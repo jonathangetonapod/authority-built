@@ -19,17 +19,17 @@ export const PodcastAnalyticsModal = ({ podcast, isOpen, onClose }: PodcastAnaly
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-start gap-4 mb-4">
-            {podcast.image && (
+            {podcast.podcast_image_url && (
               <img
-                src={podcast.image}
-                alt={podcast.name}
+                src={podcast.podcast_image_url}
+                alt={podcast.podcast_name}
                 className="w-20 h-20 rounded-lg object-cover"
               />
             )}
             <div className="flex-1">
-              <DialogTitle className="text-2xl mb-2">{podcast.name}</DialogTitle>
+              <DialogTitle className="text-2xl mb-2">{podcast.podcast_name}</DialogTitle>
               <DialogDescription className="text-base">
-                {podcast.description}
+                {podcast.podcast_description}
               </DialogDescription>
             </div>
           </div>
@@ -121,9 +121,9 @@ export const PodcastAnalyticsModal = ({ podcast, isOpen, onClose }: PodcastAnaly
 
         {/* Actions */}
         <div className="flex gap-3">
-          {podcast.url && (
+          {podcast.podcast_url && (
             <Button variant="outline" asChild className="flex-1">
-              <a href={podcast.url} target="_blank" rel="noopener noreferrer">
+              <a href={podcast.podcast_url} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="h-4 w-4 mr-2" />
                 View Podcast
               </a>

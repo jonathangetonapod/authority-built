@@ -2,17 +2,22 @@ const PODSCAN_API_BASE = 'https://podscan.fm/api/v1';
 const API_KEY = import.meta.env.VITE_PODSCAN_API_KEY;
 
 export interface PodcastData {
-  id: string;
-  name: string;
-  url: string;
-  description?: string;
-  image?: string;
-  reach_score?: number;
-  categories?: string[];
+  podcast_id: string;
+  podcast_name: string;
+  podcast_url: string;
+  podcast_description?: string;
+  podcast_image_url?: string;
+  podcast_reach_score?: number;
+  podcast_categories?: Array<{ category_id: string; category_name: string }>;
   episode_count?: number;
   language?: string;
   region?: string;
-  rating?: number;
+  reach?: {
+    itunes?: {
+      itunes_rating_average?: string;
+      itunes_rating_count?: string;
+    };
+  };
 }
 
 export interface EpisodeSearchResult {
@@ -25,12 +30,12 @@ export interface EpisodeSearchResult {
 }
 
 export interface SearchResponse {
-  data: EpisodeSearchResult[];
-  meta: {
-    total: number;
-    per_page: number;
-    current_page: number;
-    last_page: number;
+  episodes: EpisodeSearchResult[];
+  meta?: {
+    total?: number;
+    per_page?: number;
+    current_page?: number;
+    last_page?: number;
   };
 }
 
@@ -65,7 +70,11 @@ export async function searchPodcasts(options: SearchOptions = {}): Promise<Searc
     }, {} as Record<string, string>)
   });
 
-  const response = await fetch(`${PODSCAN_API_BASE}/episodes/search?${params}`, {
+  const url = `${PODSCAN_API_BASE}/episodes/search?${params}`;
+  console.log('🎙️ Podscan API Request:', url);
+  console.log('📊 Search options:', options);
+
+  const response = await fetch(url, {
     headers: {
       'Authorization': `Bearer ${API_KEY}`,
       'Content-Type': 'application/json',
@@ -73,10 +82,15 @@ export async function searchPodcasts(options: SearchOptions = {}): Promise<Searc
   });
 
   if (!response.ok) {
+    console.error('❌ Podscan API error:', response.status, response.statusText);
     throw new Error(`Podscan API error: ${response.status} ${response.statusText}`);
   }
 
-  return response.json();
+  const data = await response.json();
+  console.log('✅ Podscan API Response:', data);
+  console.log('📦 Episodes found:', data.episodes?.length || 0);
+
+  return data;
 }
 
 /**
@@ -85,9 +99,9 @@ export async function searchPodcasts(options: SearchOptions = {}): Promise<Searc
 export function extractUniquePodcasts(searchResponse: SearchResponse): PodcastData[] {
   const podcastMap = new Map<string, PodcastData>();
 
-  searchResponse.data.forEach((episode) => {
-    if (episode.podcast && !podcastMap.has(episode.podcast.id)) {
-      podcastMap.set(episode.podcast.id, episode.podcast);
+  searchResponse.episodes.forEach((episode) => {
+    if (episode.podcast && !podcastMap.has(episode.podcast.podcast_id)) {
+      podcastMap.set(episode.podcast.podcast_id, episode.podcast);
     }
   });
 
@@ -171,13 +185,19 @@ export interface PodcastAnalytics {
 }
 
 export function getPodcastAnalytics(podcast: PodcastData): PodcastAnalytics {
+  const rating = podcast.reach?.itunes?.itunes_rating_average
+    ? parseFloat(podcast.reach.itunes.itunes_rating_average)
+    : 0;
+
+  const categories = podcast.podcast_categories?.map(cat => cat.category_name) || [];
+
   return {
-    id: podcast.id,
-    name: podcast.name,
-    reach_score: podcast.reach_score || 0,
+    id: podcast.podcast_id,
+    name: podcast.podcast_name,
+    reach_score: podcast.podcast_reach_score || 0,
     episode_count: podcast.episode_count || 0,
-    rating: podcast.rating || 0,
-    categories: podcast.categories || [],
+    rating: rating,
+    categories: categories,
     language: podcast.language || 'en',
     region: podcast.region || 'US',
   };

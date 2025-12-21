@@ -12,7 +12,8 @@ import { PodcastAnalyticsModal } from '@/components/PodcastAnalyticsModal';
 const categories = ["All", "Business", "Finance", "Technology", "SaaS", "Marketing", "Leadership"];
 
 // Calculate pricing based on reach score
-const calculatePrice = (reachScore: number = 0): string => {
+const calculatePrice = (podcast: PodcastData): string => {
+  const reachScore = podcast.podcast_reach_score || 0;
   if (reachScore > 80) return "$2,200";
   if (reachScore > 60) return "$1,800";
   if (reachScore > 40) return "$1,500";
@@ -21,7 +22,8 @@ const calculatePrice = (reachScore: number = 0): string => {
 };
 
 // Calculate audience estimate from reach score
-const calculateAudience = (reachScore: number = 0): string => {
+const calculateAudience = (podcast: PodcastData): string => {
+  const reachScore = podcast.podcast_reach_score || 0;
   if (reachScore > 80) return "40,000+";
   if (reachScore > 60) return "30,000+";
   if (reachScore > 40) return "20,000+";
@@ -168,14 +170,14 @@ const PremiumPlacements = () => {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {filteredPlacements.map((podcast, index) => {
-                  const price = calculatePrice(podcast.reach_score);
-                  const audience = calculateAudience(podcast.reach_score);
+                  const price = calculatePrice(podcast);
+                  const audience = calculateAudience(podcast);
                   const features = getFeatures(podcast);
-                  const isPopular = (podcast.reach_score || 0) > 60;
+                  const isPopular = (podcast.podcast_reach_score || 0) > 60;
 
                   return (
                     <div
-                      key={podcast.id}
+                      key={podcast.podcast_id}
                       className="p-8 bg-surface-subtle rounded-xl border border-border hover:border-primary/50 transition-all duration-300 hover:shadow-lg relative"
                       style={{ transitionDelay: `${index * 100}ms` }}
                     >
@@ -186,30 +188,30 @@ const PremiumPlacements = () => {
                       )}
 
                       <div className="mb-6">
-                        {podcast.image && (
+                        {podcast.podcast_image_url && (
                           <img
-                            src={podcast.image}
-                            alt={podcast.name}
+                            src={podcast.podcast_image_url}
+                            alt={podcast.podcast_name}
                             className="w-16 h-16 rounded-lg mb-4 object-cover"
                           />
                         )}
                         <div className="flex items-center gap-2 mb-2">
                           <Mic className="h-5 w-5 text-primary" />
                           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                            {podcast.categories?.[0] || selectedCategory}
+                            {podcast.podcast_categories?.[0]?.category_name || selectedCategory}
                           </span>
                         </div>
                         <h3 className="text-2xl font-bold text-foreground mb-2">
-                          {podcast.name}
+                          {podcast.podcast_name}
                         </h3>
                         <div className="flex items-center gap-4 text-sm text-muted-foreground">
                           <div className="flex items-center gap-1">
                             <Users className="h-4 w-4" />
                             {audience} listeners
                           </div>
-                          {podcast.url && (
+                          {podcast.podcast_url && (
                             <a
-                              href={podcast.url}
+                              href={podcast.podcast_url}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="flex items-center gap-1 hover:text-primary transition-colors"
@@ -221,17 +223,17 @@ const PremiumPlacements = () => {
                         </div>
                       </div>
 
-                      {podcast.reach_score && (
+                      {podcast.podcast_reach_score && (
                         <div className="mb-4 p-3 bg-primary/5 rounded-lg">
                           <p className="text-sm font-medium text-foreground">
                             <TrendingUp className="h-4 w-4 inline mr-1" />
-                            Reach Score: {Math.round(podcast.reach_score)}/100
+                            Reach Score: {Math.round(podcast.podcast_reach_score)}/100
                           </p>
                         </div>
                       )}
 
                       <p className="text-muted-foreground mb-6 line-clamp-3">
-                        {podcast.description || 'High-quality podcast with engaged audience in the ' + (podcast.categories?.[0] || selectedCategory) + ' space.'}
+                        {podcast.podcast_description || 'High-quality podcast with engaged audience in the ' + (podcast.podcast_categories?.[0]?.category_name || selectedCategory) + ' space.'}
                       </p>
 
                       <div className="mb-6 space-y-2">

@@ -32,14 +32,14 @@ const PodcastShowcaseSection = () => {
         });
         // Fallback to static data if API fails
         setPodcasts([
-          { id: '1', name: "Tech Leaders Podcast", url: '', description: '', categories: ['Technology'] },
-          { id: '2', name: "The SaaS Show", url: '', description: '', categories: ['SaaS'] },
-          { id: '3', name: "Founder Stories", url: '', description: '', categories: ['Entrepreneurship'] },
-          { id: '4', name: "FinTech Insider", url: '', description: '', categories: ['Finance'] },
-          { id: '5', name: "Growth Talks", url: '', description: '', categories: ['Marketing'] },
-          { id: '6', name: "The Executive Edge", url: '', description: '', categories: ['Leadership'] },
-          { id: '7', name: "Scale & Grow", url: '', description: '', categories: ['Business'] },
-          { id: '8', name: "Startup Success", url: '', description: '', categories: ['Startups'] },
+          { podcast_id: '1', podcast_name: "Tech Leaders Podcast", podcast_url: '', podcast_description: '', podcast_categories: [{ category_id: '1', category_name: 'Technology' }] },
+          { podcast_id: '2', podcast_name: "The SaaS Show", podcast_url: '', podcast_description: '', podcast_categories: [{ category_id: '2', category_name: 'SaaS' }] },
+          { podcast_id: '3', podcast_name: "Founder Stories", podcast_url: '', podcast_description: '', podcast_categories: [{ category_id: '3', category_name: 'Entrepreneurship' }] },
+          { podcast_id: '4', podcast_name: "FinTech Insider", podcast_url: '', podcast_description: '', podcast_categories: [{ category_id: '4', category_name: 'Finance' }] },
+          { podcast_id: '5', podcast_name: "Growth Talks", podcast_url: '', podcast_description: '', podcast_categories: [{ category_id: '5', category_name: 'Marketing' }] },
+          { podcast_id: '6', podcast_name: "The Executive Edge", podcast_url: '', podcast_description: '', podcast_categories: [{ category_id: '6', category_name: 'Leadership' }] },
+          { podcast_id: '7', podcast_name: "Scale & Grow", podcast_url: '', podcast_description: '', podcast_categories: [{ category_id: '7', category_name: 'Business' }] },
+          { podcast_id: '8', podcast_name: "Startup Success", podcast_url: '', podcast_description: '', podcast_categories: [{ category_id: '8', category_name: 'Startups' }] },
         ]);
       } finally {
         setIsLoading(false);
@@ -97,14 +97,14 @@ const PodcastShowcaseSection = () => {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-12">
               {podcasts.map((podcast, index) => (
                 <div
-                  key={podcast.id}
+                  key={podcast.podcast_id}
                   className="group p-6 bg-background rounded-xl border border-border hover:border-primary/50 transition-all duration-300 hover:shadow-lg flex flex-col items-center justify-center text-center min-h-[140px]"
                   style={{ transitionDelay: `${index * 50}ms` }}
                 >
-                  {podcast.image ? (
+                  {podcast.podcast_image_url ? (
                     <img
-                      src={podcast.image}
-                      alt={podcast.name}
+                      src={podcast.podcast_image_url}
+                      alt={podcast.podcast_name}
                       className="w-12 h-12 rounded-lg mb-3 object-cover"
                     />
                   ) : (
@@ -113,10 +113,10 @@ const PodcastShowcaseSection = () => {
                     </div>
                   )}
                   <h3 className="font-semibold text-foreground mb-1 text-sm md:text-base">
-                    {podcast.name}
+                    {podcast.podcast_name}
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    {podcast.categories?.[0] || 'Business'}
+                    {podcast.podcast_categories?.[0]?.category_name || 'Business'}
                   </p>
                 </div>
               ))}
