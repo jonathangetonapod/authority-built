@@ -136,7 +136,9 @@ export async function searchBusinessPodcasts(limit = 20): Promise<PodcastData[]>
     order_by: randomOrder,
     order_dir: 'desc',
     min_episode_count: 10, // Filter out brand new podcasts
+    min_audience_size: 1000, // Minimum 1K audience
     max_audience_size: 500000, // Exclude mega-podcasts to keep it realistic
+    region: 'US', // Only US-based podcasts
   });
 
   console.log(`🎯 Fetched ${response.podcasts.length} business podcasts, selecting ${limit} randomly`);
