@@ -139,6 +139,7 @@ export async function searchBusinessPodcasts(limit = 20): Promise<PodcastData[]>
     min_audience_size: 1000, // Minimum 1K audience
     max_audience_size: 500000, // Exclude mega-podcasts to keep it realistic
     region: 'US', // Only US-based podcasts
+    has_guests: true, // Only shows that do interviews
   });
 
   console.log(`🎯 Fetched ${response.podcasts.length} business podcasts, selecting ${limit} randomly`);
