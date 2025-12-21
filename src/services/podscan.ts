@@ -137,7 +137,7 @@ export async function searchBusinessPodcasts(limit = 20): Promise<PodcastData[]>
     order_dir: 'desc',
     min_episode_count: 10, // Filter out brand new podcasts
     min_audience_size: 1000, // Minimum 1K audience
-    max_audience_size: 500000, // Exclude mega-podcasts to keep it realistic
+    max_audience_size: 50000, // Max 50K listeners - realistic boutique agency range
     region: 'US', // Only US-based podcasts
     has_guests: true, // Only shows that do interviews
   });
