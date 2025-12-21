@@ -131,15 +131,7 @@ export const PodcastAnalyticsModal = ({ podcast, isOpen, onClose }: PodcastAnaly
 
         {/* Actions */}
         <div className="flex gap-3">
-          {podcast.podcast_url && (
-            <Button variant="outline" asChild className="flex-1">
-              <a href={podcast.podcast_url} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="h-4 w-4 mr-2" />
-                View Podcast
-              </a>
-            </Button>
-          )}
-          <Button asChild className="flex-1">
+          <Button asChild className="w-full">
             <a href="/#book">Book This Show</a>
           </Button>
         </div>
