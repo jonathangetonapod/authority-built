@@ -1,83 +1,97 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useScrollAnimation } from '@/hooks/useScrollAnimation';
-import { Mic, Users, TrendingUp, CheckCircle2, Filter } from 'lucide-react';
+import { Mic, Users, TrendingUp, CheckCircle2, Filter, Loader2, ExternalLink, BarChart3 } from 'lucide-react';
+import { searchBusinessPodcasts, searchFinancePodcasts, searchTechPodcasts, searchPodcasts, extractUniquePodcasts, PodcastData } from '@/services/podscan';
+import { useToast } from '@/hooks/use-toast';
+import { PodcastAnalyticsModal } from '@/components/PodcastAnalyticsModal';
 
-const premiumPlacements = [
-  {
-    name: "The SaaS Podcast",
-    category: "SaaS & Tech",
-    audience: "25,000",
-    niche: "B2B SaaS Founders",
-    description: "Weekly interviews with successful SaaS founders and executives. Known for tactical insights and actionable advice.",
-    price: "$1,200",
-    features: ["Pre-interview strategy call", "Professional audio editing", "Show notes included", "Social media promotion"],
-    popular: false
-  },
-  {
-    name: "Founder Stories",
-    category: "Entrepreneurship",
-    audience: "40,000",
-    niche: "Startup Founders",
-    description: "Deep dives into the journey of building and scaling startups. Focuses on lessons learned and pivotal moments.",
-    price: "$1,800",
-    features: ["Extended 60-min episode", "YouTube video version", "Newsletter feature", "Audiogram clips"],
-    popular: true
-  },
-  {
-    name: "FinTech Insider",
-    category: "Finance & Tech",
-    audience: "15,000",
-    niche: "Financial Professionals",
-    description: "Exploring innovation in financial technology. Highly engaged audience of investors, advisors, and fintech leaders.",
-    price: "$950",
-    features: ["Industry-focused audience", "Episode transcript", "LinkedIn promotion", "Content repurposing guide"],
-    popular: false
-  },
-  {
-    name: "Scale & Grow",
-    category: "Business Growth",
-    audience: "32,000",
-    niche: "Growth Leaders",
-    description: "Marketing, sales, and growth strategies from those who've done it. Tactical, no-fluff conversations.",
-    price: "$1,500",
-    features: ["Pre-show guest prep", "Multi-platform distribution", "Post-episode promotion", "Guest highlight reel"],
-    popular: false
-  },
-  {
-    name: "The Executive Edge",
-    category: "Leadership",
-    audience: "18,000",
-    niche: "C-Suite Executives",
-    description: "Leadership insights from CEOs, founders, and executives. Premium positioning for thought leaders.",
-    price: "$2,200",
-    features: ["Premium audience targeting", "LinkedIn article feature", "Video clips package", "PR-ready content"],
-    popular: true
-  },
-  {
-    name: "Tech Talks Daily",
-    category: "Technology",
-    audience: "28,000",
-    niche: "Tech Innovators",
-    description: "Daily tech news, trends, and interviews. Fast-moving show with strong listener engagement.",
-    price: "$1,100",
-    features: ["Same-week publishing", "Social amplification", "Newsletter mention", "Bite-sized clips"],
-    popular: false
-  }
+const categories = ["All", "Business", "Finance", "Technology", "SaaS", "Marketing", "Leadership"];
+
+// Calculate pricing based on reach score
+const calculatePrice = (reachScore: number = 0): string => {
+  if (reachScore > 80) return "$2,200";
+  if (reachScore > 60) return "$1,800";
+  if (reachScore > 40) return "$1,500";
+  if (reachScore > 20) return "$1,200";
+  return "$950";
+};
+
+// Calculate audience estimate from reach score
+const calculateAudience = (reachScore: number = 0): string => {
+  if (reachScore > 80) return "40,000+";
+  if (reachScore > 60) return "30,000+";
+  if (reachScore > 40) return "20,000+";
+  if (reachScore > 20) return "15,000+";
+  return "10,000+";
+};
+
+const getFeatures = (podcast: PodcastData) => [
+  "Guest prep kit included",
+  "Professional audio editing",
+  "Show notes & transcript",
+  "Social media promotion"
 ];
-
-const categories = ["All", "SaaS & Tech", "Entrepreneurship", "Finance & Tech", "Business Growth", "Leadership", "Technology"];
 
 const PremiumPlacements = () => {
   const { ref, isVisible } = useScrollAnimation<HTMLDivElement>();
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [podcasts, setPodcasts] = useState<PodcastData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedPodcast, setSelectedPodcast] = useState<PodcastData | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const { toast } = useToast();
 
-  const filteredPlacements = selectedCategory === "All"
-    ? premiumPlacements
-    : premiumPlacements.filter(p => p.category === selectedCategory);
+  const handlePodcastClick = (podcast: PodcastData) => {
+    setSelectedPodcast(podcast);
+    setIsModalOpen(true);
+  };
+
+  useEffect(() => {
+    const loadPodcasts = async () => {
+      try {
+        setIsLoading(true);
+        let data: PodcastData[];
+
+        // Load different podcasts based on selected category
+        if (selectedCategory === "All" || selectedCategory === "Business") {
+          data = await searchBusinessPodcasts(20);
+        } else if (selectedCategory === "Finance") {
+          data = await searchFinancePodcasts(20);
+        } else if (selectedCategory === "Technology" || selectedCategory === "SaaS") {
+          data = await searchTechPodcasts(20);
+        } else {
+          // For other categories, use generic search
+          const response = await searchPodcasts({
+            query: selectedCategory.toLowerCase(),
+            per_page: 40,
+            order_by: 'podcast_rating',
+            order_dir: 'desc',
+          });
+          data = extractUniquePodcasts(response).slice(0, 20);
+        }
+
+        setPodcasts(data);
+      } catch (error) {
+        console.error('Failed to load podcasts:', error);
+        toast({
+          title: "Failed to load podcasts",
+          description: "Please try again later.",
+          variant: "destructive",
+        });
+        setPodcasts([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadPodcasts();
+  }, [selectedCategory]);
+
+  const filteredPlacements = podcasts;
 
   return (
     <main className="min-h-screen bg-background">
@@ -142,72 +156,120 @@ const PremiumPlacements = () => {
               isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
             }`}
           >
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {filteredPlacements.map((placement, index) => (
-                <div
-                  key={index}
-                  className="p-8 bg-surface-subtle rounded-xl border border-border hover:border-primary/50 transition-all duration-300 hover:shadow-lg relative"
-                  style={{ transitionDelay: `${index * 100}ms` }}
-                >
-                  {placement.popular && (
-                    <Badge className="absolute top-4 right-4" variant="default">
-                      Popular
-                    </Badge>
-                  )}
+            {isLoading ? (
+              <div className="flex items-center justify-center py-20">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <span className="ml-3 text-muted-foreground">Loading podcasts...</span>
+              </div>
+            ) : filteredPlacements.length === 0 ? (
+              <div className="text-center py-20">
+                <p className="text-muted-foreground">No podcasts found in this category.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {filteredPlacements.map((podcast, index) => {
+                  const price = calculatePrice(podcast.reach_score);
+                  const audience = calculateAudience(podcast.reach_score);
+                  const features = getFeatures(podcast);
+                  const isPopular = (podcast.reach_score || 0) > 60;
 
-                  <div className="mb-6">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Mic className="h-5 w-5 text-primary" />
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        {placement.category}
-                      </span>
-                    </div>
-                    <h3 className="text-2xl font-bold text-foreground mb-2">
-                      {placement.name}
-                    </h3>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <div className="flex items-center gap-1">
-                        <Users className="h-4 w-4" />
-                        {placement.audience} listeners
+                  return (
+                    <div
+                      key={podcast.id}
+                      className="p-8 bg-surface-subtle rounded-xl border border-border hover:border-primary/50 transition-all duration-300 hover:shadow-lg relative"
+                      style={{ transitionDelay: `${index * 100}ms` }}
+                    >
+                      {isPopular && (
+                        <Badge className="absolute top-4 right-4" variant="default">
+                          Popular
+                        </Badge>
+                      )}
+
+                      <div className="mb-6">
+                        {podcast.image && (
+                          <img
+                            src={podcast.image}
+                            alt={podcast.name}
+                            className="w-16 h-16 rounded-lg mb-4 object-cover"
+                          />
+                        )}
+                        <div className="flex items-center gap-2 mb-2">
+                          <Mic className="h-5 w-5 text-primary" />
+                          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            {podcast.categories?.[0] || selectedCategory}
+                          </span>
+                        </div>
+                        <h3 className="text-2xl font-bold text-foreground mb-2">
+                          {podcast.name}
+                        </h3>
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                          <div className="flex items-center gap-1">
+                            <Users className="h-4 w-4" />
+                            {audience} listeners
+                          </div>
+                          {podcast.url && (
+                            <a
+                              href={podcast.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 hover:text-primary transition-colors"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              View
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      {podcast.reach_score && (
+                        <div className="mb-4 p-3 bg-primary/5 rounded-lg">
+                          <p className="text-sm font-medium text-foreground">
+                            <TrendingUp className="h-4 w-4 inline mr-1" />
+                            Reach Score: {Math.round(podcast.reach_score)}/100
+                          </p>
+                        </div>
+                      )}
+
+                      <p className="text-muted-foreground mb-6 line-clamp-3">
+                        {podcast.description || 'High-quality podcast with engaged audience in the ' + (podcast.categories?.[0] || selectedCategory) + ' space.'}
+                      </p>
+
+                      <div className="mb-6 space-y-2">
+                        <p className="text-sm font-semibold text-foreground mb-2">Included:</p>
+                        {features.map((feature, idx) => (
+                          <div key={idx} className="flex items-start gap-2 text-sm text-muted-foreground">
+                            <CheckCircle2 className="h-4 w-4 text-success mt-0.5 flex-shrink-0" />
+                            {feature}
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="border-t border-border pt-6">
+                        <div className="flex items-end justify-between mb-4">
+                          <div>
+                            <p className="text-sm text-muted-foreground">One-time placement</p>
+                            <p className="text-3xl font-bold text-foreground">{price}</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => handlePodcastClick(podcast)}
+                          >
+                            <BarChart3 className="h-4 w-4 mr-2" />
+                            Analytics
+                          </Button>
+                          <Button className="flex-1" asChild>
+                            <a href="/#book">Book Show</a>
+                          </Button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-
-                  <div className="mb-4 p-3 bg-primary/5 rounded-lg">
-                    <p className="text-sm font-medium text-foreground">
-                      <TrendingUp className="h-4 w-4 inline mr-1" />
-                      {placement.niche}
-                    </p>
-                  </div>
-
-                  <p className="text-muted-foreground mb-6">
-                    {placement.description}
-                  </p>
-
-                  <div className="mb-6 space-y-2">
-                    <p className="text-sm font-semibold text-foreground mb-2">Included:</p>
-                    {placement.features.map((feature, idx) => (
-                      <div key={idx} className="flex items-start gap-2 text-sm text-muted-foreground">
-                        <CheckCircle2 className="h-4 w-4 text-success mt-0.5 flex-shrink-0" />
-                        {feature}
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="border-t border-border pt-6">
-                    <div className="flex items-end justify-between mb-4">
-                      <div>
-                        <p className="text-sm text-muted-foreground">One-time placement</p>
-                        <p className="text-3xl font-bold text-foreground">{placement.price}</p>
-                      </div>
-                    </div>
-                    <Button className="w-full" asChild>
-                      <a href="/#book">Book This Show</a>
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -271,6 +333,13 @@ const PremiumPlacements = () => {
       </section>
 
       <Footer />
+
+      {/* Analytics Modal */}
+      <PodcastAnalyticsModal
+        podcast={selectedPodcast}
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+      />
     </main>
   );
 };

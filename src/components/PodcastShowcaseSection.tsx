@@ -1,26 +1,9 @@
+import { useState, useEffect } from 'react';
 import { useScrollAnimation } from '@/hooks/useScrollAnimation';
 import { Button } from '@/components/ui/button';
-import { Mic, TrendingUp } from 'lucide-react';
-
-// Placeholder podcast data - replace with real shows
-const podcasts = [
-  { name: "Tech Leaders Podcast", category: "Technology" },
-  { name: "The SaaS Show", category: "SaaS" },
-  { name: "Founder Stories", category: "Entrepreneurship" },
-  { name: "FinTech Insider", category: "Finance" },
-  { name: "Growth Talks", category: "Marketing" },
-  { name: "The Executive Edge", category: "Leadership" },
-  { name: "Scale & Grow", category: "Business" },
-  { name: "Startup Success", category: "Startups" },
-  { name: "Future of Finance", category: "Finance" },
-  { name: "The Authority Show", category: "Personal Brand" },
-  { name: "Revenue Leaders", category: "Sales" },
-  { name: "Product Mind", category: "Product" },
-  { name: "Innovators Lab", category: "Innovation" },
-  { name: "The CFO Playbook", category: "Finance" },
-  { name: "Tech Stack Weekly", category: "Technology" },
-  { name: "Founder's Journey", category: "Entrepreneurship" },
-];
+import { Mic, TrendingUp, Loader2 } from 'lucide-react';
+import { searchBusinessPodcasts, PodcastData } from '@/services/podscan';
+import { useToast } from '@/hooks/use-toast';
 
 const stats = [
   { label: "Total Placements", value: "150+", icon: Mic },
@@ -30,6 +13,41 @@ const stats = [
 
 const PodcastShowcaseSection = () => {
   const { ref, isVisible } = useScrollAnimation<HTMLDivElement>();
+  const [podcasts, setPodcasts] = useState<PodcastData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    const loadPodcasts = async () => {
+      try {
+        setIsLoading(true);
+        const data = await searchBusinessPodcasts(16); // Load 16 podcasts
+        setPodcasts(data);
+      } catch (error) {
+        console.error('Failed to load podcasts:', error);
+        toast({
+          title: "Failed to load podcasts",
+          description: "Using fallback data. Please try again later.",
+          variant: "destructive",
+        });
+        // Fallback to static data if API fails
+        setPodcasts([
+          { id: '1', name: "Tech Leaders Podcast", url: '', description: '', categories: ['Technology'] },
+          { id: '2', name: "The SaaS Show", url: '', description: '', categories: ['SaaS'] },
+          { id: '3', name: "Founder Stories", url: '', description: '', categories: ['Entrepreneurship'] },
+          { id: '4', name: "FinTech Insider", url: '', description: '', categories: ['Finance'] },
+          { id: '5', name: "Growth Talks", url: '', description: '', categories: ['Marketing'] },
+          { id: '6', name: "The Executive Edge", url: '', description: '', categories: ['Leadership'] },
+          { id: '7', name: "Scale & Grow", url: '', description: '', categories: ['Business'] },
+          { id: '8', name: "Startup Success", url: '', description: '', categories: ['Startups'] },
+        ]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadPodcasts();
+  }, []);
 
   return (
     <section className="py-20 md:py-32 bg-gradient-to-b from-surface-subtle to-background" id="podcast-showcase">
@@ -70,23 +88,40 @@ const PodcastShowcaseSection = () => {
           </div>
 
           {/* Podcast Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-12">
-            {podcasts.map((podcast, index) => (
-              <div
-                key={index}
-                className="group p-6 bg-background rounded-xl border border-border hover:border-primary/50 transition-all duration-300 hover:shadow-lg flex flex-col items-center justify-center text-center min-h-[140px]"
-                style={{ transitionDelay: `${index * 50}ms` }}
-              >
-                <div className="p-3 bg-primary/10 rounded-full mb-3 group-hover:bg-primary/20 transition-colors">
-                  <Mic className="h-5 w-5 text-primary" />
+          {isLoading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <span className="ml-3 text-muted-foreground">Loading podcasts...</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-12">
+              {podcasts.map((podcast, index) => (
+                <div
+                  key={podcast.id}
+                  className="group p-6 bg-background rounded-xl border border-border hover:border-primary/50 transition-all duration-300 hover:shadow-lg flex flex-col items-center justify-center text-center min-h-[140px]"
+                  style={{ transitionDelay: `${index * 50}ms` }}
+                >
+                  {podcast.image ? (
+                    <img
+                      src={podcast.image}
+                      alt={podcast.name}
+                      className="w-12 h-12 rounded-lg mb-3 object-cover"
+                    />
+                  ) : (
+                    <div className="p-3 bg-primary/10 rounded-full mb-3 group-hover:bg-primary/20 transition-colors">
+                      <Mic className="h-5 w-5 text-primary" />
+                    </div>
+                  )}
+                  <h3 className="font-semibold text-foreground mb-1 text-sm md:text-base">
+                    {podcast.name}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {podcast.categories?.[0] || 'Business'}
+                  </p>
                 </div>
-                <h3 className="font-semibold text-foreground mb-1 text-sm md:text-base">
-                  {podcast.name}
-                </h3>
-                <p className="text-xs text-muted-foreground">{podcast.category}</p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
 
           {/* CTA */}
           <div className="text-center">
