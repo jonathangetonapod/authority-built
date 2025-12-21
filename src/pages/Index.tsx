@@ -8,7 +8,6 @@ import PodcastShowcaseSection from '@/components/PodcastShowcaseSection';
 import PricingSection from '@/components/PricingSection';
 import WhyProSection from '@/components/WhyProSection';
 import WhoItsForSection from '@/components/WhoItsForSection';
-import CaseStudiesSection from '@/components/CaseStudiesSection';
 import SocialProofSection from '@/components/SocialProofSection';
 import LeadMagnetSection from '@/components/LeadMagnetSection';
 import FAQSection from '@/components/FAQSection';
@@ -28,7 +27,6 @@ const Index = () => {
       <PricingSection />
       <WhyProSection />
       <WhoItsForSection />
-      <CaseStudiesSection />
       <SocialProofSection />
       <LeadMagnetSection />
       <FAQSection />
