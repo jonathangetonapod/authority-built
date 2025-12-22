@@ -4,7 +4,7 @@ import Footer from '@/components/Footer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useScrollAnimation } from '@/hooks/useScrollAnimation';
-import { Calendar, Clock, Tag, ArrowRight } from 'lucide-react';
+import { Calendar, Clock, Tag, ArrowRight, Filter } from 'lucide-react';
 import { blogPosts, categories } from '@/data/blogPosts';
 import { SocialProofNotifications } from '@/components/SocialProofNotifications';
 
@@ -21,14 +21,14 @@ const Blog = () => {
       <Navbar />
 
       {/* Hero Section */}
-      <section className="pt-28 pb-16 md:pt-36 md:pb-24 bg-gradient-to-b from-primary/5 to-background">
+      <section className="pt-28 pb-16 md:pt-36 md:pb-24 bg-gradient-to-b from-primary/5 to-background px-4">
         <div className="container mx-auto">
           <div className="max-w-3xl mx-auto text-center">
             <Badge className="mb-4">The Authority Lab Blog</Badge>
-            <h1 className="text-4xl md:text-6xl font-bold text-foreground mb-6">
+            <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold text-foreground mb-6 leading-tight px-2">
               Podcast Marketing Insights
             </h1>
-            <p className="text-xl text-muted-foreground">
+            <p className="text-base sm:text-lg md:text-xl text-muted-foreground leading-relaxed px-4">
               Expert strategies, data-driven insights, and proven tactics to dominate podcast guesting and build your authority.
             </p>
           </div>
@@ -36,16 +36,17 @@ const Blog = () => {
       </section>
 
       {/* Category Filter */}
-      <section className="pb-8">
+      <section className="pb-8 px-4">
         <div className="container mx-auto">
-          <div className="flex items-center gap-3 overflow-x-auto pb-4">
+          <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto pb-4 scrollbar-hide">
+            <Filter className="h-5 w-5 text-muted-foreground flex-shrink-0" />
             {categories.map((category) => (
               <Button
                 key={category}
                 variant={selectedCategory === category ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setSelectedCategory(category)}
-                className="whitespace-nowrap"
+                className="whitespace-nowrap min-h-[40px]"
               >
                 {category}
               </Button>
@@ -55,7 +56,7 @@ const Blog = () => {
       </section>
 
       {/* Blog Posts Grid */}
-      <section className="pb-20 md:pb-32">
+      <section className="pb-20 md:pb-32 px-4">
         <div className="container mx-auto">
           <div
             ref={ref}
@@ -155,22 +156,22 @@ const Blog = () => {
       </section>
 
       {/* Newsletter CTA */}
-      <section className="py-10 md:py-20 bg-gradient-to-r from-primary/10 via-purple-500/10 to-primary/10">
+      <section className="py-10 md:py-20 bg-gradient-to-r from-primary/10 via-purple-500/10 to-primary/10 px-4">
         <div className="container mx-auto">
           <div className="max-w-2xl mx-auto text-center">
-            <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-foreground mb-4 px-4">
               Get Podcast Marketing Insights Weekly
             </h2>
-            <p className="text-lg text-muted-foreground mb-8">
+            <p className="text-base sm:text-lg text-muted-foreground mb-8 px-4">
               Join 2,500+ founders and executives receiving our best strategies for podcast guesting.
             </p>
-            <div className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
+            <div className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto px-4">
               <input
                 type="email"
                 placeholder="Enter your email"
-                className="flex h-12 w-full rounded-lg border border-border bg-background px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                className="flex h-12 sm:h-14 w-full rounded-lg border border-border bg-background px-4 py-2 text-base focus:outline-none focus:ring-2 focus:ring-primary"
               />
-              <Button size="lg" className="sm:w-auto">
+              <Button size="lg" className="w-full sm:w-auto min-h-[48px] sm:min-h-[56px] whitespace-nowrap">
                 Subscribe
               </Button>
             </div>

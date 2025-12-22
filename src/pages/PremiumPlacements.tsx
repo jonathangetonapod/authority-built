@@ -127,14 +127,14 @@ const PremiumPlacements = () => {
       <Navbar />
 
       {/* Hero Section */}
-      <section className="pt-28 pb-16 md:pt-36 md:pb-24 bg-gradient-to-b from-primary/5 to-background">
+      <section className="pt-28 pb-16 md:pt-36 md:pb-24 bg-gradient-to-b from-primary/5 to-background px-4">
         <div className="container mx-auto">
           <div className="max-w-3xl mx-auto text-center">
             <Badge className="mb-4">Premium Placements</Badge>
-            <h1 className="text-4xl md:text-6xl font-bold text-foreground mb-6">
+            <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold text-foreground mb-6 leading-tight px-2">
               Guaranteed Podcast Spots
             </h1>
-            <p className="text-xl text-muted-foreground mb-8">
+            <p className="text-base sm:text-lg md:text-xl text-muted-foreground mb-8 leading-relaxed px-4">
               Skip the uncertainty. Choose from our curated menu of podcasts where we guarantee your placement.
               Pick your shows, we handle the booking.
             </p>
@@ -298,13 +298,13 @@ const PremiumPlacements = () => {
                         <div className="mb-6">
                           <button
                             onClick={() => toggleFeatures(podcast.podcast_id)}
-                            className="w-full flex items-center justify-between text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 hover:text-foreground transition-colors"
+                            className="w-full flex items-center justify-between text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 hover:text-foreground transition-colors py-2 min-h-[44px]"
                           >
                             <span>What's Included:</span>
                             {expandedCards.has(podcast.podcast_id) ? (
-                              <ChevronUp className="h-4 w-4" />
+                              <ChevronUp className="h-5 w-5" />
                             ) : (
-                              <ChevronDown className="h-4 w-4" />
+                              <ChevronDown className="h-5 w-5" />
                             )}
                           </button>
                           {expandedCards.has(podcast.podcast_id) && (
@@ -328,7 +328,7 @@ const PremiumPlacements = () => {
                               <p className="text-xs text-muted-foreground mt-1">One-time placement</p>
                             </div>
                           </div>
-                          <Button className="w-full bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70" size="lg" asChild>
+                          <Button className="w-full bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 min-h-[48px]" size="lg" asChild>
                             <a href="/#book">Book This Show →</a>
                           </Button>
                         </div>

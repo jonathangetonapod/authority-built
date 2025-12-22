@@ -47,7 +47,7 @@ const PricingSection = () => {
   const { ref, isVisible } = useScrollAnimation<HTMLDivElement>();
 
   return (
-    <section id="pricing" className="py-8 md:py-16 bg-surface-subtle">
+    <section id="pricing" className="py-8 md:py-16 bg-surface-subtle px-4">
       <div className="container mx-auto">
         <div
           ref={ref}
@@ -55,17 +55,17 @@ const PricingSection = () => {
             isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
           }`}
         >
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground text-center mb-16">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-foreground text-center mb-8 sm:mb-12 md:mb-16 px-4">
             Choose Your Plan
           </h2>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
             {plans.map((plan, index) => (
               <div
                 key={index}
-                className={`relative p-8 rounded-xl border transition-all duration-300 ${
+                className={`relative p-6 sm:p-8 rounded-xl border transition-all duration-300 ${
                   plan.popular
-                    ? 'bg-primary text-primary-foreground border-primary scale-105'
+                    ? 'bg-primary text-primary-foreground border-primary md:scale-105'
                     : 'bg-background border-border hover:border-foreground/20'
                 }`}
                 style={{ transitionDelay: `${index * 100}ms` }}
@@ -109,7 +109,7 @@ const PricingSection = () => {
                 <Button
                   variant={plan.popular ? 'secondary' : 'hero'}
                   size="lg"
-                  className="w-full"
+                  className="w-full min-h-[48px]"
                   asChild
                 >
                   <a href="#book">Book a Call</a>
