@@ -70,7 +70,7 @@ const Course = () => {
       <Navbar />
 
       {/* Hero Section */}
-      <section className="pt-32 pb-20 md:pt-40 md:pb-32 bg-gradient-to-b from-primary/5 to-background">
+      <section className="pt-28 pb-16 md:pt-36 md:pb-24 bg-gradient-to-b from-primary/5 to-background">
         <div className="container mx-auto">
           <div className="max-w-3xl mx-auto text-center">
             <Badge className="mb-4">Coming Soon</Badge>
@@ -114,7 +114,7 @@ const Course = () => {
       </section>
 
       {/* What's Included Section */}
-      <section className="py-20 md:py-32">
+      <section className="py-10 md:py-20">
         <div className="container mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
@@ -161,7 +161,7 @@ const Course = () => {
       </section>
 
       {/* Bonuses Section */}
-      <section className="py-20 md:py-32 bg-surface-subtle">
+      <section className="py-10 md:py-20 bg-surface-subtle">
         <div className="container mx-auto max-w-4xl">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
@@ -210,7 +210,7 @@ const Course = () => {
       </section>
 
       {/* Timeline Section */}
-      <section className="py-20 md:py-32">
+      <section className="py-10 md:py-20">
         <div className="container mx-auto max-w-3xl text-center">
           <div className="p-8 bg-surface-subtle rounded-xl border border-border">
             <Clock className="h-12 w-12 text-primary mx-auto mb-4" />
@@ -236,7 +236,7 @@ const Course = () => {
       </section>
 
       {/* CTA Section */}
-      <section className="py-20 md:py-32 bg-primary text-primary-foreground">
+      <section className="py-10 md:py-20 bg-primary text-primary-foreground">
         <div className="container mx-auto text-center">
           <h2 className="text-3xl md:text-4xl font-bold mb-6">
             Don't Want To Wait? We'll Do It For You.

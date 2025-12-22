@@ -13,6 +13,7 @@ import LeadMagnetSection from '@/components/LeadMagnetSection';
 import FAQSection from '@/components/FAQSection';
 import FinalCTASection from '@/components/FinalCTASection';
 import Footer from '@/components/Footer';
+import { SocialProofNotifications } from '@/components/SocialProofNotifications';
 
 const Index = () => {
   return (
@@ -32,6 +33,7 @@ const Index = () => {
       <FAQSection />
       <FinalCTASection />
       <Footer />
+      <SocialProofNotifications />
     </main>
   );
 };

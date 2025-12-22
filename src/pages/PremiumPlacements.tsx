@@ -7,6 +7,7 @@ import { useScrollAnimation } from '@/hooks/useScrollAnimation';
 import { Mic, Users, TrendingUp, CheckCircle2, Filter, Star, Award, BarChart3, Target, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { searchPremiumPodcasts, PodcastData, getPodcastAnalytics } from '@/services/podscan';
 import { useToast } from '@/hooks/use-toast';
+import { SocialProofNotifications } from '@/components/SocialProofNotifications';
 
 // Helper function to generate pricing tiers based on audience size
 const generatePricing = (audienceSize: number): { price: string; features: string[] } => {
@@ -126,7 +127,7 @@ const PremiumPlacements = () => {
       <Navbar />
 
       {/* Hero Section */}
-      <section className="pt-32 pb-20 md:pt-40 md:pb-32 bg-gradient-to-b from-primary/5 to-background">
+      <section className="pt-28 pb-16 md:pt-36 md:pb-24 bg-gradient-to-b from-primary/5 to-background">
         <div className="container mx-auto">
           <div className="max-w-3xl mx-auto text-center">
             <Badge className="mb-4">Premium Placements</Badge>
@@ -348,7 +349,7 @@ const PremiumPlacements = () => {
       </section>
 
       {/* FAQ Section */}
-      <section className="py-20 md:py-32 bg-surface-subtle">
+      <section className="py-10 md:py-20 bg-surface-subtle">
         <div className="container mx-auto max-w-3xl">
           <h2 className="text-3xl md:text-4xl font-bold text-foreground text-center mb-12">
             How Premium Placements Work
@@ -391,7 +392,7 @@ const PremiumPlacements = () => {
       </section>
 
       {/* CTA Section */}
-      <section className="py-20 md:py-32 bg-primary text-primary-foreground">
+      <section className="py-10 md:py-20 bg-primary text-primary-foreground">
         <div className="container mx-auto text-center">
           <h2 className="text-3xl md:text-4xl font-bold mb-6">
             Ready To Pick Your Shows?
@@ -406,6 +407,7 @@ const PremiumPlacements = () => {
       </section>
 
       <Footer />
+      <SocialProofNotifications />
     </main>
   );
 };

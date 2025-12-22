@@ -76,7 +76,7 @@ const Resources = () => {
       <Navbar />
 
       {/* Hero Section */}
-      <section className="pt-32 pb-20 md:pt-40 md:pb-32">
+      <section className="pt-28 pb-16 md:pt-36 md:pb-24">
         <div className="container mx-auto">
           <div className="max-w-3xl mx-auto text-center">
             <h1 className="text-4xl md:text-6xl font-bold text-foreground mb-6">
@@ -156,7 +156,7 @@ const Resources = () => {
       </section>
 
       {/* CTA Section */}
-      <section className="py-20 md:py-32 bg-primary text-primary-foreground">
+      <section className="py-10 md:py-20 bg-primary text-primary-foreground">
         <div className="container mx-auto text-center">
           <h2 className="text-3xl md:text-4xl font-bold mb-6">
             Want Us To Do It For You?

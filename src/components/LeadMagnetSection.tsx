@@ -21,7 +21,7 @@ const LeadMagnetSection = () => {
   };
 
   return (
-    <section id="lead-magnet" className="py-12 md:py-20 bg-surface-muted">
+    <section id="lead-magnet" className="py-8 md:py-16 bg-surface-muted">
       <div className="container mx-auto">
         <div
           ref={ref}

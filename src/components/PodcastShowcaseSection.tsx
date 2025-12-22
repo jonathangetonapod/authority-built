@@ -58,7 +58,7 @@ const PodcastShowcaseSection = () => {
   }, []);
 
   return (
-    <section className="py-12 md:py-20 bg-gradient-to-b from-surface-subtle to-background" id="podcast-showcase">
+    <section className="py-8 md:py-16 bg-gradient-to-b from-surface-subtle to-background" id="podcast-showcase">
       <div className="container mx-auto">
         <div
           ref={ref}
