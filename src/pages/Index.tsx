@@ -22,13 +22,13 @@ const Index = () => {
       <HeroSection />
       <ProblemSection />
       <SolutionSection />
+      <SocialProofSection />
+      <PodcastShowcaseSection />
       <HowItWorksSection />
       <WhatYouGetSection />
-      <PodcastShowcaseSection />
       <PricingSection />
       <WhyProSection />
       <WhoItsForSection />
-      <SocialProofSection />
       <LeadMagnetSection />
       <FAQSection />
       <FinalCTASection />
