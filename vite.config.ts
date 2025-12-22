@@ -13,6 +13,7 @@ export default defineConfig(({ mode }) => ({
     host: "0.0.0.0",
     port: 4173,
     strictPort: false,
+    allowedHosts: ["authority-lab-website-production.up.railway.app"],
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
