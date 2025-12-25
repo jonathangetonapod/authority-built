@@ -28,10 +28,11 @@ serve(async (req) => {
     }
 
     const payload = await req.json()
-    console.log('[Campaign Webhook] Received payload:', payload)
+    console.log('[Campaign Webhook] Received payload:', JSON.stringify(payload, null, 2))
 
     // Parse Email Bison webhook structure
-    const eventType = payload?.data?.event?.type
+    // Structure: { event: {...}, data: { lead, campaign, scheduled_email, campaign_event } }
+    const eventType = payload?.event?.type
     const leadData = payload?.data?.lead
     const campaignData = payload?.data?.campaign
     const scheduledEmail = payload?.data?.scheduled_email
