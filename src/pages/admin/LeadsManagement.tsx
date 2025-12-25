@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import { Download, Mail, Calendar, Plus, Search, Tag, Loader2 } from 'lucide-react'
+import { Download, Mail, MailOpen, Calendar, Plus, Search, Tag, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
 
@@ -37,6 +37,7 @@ interface CampaignReply {
   lead_type: 'sales' | 'podcasts' | 'other' | null
   status: 'new' | 'contacted' | 'qualified' | 'not_interested' | 'converted'
   notes: string | null
+  read: boolean
   created_at: string
   updated_at: string
 }
@@ -49,6 +50,7 @@ const LeadsManagement = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [readFilter, setReadFilter] = useState<string>('all')
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
 
@@ -68,7 +70,7 @@ const LeadsManagement = () => {
 
   useEffect(() => {
     filterReplies()
-  }, [replies, searchTerm, typeFilter, statusFilter])
+  }, [replies, searchTerm, typeFilter, statusFilter, readFilter])
 
   const loadReplies = async () => {
     try {
@@ -118,6 +120,15 @@ const LeadsManagement = () => {
     // Status filter
     if (statusFilter !== 'all') {
       filtered = filtered.filter((r) => r.status === statusFilter)
+    }
+
+    // Read filter
+    if (readFilter !== 'all') {
+      if (readFilter === 'unread') {
+        filtered = filtered.filter((r) => !r.read)
+      } else if (readFilter === 'read') {
+        filtered = filtered.filter((r) => r.read)
+      }
     }
 
     setFilteredReplies(filtered)
@@ -209,6 +220,32 @@ const LeadsManagement = () => {
     } catch (error: any) {
       toast({
         title: 'Error updating status',
+        description: error.message,
+        variant: 'destructive',
+      })
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
+  const toggleRead = async (id: string, currentReadStatus: boolean) => {
+    try {
+      setUpdatingId(id)
+      const { error } = await supabase
+        .from('campaign_replies')
+        .update({ read: !currentReadStatus })
+        .eq('id', id)
+
+      if (error) throw error
+
+      toast({
+        title: !currentReadStatus ? 'Marked as read' : 'Marked as unread',
+      })
+
+      loadReplies()
+    } catch (error: any) {
+      toast({
+        title: 'Error updating read status',
         description: error.message,
         variant: 'destructive',
       })
@@ -457,6 +494,16 @@ const LeadsManagement = () => {
                   <SelectItem value="converted">Converted</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={readFilter} onValueChange={setReadFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Read Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="unread">Unread Only</SelectItem>
+                  <SelectItem value="read">Read Only</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
@@ -483,16 +530,20 @@ const LeadsManagement = () => {
                 {filteredReplies.map((reply) => (
                   <div
                     key={reply.id}
-                    className="p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                    className={`p-4 border rounded-lg hover:bg-muted/50 transition-colors ${!reply.read ? 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900' : ''}`}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-4 flex-1">
                         <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                          <Mail className="h-5 w-5 text-primary" />
+                          {reply.read ? (
+                            <MailOpen className="h-5 w-5 text-primary" />
+                          ) : (
+                            <Mail className="h-5 w-5 text-primary" />
+                          )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <p className="font-medium">{reply.email}</p>
+                            <p className={reply.read ? 'font-medium' : 'font-bold'}>{reply.email}</p>
                             {reply.name && (
                               <span className="text-sm text-muted-foreground">• {reply.name}</span>
                             )}
@@ -565,6 +616,25 @@ const LeadsManagement = () => {
                             <SelectItem value="converted">Converted</SelectItem>
                           </SelectContent>
                         </Select>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleRead(reply.id, reply.read)}
+                          className="text-xs"
+                          title={reply.read ? 'Mark as unread' : 'Mark as read'}
+                        >
+                          {reply.read ? (
+                            <>
+                              <Mail className="h-3 w-3 mr-1" />
+                              Mark Unread
+                            </>
+                          ) : (
+                            <>
+                              <MailOpen className="h-3 w-3 mr-1" />
+                              Mark Read
+                            </>
+                          )}
+                        </Button>
                       </div>
                     </div>
                   </div>
