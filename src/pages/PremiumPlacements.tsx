@@ -183,7 +183,7 @@ const PremiumPlacements = () => {
                       </div>
 
                       {/* Podcast Artwork */}
-                      <div className="relative h-48 bg-gradient-to-br from-primary/20 to-primary/5 overflow-hidden">
+                      <div className="relative h-32 md:h-48 bg-gradient-to-br from-primary/20 to-primary/5 overflow-hidden">
                         {podcast.podcast_image_url ? (
                           <img
                             src={podcast.podcast_image_url}
@@ -192,22 +192,22 @@ const PremiumPlacements = () => {
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
-                            <Mic className="h-16 w-16 text-muted-foreground" />
+                            <Mic className="h-12 w-12 md:h-16 md:w-16 text-muted-foreground" />
                           </div>
                         )}
                         <div className="absolute inset-0 bg-gradient-to-t from-surface-subtle via-transparent to-transparent" />
                       </div>
 
-                      <div className="p-6">
+                      <div className="p-4 md:p-6">
                         {/* Podcast Name */}
-                        <div className="mb-4 h-16 flex items-center">
-                          <h3 className="text-2xl font-bold text-foreground line-clamp-2">
+                        <div className="mb-3 md:mb-4 min-h-[3rem] md:h-16 flex items-center">
+                          <h3 className="text-lg md:text-2xl font-bold text-foreground line-clamp-2">
                             {podcast.podcast_name}
                           </h3>
                         </div>
 
                         {/* Stats Grid */}
-                        <div className="grid grid-cols-2 gap-3 mb-4">
+                        <div className="grid grid-cols-2 gap-2 md:gap-3 mb-3 md:mb-4">
                           {podcast.audience_size && (
                             <div className="flex items-center gap-2 text-sm">
                               <Users className="h-4 w-4 text-primary" />
@@ -248,7 +248,7 @@ const PremiumPlacements = () => {
 
                         {/* Why This Show */}
                         {podcast.why_this_show && (
-                          <div className="mb-4 p-3 bg-gradient-to-br from-purple-500/10 to-primary/10 rounded-lg border border-purple-500/20">
+                          <div className="mb-3 md:mb-4 p-2 md:p-3 bg-gradient-to-br from-purple-500/10 to-primary/10 rounded-lg border border-purple-500/20">
                             <div className="flex items-center gap-2 mb-2">
                               <Award className="h-4 w-4 text-purple-500" />
                               <p className="text-xs font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wider">
@@ -271,7 +271,7 @@ const PremiumPlacements = () => {
 
                         {/* Features - Collapsible */}
                         {podcast.whats_included && podcast.whats_included.length > 0 && (
-                          <div className="mb-6">
+                          <div className="mb-4 md:mb-6">
                             <button
                               onClick={() => toggleFeatures(podcast.id)}
                               className="w-full flex items-center justify-between text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 hover:text-foreground transition-colors py-2 min-h-[44px]"
@@ -297,11 +297,11 @@ const PremiumPlacements = () => {
                         )}
 
                         {/* Price & CTA */}
-                        <div className="border-t-2 border-border pt-6">
-                          <div className="flex items-end justify-between mb-4">
+                        <div className="border-t-2 border-border pt-4 md:pt-6">
+                          <div className="flex items-end justify-between mb-3 md:mb-4">
                             <div>
                               <p className="text-xs text-muted-foreground uppercase tracking-wider">Investment</p>
-                              <p className="text-4xl font-bold text-foreground">{podcast.price}</p>
+                              <p className="text-3xl md:text-4xl font-bold text-foreground">{podcast.price}</p>
                               <p className="text-xs text-muted-foreground mt-1">One-time placement</p>
                             </div>
                           </div>
