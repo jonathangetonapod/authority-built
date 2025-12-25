@@ -11,9 +11,8 @@ export default defineConfig(({ mode }) => ({
   },
   preview: {
     host: "0.0.0.0",
-    port: 4173,
-    strictPort: false,
-    allowedHosts: ["authority-lab-website-production.up.railway.app"],
+    port: Number(process.env.PORT) || 4173,
+    strictPort: true,
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
