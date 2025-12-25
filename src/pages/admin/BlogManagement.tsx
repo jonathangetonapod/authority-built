@@ -36,6 +36,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 const BlogManagement = () => {
   const navigate = useNavigate()
@@ -199,8 +205,9 @@ const BlogManagement = () => {
   const totalViews = posts.reduce((sum, p) => sum + p.view_count, 0)
 
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
+    <TooltipProvider>
+      <DashboardLayout>
+        <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -388,72 +395,108 @@ const BlogManagement = () => {
 
                       <div className="flex items-center gap-2 ml-4">
                         {post.status === 'published' && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="View on site"
-                            onClick={() => window.open(`/blog/${post.slug}`, '_blank')}
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => window.open(`/blog/${post.slug}`, '_blank')}
+                              >
+                                <ExternalLink className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>View on site</p>
+                            </TooltipContent>
+                          </Tooltip>
                         )}
 
                         {post.status === 'published' && !post.indexed_by_google_at && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="Resubmit to Google"
-                            onClick={() => handleResubmitToGoogle(post)}
-                          >
-                            <RefreshCw className="h-4 w-4" />
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleResubmitToGoogle(post)}
+                              >
+                                <RefreshCw className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Resubmit to Google Indexing API</p>
+                            </TooltipContent>
+                          </Tooltip>
                         )}
 
                         {post.status === 'published' && post.submitted_to_google_at && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="Check indexing status with Google"
-                            onClick={() => handleCheckIndexingStatus(post)}
-                            disabled={checkingStatus[post.id]}
-                          >
-                            {checkingStatus[post.id] ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Search className="h-4 w-4" />
-                            )}
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleCheckIndexingStatus(post)}
+                                disabled={checkingStatus[post.id]}
+                              >
+                                {checkingStatus[post.id] ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Search className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Check indexing status with Google</p>
+                            </TooltipContent>
+                          </Tooltip>
                         )}
 
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title={post.status === 'published' ? 'Unpublish' : 'Publish'}
-                          onClick={() => handleTogglePublish(post)}
-                        >
-                          <Globe className={`h-4 w-4 ${post.status === 'published' ? 'text-green-600' : ''}`} />
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleTogglePublish(post)}
+                            >
+                              <Globe className={`h-4 w-4 ${post.status === 'published' ? 'text-green-600' : ''}`} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{post.status === 'published' ? 'Unpublish post' : 'Publish post'}</p>
+                          </TooltipContent>
+                        </Tooltip>
 
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Edit"
-                          onClick={() => navigate(`/admin/blog/${post.id}/edit`)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => navigate(`/admin/blog/${post.id}/edit`)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Edit post</p>
+                          </TooltipContent>
+                        </Tooltip>
 
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Delete"
-                          onClick={() => {
-                            setPostToDelete(post.id)
-                            setDeleteDialogOpen(true)
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                setPostToDelete(post.id)
+                                setDeleteDialogOpen(true)
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Delete post</p>
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
                     </div>
                   )
@@ -481,7 +524,8 @@ const BlogManagement = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </DashboardLayout>
+      </DashboardLayout>
+    </TooltipProvider>
   )
 }
 
