@@ -51,6 +51,7 @@ const PremiumPlacementsManagement = () => {
     why_this_show: '',
     whats_included: [],
     price: '$3,500',
+    my_cost: '',
     notes: '',
     is_featured: false,
     display_order: 0
@@ -205,6 +206,7 @@ const PremiumPlacementsManagement = () => {
         why_this_show: podcast.why_this_show || '',
         whats_included: podcast.whats_included,
         price: podcast.price,
+        my_cost: podcast.my_cost || '',
         notes: podcast.notes || '',
         is_featured: podcast.is_featured,
         display_order: podcast.display_order
@@ -679,7 +681,18 @@ const PremiumPlacementsManagement = () => {
                     onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                     required
                   />
-                  <p className="text-xs text-muted-foreground">One-time placement fee</p>
+                  <p className="text-xs text-muted-foreground">One-time placement fee (public)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="my_cost">My Cost (optional)</Label>
+                  <Input
+                    id="my_cost"
+                    placeholder="$2,000"
+                    value={formData.my_cost}
+                    onChange={(e) => setFormData({ ...formData, my_cost: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">Your cost to purchase this placement (admin-only, not shown on frontend)</p>
                 </div>
 
                 <div className="space-y-2">

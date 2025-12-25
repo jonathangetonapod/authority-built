@@ -4,10 +4,14 @@ import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useScrollAnimation } from '@/hooks/useScrollAnimation';
-import { Mic, Users, TrendingUp, CheckCircle2, Filter, Star, Award, BarChart3, Target, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Mic, Users, TrendingUp, CheckCircle2, Filter, Star, Award, BarChart3, Target, Loader2, ChevronDown, ChevronUp, ShoppingCart } from 'lucide-react';
 import { getActivePremiumPodcasts, type PremiumPodcast } from '@/services/premiumPodcasts';
 import { useToast } from '@/hooks/use-toast';
 import { SocialProofNotifications } from '@/components/SocialProofNotifications';
+import { CartButton } from '@/components/CartButton';
+import { CartDrawer } from '@/components/CartDrawer';
+import { useCartStore } from '@/stores/cartStore';
+import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
@@ -25,7 +29,18 @@ const PremiumPlacements = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [modalPodcast, setModalPodcast] = useState<PremiumPodcast | null>(null);
-  const { toast } = useToast();
+  const { toast: toastHook } = useToast();
+
+  // Cart store
+  const { addItem, isInCart } = useCartStore();
+
+  // Handle add to cart
+  const handleAddToCart = (podcast: PremiumPodcast) => {
+    addItem(podcast);
+    toast.success(`${podcast.podcast_name} added to cart!`, {
+      description: 'View your cart to proceed to checkout',
+    });
+  };
 
   const toggleFeatures = (podcastId: string) => {
     setExpandedCards(prev => {
@@ -290,9 +305,25 @@ const PremiumPlacements = () => {
                               <p className="text-xs text-muted-foreground mt-1">One-time placement</p>
                             </div>
                           </div>
-                          <Button className="w-full bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 min-h-[48px]" size="lg" asChild>
-                            <a href="/#book">Book This Show →</a>
-                          </Button>
+                          {isInCart(podcast.id) ? (
+                            <Button
+                              className="w-full min-h-[48px] bg-green-600 hover:bg-green-700"
+                              size="lg"
+                              disabled
+                            >
+                              <CheckCircle2 className="mr-2 h-5 w-5" />
+                              Added to Cart
+                            </Button>
+                          ) : (
+                            <Button
+                              className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 min-h-[48px]"
+                              size="lg"
+                              onClick={() => handleAddToCart(podcast)}
+                            >
+                              <ShoppingCart className="mr-2 h-5 w-5" />
+                              Add to Cart
+                            </Button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -363,6 +394,10 @@ const PremiumPlacements = () => {
 
       <Footer />
       <SocialProofNotifications />
+
+      {/* Cart Components */}
+      <CartButton />
+      <CartDrawer />
 
       {/* Why This Show Modal */}
       <Dialog open={!!modalPodcast} onOpenChange={(open) => !open && setModalPodcast(null)}>

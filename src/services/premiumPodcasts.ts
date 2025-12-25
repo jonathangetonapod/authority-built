@@ -12,6 +12,7 @@ export interface PremiumPodcast {
   why_this_show?: string
   whats_included: string[]
   price: string
+  my_cost?: string // Admin-only field: what it costs to purchase the placement
   is_featured: boolean
   is_active: boolean
   display_order: number
@@ -32,6 +33,7 @@ export interface CreatePremiumPodcastInput {
   why_this_show?: string
   whats_included?: string[]
   price: string
+  my_cost?: string
   is_featured?: boolean
   is_active?: boolean
   display_order?: number

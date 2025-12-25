@@ -14,7 +14,8 @@ import {
   X,
   User,
   GripVertical,
-  Sparkles
+  Sparkles,
+  ShoppingBag
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -52,6 +53,7 @@ const defaultNavItems: NavItem[] = [
   { id: 'blog', name: 'Blog Posts', href: '/admin/blog', icon: FileText },
   { id: 'videos', name: 'Video Testimonials', href: '/admin/videos', icon: Video },
   { id: 'premium', name: 'Premium Placements', href: '/admin/premium-placements', icon: Sparkles },
+  { id: 'customers', name: 'Customers', href: '/admin/customers', icon: ShoppingBag },
   { id: 'leads', name: 'Leads', href: '/admin/leads', icon: Users },
   { id: 'settings', name: 'Settings', href: '/admin/settings', icon: Settings },
 ]
