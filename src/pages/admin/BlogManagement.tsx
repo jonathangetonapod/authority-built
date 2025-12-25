@@ -22,6 +22,7 @@ import {
 } from '@/services/blog'
 import {
   submitToGoogleIndexing,
+  checkGoogleIndexingStatus,
   buildPostUrl,
   getIndexingStatusBadge
 } from '@/services/indexing'
@@ -46,6 +47,7 @@ const BlogManagement = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [postToDelete, setPostToDelete] = useState<string | null>(null)
+  const [checkingStatus, setCheckingStatus] = useState<Record<string, boolean>>({})
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'published'>('all')
@@ -149,6 +151,44 @@ const BlogManagement = () => {
         description: 'Failed to submit to Google',
         variant: 'destructive',
       })
+    }
+  }
+
+  const handleCheckIndexingStatus = async (post: BlogPost) => {
+    setCheckingStatus(prev => ({ ...prev, [post.id]: true }))
+
+    try {
+      const postUrl = buildPostUrl(post.slug)
+      const result = await checkGoogleIndexingStatus(postUrl, post.id)
+
+      if (result.success && result.data?.isIndexed) {
+        const indexedDate = result.data.lastCrawlTime
+          ? new Date(result.data.lastCrawlTime).toLocaleDateString()
+          : 'recently'
+
+        toast({
+          title: 'Indexed!',
+          description: `Post was indexed on ${indexedDate}`,
+        })
+      } else if (result.success && !result.data?.isIndexed) {
+        toast({
+          title: 'Not Indexed Yet',
+          description: result.data?.coverageState || "Google hasn't indexed this post yet.",
+        })
+      } else {
+        throw new Error(result.error || 'Check failed')
+      }
+
+      loadData()
+    } catch (error) {
+      console.error('Status check failed:', error)
+      toast({
+        title: 'Check Failed',
+        description: error instanceof Error ? error.message : 'Could not verify indexing status',
+        variant: 'destructive',
+      })
+    } finally {
+      setCheckingStatus(prev => ({ ...prev, [post.id]: false }))
     }
   }
 
@@ -317,6 +357,10 @@ const BlogManagement = () => {
                                   ? 'border-blue-500 text-blue-700'
                                   : indexingBadge.color === 'yellow'
                                   ? 'border-yellow-500 text-yellow-700'
+                                  : indexingBadge.color === 'red'
+                                  ? 'border-red-500 text-red-700'
+                                  : indexingBadge.color === 'orange'
+                                  ? 'border-orange-500 text-orange-700'
                                   : 'border-gray-500 text-gray-700'
                               }
                             >
@@ -362,6 +406,22 @@ const BlogManagement = () => {
                             onClick={() => handleResubmitToGoogle(post)}
                           >
                             <RefreshCw className="h-4 w-4" />
+                          </Button>
+                        )}
+
+                        {post.status === 'published' && post.submitted_to_google_at && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Check indexing status with Google"
+                            onClick={() => handleCheckIndexingStatus(post)}
+                            disabled={checkingStatus[post.id]}
+                          >
+                            {checkingStatus[post.id] ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Search className="h-4 w-4" />
+                            )}
                           </Button>
                         )}
 

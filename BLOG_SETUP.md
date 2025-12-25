@@ -145,6 +145,155 @@ The Google Indexing API allows your blog posts to be indexed within hours instea
 
 ---
 
+## 🔍 Google Search Console API Setup (Verify Indexing Status)
+
+The Google Search Console API allows you to verify if your blog posts are **actually indexed** by Google (not just submitted).
+
+### Differences from Indexing API
+
+| Feature | Indexing API | Search Console API |
+|---------|-------------|-------------------|
+| Purpose | Submit URLs to Google | Check if URLs are indexed |
+| Auth | Service Account | OAuth 2.0 |
+| Token Lifespan | 1 hour | Refresh token (permanent) |
+| Quota | 200 requests/minute | 2,000 requests/day |
+
+### Step-by-Step Setup:
+
+#### 1. Enable Search Console API
+
+- Go to https://console.cloud.google.com/
+- Navigate to "APIs & Services" > "Library"
+- Search for "Google Search Console API"
+- Click "Enable"
+
+#### 2. Create OAuth 2.0 Credentials
+
+- Go to "APIs & Services" > "Credentials"
+- Click "Create Credentials" > "OAuth client ID"
+- Application type: "Web application"
+- Name: "Authority Lab Blog - Search Console"
+- Authorized redirect URIs:
+  - `http://localhost:3000/oauth/callback` (for setup)
+  - `https://getonapod.com/oauth/callback` (optional, for production)
+- Click "Create"
+- Download the JSON file with your credentials
+
+#### 3. Get Refresh Token
+
+Run the authorization script to obtain a refresh token:
+
+```bash
+# Install dependencies (if not already installed)
+npm install google-auth-library
+
+# Run authorization script
+node scripts/get-google-refresh-token.js path/to/oauth-client.json
+```
+
+This will:
+1. Start a local HTTP server on port 3000
+2. Display a URL to visit in your browser
+3. Ask you to sign in with Google account that has Search Console access
+4. Display your refresh token after authorization
+
+**Important:** The Google account must have "Owner" permission on the getonapod.com Search Console property.
+
+#### 4. Store Credentials in Supabase
+
+```bash
+# Set OAuth credentials as Supabase secrets
+npx supabase secrets set \
+  GOOGLE_SEARCH_CONSOLE_REFRESH_TOKEN="1//0g..." \
+  GOOGLE_SEARCH_CONSOLE_CLIENT_ID="123456789-abc..." \
+  GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET="GOCSPX-xyz..."
+```
+
+**Note:** These credentials don't expire (unless you revoke access), so you only need to set them once.
+
+#### 5. Deploy Edge Function
+
+```bash
+# Deploy the check-indexing-status function
+npx supabase functions deploy check-indexing-status
+```
+
+#### 6. Test the Integration
+
+In the admin dashboard (`/admin/blog`):
+1. Find a published post that's been submitted to Google
+2. Click the "Check Status" button (magnifying glass icon)
+3. Wait 2-3 seconds for the API response
+4. See toast notification with indexing status
+
+### How It Works
+
+1. **Submission** (Google Indexing API): Notifies Google that URL exists
+2. **Verification** (Search Console API): Checks if Google actually indexed it
+3. **Database Update**: Sets `indexed_by_google_at` timestamp when confirmed
+4. **UI Badge**: Shows "Indexed" (green) when verified
+
+### Quota Management
+
+- **Daily Limit:** 2,000 requests per day per project
+- **Rate Limiting:** Frontend waits 500ms between batch checks
+- **Best Practice:** Check posts individually or in small batches
+
+### Troubleshooting
+
+#### "OAuth token refresh failed"
+- Your refresh token may be invalid or revoked
+- Re-run `get-google-refresh-token.js` to get a new one
+- Check that secrets are set correctly in Supabase:
+  ```bash
+  npx supabase secrets list
+  ```
+
+#### "URL not found in Search Console property"
+- Post may be too new (not yet discovered by Google)
+- Ensure post was submitted via Indexing API first
+- Verify Search Console property includes https://getonapod.com
+
+#### "Daily quota exceeded"
+- You've made 2,000+ API calls today
+- Wait until tomorrow (quota resets at midnight Pacific Time)
+- Avoid batch checking large numbers of posts
+
+#### "Permission denied"
+- OAuth account lacks access to Search Console property
+- Verify the Google account has "Owner" permission in Search Console
+- Go to https://search.google.com/search-console > Settings > Users
+
+### Monitoring
+
+View function logs:
+```bash
+npx supabase functions logs check-indexing-status --tail
+```
+
+Check indexing log in database:
+```sql
+SELECT * FROM blog_indexing_log
+WHERE action = 'check_status'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+View posts indexed status:
+```sql
+SELECT
+  title,
+  submitted_to_google_at,
+  indexed_by_google_at,
+  google_indexing_status
+FROM blog_posts
+WHERE status = 'published'
+ORDER BY indexed_by_google_at DESC NULLS LAST
+LIMIT 10;
+```
+
+---
+
 ## 📝 Usage Guide
 
 ### Creating a Blog Post with AI
