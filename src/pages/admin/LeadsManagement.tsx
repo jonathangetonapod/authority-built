@@ -729,96 +729,46 @@ const LeadsManagement = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Campaign Replies</h1>
-            <p className="text-muted-foreground mt-2">
-              Track and label email campaign replies
-            </p>
-          </div>
-          <div className="flex gap-2 items-center">
-            <div className="flex flex-col items-end mr-2">
-              {lastSyncTime && (
-                <span className="text-xs text-muted-foreground">
-                  Last sync: {lastSyncTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              )}
-              <div className="flex gap-2 mt-1 items-center">
-                <label className="flex items-center gap-1 text-xs cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={autoSyncEnabled}
-                    onChange={(e) => setAutoSyncEnabled(e.target.checked)}
-                    className="rounded"
-                  />
-                  <span className="text-muted-foreground">Auto-sync (5min)</span>
-                </label>
-                <label className="flex items-center gap-1 text-xs cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={smartSyncEnabled}
-                    onChange={(e) => setSmartSyncEnabled(e.target.checked)}
-                    className="rounded"
-                  />
-                  <span className="text-muted-foreground">Unread only</span>
-                </label>
-                <label className="flex items-center gap-1 text-xs">
-                  <span className="text-muted-foreground">Last</span>
-                  <select
-                    value={daysBack}
-                    onChange={(e) => setDaysBack(Number(e.target.value))}
-                    className="text-xs border rounded px-1 py-0.5 bg-background"
-                  >
-                    <option value={1}>1 day</option>
-                    <option value={3}>3 days</option>
-                    <option value={7}>7 days</option>
-                    <option value={14}>14 days</option>
-                    <option value={30}>30 days</option>
-                    <option value={90}>90 days</option>
-                    <option value={120}>120 days</option>
-                    <option value={180}>180 days</option>
-                  </select>
-                </label>
-              </div>
+        <div className="flex flex-col gap-4">
+          {/* Title and Action Buttons */}
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-bold">Campaign Replies</h1>
+              <p className="text-muted-foreground mt-2">
+                Track and label email campaign replies
+              </p>
             </div>
-            <Button
-              onClick={() => handleSync('manual')}
-              variant="outline"
-              disabled={syncing}
-            >
-              <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Syncing...' : 'Sync'}
-            </Button>
-            <Button
-              onClick={() => {
-                setViewMode(viewMode === 'list' ? 'cards' : 'list')
-                setCardIndex(0)
-              }}
-              variant="outline"
-            >
-              {viewMode === 'list' ? (
-                <>
-                  <Layers className="mr-2 h-4 w-4" />
-                  Card View
-                </>
-              ) : (
-                <>
-                  <LayoutList className="mr-2 h-4 w-4" />
-                  List View
-                </>
-              )}
-            </Button>
-            <Button onClick={exportCSV} variant="outline">
-              <Download className="mr-2 h-4 w-4" />
-              Export CSV
-            </Button>
-            <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Reply
-                </Button>
-              </DialogTrigger>
+            <div className="flex gap-2 items-center flex-wrap justify-end">
+              <Button
+                onClick={() => {
+                  setViewMode(viewMode === 'list' ? 'cards' : 'list')
+                  setCardIndex(0)
+                }}
+                variant="outline"
+              >
+                {viewMode === 'list' ? (
+                  <>
+                    <Layers className="mr-2 h-4 w-4" />
+                    Card View
+                  </>
+                ) : (
+                  <>
+                    <LayoutList className="mr-2 h-4 w-4" />
+                    List View
+                  </>
+                )}
+              </Button>
+              <Button onClick={exportCSV} variant="outline">
+                <Download className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
+              <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Reply
+                  </Button>
+                </DialogTrigger>
               <DialogContent className="max-w-2xl">
                 <DialogHeader>
                   <DialogTitle>Add Campaign Reply</DialogTitle>
@@ -898,6 +848,60 @@ const LeadsManagement = () => {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+          </div>
+
+          {/* Sync Controls Row */}
+          <div className="flex items-center justify-between border-t pt-4 flex-wrap gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
+              {lastSyncTime && (
+                <span className="text-sm text-muted-foreground">
+                  Last sync: {lastSyncTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoSyncEnabled}
+                  onChange={(e) => setAutoSyncEnabled(e.target.checked)}
+                  className="rounded"
+                />
+                <span className="text-muted-foreground">Auto-sync (5min)</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={smartSyncEnabled}
+                  onChange={(e) => setSmartSyncEnabled(e.target.checked)}
+                  className="rounded"
+                />
+                <span className="text-muted-foreground">Unread only</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Look back:</span>
+                <select
+                  value={daysBack}
+                  onChange={(e) => setDaysBack(Number(e.target.value))}
+                  className="text-sm border rounded px-2 py-1 bg-background"
+                >
+                  <option value={1}>1 day</option>
+                  <option value={3}>3 days</option>
+                  <option value={7}>7 days</option>
+                  <option value={14}>14 days</option>
+                  <option value={30}>30 days</option>
+                  <option value={90}>90 days</option>
+                  <option value={120}>120 days</option>
+                  <option value={180}>180 days</option>
+                </select>
+              </label>
+            </div>
+            <Button
+              onClick={() => handleSync('manual')}
+              variant="outline"
+              disabled={syncing}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Syncing...' : 'Sync'}
+            </Button>
           </div>
         </div>
 
