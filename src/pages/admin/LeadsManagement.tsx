@@ -1085,14 +1085,14 @@ const LeadsManagement = () => {
 
         {/* List View */}
         {viewMode === 'list' && (
-          <Card>
+          <Card className="overflow-hidden">
             <CardHeader>
               <CardTitle>Replies ({filteredReplies.length})</CardTitle>
               <CardDescription>
                 Latest campaign replies from Instantly and other platforms
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="overflow-hidden">
               {loading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -1106,10 +1106,10 @@ const LeadsManagement = () => {
                   {filteredReplies.map((reply) => (
                   <div
                     key={reply.id}
-                    className={`p-4 border rounded-lg hover:bg-muted/50 transition-colors ${!reply.read ? 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900' : ''}`}
+                    className={`p-4 border rounded-lg hover:bg-muted/50 transition-colors overflow-hidden ${!reply.read ? 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900' : ''}`}
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start gap-4 flex-1">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-4 flex-1 min-w-0">
                         <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
                           {reply.read ? (
                             <MailOpen className="h-5 w-5 text-primary" />
@@ -1117,18 +1117,18 @@ const LeadsManagement = () => {
                             <Mail className="h-5 w-5 text-primary" />
                           )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1 overflow-hidden">
-                            <p className={`${reply.read ? 'font-medium' : 'font-bold'} truncate`}>{reply.email}</p>
+                        <div className="flex-1 min-w-0 overflow-hidden">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className={`${reply.read ? 'font-medium' : 'font-bold'} truncate flex-shrink`}>{reply.email}</p>
                             {reply.name && (
-                              <span className="text-sm text-muted-foreground truncate">• {reply.name}</span>
+                              <span className="text-sm text-muted-foreground whitespace-nowrap flex-shrink-0">• {reply.name}</span>
                             )}
                           </div>
                           {reply.company && (
                             <p className="text-sm text-muted-foreground mb-2 truncate">{reply.company}</p>
                           )}
                           {reply.reply_content && (
-                            <p className="text-sm text-muted-foreground mb-2 line-clamp-2 overflow-hidden break-words">
+                            <p className="text-sm text-muted-foreground mb-2 line-clamp-2 break-words overflow-hidden">
                               {reply.reply_content}
                             </p>
                           )}
@@ -1140,13 +1140,13 @@ const LeadsManagement = () => {
                             {reply.campaign_name && (
                               <>
                                 <span>•</span>
-                                <span>{reply.campaign_name}</span>
+                                <span className="break-words">{reply.campaign_name}</span>
                               </>
                             )}
                           </div>
                         </div>
                       </div>
-                      <div className="flex flex-col gap-3 ml-4 min-w-[280px]">
+                      <div className="flex flex-col gap-3 flex-shrink-0">
                         {/* Status Badges */}
                         <div className="flex gap-2 items-center">
                           {getLeadTypeBadge(reply.lead_type)}

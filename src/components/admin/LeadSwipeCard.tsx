@@ -195,7 +195,7 @@ export function LeadSwipeCard({
 
       {/* Main Card */}
       <Card
-        className="w-full max-w-2xl shadow-2xl cursor-grab active:cursor-grabbing select-none touch-none"
+        className="w-full max-w-2xl shadow-2xl cursor-grab active:cursor-grabbing select-none touch-none overflow-hidden"
         style={{
           transform: `translateX(${currentX}px) translateY(${currentY}px) rotate(${rotation}deg)`,
           opacity: opacity,
@@ -209,7 +209,7 @@ export function LeadSwipeCard({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
-        <CardContent className="p-4 md:p-8 space-y-4 md:space-y-6">
+        <CardContent className="p-4 md:p-8 space-y-4 md:space-y-6 overflow-hidden">
           {/* Header */}
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
