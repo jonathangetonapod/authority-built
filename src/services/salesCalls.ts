@@ -86,7 +86,10 @@ export const getSalesCallsWithAnalysis = async (): Promise<SalesCallWithAnalysis
 export const getSalesPerformanceStats = async () => {
   const { data: analyses, error } = await supabase
     .from('sales_call_analysis')
-    .select('*')
+    .select(`
+      *,
+      sales_call:sales_calls!sales_call_id(duration_minutes)
+    `)
     .order('analyzed_at', { ascending: false })
 
   if (error) {
@@ -112,6 +115,14 @@ export const getSalesPerformanceStats = async () => {
   const totalCalls = analyses.length
   const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0)
 
+  // Calculate average duration from sales_calls
+  const durations = analyses
+    .map((a: any) => a.sales_call?.duration_minutes)
+    .filter((d): d is number => d != null && d > 0)
+  const avgDuration = durations.length > 0
+    ? Math.round(sum(durations) / durations.length)
+    : 0
+
   const overallScores = analyses.map(a => a.overall_score)
   const avgOverallScore = sum(overallScores) / totalCalls
 
@@ -136,6 +147,7 @@ export const getSalesPerformanceStats = async () => {
     closing_score: parseFloat((sum(analyses.map(a => a.closing_score)) / totalCalls).toFixed(1)),
     engagement_score: parseFloat((sum(analyses.map(a => a.engagement_score)) / totalCalls).toFixed(1)),
     total_calls: totalCalls,
+    avg_duration: avgDuration,
     avg_talk_listen_ratio: {
       talk: Math.round(sum(analyses.map(a => a.talk_listen_ratio_talk)) / totalCalls),
       listen: Math.round(sum(analyses.map(a => a.talk_listen_ratio_listen)) / totalCalls),
