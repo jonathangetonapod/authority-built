@@ -425,12 +425,32 @@ const LeadsManagement = () => {
   }
 
   const handleSendReply = async () => {
+    if (!replyingTo?.bison_reply_id) {
+      toast({
+        title: 'Cannot send reply',
+        description: 'This lead does not have a Bison reply ID. Only leads from Email Bison can receive replies.',
+        variant: 'destructive',
+      })
+      return
+    }
+
     try {
       setSendingReply(true)
 
-      // TODO: Backend integration - will call edge function to send email via Email Bison
-      // For now, just simulate success
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      // Call edge function to send reply via Email Bison
+      const { data, error } = await supabase.functions.invoke('send-reply', {
+        body: {
+          bisonReplyId: replyingTo.bison_reply_id,
+          message: replyForm.body,
+          subject: replyForm.subject,
+        },
+      })
+
+      if (error) throw error
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to send reply')
+      }
 
       toast({
         title: 'Reply Sent!',
@@ -446,6 +466,7 @@ const LeadsManagement = () => {
       setReplyDialogOpen(false)
       setReplyingTo(null)
       setReplyForm({ to: '', subject: '', body: '' })
+      setReplyThreadData(null)
     } catch (error: any) {
       toast({
         title: 'Error sending reply',
@@ -905,16 +926,30 @@ const LeadsManagement = () => {
 
                         {/* Actions */}
                         <div className="flex flex-col gap-1.5 pt-2 border-t">
-                          <Button
-                            type="button"
-                            variant="default"
-                            size="sm"
-                            onClick={() => openReplyDialog(reply)}
-                            className="text-xs w-full"
-                          >
-                            <Send className="h-3 w-3 mr-1.5" />
-                            Reply
-                          </Button>
+                          {reply.bison_reply_id ? (
+                            <Button
+                              type="button"
+                              variant="default"
+                              size="sm"
+                              onClick={() => openReplyDialog(reply)}
+                              className="text-xs w-full"
+                            >
+                              <Send className="h-3 w-3 mr-1.5" />
+                              Reply
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled
+                              className="text-xs w-full opacity-50 cursor-not-allowed"
+                              title="Reply not available - no Email Bison thread"
+                            >
+                              <Send className="h-3 w-3 mr-1.5" />
+                              Reply (N/A)
+                            </Button>
+                          )}
                           <Button
                             type="button"
                             variant="outline"
