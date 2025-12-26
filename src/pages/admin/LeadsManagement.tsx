@@ -675,6 +675,7 @@ const LeadsManagement = () => {
                             ) : (
                               <>
                                 <Button
+                                  type="button"
                                   variant={reply.lead_type === 'sales' ? 'default' : 'outline'}
                                   size="sm"
                                   onClick={() => updateLeadType(reply.id, 'sales')}
@@ -683,6 +684,7 @@ const LeadsManagement = () => {
                                   Sales
                                 </Button>
                                 <Button
+                                  type="button"
                                   variant={reply.lead_type === 'podcasts' ? 'default' : 'outline'}
                                   size="sm"
                                   onClick={() => updateLeadType(reply.id, 'podcasts')}
@@ -718,6 +720,7 @@ const LeadsManagement = () => {
                         {/* Actions */}
                         <div className="flex gap-1.5 pt-1 border-t">
                           <Button
+                            type="button"
                             variant="ghost"
                             size="sm"
                             onClick={() => toggleRead(reply.id, reply.read)}
@@ -728,6 +731,7 @@ const LeadsManagement = () => {
                           </Button>
                           {reply.bison_reply_id && (
                             <Button
+                              type="button"
                               variant="ghost"
                               size="sm"
                               onClick={() => fetchEmailThread(reply.bison_reply_id!)}
