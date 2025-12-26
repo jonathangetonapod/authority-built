@@ -465,25 +465,6 @@ const AISalesDirector = () => {
             </CardContent>
           </Card>
         </div>
-
-        {/* Upload Section */}
-        <Card className="border-dashed">
-          <CardContent className="pt-6">
-            <div className="flex flex-col items-center justify-center py-8 text-center">
-              <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-                <Upload className="h-8 w-8 text-primary" />
-              </div>
-              <h3 className="text-lg font-semibold mb-2">Upload Fathom Sales Calls</h3>
-              <p className="text-sm text-muted-foreground mb-4 max-w-md">
-                Drag and drop your Fathom call recordings or connect your Fathom account for automatic syncing
-              </p>
-              <div className="flex gap-3">
-                <Button variant="outline">Connect Fathom</Button>
-                <Button>Upload Files</Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </DashboardLayout>
   )
