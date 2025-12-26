@@ -94,45 +94,126 @@ serve(async (req) => {
 
     console.log(`[Analyze Call] Sending transcript to Claude for analysis (${transcript.length} messages)`)
 
-    // Analyze with Claude API
-    const analysisPrompt = `You are an expert sales coach analyzing a sales call transcript. Provide a detailed analysis with scores and recommendations.
+    // Analyze with Claude API using Corey Jackson's Framework
+    const analysisPrompt = `You are an expert sales coach analyzing a sales call transcript based on COREY JACKSON'S SCALABLE SALES FRAMEWORK.
+
+FRAMEWORK OVERVIEW:
+1. INTRO + FRAME CONTROL (60-90 seconds) - Set tone, establish authority, confirm timing
+2. DISCOVERY PHASE - Find the gap
+   a) Current State - Where are they now?
+   b) Desired State - Where do they want to be?
+   c) Cost of Inaction - What's it costing them to stay stuck?
+   d) Consequences of Not Solving - Long-term impact
+3. WATT TIE-DOWNS - Micro-commitments building YES momentum
+4. BRIDGE THE GAP - Position offer as solution to gap
+5. SELLBACK - Let them talk themselves into it
+6. PRICE DROP - Minimize and pause after revealing price
+7. OBJECTION HANDLING - Every fear is an info gap
+8. CLOSE & CELEBRATE - Take payment, celebrate the win
 
 Transcript:
 ${transcriptText}
 
-Please analyze this sales call and provide a JSON response with the following structure:
+Analyze this sales call based on the Corey Jackson Framework and provide a JSON response:
 {
   "overall_score": <number 0-10>,
-  "discovery_score": <number 0-10>,
+  "framework_adherence_score": <number 0-10>,
+
+  "frame_control_score": <number 0-10>,
+  "discovery_current_state_score": <number 0-10>,
+  "discovery_desired_state_score": <number 0-10>,
+  "discovery_cost_of_inaction_score": <number 0-10>,
+  "watt_tiedowns_score": <number 0-10>,
+  "bridge_gap_score": <number 0-10>,
+  "sellback_score": <number 0-10>,
+  "price_drop_score": <number 0-10>,
   "objection_handling_score": <number 0-10>,
+  "close_celebration_score": <number 0-10>,
+
+  "discovery_score": <number 0-10>,
   "closing_score": <number 0-10>,
   "engagement_score": <number 0-10>,
+
   "talk_listen_ratio": {
     "talk": <percentage as integer>,
     "listen": <percentage as integer>
   },
   "questions_asked_count": <number>,
+
+  "framework_insights": {
+    "frame_control": {
+      "present": <boolean>,
+      "feedback": "What was done well or missed"
+    },
+    "discovery": {
+      "current_state_explored": <boolean>,
+      "desired_state_identified": <boolean>,
+      "cost_of_inaction_discussed": <boolean>,
+      "consequences_explored": <boolean>,
+      "gap_size": "large|medium|small|none",
+      "feedback": "Overall discovery feedback"
+    },
+    "watt_tiedowns": {
+      "used": <boolean>,
+      "count": <number>,
+      "effectiveness": "high|medium|low",
+      "feedback": "Tie-down feedback"
+    },
+    "bridge_gap": {
+      "offer_positioned_as_bridge": <boolean>,
+      "recapped_gap": <boolean>,
+      "feedback": "Bridge feedback"
+    },
+    "sellback": {
+      "prospect_sold_themselves": <boolean>,
+      "feedback": "Sellback feedback"
+    },
+    "price_drop": {
+      "minimized_price": <boolean>,
+      "paused_after_drop": <boolean>,
+      "feedback": "Price handling feedback"
+    },
+    "objection_handling": {
+      "objections_encountered": <boolean>,
+      "framework_followed": <boolean>,
+      "asked_for_money_again": <boolean>,
+      "feedback": "Objection handling feedback"
+    },
+    "close": {
+      "closed": <boolean>,
+      "celebrated": <boolean>,
+      "next_steps_confirmed": <boolean>,
+      "feedback": "Close feedback"
+    }
+  },
+
   "recommendations": [
     {
       "priority": "high|medium|low",
+      "framework_stage": "frame_control|discovery|watt_tiedowns|bridge_gap|sellback|price_drop|objection_handling|close",
       "title": "Brief title",
-      "description": "Detailed recommendation",
+      "description": "Detailed recommendation based on framework",
       "specific_timestamp": "Optional timestamp reference"
     }
   ],
+
   "strengths": [
-    "List of strengths observed"
+    "List of strengths with framework stage references"
   ],
+
   "weaknesses": [
-    "List of areas for improvement"
+    "List of areas for improvement with framework stage references"
   ],
+
   "key_moments": [
     {
       "timestamp": "HH:MM:SS or approximate",
-      "type": "discovery|objection|closing|other",
+      "framework_stage": "frame_control|discovery|watt_tiedowns|bridge_gap|sellback|price_drop|objection_handling|close",
+      "type": "positive|negative|neutral",
       "description": "What happened at this moment"
     }
   ],
+
   "sentiment_analysis": {
     "overall_sentiment": "positive|neutral|negative",
     "prospect_engagement": "high|medium|low",
@@ -140,7 +221,19 @@ Please analyze this sales call and provide a JSON response with the following st
   }
 }
 
-Be specific and actionable in your recommendations. Reference actual moments from the call when possible.`
+SCORING GUIDELINES:
+- Frame Control (0-10): Did they set the tone in 60-90 seconds? Confirm timing? Get permission?
+- Discovery Current State (0-10): How well did they understand where prospect is now?
+- Discovery Desired State (0-10): How clearly did they identify the goal?
+- Discovery Cost of Inaction (0-10): How effectively did they uncover pain of staying stuck?
+- WATT Tie-downs (0-10): How well did they build YES momentum with micro-commitments?
+- Bridge Gap (0-10): How effectively was offer positioned as bridge to desired state?
+- Sellback (0-10): Did prospect talk themselves into the solution?
+- Price Drop (0-10): Was price minimized and followed by silence?
+- Objection Handling (0-10): Framework followed? Asked for money again?
+- Close & Celebrate (0-10): Did they take payment? Celebrate with prospect?
+
+Be specific, actionable, and reference actual moments from the call.`
 
     const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -186,13 +279,30 @@ Be specific and actionable in your recommendations. Reference actual moments fro
       .insert({
         sales_call_id: sales_call_id,
         overall_score: analysis.overall_score,
+        framework_adherence_score: analysis.framework_adherence_score,
+
+        // Corey Jackson Framework scores
+        frame_control_score: analysis.frame_control_score,
+        discovery_current_state_score: analysis.discovery_current_state_score,
+        discovery_desired_state_score: analysis.discovery_desired_state_score,
+        discovery_cost_of_inaction_score: analysis.discovery_cost_of_inaction_score,
+        watt_tiedowns_score: analysis.watt_tiedowns_score,
+        bridge_gap_score: analysis.bridge_gap_score,
+        sellback_score: analysis.sellback_score,
+        price_drop_score: analysis.price_drop_score,
+        close_celebration_score: analysis.close_celebration_score,
+
+        // General scores (kept for backwards compatibility)
         discovery_score: analysis.discovery_score,
         objection_handling_score: analysis.objection_handling_score,
         closing_score: analysis.closing_score,
         engagement_score: analysis.engagement_score,
+
         talk_listen_ratio_talk: analysis.talk_listen_ratio.talk,
         talk_listen_ratio_listen: analysis.talk_listen_ratio.listen,
         questions_asked_count: analysis.questions_asked_count,
+
+        framework_insights: analysis.framework_insights,
         recommendations: analysis.recommendations,
         strengths: analysis.strengths,
         weaknesses: analysis.weaknesses,

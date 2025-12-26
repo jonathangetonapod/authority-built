@@ -522,38 +522,108 @@ const AISalesDirector = () => {
                     <p className="text-sm text-muted-foreground">Overall Score</p>
                   </div>
 
-                  {/* Skill Scores */}
-                  <div className="space-y-3">
-                    <h4 className="font-semibold text-sm">Skill Breakdown</h4>
-                    <div className="space-y-2">
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs">Discovery</span>
-                          <span className="text-xs text-muted-foreground">{selectedCall.analysis.discovery_score}/10</span>
-                        </div>
-                        <Progress value={selectedCall.analysis.discovery_score * 10} className="h-2" />
+                  {/* Framework Adherence */}
+                  {selectedCall.analysis.framework_adherence_score !== undefined && (
+                    <div className="text-center pb-4 border-b">
+                      <div className="text-2xl font-bold text-blue-600 mb-1">
+                        {selectedCall.analysis.framework_adherence_score}/10
                       </div>
+                      <p className="text-xs text-muted-foreground">Framework Adherence</p>
+                    </div>
+                  )}
+
+                  {/* Corey Jackson Framework Breakdown */}
+                  <div className="space-y-3">
+                    <h4 className="font-semibold text-sm">Corey Jackson Framework</h4>
+                    <div className="space-y-2">
+                      {selectedCall.analysis.frame_control_score !== undefined && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs">1. Frame Control</span>
+                            <span className="text-xs text-muted-foreground">{selectedCall.analysis.frame_control_score}/10</span>
+                          </div>
+                          <Progress value={selectedCall.analysis.frame_control_score * 10} className="h-2" />
+                        </div>
+                      )}
+                      {selectedCall.analysis.discovery_current_state_score !== undefined && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs">2a. Current State</span>
+                            <span className="text-xs text-muted-foreground">{selectedCall.analysis.discovery_current_state_score}/10</span>
+                          </div>
+                          <Progress value={selectedCall.analysis.discovery_current_state_score * 10} className="h-2" />
+                        </div>
+                      )}
+                      {selectedCall.analysis.discovery_desired_state_score !== undefined && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs">2b. Desired State</span>
+                            <span className="text-xs text-muted-foreground">{selectedCall.analysis.discovery_desired_state_score}/10</span>
+                          </div>
+                          <Progress value={selectedCall.analysis.discovery_desired_state_score * 10} className="h-2" />
+                        </div>
+                      )}
+                      {selectedCall.analysis.discovery_cost_of_inaction_score !== undefined && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs">2c. Cost of Inaction</span>
+                            <span className="text-xs text-muted-foreground">{selectedCall.analysis.discovery_cost_of_inaction_score}/10</span>
+                          </div>
+                          <Progress value={selectedCall.analysis.discovery_cost_of_inaction_score * 10} className="h-2" />
+                        </div>
+                      )}
+                      {selectedCall.analysis.watt_tiedowns_score !== undefined && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs">3. WATT Tie-downs</span>
+                            <span className="text-xs text-muted-foreground">{selectedCall.analysis.watt_tiedowns_score}/10</span>
+                          </div>
+                          <Progress value={selectedCall.analysis.watt_tiedowns_score * 10} className="h-2" />
+                        </div>
+                      )}
+                      {selectedCall.analysis.bridge_gap_score !== undefined && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs">4. Bridge the Gap</span>
+                            <span className="text-xs text-muted-foreground">{selectedCall.analysis.bridge_gap_score}/10</span>
+                          </div>
+                          <Progress value={selectedCall.analysis.bridge_gap_score * 10} className="h-2" />
+                        </div>
+                      )}
+                      {selectedCall.analysis.sellback_score !== undefined && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs">5. Sellback</span>
+                            <span className="text-xs text-muted-foreground">{selectedCall.analysis.sellback_score}/10</span>
+                          </div>
+                          <Progress value={selectedCall.analysis.sellback_score * 10} className="h-2" />
+                        </div>
+                      )}
+                      {selectedCall.analysis.price_drop_score !== undefined && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs">6. Price Drop</span>
+                            <span className="text-xs text-muted-foreground">{selectedCall.analysis.price_drop_score}/10</span>
+                          </div>
+                          <Progress value={selectedCall.analysis.price_drop_score * 10} className="h-2" />
+                        </div>
+                      )}
                       <div>
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs">Objection Handling</span>
+                          <span className="text-xs">7. Objection Handling</span>
                           <span className="text-xs text-muted-foreground">{selectedCall.analysis.objection_handling_score}/10</span>
                         </div>
                         <Progress value={selectedCall.analysis.objection_handling_score * 10} className="h-2" />
                       </div>
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs">Closing</span>
-                          <span className="text-xs text-muted-foreground">{selectedCall.analysis.closing_score}/10</span>
+                      {selectedCall.analysis.close_celebration_score !== undefined && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs">8. Close & Celebrate</span>
+                            <span className="text-xs text-muted-foreground">{selectedCall.analysis.close_celebration_score}/10</span>
+                          </div>
+                          <Progress value={selectedCall.analysis.close_celebration_score * 10} className="h-2" />
                         </div>
-                        <Progress value={selectedCall.analysis.closing_score * 10} className="h-2" />
-                      </div>
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs">Engagement</span>
-                          <span className="text-xs text-muted-foreground">{selectedCall.analysis.engagement_score}/10</span>
-                        </div>
-                        <Progress value={selectedCall.analysis.engagement_score * 10} className="h-2" />
-                      </div>
+                      )}
                     </div>
                   </div>
 

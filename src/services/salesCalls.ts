@@ -26,13 +26,29 @@ export interface SalesCallAnalysis {
   id: string
   sales_call_id: string
   overall_score: number
+  framework_adherence_score?: number
+
+  // Corey Jackson Framework scores
+  frame_control_score?: number
+  discovery_current_state_score?: number
+  discovery_desired_state_score?: number
+  discovery_cost_of_inaction_score?: number
+  watt_tiedowns_score?: number
+  bridge_gap_score?: number
+  sellback_score?: number
+  price_drop_score?: number
+  close_celebration_score?: number
+
+  // General scores (backwards compatibility)
   discovery_score: number
   objection_handling_score: number
   closing_score: number
   engagement_score: number
+
   talk_listen_ratio_talk: number
   talk_listen_ratio_listen: number
   questions_asked_count: number
+  framework_insights?: any
   recommendations: any[]
   strengths: string[]
   weaknesses: string[]
