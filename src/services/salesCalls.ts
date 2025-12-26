@@ -359,8 +359,8 @@ export const getUnclassifiedCalls = async (limit = 50) => {
 }
 
 // Get sales analytics over time
-export const getSalesAnalytics = async () => {
-  const { data: analyses, error } = await supabase
+export const getSalesAnalytics = async (daysBack: number = 0) => {
+  let query = supabase
     .from('sales_call_analysis')
     .select(`
       *,
@@ -370,7 +370,15 @@ export const getSalesAnalytics = async () => {
         meeting_title
       )
     `)
-    .order('analyzed_at', { ascending: true })
+
+  // Filter by time period if specified
+  if (daysBack > 0) {
+    const cutoffDate = new Date()
+    cutoffDate.setDate(cutoffDate.getDate() - daysBack)
+    query = query.gte('analyzed_at', cutoffDate.toISOString())
+  }
+
+  const { data: analyses, error } = await query.order('analyzed_at', { ascending: true })
 
   if (error) {
     console.error('Error fetching sales analytics:', error)
