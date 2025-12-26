@@ -3,7 +3,7 @@ import { DashboardLayout } from '@/components/admin/DashboardLayout'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { DollarSign, ShoppingBag, Users, TrendingUp, Package } from 'lucide-react'
+import { DollarSign, ShoppingBag, Users, TrendingUp, Package, Sparkles, Brain } from 'lucide-react'
 import { getCustomerStats } from '@/services/customers'
 import { getRecentOrders, getOrderStats } from '@/services/orders'
 import { Link } from 'react-router-dom'
@@ -137,6 +137,36 @@ const AdminDashboard = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* AI Sales Director */}
+        <Card className="border-primary/20 bg-gradient-to-br from-primary/5 via-background to-purple-500/5">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center">
+                <Brain className="h-5 w-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-xl">AI Sales Director</CardTitle>
+                  <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
+                    <Sparkles className="h-3 w-3 mr-1" />
+                    AI-Powered
+                  </Badge>
+                </div>
+                <CardDescription>Your intelligent sales assistant</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <Brain className="h-16 w-16 text-primary/30 mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Coming Soon</h3>
+              <p className="text-sm text-muted-foreground max-w-md">
+                AI-powered insights, lead prioritization, and automated follow-up recommendations will appear here.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Recent Orders */}
         <Card>
