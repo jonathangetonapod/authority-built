@@ -24,6 +24,13 @@ import {
   Loader2
 } from 'lucide-react'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   syncFathomCalls,
   getSalesPerformanceStats,
   getTopRecommendations,
@@ -33,6 +40,7 @@ import { toast } from 'sonner'
 
 const AISalesDirector = () => {
   const [syncing, setSyncing] = useState(false)
+  const [daysBack, setDaysBack] = useState(30)
 
   // Fetch performance stats
   const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useQuery({
@@ -55,9 +63,9 @@ const AISalesDirector = () => {
   const handleSyncCalls = async () => {
     try {
       setSyncing(true)
-      toast.info('Syncing Fathom calls...')
+      toast.info(`Syncing Fathom calls from last ${daysBack} days...`)
 
-      const result = await syncFathomCalls()
+      const result = await syncFathomCalls(daysBack)
 
       const { new_calls, analyzed_calls, total_meetings } = result.data
 
@@ -88,42 +96,67 @@ const AISalesDirector = () => {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="h-16 w-16 rounded-xl bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center flex-shrink-0">
-              <Brain className="h-8 w-8 text-white" />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-2">
-                <h1 className="text-3xl font-bold">AI Sales Director</h1>
-                <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
-                  <Sparkles className="h-3 w-3 mr-1" />
-                  AI-Powered
-                </Badge>
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="h-16 w-16 rounded-xl bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center flex-shrink-0">
+                <Brain className="h-8 w-8 text-white" />
               </div>
-              <p className="text-muted-foreground">
-                Analyze your Fathom sales calls and improve your performance with AI insights
-              </p>
+              <div className="flex-1">
+                <div className="flex items-center gap-3 mb-2">
+                  <h1 className="text-3xl font-bold">AI Sales Director</h1>
+                  <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
+                    <Sparkles className="h-3 w-3 mr-1" />
+                    AI-Powered
+                  </Badge>
+                </div>
+                <p className="text-muted-foreground">
+                  Analyze your Fathom sales calls and improve your performance with AI insights
+                </p>
+              </div>
             </div>
           </div>
-          <Button
-            size="lg"
-            className="flex items-center gap-2"
-            onClick={handleSyncCalls}
-            disabled={syncing}
-          >
-            {syncing ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Syncing...
-              </>
-            ) : (
-              <>
-                <Upload className="h-4 w-4" />
-                Sync Fathom Calls
-              </>
-            )}
-          </Button>
+
+          {/* Sync Controls */}
+          <div className="flex items-center justify-between border-t pt-4 flex-wrap gap-4">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Sync period:</span>
+                <Select value={daysBack.toString()} onValueChange={(val) => setDaysBack(Number(val))}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="30">Last 30 days</SelectItem>
+                    <SelectItem value="60">Last 60 days</SelectItem>
+                    <SelectItem value="90">Last 90 days</SelectItem>
+                    <SelectItem value="120">Last 120 days</SelectItem>
+                    <SelectItem value="150">Last 150 days</SelectItem>
+                    <SelectItem value="180">Last 180 days</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <Button
+              size="default"
+              className="flex items-center gap-2"
+              onClick={handleSyncCalls}
+              disabled={syncing}
+            >
+              {syncing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Syncing...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4" />
+                  Sync Fathom Calls
+                </>
+              )}
+            </Button>
+          </div>
         </div>
 
         {/* Overall Performance Score */}

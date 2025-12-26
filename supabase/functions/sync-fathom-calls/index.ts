@@ -12,6 +12,9 @@ serve(async (req) => {
   }
 
   try {
+    const body = req.method === 'POST' ? await req.json() : {}
+    const daysBack = body.daysBack || 30 // Default to 30 days
+
     const fathomApiKey = Deno.env.get('FATHOM_API_KEY')
     if (!fathomApiKey) {
       throw new Error('FATHOM_API_KEY not configured')
@@ -21,7 +24,11 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    console.log('[Sync Fathom] Fetching meetings from Fathom API...')
+    // Calculate date range
+    const lookbackDate = new Date()
+    lookbackDate.setDate(lookbackDate.getDate() - daysBack)
+
+    console.log(`[Sync Fathom] Fetching meetings from Fathom API (last ${daysBack} days)...`)
 
     // Fetch meetings from Fathom
     const meetingsResponse = await fetch(
@@ -40,9 +47,16 @@ serve(async (req) => {
     }
 
     const meetingsData = await meetingsResponse.json()
-    const meetings = meetingsData.items || []
+    const allMeetings = meetingsData.items || []
 
-    console.log(`[Sync Fathom] Found ${meetings.length} meetings`)
+    // Filter meetings by date range
+    const meetings = allMeetings.filter((meeting: any) => {
+      if (!meeting.recording_start_time) return false
+      const meetingDate = new Date(meeting.recording_start_time)
+      return meetingDate >= lookbackDate
+    })
+
+    console.log(`[Sync Fathom] Found ${allMeetings.length} total meetings, ${meetings.length} within last ${daysBack} days`)
 
     let newCount = 0
     let updatedCount = 0

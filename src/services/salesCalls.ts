@@ -43,8 +43,10 @@ export interface SalesCallWithAnalysis extends SalesCall {
 }
 
 // Sync calls from Fathom
-export const syncFathomCalls = async () => {
-  const { data, error } = await supabase.functions.invoke('sync-fathom-calls')
+export const syncFathomCalls = async (daysBack: number = 30) => {
+  const { data, error } = await supabase.functions.invoke('sync-fathom-calls', {
+    body: { daysBack },
+  })
 
   if (error) {
     console.error('Error syncing Fathom calls:', error)
