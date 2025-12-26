@@ -30,24 +30,48 @@ serve(async (req) => {
 
     console.log(`[Sync Fathom] Fetching meetings from Fathom API (last ${daysBack} days)...`)
 
-    // Fetch meetings from Fathom
-    const meetingsResponse = await fetch(
-      'https://api.fathom.ai/external/v1/meetings?calendar_invitees_domains_type=all&limit=50',
-      {
+    // Fetch ALL meetings from Fathom with pagination
+    const allMeetings: any[] = []
+    let cursor: string | null = null
+    let pageCount = 0
+
+    do {
+      pageCount++
+      const url = cursor
+        ? `https://api.fathom.ai/external/v1/meetings?calendar_invitees_domains_type=all&limit=100&cursor=${cursor}`
+        : 'https://api.fathom.ai/external/v1/meetings?calendar_invitees_domains_type=all&limit=100'
+
+      console.log(`[Sync Fathom] Fetching page ${pageCount}...`)
+
+      const meetingsResponse = await fetch(url, {
         headers: {
           'X-Api-Key': fathomApiKey,
         },
+      })
+
+      if (!meetingsResponse.ok) {
+        const errorText = await meetingsResponse.text()
+        console.error('[Sync Fathom] API error:', errorText)
+        throw new Error(`Fathom API error: ${meetingsResponse.status}`)
       }
-    )
 
-    if (!meetingsResponse.ok) {
-      const errorText = await meetingsResponse.text()
-      console.error('[Sync Fathom] API error:', errorText)
-      throw new Error(`Fathom API error: ${meetingsResponse.status}`)
-    }
+      const meetingsData = await meetingsResponse.json()
+      const items = meetingsData.items || []
+      allMeetings.push(...items)
 
-    const meetingsData = await meetingsResponse.json()
-    const allMeetings = meetingsData.items || []
+      console.log(`[Sync Fathom] Page ${pageCount}: Found ${items.length} meetings (total so far: ${allMeetings.length})`)
+
+      // Check for next page
+      cursor = meetingsData.next_cursor || null
+
+      // Safety limit to prevent infinite loops
+      if (pageCount > 50) {
+        console.log('[Sync Fathom] Reached safety limit of 50 pages')
+        break
+      }
+    } while (cursor)
+
+    console.log(`[Sync Fathom] Finished pagination. Total meetings fetched: ${allMeetings.length}`)
 
     // Filter meetings by date range
     const meetings = allMeetings.filter((meeting: any) => {
