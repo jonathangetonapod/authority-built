@@ -81,20 +81,12 @@ export function LeadSwipeCard({
           e.preventDefault()
           onSwipeRight(currentReply)
           break
-        case 'ArrowUp':
-          e.preventDefault()
-          onSwipeUp(currentReply)
-          break
-        case 'ArrowDown':
-          e.preventDefault()
-          onSwipeDown(currentReply)
-          break
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [currentReply, onSwipeLeft, onSwipeRight, onSwipeUp, onSwipeDown])
+  }, [currentReply, onSwipeLeft, onSwipeRight])
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setStartX(e.touches[0].clientX)
@@ -113,21 +105,11 @@ export function LeadSwipeCard({
 
     const threshold = 100
 
-    // Horizontal swipe (prioritize)
-    if (Math.abs(currentX) > Math.abs(currentY)) {
-      if (currentX > threshold) {
-        onSwipeRight(currentReply)
-      } else if (currentX < -threshold) {
-        onSwipeLeft(currentReply)
-      }
-    }
-    // Vertical swipe
-    else {
-      if (currentY < -threshold) {
-        onSwipeUp(currentReply)
-      } else if (currentY > threshold) {
-        onSwipeDown(currentReply)
-      }
+    // Horizontal swipe only
+    if (currentX > threshold) {
+      onSwipeRight(currentReply)
+    } else if (currentX < -threshold) {
+      onSwipeLeft(currentReply)
     }
 
     setIsDragging(false)
@@ -152,21 +134,11 @@ export function LeadSwipeCard({
 
     const threshold = 100
 
-    // Horizontal swipe (prioritize)
-    if (Math.abs(currentX) > Math.abs(currentY)) {
-      if (currentX > threshold) {
-        onSwipeRight(currentReply)
-      } else if (currentX < -threshold) {
-        onSwipeLeft(currentReply)
-      }
-    }
-    // Vertical swipe
-    else {
-      if (currentY < -threshold) {
-        onSwipeUp(currentReply)
-      } else if (currentY > threshold) {
-        onSwipeDown(currentReply)
-      }
+    // Horizontal swipe only
+    if (currentX > threshold) {
+      onSwipeRight(currentReply)
+    } else if (currentX < -threshold) {
+      onSwipeLeft(currentReply)
     }
 
     setIsDragging(false)
@@ -380,7 +352,7 @@ export function LeadSwipeCard({
 
           {/* Navigation Hint */}
           <div className="text-center text-xs text-muted-foreground pt-2 border-t">
-            💡 Swipe or use arrow keys: ← Archive • → Qualify • ↑ Reply • ↓ Thread
+            💡 Swipe or use arrow keys: ← Archive • → Qualify
           </div>
         </CardContent>
       </Card>
