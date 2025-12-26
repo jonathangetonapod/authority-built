@@ -1118,17 +1118,17 @@ const LeadsManagement = () => {
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <p className={reply.read ? 'font-medium' : 'font-bold'}>{reply.email}</p>
+                          <div className="flex items-center gap-2 mb-1 overflow-hidden">
+                            <p className={`${reply.read ? 'font-medium' : 'font-bold'} truncate`}>{reply.email}</p>
                             {reply.name && (
-                              <span className="text-sm text-muted-foreground">• {reply.name}</span>
+                              <span className="text-sm text-muted-foreground truncate">• {reply.name}</span>
                             )}
                           </div>
                           {reply.company && (
-                            <p className="text-sm text-muted-foreground mb-2">{reply.company}</p>
+                            <p className="text-sm text-muted-foreground mb-2 truncate">{reply.company}</p>
                           )}
                           {reply.reply_content && (
-                            <p className="text-sm text-muted-foreground mb-2 line-clamp-2">
+                            <p className="text-sm text-muted-foreground mb-2 line-clamp-2 overflow-hidden break-words">
                               {reply.reply_content}
                             </p>
                           )}
@@ -1430,7 +1430,7 @@ const LeadsManagement = () => {
                         </div>
                       </div>
                       <div className="pl-13">
-                        <p className="text-sm whitespace-pre-wrap">{replyingTo.reply_content}</p>
+                        <p className="text-sm whitespace-pre-wrap break-words">{replyingTo.reply_content}</p>
                       </div>
                     </CardContent>
                   </Card>
@@ -1546,13 +1546,13 @@ const LeadsManagement = () => {
                           <Card className="hover:shadow-md transition-shadow">
                             <CardHeader className="pb-3">
                               <div className="flex items-start justify-between">
-                                <div className="flex items-center gap-3">
-                                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-semibold">
+                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-semibold flex-shrink-0">
                                     {(msg.from_name || msg.from_email_address).charAt(0).toUpperCase()}
                                   </div>
-                                  <div>
-                                    <p className="font-semibold text-base">{msg.from_name || 'Unknown'}</p>
-                                    <p className="text-sm text-muted-foreground">{msg.from_email_address}</p>
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-base truncate">{msg.from_name || 'Unknown'}</p>
+                                    <p className="text-sm text-muted-foreground truncate">{msg.from_email_address}</p>
                                   </div>
                                 </div>
                                 <div className="text-right">
@@ -1566,13 +1566,13 @@ const LeadsManagement = () => {
                               </div>
                               {msg.subject && (
                                 <div className="mt-3 pt-3 border-t">
-                                  <p className="text-sm font-medium text-muted-foreground">Re: {msg.subject}</p>
+                                  <p className="text-sm font-medium text-muted-foreground truncate">Re: {msg.subject}</p>
                                 </div>
                               )}
                             </CardHeader>
                             <CardContent>
                               <div
-                                className="prose prose-sm max-w-none dark:prose-invert [&>p]:my-2 [&>div]:my-2"
+                                className="prose prose-sm max-w-none dark:prose-invert [&>p]:my-2 [&>div]:my-2 break-words overflow-hidden"
                                 dangerouslySetInnerHTML={{ __html: msg.html_body || `<p>${msg.text_body}</p>` }}
                               />
                             </CardContent>
@@ -1599,13 +1599,13 @@ const LeadsManagement = () => {
                         <Card className="border-primary/50 bg-primary/5 shadow-lg">
                           <CardHeader className="pb-3">
                             <div className="flex items-start justify-between">
-                              <div className="flex items-center gap-3">
-                                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-white font-semibold text-lg ring-4 ring-primary/20">
+                              <div className="flex items-center gap-3 min-w-0 flex-1">
+                                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-white font-semibold text-lg ring-4 ring-primary/20 flex-shrink-0">
                                   {(threadData.data.current_reply.from_name || threadData.data.current_reply.from_email_address).charAt(0).toUpperCase()}
                                 </div>
-                                <div>
-                                  <p className="font-bold text-lg">{threadData.data.current_reply.from_name || 'Unknown'}</p>
-                                  <p className="text-sm text-muted-foreground">{threadData.data.current_reply.from_email_address}</p>
+                                <div className="min-w-0">
+                                  <p className="font-bold text-lg truncate">{threadData.data.current_reply.from_name || 'Unknown'}</p>
+                                  <p className="text-sm text-muted-foreground truncate">{threadData.data.current_reply.from_email_address}</p>
                                 </div>
                               </div>
                               <div className="text-right">
@@ -1620,13 +1620,13 @@ const LeadsManagement = () => {
                             </div>
                             {threadData.data.current_reply.subject && (
                               <div className="mt-3 pt-3 border-t">
-                                <p className="text-sm font-medium">Re: {threadData.data.current_reply.subject}</p>
+                                <p className="text-sm font-medium truncate">Re: {threadData.data.current_reply.subject}</p>
                               </div>
                             )}
                           </CardHeader>
                           <CardContent>
                             <div
-                              className="prose prose-sm max-w-none dark:prose-invert [&>p]:my-2 [&>div]:my-2"
+                              className="prose prose-sm max-w-none dark:prose-invert [&>p]:my-2 [&>div]:my-2 break-words overflow-hidden"
                               dangerouslySetInnerHTML={{ __html: threadData.data.current_reply.html_body || `<p>${threadData.data.current_reply.text_body}</p>` }}
                             />
                           </CardContent>
@@ -1650,13 +1650,13 @@ const LeadsManagement = () => {
                           <Card className="hover:shadow-md transition-shadow">
                             <CardHeader className="pb-3">
                               <div className="flex items-start justify-between">
-                                <div className="flex items-center gap-3">
-                                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center text-white font-semibold">
+                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center text-white font-semibold flex-shrink-0">
                                     {(msg.from_name || msg.from_email_address).charAt(0).toUpperCase()}
                                   </div>
-                                  <div>
-                                    <p className="font-semibold text-base">{msg.from_name || 'Unknown'}</p>
-                                    <p className="text-sm text-muted-foreground">{msg.from_email_address}</p>
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-base truncate">{msg.from_name || 'Unknown'}</p>
+                                    <p className="text-sm text-muted-foreground truncate">{msg.from_email_address}</p>
                                   </div>
                                 </div>
                                 <div className="text-right">
@@ -1670,13 +1670,13 @@ const LeadsManagement = () => {
                               </div>
                               {msg.subject && (
                                 <div className="mt-3 pt-3 border-t">
-                                  <p className="text-sm font-medium text-muted-foreground">Re: {msg.subject}</p>
+                                  <p className="text-sm font-medium text-muted-foreground truncate">Re: {msg.subject}</p>
                                 </div>
                               )}
                             </CardHeader>
                             <CardContent>
                               <div
-                                className="prose prose-sm max-w-none dark:prose-invert [&>p]:my-2 [&>div]:my-2"
+                                className="prose prose-sm max-w-none dark:prose-invert [&>p]:my-2 [&>div]:my-2 break-words overflow-hidden"
                                 dangerouslySetInnerHTML={{ __html: msg.html_body || `<p>${msg.text_body}</p>` }}
                               />
                             </CardContent>

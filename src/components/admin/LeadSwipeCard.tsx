@@ -246,14 +246,14 @@ export function LeadSwipeCard({
 
           {/* Message */}
           <div className="bg-muted/30 rounded-lg p-4 md:p-6 min-h-[180px] md:min-h-[200px] max-h-[300px] overflow-y-auto">
-            <p className="text-base md:text-lg leading-relaxed whitespace-pre-wrap">
+            <p className="text-base md:text-lg leading-relaxed whitespace-pre-wrap break-words">
               {currentReply.reply_content || 'No message content'}
             </p>
           </div>
 
           {/* Metadata */}
-          <div className="flex items-center justify-between text-sm text-muted-foreground border-t pt-4">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between text-sm text-muted-foreground border-t pt-4 gap-4">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <Calendar className="h-4 w-4" />
               <span>{new Date(currentReply.received_at).toLocaleDateString('en-US', {
                 month: 'short',
@@ -263,9 +263,9 @@ export function LeadSwipeCard({
               })}</span>
             </div>
             {currentReply.campaign_name && (
-              <div className="flex items-center gap-2">
-                <Mail className="h-4 w-4" />
-                <span>{currentReply.campaign_name}</span>
+              <div className="flex items-center gap-2 min-w-0">
+                <Mail className="h-4 w-4 flex-shrink-0" />
+                <span className="truncate">{currentReply.campaign_name}</span>
               </div>
             )}
           </div>
