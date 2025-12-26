@@ -81,7 +81,7 @@ const AISalesDirector = () => {
   // Fetch recent calls with pagination
   const { data: callsData, isLoading: callsLoading, refetch: refetchCalls } = useQuery({
     queryKey: ['recent-sales-calls', currentPage, showHidden, callTypeFilter],
-    queryFn: () => getRecentSalesCalls(currentPage, 10, showHidden, callTypeFilter),
+    queryFn: () => getRecentSalesCalls(currentPage, 5, showHidden, callTypeFilter),
   })
 
   const recentCalls = callsData?.calls || []
