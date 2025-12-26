@@ -13,7 +13,14 @@ serve(async (req) => {
   }
 
   try {
-    console.log('[Sync Replies] Starting sync process...')
+    const startTime = Date.now()
+
+    // Parse request body for options
+    const body = req.method === 'POST' ? await req.json() : {}
+    const syncType = body.syncType || 'manual' // 'manual' or 'auto'
+    const unreadOnly = body.unreadOnly || false // Smart sync option
+
+    console.log(`[Sync Replies] Starting ${syncType} sync process (unreadOnly: ${unreadOnly})...`)
 
     // Get Email Bison API token
     const bisonApiToken = Deno.env.get('EMAIL_BISON_API_TOKEN')
@@ -41,16 +48,19 @@ serve(async (req) => {
 
     console.log('[Sync Replies] Fetching replies from Email Bison...')
 
-    const bisonResponse = await fetch(
-      'https://send.leadgenjay.com/api/replies?folder=inbox',
-      {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${bisonApiToken}`,
-          'Accept': 'application/json',
-        },
-      }
-    )
+    // Build API URL with filters
+    let apiUrl = 'https://send.leadgenjay.com/api/replies?folder=inbox'
+    if (unreadOnly) {
+      apiUrl += '&read=false' // Smart sync: only unread replies
+    }
+
+    const bisonResponse = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${bisonApiToken}`,
+        'Accept': 'application/json',
+      },
+    })
 
     if (!bisonResponse.ok) {
       const errorText = await bisonResponse.text()
@@ -129,6 +139,20 @@ serve(async (req) => {
 
     console.log(`[Sync Replies] Sync complete - New: ${newCount}, Updated: ${updatedCount}, Skipped: ${skippedCount}`)
 
+    // Calculate sync duration
+    const syncDuration = Date.now() - startTime
+
+    // Save sync history
+    await supabase.from('sync_history').insert({
+      sync_type: syncType,
+      total_processed: recentReplies.length,
+      new_replies: newCount,
+      updated_replies: updatedCount,
+      skipped_replies: skippedCount,
+      success: true,
+      sync_duration_ms: syncDuration,
+    })
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -138,6 +162,7 @@ serve(async (req) => {
           new_replies: newCount,
           updated_replies: updatedCount,
           skipped_replies: skippedCount,
+          sync_duration_ms: syncDuration,
         },
       }),
       {
@@ -150,6 +175,25 @@ serve(async (req) => {
     )
   } catch (error) {
     console.error('[Sync Replies] Error:', error)
+
+    // Try to save error to sync history
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+      const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+      await supabase.from('sync_history').insert({
+        sync_type: 'manual', // Default to manual if we don't have context
+        total_processed: 0,
+        new_replies: 0,
+        updated_replies: 0,
+        skipped_replies: 0,
+        success: false,
+        error_message: error.message || 'Internal server error',
+      })
+    } catch (historyError) {
+      console.error('[Sync Replies] Could not save error to history:', historyError)
+    }
 
     return new Response(
       JSON.stringify({

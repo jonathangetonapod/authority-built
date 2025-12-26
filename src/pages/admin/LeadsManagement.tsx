@@ -62,6 +62,9 @@ const LeadsManagement = () => {
   const [cardIndex, setCardIndex] = useState(0)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(true)
+  const [smartSyncEnabled, setSmartSyncEnabled] = useState(true)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [threadDialogOpen, setThreadDialogOpen] = useState(false)
   const [loadingThread, setLoadingThread] = useState(false)
@@ -94,6 +97,18 @@ const LeadsManagement = () => {
   useEffect(() => {
     filterReplies()
   }, [replies, searchTerm, typeFilter, statusFilter, readFilter, dateFilter, quickFilter, showArchived])
+
+  // Auto-sync every 5 minutes
+  useEffect(() => {
+    if (!autoSyncEnabled) return
+
+    const interval = setInterval(() => {
+      console.log('[Auto-Sync] Running background sync...')
+      handleSync('auto', true) // Silent auto-sync
+    }, 5 * 60 * 1000) // 5 minutes
+
+    return () => clearInterval(interval)
+  }, [autoSyncEnabled, smartSyncEnabled])
 
   const loadReplies = async () => {
     try {
@@ -598,16 +613,23 @@ const LeadsManagement = () => {
     await updateLeadType(reply.id, 'podcasts')
   }
 
-  const handleSync = async () => {
+  const handleSync = async (syncType: 'manual' | 'auto' = 'manual', silent = false) => {
     try {
       setSyncing(true)
 
-      toast({
-        title: 'Syncing...',
-        description: 'Checking Email Bison for new replies',
-      })
+      if (!silent) {
+        toast({
+          title: 'Syncing...',
+          description: 'Checking Email Bison for new replies',
+        })
+      }
 
-      const { data, error } = await supabase.functions.invoke('sync-replies')
+      const { data, error } = await supabase.functions.invoke('sync-replies', {
+        body: {
+          syncType: syncType,
+          unreadOnly: smartSyncEnabled,
+        },
+      })
 
       if (error) throw error
 
@@ -615,21 +637,33 @@ const LeadsManagement = () => {
         throw new Error(data.error || 'Sync failed')
       }
 
-      const { new_replies, updated_replies, total_processed } = data.data
+      const { new_replies, updated_replies, total_processed, sync_duration_ms } = data.data
 
-      // Reload replies to show new ones
-      await loadReplies()
+      // Update last sync time
+      setLastSyncTime(new Date())
 
-      toast({
-        title: 'Sync Complete!',
-        description: `Processed ${total_processed} replies. ${new_replies} new, ${updated_replies} updated.`,
-      })
+      // Reload replies to show new ones (but only if there are new/updated)
+      if (new_replies > 0 || updated_replies > 0) {
+        await loadReplies()
+      }
+
+      // Show toast for manual syncs or if there are new replies
+      if (!silent || new_replies > 0) {
+        toast({
+          title: syncType === 'auto' ? 'Auto-Sync Complete!' : 'Sync Complete!',
+          description: `${new_replies} new, ${updated_replies} updated (${Math.round(sync_duration_ms / 1000)}s)`,
+        })
+      }
     } catch (error: any) {
-      toast({
-        title: 'Sync Failed',
-        description: error.message,
-        variant: 'destructive',
-      })
+      // Only show error toast for manual syncs
+      if (!silent) {
+        toast({
+          title: 'Sync Failed',
+          description: error.message,
+          variant: 'destructive',
+        })
+      }
+      console.error('[Sync Error]', error)
     } finally {
       setSyncing(false)
     }
@@ -700,9 +734,36 @@ const LeadsManagement = () => {
               Track and label email campaign replies
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            <div className="flex flex-col items-end mr-2">
+              {lastSyncTime && (
+                <span className="text-xs text-muted-foreground">
+                  Last sync: {lastSyncTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+              <div className="flex gap-2 mt-1">
+                <label className="flex items-center gap-1 text-xs cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoSyncEnabled}
+                    onChange={(e) => setAutoSyncEnabled(e.target.checked)}
+                    className="rounded"
+                  />
+                  <span className="text-muted-foreground">Auto-sync (5min)</span>
+                </label>
+                <label className="flex items-center gap-1 text-xs cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={smartSyncEnabled}
+                    onChange={(e) => setSmartSyncEnabled(e.target.checked)}
+                    className="rounded"
+                  />
+                  <span className="text-muted-foreground">Unread only</span>
+                </label>
+              </div>
+            </div>
             <Button
-              onClick={handleSync}
+              onClick={() => handleSync('manual')}
               variant="outline"
               disabled={syncing}
             >
