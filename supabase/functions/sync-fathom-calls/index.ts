@@ -62,12 +62,22 @@ serve(async (req) => {
     let updatedCount = 0
 
     for (const meeting of meetings) {
-      // Check if call already exists
+      // Check if call already exists and if it has analysis
       const { data: existingCall } = await supabase
         .from('sales_calls')
-        .select('id, recording_id')
+        .select(`
+          id,
+          recording_id,
+          analysis:sales_call_analysis(id)
+        `)
         .eq('recording_id', meeting.recording_id)
         .single()
+
+      // Skip calls that already have analysis
+      if (existingCall && existingCall.analysis && existingCall.analysis.length > 0) {
+        console.log(`[Sync Fathom] Skipping call ${meeting.recording_id} - already analyzed`)
+        continue
+      }
 
       // Calculate duration in minutes
       const startTime = new Date(meeting.recording_start_time)
@@ -91,7 +101,7 @@ serve(async (req) => {
       }
 
       if (existingCall) {
-        // Update existing call
+        // Update existing call (only if not analyzed yet)
         await supabase
           .from('sales_calls')
           .update(callData)

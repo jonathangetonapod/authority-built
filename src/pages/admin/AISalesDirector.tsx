@@ -63,6 +63,8 @@ const AISalesDirector = () => {
   const [analyzingCalls, setAnalyzingCalls] = useState<Record<string, boolean>>({})
   const [classifyingCalls, setClassifyingCalls] = useState<Record<string, boolean>>({})
   const [bulkClassifying, setBulkClassifying] = useState(false)
+  const [selectedCallId, setSelectedCallId] = useState<string | null>(null)
+  const [lastSynced, setLastSynced] = useState<Date | null>(null)
 
   // Fetch performance stats
   const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useQuery({
@@ -109,6 +111,9 @@ const AISalesDirector = () => {
 
       // Refetch calls
       refetchCalls()
+
+      // Set last synced time
+      setLastSynced(new Date())
     } catch (error: any) {
       console.error('Error syncing calls:', error)
       toast.error('Failed to sync calls: ' + error.message)
@@ -225,6 +230,11 @@ const AISalesDirector = () => {
 
   const hasData = stats && stats.total_calls > 0
 
+  // Find the selected call from the list
+  const selectedCall = selectedCallId
+    ? recentCalls?.find(call => call.id === selectedCallId)
+    : null
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -253,19 +263,26 @@ const AISalesDirector = () => {
           {/* Sync Controls */}
           <div className="flex items-center justify-between border-t pt-4 flex-wrap gap-4">
             <div className="flex items-center gap-4 flex-wrap">
+              {lastSynced && (
+                <div className="text-xs text-muted-foreground">
+                  Last synced: {lastSynced.toLocaleTimeString()}
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Sync period:</span>
                 <Select value={daysBack.toString()} onValueChange={(val) => setDaysBack(Number(val))}>
-                  <SelectTrigger className="w-[140px]">
+                  <SelectTrigger className="w-[150px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="7">Last 7 days</SelectItem>
                     <SelectItem value="30">Last 30 days</SelectItem>
                     <SelectItem value="60">Last 60 days</SelectItem>
                     <SelectItem value="90">Last 90 days</SelectItem>
                     <SelectItem value="120">Last 120 days</SelectItem>
-                    <SelectItem value="150">Last 150 days</SelectItem>
-                    <SelectItem value="180">Last 180 days</SelectItem>
+                    <SelectItem value="180">Last 6 months</SelectItem>
+                    <SelectItem value="270">Last 9 months</SelectItem>
+                    <SelectItem value="365">Last 1 year</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -457,17 +474,181 @@ const AISalesDirector = () => {
         )}
 
         <div className="grid gap-6 md:grid-cols-2">
-          {/* Top Recommendations */}
+          {/* Call Analysis / Top Recommendations */}
           <Card>
             <CardHeader>
-              <div className="flex items-center gap-2">
-                <Target className="h-5 w-5 text-primary" />
-                <CardTitle>Top Recommendations</CardTitle>
-              </div>
-              <CardDescription>AI-powered suggestions to improve your close rate</CardDescription>
+              {selectedCall ? (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Phone className="h-5 w-5 text-primary" />
+                      <CardTitle>Call Analysis</CardTitle>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => setSelectedCallId(null)}>
+                      Back to Overview
+                    </Button>
+                  </div>
+                  <CardDescription className="truncate">
+                    {selectedCall.title || selectedCall.meeting_title || 'Untitled Call'}
+                  </CardDescription>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Target className="h-5 w-5 text-primary" />
+                    <CardTitle>Top Recommendations</CardTitle>
+                  </div>
+                  <CardDescription>AI-powered suggestions to improve your close rate</CardDescription>
+                </div>
+              )}
             </CardHeader>
             <CardContent>
-              {recommendationsLoading ? (
+              {selectedCall && selectedCall.analysis ? (
+                <div className="space-y-6">
+                  {/* Overall Score */}
+                  <div className="text-center pb-4 border-b">
+                    <div className="text-4xl font-bold text-primary mb-2">
+                      {selectedCall.analysis.overall_score}/10
+                    </div>
+                    <p className="text-sm text-muted-foreground">Overall Score</p>
+                  </div>
+
+                  {/* Skill Scores */}
+                  <div className="space-y-3">
+                    <h4 className="font-semibold text-sm">Skill Breakdown</h4>
+                    <div className="space-y-2">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs">Discovery</span>
+                          <span className="text-xs text-muted-foreground">{selectedCall.analysis.discovery_score}/10</span>
+                        </div>
+                        <Progress value={selectedCall.analysis.discovery_score * 10} className="h-2" />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs">Objection Handling</span>
+                          <span className="text-xs text-muted-foreground">{selectedCall.analysis.objection_handling_score}/10</span>
+                        </div>
+                        <Progress value={selectedCall.analysis.objection_handling_score * 10} className="h-2" />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs">Closing</span>
+                          <span className="text-xs text-muted-foreground">{selectedCall.analysis.closing_score}/10</span>
+                        </div>
+                        <Progress value={selectedCall.analysis.closing_score * 10} className="h-2" />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs">Engagement</span>
+                          <span className="text-xs text-muted-foreground">{selectedCall.analysis.engagement_score}/10</span>
+                        </div>
+                        <Progress value={selectedCall.analysis.engagement_score * 10} className="h-2" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Recommendations */}
+                  {selectedCall.analysis.recommendations && selectedCall.analysis.recommendations.length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="font-semibold text-sm">Recommendations</h4>
+                      <div className="space-y-2">
+                        {selectedCall.analysis.recommendations.map((rec: any, i: number) => {
+                          const priorityStyles = {
+                            high: { bg: 'bg-orange-50 dark:bg-orange-950/20', border: 'border-orange-200 dark:border-orange-900', icon: 'text-orange-600' },
+                            medium: { bg: 'bg-blue-50 dark:bg-blue-950/20', border: 'border-blue-200 dark:border-blue-900', icon: 'text-blue-600' },
+                            low: { bg: 'bg-green-50 dark:bg-green-950/20', border: 'border-green-200 dark:border-green-900', icon: 'text-green-600' },
+                          }
+                          const style = priorityStyles[rec.priority as keyof typeof priorityStyles] || priorityStyles.medium
+                          const Icon = rec.priority === 'low' ? CheckCircle2 : AlertCircle
+
+                          return (
+                            <div key={i} className={`flex gap-2 p-2 border rounded-lg ${style.bg} ${style.border}`}>
+                              <Icon className={`h-4 w-4 ${style.icon} flex-shrink-0 mt-0.5`} />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-xs mb-1">{rec.title}</p>
+                                <p className="text-xs text-muted-foreground line-clamp-2">{rec.description}</p>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Strengths */}
+                  {selectedCall.analysis.strengths && selectedCall.analysis.strengths.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="font-semibold text-sm flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        Strengths
+                      </h4>
+                      <ul className="space-y-1">
+                        {selectedCall.analysis.strengths.map((strength: string, i: number) => (
+                          <li key={i} className="text-xs text-muted-foreground flex items-start gap-2">
+                            <span className="text-green-600">•</span>
+                            <span>{strength}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Weaknesses */}
+                  {selectedCall.analysis.weaknesses && selectedCall.analysis.weaknesses.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="font-semibold text-sm flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4 text-orange-600" />
+                        Areas for Improvement
+                      </h4>
+                      <ul className="space-y-1">
+                        {selectedCall.analysis.weaknesses.map((weakness: string, i: number) => (
+                          <li key={i} className="text-xs text-muted-foreground flex items-start gap-2">
+                            <span className="text-orange-600">•</span>
+                            <span>{weakness}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Stats */}
+                  <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+                    <div className="text-center">
+                      <div className="text-lg font-bold">
+                        {selectedCall.analysis.talk_listen_ratio_talk}:{selectedCall.analysis.talk_listen_ratio_listen}
+                      </div>
+                      <p className="text-xs text-muted-foreground">Talk:Listen</p>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-lg font-bold">{selectedCall.analysis.questions_asked_count}</div>
+                      <p className="text-xs text-muted-foreground">Questions Asked</p>
+                    </div>
+                  </div>
+                </div>
+              ) : selectedCall && !selectedCall.analysis ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p className="text-sm mb-2">This call hasn't been analyzed yet</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleAnalyzeCall(selectedCall.id, selectedCall.recording_id, selectedCall.title || selectedCall.meeting_title || 'Untitled Call')}
+                    disabled={analyzingCalls[selectedCall.id]}
+                  >
+                    {analyzingCalls[selectedCall.id] ? (
+                      <>
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Brain className="h-3 w-3 mr-1" />
+                        Analyze with AI
+                      </>
+                    )}
+                  </Button>
+                </div>
+              ) : recommendationsLoading ? (
                 <div className="space-y-4">
                   {[1, 2, 3].map(i => (
                     <Skeleton key={i} className="h-20 w-full" />
@@ -512,7 +693,7 @@ const AISalesDirector = () => {
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
                   <p className="text-sm">No recommendations yet</p>
-                  <p className="text-xs mt-1">Sync calls to get AI-powered insights</p>
+                  <p className="text-xs mt-1">Sync and analyze calls to get AI-powered insights</p>
                 </div>
               )}
             </CardContent>
@@ -599,19 +780,19 @@ const AISalesDirector = () => {
                     return (
                       <div
                         key={call.id}
-                        className={`p-4 border rounded-lg ${call.hidden ? 'opacity-60 bg-muted/30' : ''}`}
+                        className={`p-4 border rounded-lg transition-colors ${
+                          call.hidden ? 'opacity-60 bg-muted/30' : ''
+                        } ${
+                          selectedCallId === call.id ? 'ring-2 ring-primary bg-primary/5' : 'hover:bg-muted/50'
+                        } ${call.analysis ? 'cursor-pointer' : ''}`}
+                        onClick={() => call.analysis && setSelectedCallId(call.id)}
                       >
                         <div className="flex items-start justify-between gap-3 mb-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <a
-                                href={call.fathom_url || '#'}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="font-medium text-sm hover:underline truncate"
-                              >
+                              <span className="font-medium text-sm truncate">
                                 {callTitle}
-                              </a>
+                              </span>
                               {call.hidden && (
                                 <Badge variant="outline" className="text-xs">
                                   <EyeOff className="h-3 w-3 mr-1" />
@@ -666,7 +847,12 @@ const AISalesDirector = () => {
                           </div>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="flex-shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="flex-shrink-0"
+                                onClick={(e) => e.stopPropagation()}
+                              >
                                 <MoreVertical className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
@@ -692,7 +878,7 @@ const AISalesDirector = () => {
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
-                        <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
                           {callType === 'unclassified' && (
                             <Button
                               size="sm"
