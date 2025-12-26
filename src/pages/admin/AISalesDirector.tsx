@@ -978,7 +978,7 @@ const AISalesDirector = () => {
                               )}
                             </Button>
                           )}
-                          {!call.analysis && callType === 'sales' && (
+                          {callType === 'sales' && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -988,12 +988,12 @@ const AISalesDirector = () => {
                               {isAnalyzing ? (
                                 <>
                                   <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                  Analyzing...
+                                  {call.analysis ? 'Re-analyzing...' : 'Analyzing...'}
                                 </>
                               ) : (
                                 <>
                                   <Brain className="h-3 w-3 mr-1" />
-                                  Analyze with AI
+                                  {call.analysis ? 'Re-analyze' : 'Analyze with AI'}
                                 </>
                               )}
                             </Button>

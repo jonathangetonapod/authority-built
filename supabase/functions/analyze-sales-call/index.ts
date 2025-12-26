@@ -268,46 +268,68 @@ Be specific, actionable, and reference actual moments from the call.`
     // Parse the JSON response from Claude
     const jsonMatch = analysisText.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
+      console.error('[Analyze Call] No JSON found in response. Response text:', analysisText)
       throw new Error('Failed to parse JSON from Claude response')
     }
 
-    const analysis = JSON.parse(jsonMatch[0])
+    let analysis
+    try {
+      analysis = JSON.parse(jsonMatch[0])
+    } catch (parseError) {
+      console.error('[Analyze Call] JSON parse error:', parseError)
+      console.error('[Analyze Call] Attempted to parse:', jsonMatch[0])
+      throw new Error('Invalid JSON in Claude response')
+    }
 
-    // Store analysis in database
+    console.log('[Analyze Call] Parsed analysis, preparing to store in database')
+
+    // Delete existing analysis if it exists (for re-analysis)
+    const { error: deleteError } = await supabase
+      .from('sales_call_analysis')
+      .delete()
+      .eq('sales_call_id', sales_call_id)
+
+    if (deleteError) {
+      console.log('[Analyze Call] No existing analysis to delete or delete failed:', deleteError)
+    } else {
+      console.log('[Analyze Call] Deleted existing analysis for re-analysis')
+    }
+
+    // Store analysis in database (with optional framework fields)
     const { error: insertError } = await supabase
       .from('sales_call_analysis')
       .insert({
         sales_call_id: sales_call_id,
-        overall_score: analysis.overall_score,
-        framework_adherence_score: analysis.framework_adherence_score,
+        overall_score: analysis.overall_score || 0,
+        framework_adherence_score: analysis.framework_adherence_score || null,
 
-        // Corey Jackson Framework scores
-        frame_control_score: analysis.frame_control_score,
-        discovery_current_state_score: analysis.discovery_current_state_score,
-        discovery_desired_state_score: analysis.discovery_desired_state_score,
-        discovery_cost_of_inaction_score: analysis.discovery_cost_of_inaction_score,
-        watt_tiedowns_score: analysis.watt_tiedowns_score,
-        bridge_gap_score: analysis.bridge_gap_score,
-        sellback_score: analysis.sellback_score,
-        price_drop_score: analysis.price_drop_score,
-        close_celebration_score: analysis.close_celebration_score,
+        // Corey Jackson Framework scores (optional)
+        frame_control_score: analysis.frame_control_score || null,
+        discovery_current_state_score: analysis.discovery_current_state_score || null,
+        discovery_desired_state_score: analysis.discovery_desired_state_score || null,
+        discovery_cost_of_inaction_score: analysis.discovery_cost_of_inaction_score || null,
+        watt_tiedowns_score: analysis.watt_tiedowns_score || null,
+        bridge_gap_score: analysis.bridge_gap_score || null,
+        sellback_score: analysis.sellback_score || null,
+        price_drop_score: analysis.price_drop_score || null,
+        close_celebration_score: analysis.close_celebration_score || null,
 
         // General scores (kept for backwards compatibility)
-        discovery_score: analysis.discovery_score,
-        objection_handling_score: analysis.objection_handling_score,
-        closing_score: analysis.closing_score,
-        engagement_score: analysis.engagement_score,
+        discovery_score: analysis.discovery_score || 0,
+        objection_handling_score: analysis.objection_handling_score || 0,
+        closing_score: analysis.closing_score || 0,
+        engagement_score: analysis.engagement_score || 0,
 
-        talk_listen_ratio_talk: analysis.talk_listen_ratio.talk,
-        talk_listen_ratio_listen: analysis.talk_listen_ratio.listen,
-        questions_asked_count: analysis.questions_asked_count,
+        talk_listen_ratio_talk: analysis.talk_listen_ratio?.talk || 50,
+        talk_listen_ratio_listen: analysis.talk_listen_ratio?.listen || 50,
+        questions_asked_count: analysis.questions_asked_count || 0,
 
-        framework_insights: analysis.framework_insights,
-        recommendations: analysis.recommendations,
-        strengths: analysis.strengths,
-        weaknesses: analysis.weaknesses,
-        key_moments: analysis.key_moments,
-        sentiment_analysis: analysis.sentiment_analysis,
+        framework_insights: analysis.framework_insights || null,
+        recommendations: analysis.recommendations || [],
+        strengths: analysis.strengths || [],
+        weaknesses: analysis.weaknesses || [],
+        key_moments: analysis.key_moments || [],
+        sentiment_analysis: analysis.sentiment_analysis || null,
       })
 
     if (insertError) {
