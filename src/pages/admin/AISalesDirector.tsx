@@ -629,6 +629,61 @@ const AISalesDirector = () => {
                   </AccordionTrigger>
                   <AccordionContent>
                     <div className="pt-4 space-y-6">
+                      {/* Text Analysis */}
+                      {analytics.textAnalysis && (
+                        <div className="space-y-4 p-4 bg-muted/50 rounded-lg border">
+                          <div>
+                            <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                              <MessageSquare className="h-4 w-4 text-primary" />
+                              Performance Overview
+                            </h4>
+                            <p className="text-sm text-muted-foreground leading-relaxed">
+                              {analytics.textAnalysis.overview}
+                            </p>
+                          </div>
+
+                          <div>
+                            <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                              <CheckCircle2 className="h-4 w-4 text-green-600" />
+                              Your Strengths
+                            </h4>
+                            <p className="text-sm text-muted-foreground leading-relaxed">
+                              {analytics.textAnalysis.strengths}
+                            </p>
+                          </div>
+
+                          <div>
+                            <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                              <AlertCircle className="h-4 w-4 text-orange-600" />
+                              Growth Opportunities
+                            </h4>
+                            <p className="text-sm text-muted-foreground leading-relaxed">
+                              {analytics.textAnalysis.improvements}
+                            </p>
+                          </div>
+
+                          <div>
+                            <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                              <TrendingUp className="h-4 w-4 text-blue-600" />
+                              Recent Trajectory
+                            </h4>
+                            <p className="text-sm text-muted-foreground leading-relaxed">
+                              {analytics.textAnalysis.trend}
+                            </p>
+                          </div>
+
+                          <div className="pt-2 border-t">
+                            <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                              <Target className="h-4 w-4 text-primary" />
+                              Next Action
+                            </h4>
+                            <p className="text-sm font-medium text-primary leading-relaxed">
+                              {analytics.textAnalysis.recommendation}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Skill Progression */}
                       <div>
                         <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">

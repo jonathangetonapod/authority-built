@@ -446,6 +446,16 @@ export const getSalesAnalytics = async (daysBack: number = 0) => {
     engagement: calcProgression(olderCalls, recentCalls, 'engagement_score'),
   }
 
+  // Generate text analysis
+  const overallAvg = avg(analyses.map((a: any) => a.overall_score)) || 0
+  const textAnalysis = generateTextAnalysis(
+    overallAvg,
+    topStrengths,
+    improvementAreas,
+    skillProgression,
+    analyses.length
+  )
+
   return {
     timeSeriesData,
     frameworkBreakdown,
@@ -453,6 +463,7 @@ export const getSalesAnalytics = async (daysBack: number = 0) => {
     topStrengths,
     skillProgression,
     totalAnalyzedCalls: analyses.length,
+    textAnalysis,
   }
 }
 
@@ -468,4 +479,69 @@ const calcProgression = (olderCalls: any[], recentCalls: any[], field: string) =
   const recentAvg = avg(recentCalls.map((c: any) => c[field]))
   if (oldAvg === null || recentAvg === null) return 0
   return parseFloat((recentAvg - oldAvg).toFixed(1))
+}
+
+const generateTextAnalysis = (
+  overallScore: number,
+  strengths: any[],
+  weaknesses: any[],
+  progression: any,
+  totalCalls: number
+) => {
+  // Overall performance assessment
+  let performanceLevel = ''
+  if (overallScore >= 8) performanceLevel = 'excellent'
+  else if (overallScore >= 7) performanceLevel = 'strong'
+  else if (overallScore >= 6) performanceLevel = 'good'
+  else if (overallScore >= 5) performanceLevel = 'developing'
+  else performanceLevel = 'needs significant improvement'
+
+  // Trend assessment
+  let trendText = ''
+  if (progression.overall > 1.5) {
+    trendText = 'showing excellent improvement'
+  } else if (progression.overall > 0.5) {
+    trendText = 'showing steady improvement'
+  } else if (progression.overall > 0) {
+    trendText = 'showing slight improvement'
+  } else if (progression.overall === 0) {
+    trendText = 'maintaining consistent performance'
+  } else if (progression.overall > -0.5) {
+    trendText = 'showing slight decline'
+  } else {
+    trendText = 'showing concerning decline'
+  }
+
+  // Build comprehensive analysis
+  const analysis = {
+    overview: `Based on ${totalCalls} analyzed sales calls, your overall performance is ${performanceLevel} with an average score of ${overallScore.toFixed(1)}/10. You are ${trendText} compared to your earlier calls.`,
+
+    strengths: strengths.length > 0
+      ? `Your strongest areas are ${strengths.map(s => s.stage).join(', ')}. ${strengths[0].stage} is particularly impressive at ${strengths[0].score}/10, indicating you excel at this critical stage of the sales process.`
+      : 'Continue analyzing more calls to identify your strengths.',
+
+    improvements: weaknesses.length > 0
+      ? `Your primary growth opportunities lie in ${weaknesses.map(w => w.stage).join(', ')}. Focus particularly on ${weaknesses[0].stage} (${weaknesses[0].score}/10), as improving this will have the biggest impact on your close rate.`
+      : 'Continue analyzing more calls to identify improvement areas.',
+
+    trend: progression.overall !== 0
+      ? progression.overall > 0
+        ? `Your recent trajectory is positive with a +${progression.overall} point improvement. ${
+            progression.discovery > 0 ? `Discovery skills are improving (+${progression.discovery}), ` : ''
+          }${
+            progression.closing > 0 ? `and closing ability is strengthening (+${progression.closing}). ` : ''
+          }Keep up this momentum!`
+        : `Your recent trajectory shows a ${progression.overall} point decline. ${
+            progression.discovery < 0 ? `Discovery needs attention (${progression.discovery}), ` : ''
+          }${
+            progression.closing < 0 ? `and closing requires focus (${progression.closing}). ` : ''
+          }Review recent calls to identify what changed.`
+      : 'Your performance is consistent across recent calls.',
+
+    recommendation: weaknesses.length > 0 && strengths.length > 0
+      ? `Actionable next step: During your next call, leverage your strength in ${strengths[0].stage.toLowerCase()} while specifically practicing ${weaknesses[0].stage.toLowerCase()}. Record the call and immediately review how you handled this weak area.`
+      : 'Continue analyzing calls to get personalized recommendations.',
+  }
+
+  return analysis
 }
