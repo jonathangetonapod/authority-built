@@ -774,6 +774,9 @@ const LeadsManagement = () => {
                     <option value={7}>7 days</option>
                     <option value={14}>14 days</option>
                     <option value={30}>30 days</option>
+                    <option value={90}>90 days</option>
+                    <option value={120}>120 days</option>
+                    <option value={180}>180 days</option>
                   </select>
                 </label>
               </div>
