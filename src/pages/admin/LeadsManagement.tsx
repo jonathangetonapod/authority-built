@@ -52,6 +52,7 @@ const LeadsManagement = () => {
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [readFilter, setReadFilter] = useState<string>('all')
+  const [dateFilter, setDateFilter] = useState<string>('all')
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [threadDialogOpen, setThreadDialogOpen] = useState(false)
@@ -74,7 +75,7 @@ const LeadsManagement = () => {
 
   useEffect(() => {
     filterReplies()
-  }, [replies, searchTerm, typeFilter, statusFilter, readFilter])
+  }, [replies, searchTerm, typeFilter, statusFilter, readFilter, dateFilter])
 
   const loadReplies = async () => {
     try {
@@ -133,6 +134,42 @@ const LeadsManagement = () => {
       } else if (readFilter === 'read') {
         filtered = filtered.filter((r) => r.read)
       }
+    }
+
+    // Date filter
+    if (dateFilter !== 'all') {
+      const now = new Date()
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+      filtered = filtered.filter((r) => {
+        const replyDate = new Date(r.received_at)
+
+        switch (dateFilter) {
+          case 'today':
+            return replyDate >= today
+          case 'yesterday':
+            const yesterday = new Date(today)
+            yesterday.setDate(yesterday.getDate() - 1)
+            return replyDate >= yesterday && replyDate < today
+          case 'last7days':
+            const last7days = new Date(today)
+            last7days.setDate(last7days.getDate() - 7)
+            return replyDate >= last7days
+          case 'last30days':
+            const last30days = new Date(today)
+            last30days.setDate(last30days.getDate() - 30)
+            return replyDate >= last30days
+          case 'thisMonth':
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+            return replyDate >= startOfMonth
+          case 'lastMonth':
+            const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+            const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+            return replyDate >= startOfLastMonth && replyDate < endOfLastMonth
+          default:
+            return true
+        }
+      })
     }
 
     setFilteredReplies(filtered)
@@ -489,53 +526,71 @@ const LeadsManagement = () => {
             <CardTitle>Filters</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search by email, name, company, or campaign..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
+            <div className="space-y-4">
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by email, name, company, or campaign..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
                 </div>
               </div>
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Lead Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="unlabeled">Unlabeled Only</SelectItem>
-                  <SelectItem value="sales">Sales Only</SelectItem>
-                  <SelectItem value="podcasts">Premium Placements Only</SelectItem>
-                  <SelectItem value="other">Other Only</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="new">New</SelectItem>
-                  <SelectItem value="contacted">Contacted</SelectItem>
-                  <SelectItem value="qualified">Qualified</SelectItem>
-                  <SelectItem value="not_interested">Not Interested</SelectItem>
-                  <SelectItem value="converted">Converted</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={readFilter} onValueChange={setReadFilter}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Read Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="unread">Unread Only</SelectItem>
-                  <SelectItem value="read">Read Only</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex gap-3 flex-wrap">
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Lead Type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="unlabeled">Unlabeled Only</SelectItem>
+                    <SelectItem value="sales">Sales Only</SelectItem>
+                    <SelectItem value="podcasts">Premium Placements Only</SelectItem>
+                    <SelectItem value="other">Other Only</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="new">New</SelectItem>
+                    <SelectItem value="contacted">Contacted</SelectItem>
+                    <SelectItem value="qualified">Qualified</SelectItem>
+                    <SelectItem value="not_interested">Not Interested</SelectItem>
+                    <SelectItem value="converted">Converted</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={readFilter} onValueChange={setReadFilter}>
+                  <SelectTrigger className="w-[150px]">
+                    <SelectValue placeholder="Read Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="unread">Unread Only</SelectItem>
+                    <SelectItem value="read">Read Only</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={dateFilter} onValueChange={setDateFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Date Range" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Time</SelectItem>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="yesterday">Yesterday</SelectItem>
+                    <SelectItem value="last7days">Last 7 Days</SelectItem>
+                    <SelectItem value="last30days">Last 30 Days</SelectItem>
+                    <SelectItem value="thisMonth">This Month</SelectItem>
+                    <SelectItem value="lastMonth">Last Month</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -602,83 +657,87 @@ const LeadsManagement = () => {
                           </div>
                         </div>
                       </div>
-                      <div className="flex flex-col gap-2 ml-4">
-                        <div className="flex gap-2">
+                      <div className="flex flex-col gap-3 ml-4 min-w-[280px]">
+                        {/* Status Badges */}
+                        <div className="flex gap-2 items-center">
                           {getLeadTypeBadge(reply.lead_type)}
                           {getStatusBadge(reply.status)}
                         </div>
-                        <div className="flex gap-1">
-                          {updatingId === reply.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <>
-                              <Button
-                                variant={reply.lead_type === 'sales' ? 'default' : 'outline'}
-                                size="sm"
-                                onClick={() => updateLeadType(reply.id, 'sales')}
-                                className="text-xs"
-                              >
-                                <Tag className="h-3 w-3 mr-1" />
-                                Sales
-                              </Button>
-                              <Button
-                                variant={reply.lead_type === 'podcasts' ? 'default' : 'outline'}
-                                size="sm"
-                                onClick={() => updateLeadType(reply.id, 'podcasts')}
-                                className="text-xs"
-                              >
-                                <Tag className="h-3 w-3 mr-1" />
-                                Premium Placement
-                              </Button>
-                            </>
+
+                        {/* Label As Section */}
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Label As</p>
+                          <div className="flex gap-1.5">
+                            {updatingId === reply.id ? (
+                              <div className="flex items-center justify-center w-full py-2">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              </div>
+                            ) : (
+                              <>
+                                <Button
+                                  variant={reply.lead_type === 'sales' ? 'default' : 'outline'}
+                                  size="sm"
+                                  onClick={() => updateLeadType(reply.id, 'sales')}
+                                  className="text-xs flex-1"
+                                >
+                                  Sales
+                                </Button>
+                                <Button
+                                  variant={reply.lead_type === 'podcasts' ? 'default' : 'outline'}
+                                  size="sm"
+                                  onClick={() => updateLeadType(reply.id, 'podcasts')}
+                                  className="text-xs flex-1"
+                                >
+                                  Premium
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Status Dropdown */}
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Status</p>
+                          <Select
+                            value={reply.status}
+                            onValueChange={(value) => updateStatus(reply.id, value as CampaignReply['status'])}
+                          >
+                            <SelectTrigger className="w-full h-8 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="new">New</SelectItem>
+                              <SelectItem value="contacted">Contacted</SelectItem>
+                              <SelectItem value="qualified">Qualified</SelectItem>
+                              <SelectItem value="not_interested">Not Interested</SelectItem>
+                              <SelectItem value="converted">Converted</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex gap-1.5 pt-1 border-t">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => toggleRead(reply.id, reply.read)}
+                            className="text-xs flex-1"
+                            title={reply.read ? 'Mark as unread' : 'Mark as read'}
+                          >
+                            {reply.read ? <Mail className="h-3 w-3" /> : <MailOpen className="h-3 w-3" />}
+                          </Button>
+                          {reply.bison_reply_id && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => fetchEmailThread(reply.bison_reply_id!)}
+                              className="text-xs flex-1"
+                              title="View email thread"
+                            >
+                              <MessageSquare className="h-3 w-3" />
+                            </Button>
                           )}
                         </div>
-                        <Select
-                          value={reply.status}
-                          onValueChange={(value) => updateStatus(reply.id, value as CampaignReply['status'])}
-                        >
-                          <SelectTrigger className="w-[140px] h-8 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="new">New</SelectItem>
-                            <SelectItem value="contacted">Contacted</SelectItem>
-                            <SelectItem value="qualified">Qualified</SelectItem>
-                            <SelectItem value="not_interested">Not Interested</SelectItem>
-                            <SelectItem value="converted">Converted</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => toggleRead(reply.id, reply.read)}
-                          className="text-xs"
-                          title={reply.read ? 'Mark as unread' : 'Mark as read'}
-                        >
-                          {reply.read ? (
-                            <>
-                              <Mail className="h-3 w-3 mr-1" />
-                              Mark Unread
-                            </>
-                          ) : (
-                            <>
-                              <MailOpen className="h-3 w-3 mr-1" />
-                              Mark Read
-                            </>
-                          )}
-                        </Button>
-                        {reply.bison_reply_id && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => fetchEmailThread(reply.bison_reply_id!)}
-                            className="text-xs"
-                            title="View email thread"
-                          >
-                            <MessageSquare className="h-3 w-3 mr-1" />
-                            View Thread
-                          </Button>
-                        )}
                       </div>
                     </div>
                   </div>
