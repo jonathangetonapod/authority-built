@@ -733,27 +733,36 @@ const LeadsManagement = () => {
                         </div>
 
                         {/* Actions */}
-                        <div className="flex gap-1.5 pt-1 border-t">
+                        <div className="flex flex-col gap-1.5 pt-2 border-t">
                           <Button
                             type="button"
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
                             onClick={() => toggleRead(reply.id, reply.read)}
-                            className="text-xs flex-1"
-                            title={reply.read ? 'Mark as unread' : 'Mark as read'}
+                            className="text-xs w-full"
                           >
-                            {reply.read ? <Mail className="h-3 w-3" /> : <MailOpen className="h-3 w-3" />}
+                            {reply.read ? (
+                              <>
+                                <Mail className="h-3 w-3 mr-1.5" />
+                                Mark Unread
+                              </>
+                            ) : (
+                              <>
+                                <MailOpen className="h-3 w-3 mr-1.5" />
+                                Mark Read
+                              </>
+                            )}
                           </Button>
                           {reply.bison_reply_id && (
                             <Button
                               type="button"
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
                               onClick={() => fetchEmailThread(reply.bison_reply_id!)}
-                              className="text-xs flex-1"
-                              title="View email thread"
+                              className="text-xs w-full"
                             >
-                              <MessageSquare className="h-3 w-3" />
+                              <MessageSquare className="h-3 w-3 mr-1.5" />
+                              View Thread
                             </Button>
                           )}
                         </div>
