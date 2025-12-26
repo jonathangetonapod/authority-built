@@ -19,8 +19,9 @@ serve(async (req) => {
     const body = req.method === 'POST' ? await req.json() : {}
     const syncType = body.syncType || 'manual' // 'manual' or 'auto'
     const unreadOnly = body.unreadOnly || false // Smart sync option
+    const daysBack = body.daysBack || 7 // How many days to look back (default 7)
 
-    console.log(`[Sync Replies] Starting ${syncType} sync process (unreadOnly: ${unreadOnly})...`)
+    console.log(`[Sync Replies] Starting ${syncType} sync process (unreadOnly: ${unreadOnly}, daysBack: ${daysBack})...`)
 
     // Get Email Bison API token
     const bisonApiToken = Deno.env.get('EMAIL_BISON_API_TOKEN')
@@ -42,9 +43,9 @@ serve(async (req) => {
       .single()
 
     // Fetch inbox replies from Email Bison API
-    // Get replies from last 7 days to catch any missed ones
-    const sevenDaysAgo = new Date()
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+    // Get replies from last N days to catch any missed ones
+    const lookbackDate = new Date()
+    lookbackDate.setDate(lookbackDate.getDate() - daysBack)
 
     console.log('[Sync Replies] Fetching replies from Email Bison...')
 
@@ -70,10 +71,10 @@ serve(async (req) => {
 
     console.log(`[Sync Replies] Found ${allReplies.length} replies from Email Bison`)
 
-    // Filter to only replies received in last 7 days
+    // Filter to only replies received in last N days
     let recentReplies = allReplies.filter((reply: any) => {
       const replyDate = new Date(reply.date_received)
-      return replyDate >= sevenDaysAgo
+      return replyDate >= lookbackDate
     })
 
     // Smart sync: filter to unread only (client-side)

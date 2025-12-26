@@ -65,6 +65,7 @@ const LeadsManagement = () => {
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(true)
   const [smartSyncEnabled, setSmartSyncEnabled] = useState(true)
+  const [daysBack, setDaysBack] = useState(7)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [threadDialogOpen, setThreadDialogOpen] = useState(false)
   const [loadingThread, setLoadingThread] = useState(false)
@@ -108,7 +109,7 @@ const LeadsManagement = () => {
     }, 5 * 60 * 1000) // 5 minutes
 
     return () => clearInterval(interval)
-  }, [autoSyncEnabled, smartSyncEnabled])
+  }, [autoSyncEnabled, smartSyncEnabled, daysBack])
 
   const loadReplies = async () => {
     try {
@@ -628,6 +629,7 @@ const LeadsManagement = () => {
         body: {
           syncType: syncType,
           unreadOnly: smartSyncEnabled,
+          daysBack: daysBack,
         },
       })
 
@@ -741,7 +743,7 @@ const LeadsManagement = () => {
                   Last sync: {lastSyncTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               )}
-              <div className="flex gap-2 mt-1">
+              <div className="flex gap-2 mt-1 items-center">
                 <label className="flex items-center gap-1 text-xs cursor-pointer">
                   <input
                     type="checkbox"
@@ -759,6 +761,20 @@ const LeadsManagement = () => {
                     className="rounded"
                   />
                   <span className="text-muted-foreground">Unread only</span>
+                </label>
+                <label className="flex items-center gap-1 text-xs">
+                  <span className="text-muted-foreground">Last</span>
+                  <select
+                    value={daysBack}
+                    onChange={(e) => setDaysBack(Number(e.target.value))}
+                    className="text-xs border rounded px-1 py-0.5 bg-background"
+                  >
+                    <option value={1}>1 day</option>
+                    <option value={3}>3 days</option>
+                    <option value={7}>7 days</option>
+                    <option value={14}>14 days</option>
+                    <option value={30}>30 days</option>
+                  </select>
                 </label>
               </div>
             </div>
