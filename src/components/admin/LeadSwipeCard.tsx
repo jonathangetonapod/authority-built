@@ -42,6 +42,8 @@ interface LeadSwipeCardProps {
   onSwipeRight: (reply: CampaignReply) => void // Qualify
   onSwipeUp: (reply: CampaignReply) => void    // Reply
   onSwipeDown: (reply: CampaignReply) => void  // View Thread
+  onMarkAsSales: (reply: CampaignReply) => void
+  onMarkAsPremium: (reply: CampaignReply) => void
   onNext: () => void
   onPrevious: () => void
 }
@@ -53,6 +55,8 @@ export function LeadSwipeCard({
   onSwipeRight,
   onSwipeUp,
   onSwipeDown,
+  onMarkAsSales,
+  onMarkAsPremium,
   onNext,
   onPrevious,
 }: LeadSwipeCardProps) {
@@ -292,6 +296,35 @@ export function LeadSwipeCard({
                 <span>{currentReply.campaign_name}</span>
               </div>
             )}
+          </div>
+
+          {/* Label As Section */}
+          <div className="border-t pt-4">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Label As</p>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={currentReply.lead_type === 'sales' ? 'default' : 'outline'}
+                size="lg"
+                onClick={() => onMarkAsSales(currentReply)}
+                className="flex-1 h-12"
+              >
+                <span className={currentReply.lead_type === 'sales' ? '' : 'text-blue-500'}>
+                  💼 Sales
+                </span>
+              </Button>
+              <Button
+                type="button"
+                variant={currentReply.lead_type === 'podcasts' ? 'default' : 'outline'}
+                size="lg"
+                onClick={() => onMarkAsPremium(currentReply)}
+                className="flex-1 h-12"
+              >
+                <span className={currentReply.lead_type === 'podcasts' ? '' : 'text-purple-500'}>
+                  🎙️ Premium
+                </span>
+              </Button>
+            </div>
           </div>
 
           {/* Action Buttons */}

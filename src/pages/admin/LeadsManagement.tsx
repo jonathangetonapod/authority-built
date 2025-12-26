@@ -589,6 +589,14 @@ const LeadsManagement = () => {
     }
   }
 
+  const handleMarkAsSales = async (reply: CampaignReply) => {
+    await updateLeadType(reply.id, 'sales')
+  }
+
+  const handleMarkAsPremium = async (reply: CampaignReply) => {
+    await updateLeadType(reply.id, 'podcasts')
+  }
+
   const exportCSV = () => {
     const headers = ['Email', 'Name', 'Company', 'Campaign', 'Lead Type', 'Status', 'Received At']
     const rows = filteredReplies.map((r) => [
@@ -943,6 +951,8 @@ const LeadsManagement = () => {
                 onSwipeRight={handleSwipeRight}
                 onSwipeUp={handleSwipeUp}
                 onSwipeDown={handleSwipeDown}
+                onMarkAsSales={handleMarkAsSales}
+                onMarkAsPremium={handleMarkAsPremium}
                 onNext={handleNextCard}
                 onPrevious={handlePreviousCard}
               />
