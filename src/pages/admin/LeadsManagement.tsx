@@ -1703,6 +1703,7 @@ const LeadsManagement = () => {
           </DialogContent>
         </Dialog>
       </div>
+    </div>
     </DashboardLayout>
   )
 }
