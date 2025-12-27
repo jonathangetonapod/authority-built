@@ -36,7 +36,7 @@ const Navbar = () => {
       <div className="container mx-auto">
         <div className="flex items-center justify-between h-16 md:h-20">
           <Link to="/" className="text-xl font-bold tracking-tight text-foreground">
-            AUTHORITY LAB
+            GET ON A POD
           </Link>
 
           {/* Desktop Navigation */}
