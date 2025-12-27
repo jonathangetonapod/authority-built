@@ -14,6 +14,15 @@ export interface Booking {
   episode_url: string | null
   notes: string | null
   prep_sent: boolean
+  // Podcast metadata from Podscan
+  podcast_id: string | null
+  audience_size: number | null
+  podcast_description: string | null
+  itunes_rating: number | null
+  itunes_rating_count: number | null
+  episode_count: number | null
+  podcast_image_url: string | null
+  rss_url: string | null
   created_at: string
   updated_at: string
 }
@@ -163,6 +172,15 @@ export async function createBooking(input: {
   episode_url?: string
   notes?: string
   prep_sent?: boolean
+  // Podcast metadata from Podscan
+  podcast_id?: string
+  audience_size?: number | null
+  podcast_description?: string
+  itunes_rating?: number | null
+  itunes_rating_count?: number | null
+  episode_count?: number | null
+  podcast_image_url?: string
+  rss_url?: string
 }) {
   const { data, error } = await supabase
     .from('bookings')
