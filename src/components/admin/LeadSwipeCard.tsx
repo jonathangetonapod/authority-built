@@ -24,7 +24,7 @@ interface CampaignReply {
   reply_content: string | null
   campaign_name: string | null
   received_at: string
-  lead_type: 'sales' | 'podcasts' | 'other' | null
+  lead_type: 'sales' | 'podcasts' | 'client_podcast' | 'other' | null
   status: 'new' | 'contacted' | 'qualified' | 'not_interested' | 'converted'
   notes: string | null
   read: boolean
@@ -44,6 +44,7 @@ interface LeadSwipeCardProps {
   onSwipeDown: (reply: CampaignReply) => void  // View Thread
   onMarkAsSales: (reply: CampaignReply) => void
   onMarkAsPremium: (reply: CampaignReply) => void
+  onMarkAsClientPodcast: (reply: CampaignReply) => void
   onNext: () => void
   onPrevious: () => void
 }
@@ -57,6 +58,7 @@ export function LeadSwipeCard({
   onSwipeDown,
   onMarkAsSales,
   onMarkAsPremium,
+  onMarkAsClientPodcast,
   onNext,
   onPrevious,
 }: LeadSwipeCardProps) {
@@ -230,6 +232,9 @@ export function LeadSwipeCard({
               {currentReply.lead_type === 'podcasts' && (
                 <Badge className="bg-purple-500 text-xs md:text-sm">Premium</Badge>
               )}
+              {currentReply.lead_type === 'client_podcast' && (
+                <Badge className="bg-green-500 text-xs md:text-sm">Client Podcast</Badge>
+              )}
               {!currentReply.read && (
                 <Badge variant="default" className="text-xs md:text-sm">Unread</Badge>
               )}
@@ -273,13 +278,13 @@ export function LeadSwipeCard({
           {/* Label As Section */}
           <div className="border-t pt-3 md:pt-4">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 md:mb-3">Label As</p>
-            <div className="flex gap-2 md:gap-3">
+            <div className="grid grid-cols-3 gap-2 md:gap-3">
               <Button
                 type="button"
                 variant={currentReply.lead_type === 'sales' ? 'default' : 'outline'}
                 size="lg"
                 onClick={() => onMarkAsSales(currentReply)}
-                className="flex-1 h-14 md:h-12 text-base md:text-sm"
+                className="h-14 md:h-12 text-base md:text-sm"
               >
                 <span className={currentReply.lead_type === 'sales' ? '' : 'text-blue-500'}>
                   💼 Sales
@@ -290,10 +295,21 @@ export function LeadSwipeCard({
                 variant={currentReply.lead_type === 'podcasts' ? 'default' : 'outline'}
                 size="lg"
                 onClick={() => onMarkAsPremium(currentReply)}
-                className="flex-1 h-14 md:h-12 text-base md:text-sm"
+                className="h-14 md:h-12 text-base md:text-sm"
               >
                 <span className={currentReply.lead_type === 'podcasts' ? '' : 'text-purple-500'}>
                   🎙️ Premium
+                </span>
+              </Button>
+              <Button
+                type="button"
+                variant={currentReply.lead_type === 'client_podcast' ? 'default' : 'outline'}
+                size="lg"
+                onClick={() => onMarkAsClientPodcast(currentReply)}
+                className="h-14 md:h-12 text-base md:text-sm"
+              >
+                <span className={currentReply.lead_type === 'client_podcast' ? '' : 'text-green-500'}>
+                  🎤 Client
                 </span>
               </Button>
             </div>

@@ -35,7 +35,7 @@ interface CampaignReply {
   reply_content: string | null
   campaign_name: string | null
   received_at: string
-  lead_type: 'sales' | 'podcasts' | 'other' | null
+  lead_type: 'sales' | 'podcasts' | 'client_podcast' | 'other' | null
   status: 'new' | 'contacted' | 'qualified' | 'not_interested' | 'converted'
   notes: string | null
   read: boolean
@@ -279,7 +279,7 @@ const LeadsManagement = () => {
     }
   }
 
-  const updateLeadType = async (id: string, leadType: 'sales' | 'podcasts' | 'other') => {
+  const updateLeadType = async (id: string, leadType: 'sales' | 'podcasts' | 'client_podcast' | 'other') => {
     try {
       setUpdatingId(id)
       const { error } = await supabase
@@ -299,6 +299,7 @@ const LeadsManagement = () => {
       const typeLabels: Record<string, string> = {
         sales: 'sales',
         podcasts: 'premium placement',
+        client_podcast: 'client podcast',
         other: 'other'
       }
       toast({
@@ -614,6 +615,10 @@ const LeadsManagement = () => {
     await updateLeadType(reply.id, 'podcasts')
   }
 
+  const handleMarkAsClientPodcast = async (reply: CampaignReply) => {
+    await updateLeadType(reply.id, 'client_podcast')
+  }
+
   const handleSync = async (syncType: 'manual' | 'auto' = 'manual', silent = false) => {
     try {
       setSyncing(true)
@@ -710,6 +715,7 @@ const LeadsManagement = () => {
     const variants: Record<string, any> = {
       sales: { variant: 'default', label: 'Sales', className: 'bg-blue-500' },
       podcasts: { variant: 'default', label: 'Premium Placement', className: 'bg-purple-500' },
+      client_podcast: { variant: 'default', label: 'Client Podcast', className: 'bg-green-500' },
       other: { variant: 'outline', label: 'Other' },
     }
     const config = variants[leadType] || variants.other
@@ -1017,7 +1023,7 @@ const LeadsManagement = () => {
               </div>
               <div className="flex gap-3 flex-wrap">
                 <Select value={typeFilter} onValueChange={setTypeFilter}>
-                  <SelectTrigger className="w-[200px]">
+                  <SelectTrigger className="w-[220px]">
                     <SelectValue placeholder="Lead Type" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1025,6 +1031,7 @@ const LeadsManagement = () => {
                     <SelectItem value="unlabeled">Unlabeled Only</SelectItem>
                     <SelectItem value="sales">Sales Only</SelectItem>
                     <SelectItem value="podcasts">Premium Placements Only</SelectItem>
+                    <SelectItem value="client_podcast">Client Podcast Only</SelectItem>
                     <SelectItem value="other">Other Only</SelectItem>
                   </SelectContent>
                 </Select>
@@ -1083,6 +1090,7 @@ const LeadsManagement = () => {
                 onSwipeDown={handleSwipeDown}
                 onMarkAsSales={handleMarkAsSales}
                 onMarkAsPremium={handleMarkAsPremium}
+                onMarkAsClientPodcast={handleMarkAsClientPodcast}
                 onNext={handleNextCard}
                 onPrevious={handlePreviousCard}
               />
@@ -1163,7 +1171,7 @@ const LeadsManagement = () => {
                         {/* Label As Section */}
                         <div className="space-y-1.5">
                           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Label As</p>
-                          <div className="flex gap-1.5">
+                          <div className="flex flex-col gap-1.5">
                             {updatingId === reply.id ? (
                               <div className="flex items-center justify-center w-full py-2">
                                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -1175,7 +1183,7 @@ const LeadsManagement = () => {
                                   variant={reply.lead_type === 'sales' ? 'default' : 'outline'}
                                   size="sm"
                                   onClick={() => updateLeadType(reply.id, 'sales')}
-                                  className="text-xs flex-1"
+                                  className="text-xs w-full"
                                 >
                                   Sales
                                 </Button>
@@ -1184,9 +1192,18 @@ const LeadsManagement = () => {
                                   variant={reply.lead_type === 'podcasts' ? 'default' : 'outline'}
                                   size="sm"
                                   onClick={() => updateLeadType(reply.id, 'podcasts')}
-                                  className="text-xs flex-1"
+                                  className="text-xs w-full"
                                 >
                                   Premium
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant={reply.lead_type === 'client_podcast' ? 'default' : 'outline'}
+                                  size="sm"
+                                  onClick={() => updateLeadType(reply.id, 'client_podcast')}
+                                  className="text-xs w-full"
+                                >
+                                  Client Podcast
                                 </Button>
                               </>
                             )}
