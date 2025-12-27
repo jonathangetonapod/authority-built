@@ -6,17 +6,17 @@ const guarantees = [
   {
     icon: Shield,
     title: "We Work Until You're Booked",
-    description: "We don't stop working until you get the podcast placements we promised. Your success is literally our business model."
+    description: "We don't stop working until you get the podcast placements we promised. If we don't hit the number in your agreed timeframe, we keep working for free until we do."
   },
   {
     icon: Target,
-    title: "Pay Only When We Deliver",
-    description: "You only pay once we've secured your bookings. No upfront fees, no payment until results are in hand."
+    title: "Results-Guaranteed Service",
+    description: "You get the exact number of podcast placements promised in your plan. If we fall short, we continue working at no additional cost until we deliver."
   },
   {
     icon: Zap,
-    title: "Zero Risk to You",
-    description: "If we can't deliver your placements, you don't pay a cent. We put in the work for free until we get you results."
+    title: "No Excuses, Just Results",
+    description: "Time limit expires before we hit your number? We keep pitching, booking, and coordinating—completely free—until every promised placement is secured."
   }
 ];
 
@@ -35,13 +35,13 @@ const GuaranteeSection = () => {
           {/* Header */}
           <div className="text-center mb-12">
             <Badge className="mb-4 bg-success/10 text-success border-success/20">
-              100% Risk-Free
+              Results Guaranteed
             </Badge>
             <h2 className="text-3xl md:text-5xl font-bold text-foreground mb-6">
               Our Iron-Clad Guarantee
             </h2>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-              We're so confident in our ability to get you booked that we put our money where our mouth is.
+              You get every podcast placement we promise—no matter how long it takes us to deliver.
             </p>
           </div>
 
@@ -82,24 +82,24 @@ const GuaranteeSection = () => {
             <div className="flex items-center justify-center gap-3 mb-4">
               <Shield className="h-10 w-10 text-primary" />
               <h3 className="text-2xl md:text-3xl font-bold text-foreground">
-                We Don't Get Paid Until You Get Results
+                If We Don't Hit Your Number, We Work For Free
               </h3>
             </div>
             <p className="text-lg text-muted-foreground mb-6">
-              That's right—we work for free until we deliver your promised podcast placements. No upfront payment. No risk to you. We only succeed when you succeed.
+              Miss the deadline? We keep going—for free—until every promised placement is delivered. You paid for X podcasts, you get X podcasts. Period.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-5 w-5 text-success" />
-                <span>No payment until delivery</span>
+                <span>Get every placement promised</span>
               </div>
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-5 w-5 text-success" />
-                <span>We work for free until results</span>
+                <span>We work free until delivered</span>
               </div>
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-5 w-5 text-success" />
-                <span>100% performance-based</span>
+                <span>No excuses, just results</span>
               </div>
             </div>
           </div>
