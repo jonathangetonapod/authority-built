@@ -1,10 +1,22 @@
 import { useState, useEffect } from 'react';
 import { useScrollAnimation } from '@/hooks/useScrollAnimation';
 import { Button } from '@/components/ui/button';
-import { Mic, TrendingUp, Loader2 } from 'lucide-react';
+import { Mic, TrendingUp, Loader2, Users } from 'lucide-react';
 import { searchBusinessPodcasts, PodcastData } from '@/services/podscan';
 import { useToast } from '@/hooks/use-toast';
 import { PodcastAnalyticsModal } from '@/components/PodcastAnalyticsModal';
+
+// Helper function to format audience size
+const formatAudienceSize = (size: number | undefined): string => {
+  if (!size || size === 0) return 'N/A';
+
+  if (size >= 1000000) {
+    return `${(size / 1000000).toFixed(1)}M`;
+  } else if (size >= 1000) {
+    return `${(size / 1000).toFixed(1)}K`;
+  }
+  return size.toString();
+};
 
 const stats = [
   { label: "Total Placements", value: "150+", icon: Mic },
@@ -121,12 +133,13 @@ const PodcastShowcaseSection = () => {
 
                   {/* Podcast Info */}
                   <div className="p-4">
-                    <h3 className="font-semibold text-foreground mb-1 text-sm md:text-base line-clamp-2">
+                    <h3 className="font-semibold text-foreground mb-2 text-sm md:text-base line-clamp-2">
                       {podcast.podcast_name}
                     </h3>
-                    <p className="text-xs text-muted-foreground">
-                      {podcast.podcast_categories?.[0]?.category_name || 'Business'}
-                    </p>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Users className="w-3 h-3" />
+                      <span>{formatAudienceSize(podcast.reach?.audience_size)} listeners</span>
+                    </div>
                   </div>
                 </div>
               ))}
