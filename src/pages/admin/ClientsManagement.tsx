@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Search, Plus, Users, TrendingUp, CheckCircle2, Clock, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, Plus, Users, TrendingUp, CheckCircle2, Clock, Loader2, ChevronLeft, ChevronRight, Unlock, Lock } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { getClients, createClient } from '@/services/clients'
 import { getBookings, getClientBookingStats } from '@/services/bookings'
@@ -302,6 +302,7 @@ export default function ClientsManagement() {
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead className="text-center">Status</TableHead>
+                    <TableHead className="text-center">Portal</TableHead>
                     <TableHead className="text-center">Total</TableHead>
                     <TableHead className="text-center">Booked</TableHead>
                     <TableHead className="text-center">In Progress</TableHead>
@@ -321,6 +322,19 @@ export default function ClientsManagement() {
                       <TableCell className="text-muted-foreground">{client.email || '-'}</TableCell>
                       <TableCell className="text-center">
                         {getStatusBadge(client.status)}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {client.portal_access_enabled ? (
+                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-400 dark:border-green-900">
+                            <Unlock className="h-3 w-3 mr-1" />
+                            Enabled
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200 dark:bg-gray-950 dark:text-gray-400 dark:border-gray-900">
+                            <Lock className="h-3 w-3 mr-1" />
+                            Disabled
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-center font-semibold">
                         {client.totalBookings}
