@@ -13,6 +13,8 @@ type TimeRange = 7 | 14 | 30 | 60 | 90 | 180
 
 export default function Dashboard() {
   const [upcomingTimeRange, setUpcomingTimeRange] = useState<TimeRange>(30)
+  const [activityPage, setActivityPage] = useState(0)
+  const activityPerPage = 5
   // Fetch clients
   const { data: clientsData, isLoading: clientsLoading } = useQuery({
     queryKey: ['clients'],
@@ -59,10 +61,15 @@ export default function Dashboard() {
     .sort((a, b) => new Date(a.recording_date!).getTime() - new Date(b.recording_date!).getTime())
     .slice(0, 5)
 
-  // Recent activity (last 10 bookings created or updated)
-  const recentActivity = [...allBookings]
+  // Recent activity (all bookings sorted by update time)
+  const allRecentActivity = [...allBookings]
     .sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime())
-    .slice(0, 8)
+
+  const totalActivityPages = Math.ceil(allRecentActivity.length / activityPerPage)
+  const recentActivity = allRecentActivity.slice(
+    activityPage * activityPerPage,
+    (activityPage + 1) * activityPerPage
+  )
 
   // Upcoming going live (filtered by time range, all statuses with publish date)
   const upcomingGoingLive = allBookings
@@ -112,35 +119,15 @@ export default function Dashboard() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">Welcome back! Here's your podcast placement overview</p>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="flex flex-wrap gap-3">
-          <Button asChild>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Dashboard</h1>
+            <p className="text-muted-foreground">Podcast placement overview</p>
+          </div>
+          <Button asChild size="lg">
             <Link to="/admin/clients">
               <Plus className="h-4 w-4 mr-2" />
               Add Client
-            </Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link to="/admin/calendar">
-              <Calendar className="h-4 w-4 mr-2" />
-              View Calendar
-            </Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link to="/admin/upcoming">
-              <Clock className="h-4 w-4 mr-2" />
-              Upcoming Recordings
-            </Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link to="/admin/going-live">
-              <Rocket className="h-4 w-4 mr-2" />
-              Going Live
             </Link>
           </Button>
         </div>
@@ -192,272 +179,300 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2">
-          {/* Upcoming Recordings */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Upcoming Recordings</CardTitle>
-                <Button variant="ghost" size="sm" asChild>
-                  <Link to="/admin/upcoming">
-                    View All
-                    <ArrowRight className="h-4 w-4 ml-2" />
-                  </Link>
-                </Button>
-              </div>
-              <div className="flex items-center justify-between mt-2">
-                <div className="flex items-center gap-1 flex-wrap">
-                  <Button
-                    variant={upcomingTimeRange === 7 ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setUpcomingTimeRange(7)}
-                  >
-                    7 days
-                  </Button>
-                  <Button
-                    variant={upcomingTimeRange === 14 ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setUpcomingTimeRange(14)}
-                  >
-                    14 days
-                  </Button>
-                  <Button
-                    variant={upcomingTimeRange === 30 ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setUpcomingTimeRange(30)}
-                  >
-                    30 days
-                  </Button>
-                  <Button
-                    variant={upcomingTimeRange === 60 ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setUpcomingTimeRange(60)}
-                  >
-                    2 months
-                  </Button>
-                  <Button
-                    variant={upcomingTimeRange === 90 ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setUpcomingTimeRange(90)}
-                  >
-                    3 months
-                  </Button>
-                  <Button
-                    variant={upcomingTimeRange === 180 ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setUpcomingTimeRange(180)}
-                  >
-                    6 months
+        {/* Main Content Grid */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Left Column */}
+          <div className="space-y-6">
+            {/* Upcoming Recordings */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Upcoming Recordings</CardTitle>
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link to="/admin/upcoming">
+                      View All
+                      <ArrowRight className="h-4 w-4 ml-2" />
+                    </Link>
                   </Button>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {upcomingRecordings.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No upcoming recordings</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {upcomingRecordings.map(booking => (
-                    <div
-                      key={booking.id}
-                      className={`flex items-start gap-3 p-3 rounded-lg border ${
-                        !booking.prep_sent
-                          ? 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900'
-                          : 'bg-muted border-border'
-                      }`}
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-sm text-muted-foreground">Show:</span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant={upcomingTimeRange === 7 ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setUpcomingTimeRange(7)}
                     >
-                      <div className="flex-1 min-w-0 space-y-2">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Link
-                            to={`/admin/clients/${booking.client_id}`}
-                            className="font-semibold hover:text-primary hover:underline truncate"
-                          >
-                            {booking.client.name}
-                          </Link>
-                          {getStatusBadge(booking.status)}
-                        </div>
-                        <p className="text-sm font-medium truncate">{booking.podcast_name}</p>
-                        {booking.host_name && (
-                          <p className="text-xs text-muted-foreground">Host: {booking.host_name}</p>
-                        )}
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          {booking.scheduled_date && (
-                            <span>Scheduled: {formatDate(booking.scheduled_date)}</span>
+                      7d
+                    </Button>
+                    <Button
+                      variant={upcomingTimeRange === 14 ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setUpcomingTimeRange(14)}
+                    >
+                      14d
+                    </Button>
+                    <Button
+                      variant={upcomingTimeRange === 30 ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setUpcomingTimeRange(30)}
+                    >
+                      30d
+                    </Button>
+                    <Button
+                      variant={upcomingTimeRange === 60 ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setUpcomingTimeRange(60)}
+                    >
+                      2mo
+                    </Button>
+                    <Button
+                      variant={upcomingTimeRange === 90 ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setUpcomingTimeRange(90)}
+                    >
+                      3mo
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {upcomingRecordings.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No upcoming recordings</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {upcomingRecordings.map(booking => (
+                      <div
+                        key={booking.id}
+                        className={`flex items-start gap-3 p-3 rounded-lg border ${
+                          !booking.prep_sent
+                            ? 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900'
+                            : 'bg-muted border-border'
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0 space-y-2">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Link
+                              to={`/admin/clients/${booking.client_id}`}
+                              className="font-semibold hover:text-primary hover:underline truncate"
+                            >
+                              {booking.client.name}
+                            </Link>
+                            {getStatusBadge(booking.status)}
+                          </div>
+                          <p className="text-sm font-medium truncate">{booking.podcast_name}</p>
+                          {booking.host_name && (
+                            <p className="text-xs text-muted-foreground">Host: {booking.host_name}</p>
                           )}
-                          <span className="font-medium">Recording: {formatDate(booking.recording_date!)}</span>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                            {booking.scheduled_date && (
+                              <span>Scheduled: {formatDate(booking.scheduled_date)}</span>
+                            )}
+                            <span className="font-medium">Recording: {formatDate(booking.recording_date!)}</span>
+                          </div>
+                          {!booking.prep_sent ? (
+                            <div className="flex items-center gap-1.5 text-sm font-medium text-amber-700 dark:text-amber-500">
+                              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                              <span>Prep Not Sent - Action Required</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-500">
+                              <CheckCircle2 className="h-3 w-3 flex-shrink-0" />
+                              <span>Prep sent</span>
+                            </div>
+                          )}
                         </div>
-                        {!booking.prep_sent ? (
-                          <div className="flex items-center gap-1.5 text-sm font-medium text-amber-700 dark:text-amber-500">
-                            <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                            <span>Prep Not Sent - Action Required</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-500">
-                            <CheckCircle2 className="h-3 w-3 flex-shrink-0" />
-                            <span>Prep sent</span>
-                          </div>
-                        )}
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
 
-          {/* Recent Activity */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Activity</CardTitle>
-              <p className="text-sm text-muted-foreground">Latest updates</p>
-            </CardHeader>
-            <CardContent>
-              {recentActivity.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <TrendingUp className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No recent activity</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {recentActivity.map(booking => (
-                    <div key={booking.id} className="flex items-start gap-3 pb-3 border-b last:border-0 last:pb-0">
-                      <div className="flex-1 min-w-0">
-                        <Link
-                          to={`/admin/clients/${booking.client_id}`}
-                          className="font-medium hover:text-primary hover:underline truncate block"
-                        >
-                          {booking.client.name}
-                        </Link>
-                        <p className="text-sm text-muted-foreground truncate">{booking.podcast_name}</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Updated {new Date(booking.updated_at || booking.created_at).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric'
-                          })}
-                        </p>
-                      </div>
-                      {getStatusBadge(booking.status)}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Upcoming Going Live */}
-        <Card>
+          {/* Right Column */}
+          <div className="space-y-6">
+            {/* Recent Activity */}
+            <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Upcoming Going Live</CardTitle>
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/admin/going-live">
-                  View All
-                  <ArrowRight className="h-4 w-4 ml-2" />
-                </Link>
-              </Button>
-            </div>
-            <div className="flex items-center justify-between mt-2">
-              <div className="flex items-center gap-1 flex-wrap">
-                <Button
-                  variant={upcomingTimeRange === 7 ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setUpcomingTimeRange(7)}
-                >
-                  7 days
-                </Button>
-                <Button
-                  variant={upcomingTimeRange === 14 ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setUpcomingTimeRange(14)}
-                >
-                  14 days
-                </Button>
-                <Button
-                  variant={upcomingTimeRange === 30 ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setUpcomingTimeRange(30)}
-                >
-                  30 days
-                </Button>
-                <Button
-                  variant={upcomingTimeRange === 60 ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setUpcomingTimeRange(60)}
-                >
-                  2 months
-                </Button>
-                <Button
-                  variant={upcomingTimeRange === 90 ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setUpcomingTimeRange(90)}
-                >
-                  3 months
-                </Button>
-                <Button
-                  variant={upcomingTimeRange === 180 ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setUpcomingTimeRange(180)}
-                >
-                  6 months
-                </Button>
+              <div>
+                <CardTitle>Recent Activity</CardTitle>
+                <p className="text-sm text-muted-foreground">Latest booking updates</p>
               </div>
+              {totalActivityPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setActivityPage(Math.max(0, activityPage - 1))}
+                    disabled={activityPage === 0}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    {activityPage + 1} of {totalActivityPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setActivityPage(Math.min(totalActivityPages - 1, activityPage + 1))}
+                    disabled={activityPage === totalActivityPages - 1}
+                  >
+                    Next
+                  </Button>
+                </div>
+              )}
             </div>
           </CardHeader>
           <CardContent>
-            {upcomingGoingLive.length === 0 ? (
+            {recentActivity.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                <Rocket className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No upcoming publications</p>
+                <TrendingUp className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No recent activity</p>
               </div>
             ) : (
               <div className="space-y-3">
-                {upcomingGoingLive.map(booking => (
-                  <div
-                    key={booking.id}
-                    className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30"
-                  >
-                    <div className="flex-1 min-w-0 space-y-2">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Link
-                          to={`/admin/clients/${booking.client_id}`}
-                          className="font-semibold hover:text-primary hover:underline truncate"
-                        >
-                          {booking.client.name}
-                        </Link>
-                        {getStatusBadge(booking.status)}
-                      </div>
-                      <p className="text-sm font-medium truncate">{booking.podcast_name}</p>
-                      {booking.host_name && (
-                        <p className="text-xs text-muted-foreground">Host: {booking.host_name}</p>
-                      )}
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                        <span className="font-medium">Going Live: {formatDate(booking.publish_date!)}</span>
-                        {booking.recording_date && (
-                          <span>Recorded: {formatDate(booking.recording_date)}</span>
-                        )}
-                      </div>
-                      {booking.episode_url && (
-                        <a
-                          href={booking.episode_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-                        >
-                          <Rocket className="h-3 w-3" />
-                          Episode Link
-                        </a>
-                      )}
+                {recentActivity.map(booking => (
+                  <div key={booking.id} className="flex items-start gap-3 pb-3 border-b last:border-0 last:pb-0">
+                    <div className="flex-1 min-w-0">
+                      <Link
+                        to={`/admin/clients/${booking.client_id}`}
+                        className="font-medium hover:text-primary hover:underline truncate block"
+                      >
+                        {booking.client.name}
+                      </Link>
+                      <p className="text-sm text-muted-foreground truncate">{booking.podcast_name}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Updated {new Date(booking.updated_at || booking.created_at).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric'
+                        })}
+                      </p>
                     </div>
+                    {getStatusBadge(booking.status)}
                   </div>
                 ))}
               </div>
             )}
           </CardContent>
-        </Card>
+            </Card>
+
+            {/* Upcoming Going Live */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Upcoming Going Live</CardTitle>
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link to="/admin/going-live">
+                      View All
+                      <ArrowRight className="h-4 w-4 ml-2" />
+                    </Link>
+                  </Button>
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <Button
+                      variant={upcomingTimeRange === 7 ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setUpcomingTimeRange(7)}
+                    >
+                      7d
+                    </Button>
+                    <Button
+                      variant={upcomingTimeRange === 14 ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setUpcomingTimeRange(14)}
+                    >
+                      14d
+                    </Button>
+                    <Button
+                      variant={upcomingTimeRange === 30 ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setUpcomingTimeRange(30)}
+                    >
+                      30d
+                    </Button>
+                    <Button
+                      variant={upcomingTimeRange === 60 ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setUpcomingTimeRange(60)}
+                    >
+                      2mo
+                    </Button>
+                    <Button
+                      variant={upcomingTimeRange === 90 ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setUpcomingTimeRange(90)}
+                    >
+                      3mo
+                    </Button>
+                    <Button
+                      variant={upcomingTimeRange === 180 ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setUpcomingTimeRange(180)}
+                    >
+                      6mo
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {upcomingGoingLive.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Rocket className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No upcoming publications</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {upcomingGoingLive.map(booking => (
+                      <div
+                        key={booking.id}
+                        className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30"
+                      >
+                        <div className="flex-1 min-w-0 space-y-2">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Link
+                              to={`/admin/clients/${booking.client_id}`}
+                              className="font-semibold hover:text-primary hover:underline truncate"
+                            >
+                              {booking.client.name}
+                            </Link>
+                            {getStatusBadge(booking.status)}
+                          </div>
+                          <p className="text-sm font-medium truncate">{booking.podcast_name}</p>
+                          {booking.host_name && (
+                            <p className="text-xs text-muted-foreground">Host: {booking.host_name}</p>
+                          )}
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                            <span className="font-medium">Going Live: {formatDate(booking.publish_date!)}</span>
+                            {booking.recording_date && (
+                              <span>Recorded: {formatDate(booking.recording_date)}</span>
+                            )}
+                          </div>
+                          {booking.episode_url && (
+                            <a
+                              href={booking.episode_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+                            >
+                              <Rocket className="h-3 w-3" />
+                              Episode Link
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
 
         {/* Monthly Pipeline Status */}
         <Card>
