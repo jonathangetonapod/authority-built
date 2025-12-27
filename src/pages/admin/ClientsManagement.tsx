@@ -185,21 +185,21 @@ export default function ClientsManagement() {
 
         {/* Month Timeline Selector */}
         <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <Button variant="outline" size="icon" onClick={goToPreviousMonth}>
-                  <ChevronLeft className="h-4 w-4" />
+          <CardContent className="pt-4 sm:pt-6">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-2 sm:gap-4">
+                <Button variant="outline" size="icon" onClick={goToPreviousMonth} className="h-8 w-8 sm:h-10 sm:w-10">
+                  <ChevronLeft className="h-3 w-3 sm:h-4 sm:w-4" />
                 </Button>
-                <div className="text-center min-w-[200px]">
-                  <h3 className="text-2xl font-bold">{monthNames[selectedMonth]} {selectedYear}</h3>
-                  <p className="text-sm text-muted-foreground">Monthly Overview</p>
+                <div className="text-center min-w-[160px] sm:min-w-[200px]">
+                  <h3 className="text-lg sm:text-2xl font-bold">{monthNames[selectedMonth]} {selectedYear}</h3>
+                  <p className="text-xs sm:text-sm text-muted-foreground">Monthly Overview</p>
                 </div>
-                <Button variant="outline" size="icon" onClick={goToNextMonth}>
-                  <ChevronRight className="h-4 w-4" />
+                <Button variant="outline" size="icon" onClick={goToNextMonth} className="h-8 w-8 sm:h-10 sm:w-10">
+                  <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4" />
                 </Button>
               </div>
-              <Button variant="outline" size="sm" onClick={goToThisMonth}>
+              <Button variant="outline" size="sm" onClick={goToThisMonth} className="w-full sm:w-auto text-xs sm:text-sm">
                 This Month
               </Button>
             </div>
