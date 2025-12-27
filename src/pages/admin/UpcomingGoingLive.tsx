@@ -59,8 +59,13 @@ export default function UpcomingGoingLive() {
   }
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
+    // Parse date in local timezone to avoid timezone shifts
+    const [year, month, day] = dateString.split('T')[0].split('-')
+    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+
     const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
     const tomorrow = new Date(today)
     tomorrow.setDate(tomorrow.getDate() + 1)
 
