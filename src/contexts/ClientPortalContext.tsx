@@ -87,6 +87,11 @@ export const ClientPortalProvider = ({ children }: { children: React.ReactNode }
   }
 
   const loginWithToken = async (token: string) => {
+    // Clear any existing session first to avoid race conditions
+    sessionStorage.clear()
+    setSession(null)
+    setClient(null)
+
     setLoading(true)
     try {
       const { session: newSession, client: newClient } = await apiVerifyToken(token)

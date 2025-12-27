@@ -26,10 +26,8 @@ export default function PortalAuth() {
       try {
         await loginWithToken(token)
         setStatus('success')
-        // Redirect to dashboard after short delay
-        setTimeout(() => {
-          navigate('/portal/dashboard', { replace: true })
-        }, 1500)
+        // Redirect to dashboard immediately - no delay needed
+        navigate('/portal/dashboard', { replace: true })
       } catch (err) {
         console.error('Token verification failed:', err)
         setStatus('error')
