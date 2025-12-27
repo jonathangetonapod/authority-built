@@ -31,7 +31,9 @@ import {
   ChevronRight,
   AlertCircle,
   Rocket,
-  Download
+  Download,
+  MessageSquare,
+  XCircle
 } from 'lucide-react'
 import { getClientById, updateClient } from '@/services/clients'
 import { getBookings, createBooking, updateBooking, deleteBooking } from '@/services/bookings'
@@ -45,6 +47,8 @@ export default function ClientDetail() {
   const { toast } = useToast()
   const [isAddBookingModalOpen, setIsAddBookingModalOpen] = useState(false)
   const [isEditClientModalOpen, setIsEditClientModalOpen] = useState(false)
+  const [isPodcastDetailsModalOpen, setIsPodcastDetailsModalOpen] = useState(false)
+  const [viewingPodcast, setViewingPodcast] = useState<any>(null)
   const [statusFilter, setStatusFilter] = useState('all')
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [upcomingTimeRange, setUpcomingTimeRange] = useState<TimeRange>(30)
@@ -171,7 +175,21 @@ export default function ClientDetail() {
   const deleteBookingMutation = useMutation({
     mutationFn: (id: string) => deleteBooking(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['bookings', 'client', id] })
+      queryClient.invalidateQueries({ queryKey: ['bookings', 'all'] })
+      toast({
+        title: 'Booking Deleted',
+        description: 'Successfully deleted booking',
+      })
+      setDeletingBooking(null)
+    },
+    onError: (error) => {
+      console.error('Failed to delete booking:', error)
+      toast({
+        title: 'Failed to Delete Booking',
+        description: error instanceof Error ? error.message : 'An unknown error occurred',
+        variant: 'destructive'
+      })
       setDeletingBooking(null)
     }
   })
@@ -375,6 +393,11 @@ export default function ClientDetail() {
     }
   }
 
+  const handleViewPodcast = (booking: any) => {
+    setViewingPodcast(booking)
+    setIsPodcastDetailsModalOpen(true)
+  }
+
   const handleEditClient = () => {
     if (client) {
       setEditClientForm({
@@ -423,12 +446,14 @@ export default function ClientDetail() {
 
   const getStatusBadge = (status: string) => {
     const styles = {
-      booked: { bg: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200', icon: CheckCircle2 },
+      conversation_started: { bg: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200', icon: MessageSquare },
       in_progress: { bg: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200', icon: Clock },
+      booked: { bg: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200', icon: CheckCircle2 },
       recorded: { bg: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200', icon: Video },
       published: { bg: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200', icon: CheckCheck },
+      cancelled: { bg: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200', icon: XCircle },
     }
-    const config = styles[status as keyof typeof styles]
+    const config = styles[status as keyof typeof styles] || { bg: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200', icon: AlertCircle }
     const Icon = config.icon
     return (
       <Badge className={config.bg}>
@@ -874,7 +899,12 @@ export default function ClientDetail() {
                       <TableCell>
                         <div>
                           <div className="flex items-center gap-2">
-                            <p className="font-medium">{booking.podcast_name}</p>
+                            <button
+                              onClick={() => handleViewPodcast(booking)}
+                              className="font-medium text-primary hover:underline text-left"
+                            >
+                              {booking.podcast_name}
+                            </button>
                             {booking.audience_size && (
                               <span className="text-xs text-muted-foreground">
                                 👥 {booking.audience_size.toLocaleString()}
@@ -1413,6 +1443,148 @@ export default function ClientDetail() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Podcast Details Modal */}
+      <Dialog open={isPodcastDetailsModalOpen} onOpenChange={setIsPodcastDetailsModalOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Podcast Details</DialogTitle>
+            <DialogDescription>
+              Information from Podscan API
+            </DialogDescription>
+          </DialogHeader>
+          {viewingPodcast && (
+            <div className="space-y-6">
+              {/* Podcast Header with Image */}
+              <div className="flex gap-4">
+                {viewingPodcast.podcast_image_url && (
+                  <img
+                    src={viewingPodcast.podcast_image_url}
+                    alt={viewingPodcast.podcast_name}
+                    className="w-32 h-32 rounded-lg object-cover shadow-md"
+                  />
+                )}
+                <div className="flex-1 space-y-2">
+                  <h3 className="text-xl font-bold">{viewingPodcast.podcast_name}</h3>
+                  {viewingPodcast.host_name && (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <User className="h-4 w-4" />
+                      <span className="text-sm">Host: {viewingPodcast.host_name}</span>
+                    </div>
+                  )}
+                  {viewingPodcast.podcast_url && (
+                    <a
+                      href={viewingPodcast.podcast_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                    >
+                      <Globe className="h-4 w-4" />
+                      Visit Podcast
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              {/* Stats Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {viewingPodcast.audience_size && (
+                  <div className="p-4 bg-muted rounded-lg">
+                    <p className="text-xs text-muted-foreground mb-1">Audience Size</p>
+                    <p className="text-2xl font-bold">{viewingPodcast.audience_size.toLocaleString()}</p>
+                  </div>
+                )}
+                {viewingPodcast.episode_count && (
+                  <div className="p-4 bg-muted rounded-lg">
+                    <p className="text-xs text-muted-foreground mb-1">Episodes</p>
+                    <p className="text-2xl font-bold">{viewingPodcast.episode_count.toLocaleString()}</p>
+                  </div>
+                )}
+                {viewingPodcast.itunes_rating && (
+                  <div className="p-4 bg-muted rounded-lg">
+                    <p className="text-xs text-muted-foreground mb-1">iTunes Rating</p>
+                    <p className="text-2xl font-bold">{viewingPodcast.itunes_rating.toFixed(1)} ⭐</p>
+                  </div>
+                )}
+                {viewingPodcast.itunes_rating_count && (
+                  <div className="p-4 bg-muted rounded-lg">
+                    <p className="text-xs text-muted-foreground mb-1">Ratings Count</p>
+                    <p className="text-2xl font-bold">{viewingPodcast.itunes_rating_count.toLocaleString()}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Description */}
+              {viewingPodcast.podcast_description && (
+                <div className="space-y-2">
+                  <h4 className="font-semibold">Description</h4>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {viewingPodcast.podcast_description}
+                  </p>
+                </div>
+              )}
+
+              {/* Technical Details */}
+              <div className="space-y-3 p-4 bg-muted rounded-lg">
+                <h4 className="font-semibold">Technical Details</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  {viewingPodcast.podcast_id && (
+                    <div>
+                      <span className="text-muted-foreground">Podcast ID:</span>
+                      <span className="ml-2 font-mono">{viewingPodcast.podcast_id}</span>
+                    </div>
+                  )}
+                  {viewingPodcast.rss_url && (
+                    <div className="col-span-full">
+                      <span className="text-muted-foreground">RSS Feed:</span>
+                      <a
+                        href={viewingPodcast.rss_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-2 text-primary hover:underline break-all"
+                      >
+                        {viewingPodcast.rss_url}
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Booking Status */}
+              <div className="space-y-2">
+                <h4 className="font-semibold">Booking Status</h4>
+                <div className="flex items-center gap-3">
+                  {getStatusBadge(viewingPodcast.status)}
+                  {viewingPodcast.scheduled_date && (
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                      <Calendar className="h-4 w-4" />
+                      <span>Scheduled: {formatDate(viewingPodcast.scheduled_date)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Notes */}
+              {viewingPodcast.notes && (
+                <div className="space-y-2">
+                  <h4 className="font-semibold">Notes</h4>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                    {viewingPodcast.notes}
+                  </p>
+                </div>
+              )}
+
+              {/* Close Button */}
+              <div className="flex justify-end pt-4 border-t">
+                <Button onClick={() => setIsPodcastDetailsModalOpen(false)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </DashboardLayout>
