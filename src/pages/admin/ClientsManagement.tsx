@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { DashboardLayout } from '@/components/admin/DashboardLayout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -9,77 +10,137 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Search, Plus, Eye, Edit, Users, TrendingUp, CheckCircle2, Clock } from 'lucide-react'
-import { Link } from 'react-router-dom'
-
-// Mock data
-const mockClients = [
-  {
-    id: '1',
-    name: 'Client A',
-    email: 'clienta@example.com',
-    status: 'active' as const,
-    totalBookings: 19,
-    bookedCount: 8,
-    inProgressCount: 3,
-    recordedCount: 4,
-    publishedCount: 4,
-    lastBookingDate: '2025-01-10'
-  },
-  {
-    id: '2',
-    name: 'Client B',
-    email: 'clientb@example.com',
-    status: 'active' as const,
-    totalBookings: 15,
-    bookedCount: 6,
-    inProgressCount: 2,
-    recordedCount: 3,
-    publishedCount: 4,
-    lastBookingDate: '2025-01-08'
-  },
-  {
-    id: '3',
-    name: 'Client C',
-    email: 'clientc@example.com',
-    status: 'active' as const,
-    totalBookings: 18,
-    bookedCount: 7,
-    inProgressCount: 3,
-    recordedCount: 4,
-    publishedCount: 4,
-    lastBookingDate: '2025-01-12'
-  },
-  {
-    id: '4',
-    name: 'Client D',
-    email: 'clientd@example.com',
-    status: 'paused' as const,
-    totalBookings: 8,
-    bookedCount: 0,
-    inProgressCount: 0,
-    recordedCount: 3,
-    publishedCount: 5,
-    lastBookingDate: '2024-12-15'
-  },
-]
+import { Search, Plus, Users, TrendingUp, CheckCircle2, Clock, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { getClients, createClient } from '@/services/clients'
+import { getBookings, getClientBookingStats } from '@/services/bookings'
 
 export default function ClientsManagement() {
+  const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-
-  const filteredClients = mockClients.filter(client => {
-    const matchesSearch = client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         client.email.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesStatus = statusFilter === 'all' || client.status === statusFilter
-    return matchesSearch && matchesStatus
+  const [selectedDate, setSelectedDate] = useState(new Date())
+  const [newClientForm, setNewClientForm] = useState({
+    name: '',
+    email: '',
+    contact_person: '',
+    linkedin_url: '',
+    website: '',
+    status: 'active' as const,
+    notes: ''
   })
 
-  const activeClients = mockClients.filter(c => c.status === 'active').length
-  const totalBookings = mockClients.reduce((sum, c) => sum + c.totalBookings, 0)
-  const totalBooked = mockClients.reduce((sum, c) => sum + c.bookedCount, 0)
-  const totalInProgress = mockClients.reduce((sum, c) => sum + c.inProgressCount, 0)
+  const queryClient = useQueryClient()
+
+  const selectedMonth = selectedDate.getMonth()
+  const selectedYear = selectedDate.getFullYear()
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+  // Fetch clients
+  const { data: clientsData, isLoading: clientsLoading } = useQuery({
+    queryKey: ['clients'],
+    queryFn: () => getClients()
+  })
+
+  // Fetch all bookings for stats
+  const { data: bookingsData, isLoading: bookingsLoading } = useQuery({
+    queryKey: ['bookings', 'all'],
+    queryFn: () => getBookings()
+  })
+
+  // Create client mutation
+  const createClientMutation = useMutation({
+    mutationFn: createClient,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clients'] })
+      setIsAddModalOpen(false)
+      setNewClientForm({
+        name: '',
+        email: '',
+        contact_person: '',
+        linkedin_url: '',
+        website: '',
+        status: 'active',
+        notes: ''
+      })
+    }
+  })
+
+  const clients = clientsData?.clients || []
+  const allBookings = bookingsData?.bookings || []
+
+  // Filter bookings by selected month
+  const bookingsInSelectedMonth = allBookings.filter(booking => {
+    if (!booking.scheduled_date) return false
+    const bookingDate = new Date(booking.scheduled_date)
+    return bookingDate.getMonth() === selectedMonth && bookingDate.getFullYear() === selectedYear
+  })
+
+  // Calculate client stats for selected month
+  const clientsWithStats = clients.map(client => {
+    // Get all bookings for this client in the selected month
+    const clientBookingsInMonth = bookingsInSelectedMonth.filter(b => b.client_id === client.id)
+
+    // Get last booking in the selected month
+    const lastBookingInMonth = clientBookingsInMonth
+      .filter(b => b.scheduled_date)
+      .sort((a, b) => new Date(b.scheduled_date!).getTime() - new Date(a.scheduled_date!).getTime())[0]
+
+    return {
+      ...client,
+      totalBookings: clientBookingsInMonth.length,
+      bookedCount: clientBookingsInMonth.filter(b => b.status === 'booked').length,
+      inProgressCount: clientBookingsInMonth.filter(b => b.status === 'in_progress').length,
+      recordedCount: clientBookingsInMonth.filter(b => b.status === 'recorded').length,
+      publishedCount: clientBookingsInMonth.filter(b => b.status === 'published').length,
+      lastBookingDate: lastBookingInMonth?.scheduled_date || null
+    }
+  })
+
+  const filteredClients = clientsWithStats.filter(client => {
+    const matchesSearch = client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (client.email && client.email.toLowerCase().includes(searchTerm.toLowerCase()))
+    const matchesStatus = statusFilter === 'all' || client.status === statusFilter
+    const hasBookingsInMonth = client.totalBookings > 0 // Only show clients with bookings in selected month
+    return matchesSearch && matchesStatus && hasBookingsInMonth
+  })
+
+  // Get clients active in selected month (clients with bookings in that month)
+  const clientIdsInMonth = new Set(bookingsInSelectedMonth.map(b => b.client_id))
+  const activeClientsInMonth = clients.filter(c => clientIdsInMonth.has(c.id)).length
+
+  const totalBookingsInMonth = bookingsInSelectedMonth.length
+  const bookedInMonth = bookingsInSelectedMonth.filter(b => b.status === 'booked').length
+  const inProgressInMonth = bookingsInSelectedMonth.filter(b => b.status === 'in_progress').length
+  const publishedInMonth = bookingsInSelectedMonth.filter(b => b.status === 'published').length
+
+  const goToPreviousMonth = () => {
+    setSelectedDate(new Date(selectedYear, selectedMonth - 1, 1))
+  }
+
+  const goToNextMonth = () => {
+    setSelectedDate(new Date(selectedYear, selectedMonth + 1, 1))
+  }
+
+  const goToThisMonth = () => {
+    setSelectedDate(new Date())
+  }
+
+  const handleCreateClient = () => {
+    if (!newClientForm.name) return
+    createClientMutation.mutate(newClientForm)
+  }
+
+  if (clientsLoading || bookingsLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-96">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardLayout>
+    )
+  }
 
   const getStatusBadge = (status: 'active' | 'paused' | 'churned') => {
     const styles = {
@@ -122,16 +183,39 @@ export default function ClientsManagement() {
           </Button>
         </div>
 
+        {/* Month Timeline Selector */}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Button variant="outline" size="icon" onClick={goToPreviousMonth}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <div className="text-center min-w-[200px]">
+                  <h3 className="text-2xl font-bold">{monthNames[selectedMonth]} {selectedYear}</h3>
+                  <p className="text-sm text-muted-foreground">Monthly Overview</p>
+                </div>
+                <Button variant="outline" size="icon" onClick={goToNextMonth}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+              <Button variant="outline" size="sm" onClick={goToThisMonth}>
+                This Month
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Active Clients</CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{activeClients}</div>
-              <p className="text-xs text-muted-foreground">Currently servicing</p>
+              <div className="text-2xl font-bold">{activeClientsInMonth}</div>
+              <p className="text-xs text-muted-foreground">With bookings this month</p>
             </CardContent>
           </Card>
 
@@ -141,8 +225,8 @@ export default function ClientsManagement() {
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalBookings}</div>
-              <p className="text-xs text-muted-foreground">All time</p>
+              <div className="text-2xl font-bold">{totalBookingsInMonth}</div>
+              <p className="text-xs text-muted-foreground">Scheduled this month</p>
             </CardContent>
           </Card>
 
@@ -152,8 +236,8 @@ export default function ClientsManagement() {
               <CheckCircle2 className="h-4 w-4 text-green-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalBooked}</div>
-              <p className="text-xs text-muted-foreground">Confirmed bookings</p>
+              <div className="text-2xl font-bold text-green-600">{bookedInMonth}</div>
+              <p className="text-xs text-muted-foreground">Confirmed</p>
             </CardContent>
           </Card>
 
@@ -163,8 +247,19 @@ export default function ClientsManagement() {
               <Clock className="h-4 w-4 text-yellow-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalInProgress}</div>
-              <p className="text-xs text-muted-foreground">Being coordinated</p>
+              <div className="text-2xl font-bold text-yellow-600">{inProgressInMonth}</div>
+              <p className="text-xs text-muted-foreground">Coordinating</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Published</CardTitle>
+              <CheckCircle2 className="h-4 w-4 text-purple-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-purple-600">{publishedInMonth}</div>
+              <p className="text-xs text-muted-foreground">Live episodes</p>
             </CardContent>
           </Card>
         </div>
@@ -211,21 +306,19 @@ export default function ClientsManagement() {
                     <TableHead className="text-center">Booked</TableHead>
                     <TableHead className="text-center">In Progress</TableHead>
                     <TableHead>Last Booking</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredClients.map((client) => (
-                    <TableRow key={client.id}>
+                    <TableRow
+                      key={client.id}
+                      onClick={() => navigate(`/admin/clients/${client.id}`)}
+                      className="cursor-pointer hover:bg-muted/50"
+                    >
                       <TableCell className="font-medium">
-                        <Link
-                          to={`/admin/clients/${client.id}`}
-                          className="hover:text-primary hover:underline"
-                        >
-                          {client.name}
-                        </Link>
+                        {client.name}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{client.email}</TableCell>
+                      <TableCell className="text-muted-foreground">{client.email || '-'}</TableCell>
                       <TableCell className="text-center">
                         {getStatusBadge(client.status)}
                       </TableCell>
@@ -245,19 +338,7 @@ export default function ClientsManagement() {
                         </span>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {formatDate(client.lastBookingDate)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button variant="ghost" size="sm" asChild>
-                            <Link to={`/admin/clients/${client.id}`}>
-                              <Eye className="h-4 w-4" />
-                            </Link>
-                          </Button>
-                          <Button variant="ghost" size="sm">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        {client.lastBookingDate ? formatDate(client.lastBookingDate) : 'No bookings'}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -284,27 +365,58 @@ export default function ClientsManagement() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Client Name *</Label>
-              <Input id="name" placeholder="Enter client name" />
+              <Input
+                id="name"
+                placeholder="Enter client name"
+                value={newClientForm.name}
+                onChange={(e) => setNewClientForm({ ...newClientForm, name: e.target.value })}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" placeholder="client@example.com" />
+              <Input
+                id="email"
+                type="email"
+                placeholder="client@example.com"
+                value={newClientForm.email}
+                onChange={(e) => setNewClientForm({ ...newClientForm, email: e.target.value })}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="contact">Contact Person</Label>
-              <Input id="contact" placeholder="John Doe" />
+              <Input
+                id="contact"
+                placeholder="John Doe"
+                value={newClientForm.contact_person}
+                onChange={(e) => setNewClientForm({ ...newClientForm, contact_person: e.target.value })}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="linkedin">LinkedIn URL</Label>
-              <Input id="linkedin" placeholder="https://linkedin.com/in/..." />
+              <Input
+                id="linkedin"
+                placeholder="https://linkedin.com/in/..."
+                value={newClientForm.linkedin_url}
+                onChange={(e) => setNewClientForm({ ...newClientForm, linkedin_url: e.target.value })}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="website">Website</Label>
-              <Input id="website" placeholder="https://example.com" />
+              <Input
+                id="website"
+                placeholder="https://example.com"
+                value={newClientForm.website}
+                onChange={(e) => setNewClientForm({ ...newClientForm, website: e.target.value })}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="status">Status</Label>
-              <Select defaultValue="active">
+              <Select
+                value={newClientForm.status}
+                onValueChange={(value: 'active' | 'paused' | 'churned') =>
+                  setNewClientForm({ ...newClientForm, status: value })
+                }
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -317,14 +429,29 @@ export default function ClientsManagement() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="notes">Notes</Label>
-              <Textarea id="notes" placeholder="Any additional notes..." />
+              <Textarea
+                id="notes"
+                placeholder="Any additional notes..."
+                value={newClientForm.notes}
+                onChange={(e) => setNewClientForm({ ...newClientForm, notes: e.target.value })}
+              />
             </div>
             <div className="flex justify-end gap-2 pt-4">
               <Button variant="outline" onClick={() => setIsAddModalOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={() => setIsAddModalOpen(false)}>
-                Save Client
+              <Button
+                onClick={handleCreateClient}
+                disabled={!newClientForm.name || createClientMutation.isPending}
+              >
+                {createClientMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Client'
+                )}
               </Button>
             </div>
           </div>

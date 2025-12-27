@@ -20,6 +20,7 @@ import AdminDashboard from "./pages/admin/Dashboard";
 import AuthCallback from "./pages/admin/Callback";
 import AISalesDirector from "./pages/admin/AISalesDirector";
 import CalendarDashboard from "./pages/admin/CalendarDashboard";
+import UpcomingRecordings from "./pages/admin/UpcomingRecordings";
 import ClientsManagement from "./pages/admin/ClientsManagement";
 import ClientDetail from "./pages/admin/ClientDetail";
 import BlogManagement from "./pages/admin/BlogManagement";
@@ -82,6 +83,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <CalendarDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/upcoming"
+              element={
+                <ProtectedRoute>
+                  <UpcomingRecordings />
                 </ProtectedRoute>
               }
             />
