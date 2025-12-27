@@ -30,15 +30,19 @@ import {
   ChevronLeft,
   ChevronRight,
   AlertCircle,
-  Rocket
+  Rocket,
+  Download
 } from 'lucide-react'
 import { getClientById, updateClient } from '@/services/clients'
 import { getBookings, createBooking, updateBooking, deleteBooking } from '@/services/bookings'
+import { getPodcastById } from '@/services/podscan'
+import { useToast } from '@/hooks/use-toast'
 
 type TimeRange = 30 | 60 | 90 | 180
 
 export default function ClientDetail() {
   const { id } = useParams<{ id: string }>()
+  const { toast } = useToast()
   const [isAddBookingModalOpen, setIsAddBookingModalOpen] = useState(false)
   const [isEditClientModalOpen, setIsEditClientModalOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState('all')
@@ -47,6 +51,7 @@ export default function ClientDetail() {
   const [goingLiveTimeRange, setGoingLiveTimeRange] = useState<TimeRange>(30)
   const [editingBooking, setEditingBooking] = useState<any>(null)
   const [deletingBooking, setDeletingBooking] = useState<any>(null)
+  const [fetchingPodcast, setFetchingPodcast] = useState(false)
   const [editBookingForm, setEditBookingForm] = useState({
     podcast_name: '',
     host_name: '',
@@ -60,6 +65,7 @@ export default function ClientDetail() {
     prep_sent: false
   })
   const [newBookingForm, setNewBookingForm] = useState({
+    podcast_id: '',
     podcast_name: '',
     host_name: '',
     podcast_url: '',
@@ -105,6 +111,7 @@ export default function ClientDetail() {
       queryClient.invalidateQueries({ queryKey: ['bookings', 'all'] })
       setIsAddBookingModalOpen(false)
       setNewBookingForm({
+        podcast_id: '',
         podcast_name: '',
         host_name: '',
         podcast_url: '',
@@ -208,6 +215,48 @@ export default function ClientDetail() {
       client_id: id,
       ...newBookingForm
     })
+  }
+
+  const handleFetchPodcastDetails = async () => {
+    if (!newBookingForm.podcast_id) {
+      toast({
+        title: 'Podcast ID Required',
+        description: 'Please enter a podcast ID first',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    try {
+      setFetchingPodcast(true)
+      const podcastData = await getPodcastById(newBookingForm.podcast_id)
+
+      // Extract host/publisher name
+      const hostName = podcastData.publisher_name || ''
+
+      // Auto-fill form with podcast data
+      setNewBookingForm(prev => ({
+        ...prev,
+        podcast_name: prev.podcast_name || podcastData.podcast_name,
+        host_name: prev.host_name || hostName,
+        podcast_url: prev.podcast_url || podcastData.podcast_url || '',
+        notes: prev.notes || podcastData.podcast_description || ''
+      }))
+
+      toast({
+        title: 'Podcast Details Loaded',
+        description: `Successfully fetched details for "${podcastData.podcast_name}"`,
+      })
+    } catch (error) {
+      console.error('Error fetching podcast:', error)
+      toast({
+        title: 'Fetch Failed',
+        description: error instanceof Error ? error.message : 'Failed to fetch podcast details',
+        variant: 'destructive'
+      })
+    } finally {
+      setFetchingPodcast(false)
+    }
   }
 
   const handleEditBooking = (booking: any) => {
@@ -801,12 +850,54 @@ export default function ClientDetail() {
 
       {/* Add Booking Modal */}
       <Dialog open={isAddBookingModalOpen} onOpenChange={setIsAddBookingModalOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add Booking for {client.name}</DialogTitle>
             <DialogDescription>Create a new podcast booking</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Podcast ID Fetcher */}
+            <div className="space-y-2 p-4 bg-muted/50 rounded-lg border">
+              <Label htmlFor="podcast_id" className="text-sm font-semibold">
+                Podcast ID (Podscan)
+              </Label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Enter a Podscan podcast ID to auto-fill booking details
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  id="podcast_id"
+                  placeholder="e.g., 12345"
+                  value={newBookingForm.podcast_id}
+                  onChange={(e) => setNewBookingForm({ ...newBookingForm, podcast_id: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handleFetchPodcastDetails()
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  onClick={handleFetchPodcastDetails}
+                  disabled={!newBookingForm.podcast_id || fetchingPodcast}
+                  variant="secondary"
+                >
+                  {fetchingPodcast ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Fetching...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4 mr-2" />
+                      Fetch
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="podcastName">Podcast Name *</Label>
               <Input
