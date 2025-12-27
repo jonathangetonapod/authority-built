@@ -258,7 +258,8 @@ export async function getPodcastById(podcastId: string): Promise<PodcastData> {
   const data = await response.json();
   console.log('✅ Podcast fetched:', data);
 
-  return data;
+  // API returns { podcast: { ... } }, extract the podcast object
+  return data.podcast || data;
 }
 
 /**
