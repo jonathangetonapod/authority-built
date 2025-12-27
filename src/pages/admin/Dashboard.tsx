@@ -295,72 +295,6 @@ export default function Dashboard() {
 
           {/* Right Column */}
           <div className="space-y-6">
-            {/* Recent Activity */}
-            <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Recent Activity</CardTitle>
-                <p className="text-sm text-muted-foreground">Latest booking updates</p>
-              </div>
-              {totalActivityPages > 1 && (
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setActivityPage(Math.max(0, activityPage - 1))}
-                    disabled={activityPage === 0}
-                  >
-                    Previous
-                  </Button>
-                  <span className="text-sm text-muted-foreground">
-                    {activityPage + 1} of {totalActivityPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setActivityPage(Math.min(totalActivityPages - 1, activityPage + 1))}
-                    disabled={activityPage === totalActivityPages - 1}
-                  >
-                    Next
-                  </Button>
-                </div>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {recentActivity.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <TrendingUp className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No recent activity</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {recentActivity.map(booking => (
-                  <div key={booking.id} className="flex items-start gap-3 pb-3 border-b last:border-0 last:pb-0">
-                    <div className="flex-1 min-w-0">
-                      <Link
-                        to={`/admin/clients/${booking.client_id}`}
-                        className="font-medium hover:text-primary hover:underline truncate block"
-                      >
-                        {booking.client.name}
-                      </Link>
-                      <p className="text-sm text-muted-foreground truncate">{booking.podcast_name}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Updated {new Date(booking.updated_at || booking.created_at).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric'
-                        })}
-                      </p>
-                    </div>
-                    {getStatusBadge(booking.status)}
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-            </Card>
-
             {/* Upcoming Going Live */}
             <Card>
               <CardHeader>
@@ -465,6 +399,72 @@ export default function Dashboard() {
                             </a>
                           )}
                         </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Recent Activity */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Recent Activity</CardTitle>
+                    <p className="text-sm text-muted-foreground">Latest booking updates</p>
+                  </div>
+                  {totalActivityPages > 1 && (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setActivityPage(Math.max(0, activityPage - 1))}
+                        disabled={activityPage === 0}
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-sm text-muted-foreground">
+                        {activityPage + 1} of {totalActivityPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setActivityPage(Math.min(totalActivityPages - 1, activityPage + 1))}
+                        disabled={activityPage === totalActivityPages - 1}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                {recentActivity.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <TrendingUp className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No recent activity</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {recentActivity.map(booking => (
+                      <div key={booking.id} className="flex items-start gap-3 pb-3 border-b last:border-0 last:pb-0">
+                        <div className="flex-1 min-w-0">
+                          <Link
+                            to={`/admin/clients/${booking.client_id}`}
+                            className="font-medium hover:text-primary hover:underline truncate block"
+                          >
+                            {booking.client.name}
+                          </Link>
+                          <p className="text-sm text-muted-foreground truncate">{booking.podcast_name}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Updated {new Date(booking.updated_at || booking.created_at).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric'
+                            })}
+                          </p>
+                        </div>
+                        {getStatusBadge(booking.status)}
                       </div>
                     ))}
                   </div>
