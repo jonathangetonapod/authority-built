@@ -473,22 +473,24 @@ export default function Dashboard() {
             {/* Recent Activity */}
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <div>
-                    <CardTitle>Recent Activity</CardTitle>
-                    <p className="text-sm text-muted-foreground">Latest booking updates</p>
+                    <CardTitle className="text-lg sm:text-xl">Recent Activity</CardTitle>
+                    <p className="text-xs sm:text-sm text-muted-foreground">Latest booking updates</p>
                   </div>
                   {totalActivityPages > 1 && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 sm:gap-3">
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => setActivityPage(Math.max(0, activityPage - 1))}
                         disabled={activityPage === 0}
+                        className="text-xs px-2 sm:px-3"
                       >
-                        Previous
+                        <span className="hidden sm:inline">Previous</span>
+                        <span className="sm:hidden">Prev</span>
                       </Button>
-                      <span className="text-sm text-muted-foreground">
+                      <span className="text-xs sm:text-sm text-muted-foreground whitespace-nowrap">
                         {activityPage + 1} of {totalActivityPages}
                       </span>
                       <Button
@@ -496,6 +498,7 @@ export default function Dashboard() {
                         size="sm"
                         onClick={() => setActivityPage(Math.min(totalActivityPages - 1, activityPage + 1))}
                         disabled={activityPage === totalActivityPages - 1}
+                        className="text-xs px-2 sm:px-3"
                       >
                         Next
                       </Button>
