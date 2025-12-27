@@ -10,17 +10,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Search, Plus, Users, TrendingUp, CheckCircle2, Clock, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, Plus, Users, TrendingUp, CheckCircle2, Clock, Loader2, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { getClients, createClient } from '@/services/clients'
 import { getBookings, getClientBookingStats } from '@/services/bookings'
+import { getPodcastById } from '@/services/podscan'
+import { useToast } from '@/hooks/use-toast'
 
 export default function ClientsManagement() {
   const navigate = useNavigate()
+  const { toast } = useToast()
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [selectedDate, setSelectedDate] = useState(new Date())
+  const [fetchingPodcast, setFetchingPodcast] = useState(false)
   const [newClientForm, setNewClientForm] = useState({
     name: '',
     email: '',
@@ -28,7 +32,8 @@ export default function ClientsManagement() {
     linkedin_url: '',
     website: '',
     status: 'active' as const,
-    notes: ''
+    notes: '',
+    podcast_id: ''
   })
 
   const queryClient = useQueryClient()
@@ -62,7 +67,8 @@ export default function ClientsManagement() {
         linkedin_url: '',
         website: '',
         status: 'active',
-        notes: ''
+        notes: '',
+        podcast_id: ''
       })
     }
   })
@@ -130,6 +136,51 @@ export default function ClientsManagement() {
   const handleCreateClient = () => {
     if (!newClientForm.name) return
     createClientMutation.mutate(newClientForm)
+  }
+
+  const handleFetchPodcastDetails = async () => {
+    if (!newClientForm.podcast_id) {
+      toast({
+        title: 'Podcast ID Required',
+        description: 'Please enter a podcast ID first',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    try {
+      setFetchingPodcast(true)
+      const podcastData = await getPodcastById(newClientForm.podcast_id)
+
+      // Extract LinkedIn from social links
+      const linkedInLink = podcastData.reach?.social_links?.find(
+        link => link.platform.toLowerCase().includes('linkedin')
+      )?.url || ''
+
+      // Auto-fill form with podcast data
+      setNewClientForm(prev => ({
+        ...prev,
+        name: prev.name || podcastData.podcast_name,
+        website: prev.website || podcastData.podcast_url || podcastData.reach?.website || '',
+        linkedin_url: prev.linkedin_url || linkedInLink,
+        email: prev.email || podcastData.reach?.email || '',
+        notes: prev.notes || podcastData.podcast_description || ''
+      }))
+
+      toast({
+        title: 'Podcast Details Loaded',
+        description: `Successfully fetched details for "${podcastData.podcast_name}"`,
+      })
+    } catch (error) {
+      console.error('Error fetching podcast:', error)
+      toast({
+        title: 'Fetch Failed',
+        description: error instanceof Error ? error.message : 'Failed to fetch podcast details',
+        variant: 'destructive'
+      })
+    } finally {
+      setFetchingPodcast(false)
+    }
   }
 
   if (clientsLoading || bookingsLoading) {
@@ -357,12 +408,54 @@ export default function ClientsManagement() {
 
       {/* Add Client Modal */}
       <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add New Client</DialogTitle>
             <DialogDescription>Create a new client profile</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Podcast ID Fetcher */}
+            <div className="space-y-2 p-4 bg-muted/50 rounded-lg border">
+              <Label htmlFor="podcast_id" className="text-sm font-semibold">
+                Podcast ID (Podscan)
+              </Label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Enter a Podscan podcast ID to auto-fill client details
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  id="podcast_id"
+                  placeholder="e.g., 12345"
+                  value={newClientForm.podcast_id}
+                  onChange={(e) => setNewClientForm({ ...newClientForm, podcast_id: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handleFetchPodcastDetails()
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  onClick={handleFetchPodcastDetails}
+                  disabled={!newClientForm.podcast_id || fetchingPodcast}
+                  variant="secondary"
+                >
+                  {fetchingPodcast ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Fetching...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4 mr-2" />
+                      Fetch
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="name">Client Name *</Label>
               <Input
