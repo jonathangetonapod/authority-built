@@ -165,8 +165,8 @@ const Resources = () => {
             These resources will help you get started. But if you'd rather have experts handle
             everything—research, pitching, booking, prep, and content—that's what we do.
           </p>
-          <Button variant="heroOutline" size="lg" asChild>
-            <a href="/#pricing">View Our Services</a>
+          <Button variant="secondary" size="lg" asChild>
+            <a href="https://calendly.com/getonapodjg/30min" target="_blank" rel="noopener noreferrer">Schedule a Call</a>
           </Button>
         </div>
       </section>
