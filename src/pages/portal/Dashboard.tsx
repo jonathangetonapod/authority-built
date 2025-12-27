@@ -53,6 +53,8 @@ import type { Booking } from '@/services/bookings'
 import { getActivePremiumPodcasts, type PremiumPodcast } from '@/services/premiumPodcasts'
 import { useCartStore } from '@/stores/cartStore'
 import { toast as sonnerToast } from 'sonner'
+import { CartButton } from '@/components/CartButton'
+import { CartDrawer } from '@/components/CartDrawer'
 
 type TimeRange = 'all' | 'month' | 'quarter' | 'year'
 
@@ -1657,153 +1659,7 @@ export default function PortalDashboard() {
           </TabsContent>
         </Tabs>
 
-        {/* Full Bookings Table - Outside Tabs */}
-        <Card>
-          <CardHeader>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <CardTitle>Your Podcast Bookings</CardTitle>
-                <CardDescription>
-                  Track the status of all your podcast placements
-                </CardDescription>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                <div className="relative flex-1 sm:w-[200px]">
-                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search podcasts..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-8"
-                  />
-                </div>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-full sm:w-[180px]">
-                    <SelectValue placeholder="Filter by status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="conversation_started">Conversation Started</SelectItem>
-                    <SelectItem value="in_progress">In Progress</SelectItem>
-                    <SelectItem value="booked">Booked</SelectItem>
-                    <SelectItem value="recorded">Recorded</SelectItem>
-                    <SelectItem value="published">Published</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
-                  <SelectTrigger className="w-full sm:w-[180px]">
-                    <SelectValue placeholder="Sort by" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="date">Date</SelectItem>
-                    <SelectItem value="audience">Audience Size</SelectItem>
-                    <SelectItem value="rating">Rating</SelectItem>
-                    <SelectItem value="name">Name</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-                  className="w-full sm:w-auto"
-                >
-                  <ArrowUpDown className="h-4 w-4 mr-2" />
-                  {sortOrder === 'asc' ? 'Asc' : 'Desc'}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={exportToCSV}
-                  disabled={filteredBookings.length === 0}
-                  className="w-full sm:w-auto"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Export CSV
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : filteredBookings.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No bookings found</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Podcast</TableHead>
-                      <TableHead>Host</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Rating</TableHead>
-                      <TableHead>Scheduled</TableHead>
-                      <TableHead>Episode</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredBookings.map((booking) => (
-                      <TableRow key={booking.id} className="cursor-pointer" onClick={() => setViewingBooking(booking)}>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium text-primary hover:underline">{booking.podcast_name}</p>
-                            {booking.audience_size && (
-                              <p className="text-xs text-muted-foreground">
-                                👥 {booking.audience_size.toLocaleString()} listeners
-                              </p>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {booking.host_name || '-'}
-                        </TableCell>
-                        <TableCell>
-                          {getStatusBadge(booking.status)}
-                        </TableCell>
-                        <TableCell>
-                          {booking.itunes_rating ? (
-                            <div className="flex items-center gap-1">
-                              <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
-                              <span className="text-sm font-medium">{booking.itunes_rating.toFixed(1)}</span>
-                            </div>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {formatDate(booking.scheduled_date)}
-                        </TableCell>
-                        <TableCell>
-                          {booking.episode_url ? (
-                            <a
-                              href={booking.episode_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              Listen
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-      {/* Booking Detail Modal */}
+        {/* Booking Detail Modal */}
       <Dialog open={!!viewingBooking} onOpenChange={() => setViewingBooking(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -1932,6 +1788,10 @@ export default function PortalDashboard() {
           )}
         </DialogContent>
       </Dialog>
+
+        {/* Cart Components */}
+        <CartButton />
+        <CartDrawer />
       </div>
     </PortalLayout>
   )
