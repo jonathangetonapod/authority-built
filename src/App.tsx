@@ -19,6 +19,7 @@ import CheckoutSuccess from "./pages/CheckoutSuccess";
 import CheckoutCanceled from "./pages/CheckoutCanceled";
 import AdminLogin from "./pages/admin/Login";
 import AdminDashboard from "./pages/admin/Dashboard";
+import PodcastFinder from "./pages/admin/PodcastFinder";
 import AuthCallback from "./pages/admin/Callback";
 import AISalesDirector from "./pages/admin/AISalesDirector";
 import CalendarDashboard from "./pages/admin/CalendarDashboard";
@@ -87,6 +88,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AdminDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/podcast-finder"
+              element={
+                <ProtectedRoute>
+                  <PodcastFinder />
                 </ProtectedRoute>
               }
             />
