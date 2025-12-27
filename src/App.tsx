@@ -4,7 +4,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ClientPortalProvider } from "@/contexts/ClientPortalContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { ClientProtectedRoute } from "@/components/ClientProtectedRoute";
 import Index from "./pages/Index";
 import Resources from "./pages/Resources";
 import PremiumPlacements from "./pages/PremiumPlacements";
@@ -33,17 +35,21 @@ import LeadsManagement from "./pages/admin/LeadsManagement";
 import Settings from "./pages/admin/Settings";
 import Analytics from "./pages/admin/Analytics";
 import AnalyticsTest from "./pages/AnalyticsTest";
+import PortalLogin from "./pages/portal/Login";
+import PortalAuth from "./pages/portal/Auth";
+import PortalDashboard from "./pages/portal/Dashboard";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
+      <ClientPortalProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/resources" element={<Resources />} />
             <Route path="/premium-placements" element={<PremiumPlacements />} />
@@ -58,6 +64,19 @@ const App = () => (
 
             {/* Test route - no auth required */}
             <Route path="/test-analytics" element={<AnalyticsTest />} />
+
+            {/* Client Portal routes */}
+            <Route path="/portal" element={<Navigate to="/portal/login" replace />} />
+            <Route path="/portal/login" element={<PortalLogin />} />
+            <Route path="/portal/auth" element={<PortalAuth />} />
+            <Route
+              path="/portal/dashboard"
+              element={
+                <ClientProtectedRoute>
+                  <PortalDashboard />
+                </ClientProtectedRoute>
+              }
+            />
 
             {/* Admin routes */}
             <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
@@ -197,6 +216,7 @@ const App = () => (
           </Routes>
         </BrowserRouter>
       </TooltipProvider>
+    </ClientPortalProvider>
     </AuthProvider>
   </QueryClientProvider>
 );
