@@ -294,7 +294,8 @@ export default function Dashboard() {
                         }`}
                       >
                         <div className="flex-1 min-w-0 space-y-2">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-xs font-medium text-muted-foreground">Client:</span>
                             <Link
                               to={`/admin/clients/${booking.client_id}`}
                               className="font-semibold hover:text-primary hover:underline truncate"
@@ -303,7 +304,10 @@ export default function Dashboard() {
                             </Link>
                             {getStatusBadge(booking.status)}
                           </div>
-                          <p className="text-sm font-medium truncate">{booking.podcast_name}</p>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-xs font-medium text-muted-foreground">Podcast:</span>
+                            <p className="text-sm font-medium truncate">{booking.podcast_name}</p>
+                          </div>
                           {booking.host_name && (
                             <p className="text-xs text-muted-foreground">Host: {booking.host_name}</p>
                           )}
@@ -408,7 +412,8 @@ export default function Dashboard() {
                         className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30"
                       >
                         <div className="flex-1 min-w-0 space-y-2">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-xs font-medium text-muted-foreground">Client:</span>
                             <Link
                               to={`/admin/clients/${booking.client_id}`}
                               className="font-semibold hover:text-primary hover:underline truncate"
@@ -417,7 +422,10 @@ export default function Dashboard() {
                             </Link>
                             {getStatusBadge(booking.status)}
                           </div>
-                          <p className="text-sm font-medium truncate">{booking.podcast_name}</p>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-xs font-medium text-muted-foreground">Podcast:</span>
+                            <p className="text-sm font-medium truncate">{booking.podcast_name}</p>
+                          </div>
                           {booking.host_name && (
                             <p className="text-xs text-muted-foreground">Host: {booking.host_name}</p>
                           )}

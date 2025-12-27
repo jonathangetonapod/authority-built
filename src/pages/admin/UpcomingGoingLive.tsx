@@ -217,16 +217,22 @@ export default function UpcomingGoingLive() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start gap-2 mb-2">
                         <div className="flex-1 min-w-0">
-                          <Link
-                            to={`/admin/clients/${booking.client_id}`}
-                            className="text-lg font-semibold hover:text-primary hover:underline block truncate"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {booking.client.name}
-                          </Link>
-                          <p className="text-base text-muted-foreground truncate">
-                            {booking.podcast_name}
-                          </p>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-sm font-medium text-muted-foreground">Client:</span>
+                            <Link
+                              to={`/admin/clients/${booking.client_id}`}
+                              className="text-lg font-semibold hover:text-primary hover:underline truncate"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {booking.client.name}
+                            </Link>
+                          </div>
+                          <div className="flex items-baseline gap-2 mt-1">
+                            <span className="text-sm font-medium text-muted-foreground">Podcast:</span>
+                            <p className="text-base text-muted-foreground truncate">
+                              {booking.podcast_name}
+                            </p>
+                          </div>
                         </div>
                       </div>
 
