@@ -239,13 +239,12 @@ const PremiumPlacements = () => {
       <section className="pt-28 pb-16 md:pt-36 md:pb-24 bg-gradient-to-b from-primary/5 to-background px-4">
         <div className="container mx-auto">
           <div className="max-w-3xl mx-auto text-center">
-            <Badge className="mb-4">Premium Placements</Badge>
+            <Badge className="mb-4">Industry-First Offering</Badge>
             <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold text-foreground mb-6 leading-tight px-2">
-              Guaranteed Podcast Spots
+              Pick Your Exact Show.<br />Get Booked. Guaranteed.
             </h1>
             <p className="text-base sm:text-lg md:text-xl text-muted-foreground mb-8 leading-relaxed px-4">
-              Skip the uncertainty. Choose from our curated menu of podcasts where we guarantee your placement.
-              Pick your shows, we handle the booking.
+              <span className="font-semibold text-foreground">This doesn't exist anywhere else.</span> We've secured exclusive placements on shows that normally ignore cold pitches. You pick from our private menu, we guarantee the booking—no pitching, no rejection, no waiting months for a "maybe."
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center text-sm text-muted-foreground">
               <div className="flex items-center gap-2">
