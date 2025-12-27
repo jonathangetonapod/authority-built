@@ -133,7 +133,7 @@ export default function Dashboard() {
         </div>
 
         {/* Overview Stats */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Active Clients</CardTitle>
@@ -145,36 +145,76 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
+          {/* Monthly Pipeline Status */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">This Month</CardTitle>
-              <Calendar className="h-4 w-4 text-muted-foreground" />
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>This Month's Pipeline</CardTitle>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {totalThisMonth} total bookings • {completionRate.toFixed(0)}% completion rate
+                  </p>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalThisMonth}</div>
-              <p className="text-xs text-muted-foreground">Total bookings</p>
-            </CardContent>
-          </Card>
+              <div className="space-y-4">
+                {/* Progress Bar */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Pipeline Progress</span>
+                    <span className="font-medium">{publishedThisMonth} of {totalThisMonth} published</span>
+                  </div>
+                  <div className="h-3 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-green-500 via-blue-500 to-purple-500 transition-all"
+                      style={{ width: `${completionRate}%` }}
+                    />
+                  </div>
+                </div>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">In Progress</CardTitle>
-              <Clock className="h-4 w-4 text-yellow-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">{inProgressThisMonth}</div>
-              <p className="text-xs text-muted-foreground">Coordinating</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Completion Rate</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{completionRate.toFixed(0)}%</div>
-              <p className="text-xs text-muted-foreground">Published this month</p>
+                {/* Status Breakdown */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+                  <div className="flex items-center gap-3 p-3 rounded-lg border">
+                    <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center">
+                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                    </div>
+                    <div>
+                      <div className="text-xl font-bold">{bookedThisMonth}</div>
+                      <div className="text-xs text-muted-foreground">Booked</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-lg border">
+                    <div className="h-10 w-10 rounded-full bg-yellow-100 dark:bg-yellow-900/20 flex items-center justify-center">
+                      <Clock className="h-5 w-5 text-yellow-600" />
+                    </div>
+                    <div>
+                      <div className="text-xl font-bold">{inProgressThisMonth}</div>
+                      <div className="text-xs text-muted-foreground">In Progress</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-lg border">
+                    <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
+                      <Video className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <div className="text-xl font-bold">
+                        {thisMonthBookings.filter(b => b.status === 'recorded').length}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Recorded</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-lg border">
+                    <div className="h-10 w-10 rounded-full bg-purple-100 dark:bg-purple-900/20 flex items-center justify-center">
+                      <CheckCheck className="h-5 w-5 text-purple-600" />
+                    </div>
+                    <div>
+                      <div className="text-xl font-bold">{publishedThisMonth}</div>
+                      <div className="text-xs text-muted-foreground">Published</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -473,79 +513,6 @@ export default function Dashboard() {
             </Card>
           </div>
         </div>
-
-        {/* Monthly Pipeline Status */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>This Month's Pipeline</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {totalThisMonth} total bookings • {completionRate.toFixed(0)}% completion rate
-                </p>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {/* Progress Bar */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Pipeline Progress</span>
-                  <span className="font-medium">{publishedThisMonth} of {totalThisMonth} published</span>
-                </div>
-                <div className="h-3 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-green-500 via-blue-500 to-purple-500 transition-all"
-                    style={{ width: `${completionRate}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Status Breakdown */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
-                <div className="flex items-center gap-3 p-3 rounded-lg border">
-                  <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center">
-                    <CheckCircle2 className="h-5 w-5 text-green-600" />
-                  </div>
-                  <div>
-                    <div className="text-xl font-bold">{bookedThisMonth}</div>
-                    <div className="text-xs text-muted-foreground">Booked</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 p-3 rounded-lg border">
-                  <div className="h-10 w-10 rounded-full bg-yellow-100 dark:bg-yellow-900/20 flex items-center justify-center">
-                    <Clock className="h-5 w-5 text-yellow-600" />
-                  </div>
-                  <div>
-                    <div className="text-xl font-bold">{inProgressThisMonth}</div>
-                    <div className="text-xs text-muted-foreground">In Progress</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 p-3 rounded-lg border">
-                  <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
-                    <Video className="h-5 w-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <div className="text-xl font-bold">
-                      {thisMonthBookings.filter(b => b.status === 'recorded').length}
-                    </div>
-                    <div className="text-xs text-muted-foreground">Recorded</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 p-3 rounded-lg border">
-                  <div className="h-10 w-10 rounded-full bg-purple-100 dark:bg-purple-900/20 flex items-center justify-center">
-                    <CheckCheck className="h-5 w-5 text-purple-600" />
-                  </div>
-                  <div>
-                    <div className="text-xl font-bold">{publishedThisMonth}</div>
-                    <div className="text-xs text-muted-foreground">Published</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </DashboardLayout>
   )
