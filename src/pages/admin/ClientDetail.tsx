@@ -116,6 +116,10 @@ export default function ClientDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookings', 'client', id] })
       queryClient.invalidateQueries({ queryKey: ['bookings', 'all'] })
+      toast({
+        title: 'Booking Created',
+        description: 'Successfully created podcast booking',
+      })
       setIsAddBookingModalOpen(false)
       setNewBookingForm({
         podcast_id: '',
@@ -132,6 +136,14 @@ export default function ClientDetail() {
         episode_count: null,
         podcast_image_url: '',
         rss_url: ''
+      })
+    },
+    onError: (error) => {
+      console.error('Failed to create booking:', error)
+      toast({
+        title: 'Failed to Create Booking',
+        description: error instanceof Error ? error.message : 'An unknown error occurred',
+        variant: 'destructive'
       })
     }
   })
@@ -224,7 +236,17 @@ export default function ClientDetail() {
   }
 
   const handleCreateBooking = () => {
-    if (!newBookingForm.podcast_name || !id) return
+    console.log('handleCreateBooking called', { podcast_name: newBookingForm.podcast_name, id })
+    if (!newBookingForm.podcast_name || !id) {
+      console.log('Validation failed', { podcast_name: newBookingForm.podcast_name, id })
+      toast({
+        title: 'Validation Error',
+        description: 'Podcast name is required',
+        variant: 'destructive'
+      })
+      return
+    }
+    console.log('Creating booking with data:', newBookingForm)
     createBookingMutation.mutate({
       client_id: id,
       ...newBookingForm
