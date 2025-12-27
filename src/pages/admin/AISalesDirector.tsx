@@ -761,32 +761,32 @@ const AISalesDirector = () => {
           </Card>
         )}
 
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2">
           {/* Call Analysis / Top Recommendations */}
           <Card>
             <CardHeader>
               {selectedCall ? (
                 <div>
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
                     <div className="flex items-center gap-2">
-                      <Phone className="h-5 w-5 text-primary" />
-                      <CardTitle>Call Analysis</CardTitle>
+                      <Phone className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                      <CardTitle className="text-lg sm:text-xl">Call Analysis</CardTitle>
                     </div>
-                    <Button variant="ghost" size="sm" onClick={() => setSelectedCallId(null)}>
+                    <Button variant="ghost" size="sm" onClick={() => setSelectedCallId(null)} className="self-start sm:self-auto text-xs sm:text-sm">
                       Back to Overview
                     </Button>
                   </div>
-                  <CardDescription className="truncate">
+                  <CardDescription className="truncate text-xs sm:text-sm">
                     {selectedCall.title || selectedCall.meeting_title || 'Untitled Call'}
                   </CardDescription>
                 </div>
               ) : (
                 <div>
                   <div className="flex items-center gap-2">
-                    <Target className="h-5 w-5 text-primary" />
-                    <CardTitle>Top Recommendations</CardTitle>
+                    <Target className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                    <CardTitle className="text-lg sm:text-xl">Top Recommendations</CardTitle>
                   </div>
-                  <CardDescription>AI-powered suggestions to improve your close rate</CardDescription>
+                  <CardDescription className="text-xs sm:text-sm">AI-powered suggestions to improve your close rate</CardDescription>
                 </div>
               )}
             </CardHeader>
@@ -1044,11 +1044,11 @@ const AISalesDirector = () => {
                     const Icon = rec.priority === 'low' ? CheckCircle2 : AlertCircle
 
                     return (
-                      <div key={i} className={`flex gap-3 p-3 border rounded-lg ${style.bg} ${style.border}`}>
-                        <Icon className={`h-5 w-5 ${style.icon} flex-shrink-0 mt-0.5`} />
-                        <div className="flex-1">
-                          <p className="font-medium text-sm mb-1">{rec.title}</p>
-                          <p className="text-sm text-muted-foreground">
+                      <div key={i} className={`flex gap-2 sm:gap-3 p-2 sm:p-3 border rounded-lg ${style.bg} ${style.border}`}>
+                        <Icon className={`h-4 w-4 sm:h-5 sm:w-5 ${style.icon} flex-shrink-0 mt-0.5`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-xs sm:text-sm mb-1 break-words">{rec.title}</p>
+                          <p className="text-xs sm:text-sm text-muted-foreground break-words">
                             {rec.description}
                           </p>
                         </div>
