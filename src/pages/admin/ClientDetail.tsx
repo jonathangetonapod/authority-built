@@ -107,7 +107,8 @@ export default function ClientDetail() {
     website: '',
     status: 'active' as const,
     notes: '',
-    bio: ''
+    bio: '',
+    google_sheet_url: ''
   })
 
   const queryClient = useQueryClient()
@@ -424,7 +425,8 @@ export default function ClientDetail() {
         website: client.website || '',
         status: client.status,
         notes: client.notes || '',
-        bio: client.bio || ''
+        bio: client.bio || '',
+        google_sheet_url: client.google_sheet_url || ''
       })
       setIsEditClientModalOpen(true)
     }
@@ -835,6 +837,23 @@ export default function ClientDetail() {
                       className="text-sm text-primary hover:underline"
                     >
                       Book Time
+                    </a>
+                  </div>
+                </div>
+              )}
+              {client.google_sheet_url && (
+                <div className="flex items-center gap-3">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">Google Sheet (Podcast Export)</p>
+                    <a
+                      href={client.google_sheet_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-primary hover:underline flex items-center gap-1"
+                    >
+                      Open Sheet
+                      <ExternalLink className="h-3 w-3" />
                     </a>
                   </div>
                 </div>
@@ -1586,6 +1605,22 @@ export default function ClientDetail() {
               />
               <p className="text-xs text-muted-foreground">
                 This bio is used by AI to generate relevant podcast search queries in the Podcast Finder
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-google-sheet" className="flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Google Sheet URL (for Podcast Export)
+              </Label>
+              <Input
+                id="edit-google-sheet"
+                type="url"
+                placeholder="https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit"
+                value={editClientForm.google_sheet_url}
+                onChange={(e) => setEditClientForm({ ...editClientForm, google_sheet_url: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Podcast Finder results will be exported to this Google Sheet. Make sure to share the sheet with the service account.
               </p>
             </div>
           </div>

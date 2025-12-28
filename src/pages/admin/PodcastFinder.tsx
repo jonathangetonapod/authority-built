@@ -25,13 +25,15 @@ import {
   Globe,
   Calendar,
   X,
-  Trash2
+  Trash2,
+  FileText
 } from 'lucide-react'
 import { getClients } from '@/services/clients'
 import { generatePodcastQueries, regenerateQuery } from '@/services/queryGeneration'
 import { scoreCompatibilityBatch } from '@/services/compatibilityScoring'
 import { searchPodcasts, getPodcastById, type PodcastData } from '@/services/podscan'
 import { deduplicatePodcasts } from '@/services/podcastSearchUtils'
+import { exportPodcastsToGoogleSheets, type PodcastExportData } from '@/services/googleSheets'
 import { toast } from 'sonner'
 
 interface GeneratedQuery {
@@ -61,6 +63,10 @@ export default function PodcastFinder() {
   const [podcastDetailsModalOpen, setPodcastDetailsModalOpen] = useState(false)
   const [selectedPodcastDetails, setSelectedPodcastDetails] = useState<PodcastData | null>(null)
   const [loadingPodcastDetails, setLoadingPodcastDetails] = useState(false)
+
+  // Google Sheets Export
+  const [selectedPodcasts, setSelectedPodcasts] = useState<Set<string>>(new Set())
+  const [isExporting, setIsExporting] = useState(false)
 
   // Filters
   const [minAudience, setMinAudience] = useState('')
@@ -416,7 +422,87 @@ export default function PodcastFinder() {
   const handleReset = () => {
     setQueries([])
     setExpandedQueryId(null)
+    setSelectedPodcasts(new Set())
     toast.success('Queries cleared')
+  }
+
+  // Checkbox selection handlers
+  const handleTogglePodcastSelection = (podcastId: string) => {
+    setSelectedPodcasts(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(podcastId)) {
+        newSet.delete(podcastId)
+      } else {
+        newSet.add(podcastId)
+      }
+      return newSet
+    })
+  }
+
+  const handleToggleAllInQuery = (query: GeneratedQuery) => {
+    const queryPodcastIds = query.results.map(p => p.podcast_id)
+    const allSelected = queryPodcastIds.every(id => selectedPodcasts.has(id))
+
+    setSelectedPodcasts(prev => {
+      const newSet = new Set(prev)
+      if (allSelected) {
+        // Deselect all in this query
+        queryPodcastIds.forEach(id => newSet.delete(id))
+      } else {
+        // Select all in this query
+        queryPodcastIds.forEach(id => newSet.add(id))
+      }
+      return newSet
+    })
+  }
+
+  const handleExportToGoogleSheets = async () => {
+    if (!selectedClient) {
+      toast.error('Please select a client first')
+      return
+    }
+
+    if (selectedPodcasts.size === 0) {
+      toast.error('Please select at least one podcast to export')
+      return
+    }
+
+    setIsExporting(true)
+
+    try {
+      // Collect all selected podcasts from all queries
+      const podcastsToExport: PodcastExportData[] = []
+
+      queries.forEach(query => {
+        query.results.forEach(podcast => {
+          if (selectedPodcasts.has(podcast.podcast_id)) {
+            podcastsToExport.push({
+              podcast_name: podcast.podcast_name,
+              publisher_name: podcast.publisher_name,
+              podcast_description: podcast.podcast_description,
+              audience_size: podcast.reach?.audience_size,
+              episode_count: podcast.episode_count,
+              itunes_rating: podcast.itunes_rating,
+              podcast_url: podcast.podcast_url,
+              podcast_email: podcast.podcast_email,
+              rss_feed: podcast.rss_url,
+              compatibility_score: query.compatibilityScores[podcast.podcast_id],
+              compatibility_reasoning: query.scoreReasonings[podcast.podcast_id],
+            })
+          }
+        })
+      })
+
+      const result = await exportPodcastsToGoogleSheets(selectedClient, podcastsToExport)
+
+      toast.success(`Successfully exported ${result.rowsAdded} podcasts to Google Sheets!`)
+      setSelectedPodcasts(new Set()) // Clear selection after successful export
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to export to Google Sheets')
+      console.error('Export error:', error)
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   const handleSearchAllQueries = async () => {
@@ -510,6 +596,56 @@ export default function PodcastFinder() {
             </div>
           </div>
         </div>
+
+        {/* Export to Google Sheets */}
+        {selectedPodcasts.size > 0 && (
+          <Card className="border-2 border-green-200 dark:border-green-800 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 shadow-md">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-600 text-white">
+                    <FileText className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-semibold">
+                      {selectedPodcasts.size} podcast{selectedPodcasts.size !== 1 ? 's' : ''} selected
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Ready to export to Google Sheets
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setSelectedPodcasts(new Set())}
+                    disabled={isExporting}
+                  >
+                    Clear Selection
+                  </Button>
+                  <Button
+                    onClick={handleExportToGoogleSheets}
+                    disabled={isExporting || !selectedClient}
+                    size="lg"
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    {isExporting ? (
+                      <>
+                        <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                        Exporting...
+                      </>
+                    ) : (
+                      <>
+                        <FileText className="h-5 w-5 mr-2" />
+                        Export to Google Sheets
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Client Selection & Query Generation */}
         <Card className="border-2 shadow-sm">
@@ -989,6 +1125,15 @@ export default function PodcastFinder() {
                       <Table>
                         <TableHeader>
                           <TableRow className="bg-muted/50">
+                            <TableHead className="w-[50px]">
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 cursor-pointer"
+                                checked={query.results.length > 0 && query.results.every(p => selectedPodcasts.has(p.podcast_id))}
+                                onChange={() => handleToggleAllInQuery(query)}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            </TableHead>
                             <TableHead className="font-semibold">Podcast</TableHead>
                             <TableHead className="font-semibold">Has Guests</TableHead>
                             <TableHead className="font-semibold">Audience</TableHead>
@@ -1005,6 +1150,14 @@ export default function PodcastFinder() {
                               className="hover:bg-muted/30 transition-colors cursor-pointer"
                               onClick={() => handlePodcastRowClick(podcast.podcast_id)}
                             >
+                              <TableCell className="py-4" onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  className="w-4 h-4 cursor-pointer"
+                                  checked={selectedPodcasts.has(podcast.podcast_id)}
+                                  onChange={() => handleTogglePodcastSelection(podcast.podcast_id)}
+                                />
+                              </TableCell>
                               <TableCell className="py-4">
                                 <div className="max-w-md">
                                   <p className="font-semibold text-base mb-1">{podcast.podcast_name}</p>
