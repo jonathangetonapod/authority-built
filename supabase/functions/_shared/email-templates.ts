@@ -106,38 +106,36 @@ export function getMagicLinkEmail(clientName: string, magicLink: string): EmailT
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${subject}</title>
 </head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 24px;">Get On A Pod</h1>
-  </div>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background: #ffffff;">
+  <p>Hi ${clientName},</p>
 
-  <div style="background: #ffffff; padding: 40px 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
-    <h2 style="color: #1f2937; margin-top: 0;">Hi ${clientName},</h2>
+  <p>Here's your secure login link to access your Get On A Pod client portal:</p>
 
-    <p style="color: #4b5563; font-size: 16px;">
-      Click the button below to access your client portal:
-    </p>
+  <p><a href="${magicLink}" style="color: #667eea; text-decoration: none; font-weight: 500;">${magicLink}</a></p>
 
-    <div style="text-align: center; margin: 30px 0;">
-      <a href="${magicLink}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; font-size: 16px;">
-        Sign In to Portal
-      </a>
-    </div>
+  <p><strong>This link expires in 15 minutes</strong> for your security.</p>
 
-    <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px; margin: 24px 0; border-radius: 4px;">
-      <p style="margin: 0; color: #92400e; font-size: 13px;">
-        <strong>⏱️ This link expires in 15 minutes</strong> for your security.
-      </p>
-    </div>
+  <p>Once you're in, you'll be able to view:</p>
+  <ul style="line-height: 1.8;">
+    <li>All your podcast bookings and their status</li>
+    <li>Recording and publish dates</li>
+    <li>Episode links once they go live</li>
+    <li>Your complete outreach list</li>
+  </ul>
 
-    <p style="color: #6b7280; font-size: 14px; margin-bottom: 0;">
-      If you didn't request this, you can safely ignore this email.
-    </p>
-  </div>
+  <p>If you didn't request this login link, you can safely ignore this email.</p>
 
-  <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">
-    <p style="margin: 0;">Get On A Pod - Your Podcast Booking Portal</p>
-  </div>
+  <p style="margin-top: 30px;">
+    Best regards,<br>
+    The Get On A Pod Team
+  </p>
+
+  <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+
+  <p style="color: #6b7280; font-size: 13px; margin: 0;">
+    Get On A Pod - Your Podcast Booking Portal<br>
+    <a href="https://getonapod.com" style="color: #667eea; text-decoration: none;">getonapod.com</a>
+  </p>
 </body>
 </html>
   `.trim()
@@ -145,16 +143,26 @@ export function getMagicLinkEmail(clientName: string, magicLink: string): EmailT
   const text = `
 Hi ${clientName},
 
-Click the link below to access your client portal:
+Here's your secure login link to access your Get On A Pod client portal:
 
 ${magicLink}
 
-⏱️ This link expires in 15 minutes for your security.
+This link expires in 15 minutes for your security.
 
-If you didn't request this, you can safely ignore this email.
+Once you're in, you'll be able to view:
+- All your podcast bookings and their status
+- Recording and publish dates
+- Episode links once they go live
+- Your complete outreach list
+
+If you didn't request this login link, you can safely ignore this email.
+
+Best regards,
+The Get On A Pod Team
 
 ---
 Get On A Pod - Your Podcast Booking Portal
+getonapod.com
   `.trim()
 
   return { subject, html, text }
