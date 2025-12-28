@@ -1525,7 +1525,29 @@ export default function PortalDashboard() {
                             </p>
                           )}
                         </div>
-                        {getStatusBadge(booking.status)}
+                        <div className="flex flex-col items-end gap-2">
+                          {(booking.recording_date || booking.scheduled_date) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                const calendarEvent = createCalendarEventFromBooking(booking)
+                                if (calendarEvent) {
+                                  openGoogleCalendar(calendarEvent)
+                                  toast.success('Opening Google Calendar...')
+                                } else {
+                                  toast.error('No date available for this booking')
+                                }
+                              }}
+                              className="flex-shrink-0"
+                            >
+                              <CalendarPlus className="h-4 w-4 mr-1" />
+                              <span className="hidden sm:inline">Add to Calendar</span>
+                            </Button>
+                          )}
+                          {getStatusBadge(booking.status)}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1571,7 +1593,29 @@ export default function PortalDashboard() {
                             </p>
                           )}
                         </div>
-                        {getStatusBadge(booking.status)}
+                        <div className="flex flex-col items-end gap-2">
+                          {(booking.publish_date || booking.recording_date || booking.scheduled_date) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                const calendarEvent = createCalendarEventFromBooking(booking)
+                                if (calendarEvent) {
+                                  openGoogleCalendar(calendarEvent)
+                                  toast.success('Opening Google Calendar...')
+                                } else {
+                                  toast.error('No date available for this booking')
+                                }
+                              }}
+                              className="flex-shrink-0"
+                            >
+                              <CalendarPlus className="h-4 w-4 mr-1" />
+                              <span className="hidden sm:inline">Add to Calendar</span>
+                            </Button>
+                          )}
+                          {getStatusBadge(booking.status)}
+                        </div>
                       </div>
                     ))}
                   </div>
