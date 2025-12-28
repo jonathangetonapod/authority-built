@@ -160,7 +160,8 @@ serve(async (req) => {
     if (!createResponse.ok) {
       const errorText = await createResponse.text()
       console.error('[Create Sheet] Failed to create:', errorText)
-      throw new Error('Failed to create Google Sheet')
+      console.error('[Create Sheet] Status:', createResponse.status)
+      throw new Error(`Google Sheets API error (${createResponse.status}): ${errorText}`)
     }
 
     const spreadsheet = await createResponse.json()
