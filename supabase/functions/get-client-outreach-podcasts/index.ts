@@ -123,6 +123,7 @@ serve(async (req) => {
     }
 
     console.log('[Get Outreach Podcasts] Starting for client:', clientId)
+    console.log('[Get Outreach Podcasts] Version: 2.0 with debug info')
 
     // Get client's Google Sheet URL from database
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
