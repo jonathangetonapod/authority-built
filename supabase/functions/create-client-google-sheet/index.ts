@@ -123,12 +123,13 @@ serve(async (req) => {
 
     // Get access token
     console.log('[Create Sheet] Generating access token...')
-    const accessToken = await getGoogleAccessToken()
-
-    // Get service account email for sharing
     const serviceAccountJson = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON')!
     const serviceAccount = JSON.parse(serviceAccountJson)
     const serviceAccountEmail = serviceAccount.client_email
+    console.log('[Create Sheet] Using service account:', serviceAccountEmail)
+
+    const accessToken = await getGoogleAccessToken()
+    console.log('[Create Sheet] Access token obtained, length:', accessToken.length)
 
     // Create a new spreadsheet
     const sheetTitle = `Podcast Leads - ${clientName}`
@@ -169,6 +170,31 @@ serve(async (req) => {
     const spreadsheetUrl = spreadsheet.spreadsheetUrl
 
     console.log('[Create Sheet] Created with ID:', spreadsheetId)
+    console.log('[Create Sheet] Spreadsheet URL:', spreadsheetUrl)
+
+    // Make the sheet publicly editable by anyone with the link
+    const publicPermissionResponse = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${spreadsheetId}/permissions`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'anyone',
+          role: 'writer',
+        }),
+      }
+    )
+
+    if (!publicPermissionResponse.ok) {
+      const errorText = await publicPermissionResponse.text()
+      console.error('[Create Sheet] Failed to make public:', errorText)
+      // Continue anyway - this is optional
+    } else {
+      console.log('[Create Sheet] Made sheet publicly editable via link')
+    }
 
     // Add headers to the first row
     const headers = [
