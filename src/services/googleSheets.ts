@@ -196,7 +196,7 @@ export async function getClientOutreachPodcasts(
           `https://podscan.fm/api/v1/podcasts/${podcastId}`,
           {
             headers: {
-              'X-API-KEY': podscanApiKey,
+              'Authorization': `Bearer ${podscanApiKey}`,
             },
           }
         )

@@ -243,7 +243,7 @@ serve(async (req) => {
             `https://podscan.fm/api/v1/podcasts/${podcastId}`,
             {
               headers: {
-                'X-API-KEY': podscanApiKey,
+                'Authorization': `Bearer ${podscanApiKey}`,
               },
             }
           )
