@@ -11,6 +11,7 @@ export interface Client {
   first_invoice_paid_date: string | null
   status: 'active' | 'paused' | 'churned'
   notes: string | null
+  bio: string | null
   photo_url: string | null
   created_at: string
   updated_at: string

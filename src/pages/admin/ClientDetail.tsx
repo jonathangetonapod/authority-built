@@ -105,7 +105,8 @@ export default function ClientDetail() {
     linkedin_url: '',
     website: '',
     status: 'active' as const,
-    notes: ''
+    notes: '',
+    bio: ''
   })
 
   const queryClient = useQueryClient()
@@ -421,7 +422,8 @@ export default function ClientDetail() {
         linkedin_url: client.linkedin_url || '',
         website: client.website || '',
         status: client.status,
-        notes: client.notes || ''
+        notes: client.notes || '',
+        bio: client.bio || ''
       })
       setIsEditClientModalOpen(true)
     }
@@ -833,6 +835,19 @@ export default function ClientDetail() {
                     >
                       Book Time
                     </a>
+                  </div>
+                </div>
+              )}
+
+              {/* Client Bio */}
+              {client.bio && (
+                <div className="pt-4 border-t">
+                  <div className="flex items-start gap-3">
+                    <FileText className="h-4 w-4 text-muted-foreground mt-1" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium mb-2">Client Bio (for AI Podcast Search)</p>
+                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">{client.bio}</p>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1556,7 +1571,21 @@ export default function ClientDetail() {
                 placeholder="Any additional notes..."
                 value={editClientForm.notes}
                 onChange={(e) => setEditClientForm({ ...editClientForm, notes: e.target.value })}
+                rows={3}
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-bio">Client Bio (for AI Podcast Search)</Label>
+              <Textarea
+                id="edit-bio"
+                placeholder="Describe the client's expertise, industry, target audience, and ideal podcast topics..."
+                value={editClientForm.bio}
+                onChange={(e) => setEditClientForm({ ...editClientForm, bio: e.target.value })}
+                rows={5}
+              />
+              <p className="text-xs text-muted-foreground">
+                This bio is used by AI to generate relevant podcast search queries in the Podcast Finder
+              </p>
             </div>
             <div className="flex justify-end gap-2 pt-4">
               <Button variant="outline" onClick={() => setIsEditClientModalOpen(false)}>

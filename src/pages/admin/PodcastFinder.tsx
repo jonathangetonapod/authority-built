@@ -313,7 +313,7 @@ export default function PodcastFinder() {
             </div>
 
             {selectedClientData && (
-              <div className="p-4 bg-muted rounded-lg space-y-1">
+              <div className="p-4 bg-muted rounded-lg space-y-2">
                 <p className="text-sm font-medium">Selected Client Info:</p>
                 <p className="text-sm text-muted-foreground">
                   <strong>Name:</strong> {selectedClientData.name}
@@ -322,6 +322,18 @@ export default function PodcastFinder() {
                   <p className="text-sm text-muted-foreground">
                     <strong>Email:</strong> {selectedClientData.email}
                   </p>
+                )}
+                {selectedClientData.bio ? (
+                  <div className="pt-2 border-t border-border/50 mt-2">
+                    <p className="text-xs font-medium mb-1">Client Bio:</p>
+                    <p className="text-xs text-muted-foreground whitespace-pre-wrap">{selectedClientData.bio}</p>
+                  </div>
+                ) : (
+                  <div className="pt-2 border-t border-border/50 mt-2">
+                    <p className="text-xs text-amber-600 dark:text-amber-500">
+                      ⚠️ No bio added yet. Add a bio in the client details page for better AI query generation.
+                    </p>
+                  </div>
                 )}
               </div>
             )}
