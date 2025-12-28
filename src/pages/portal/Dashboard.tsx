@@ -99,6 +99,7 @@ export default function PortalDashboard() {
   const [calendarDate, setCalendarDate] = useState(new Date())
   const [completedActions, setCompletedActions] = useState<Set<string>>(new Set())
   const [viewingDayBookings, setViewingDayBookings] = useState<{ date: Date; bookings: Booking[] } | null>(null)
+  const [viewingOutreachPodcast, setViewingOutreachPodcast] = useState<OutreachPodcast | null>(null)
 
   // Premium Placements state
   const [premiumSearchQuery, setPremiumSearchQuery] = useState('')
@@ -1829,7 +1830,8 @@ export default function PortalDashboard() {
                         {outreachData.podcasts.map((podcast) => (
                           <div
                             key={podcast.podcast_id}
-                            className="flex flex-col gap-4 p-4 rounded-lg border bg-card hover:shadow-lg transition-shadow"
+                            className="flex flex-col gap-4 p-4 rounded-lg border bg-card hover:shadow-lg transition-shadow cursor-pointer"
+                            onClick={() => setViewingOutreachPodcast(podcast)}
                           >
                             {podcast.podcast_image_url && (
                               <img
@@ -1877,7 +1879,10 @@ export default function PortalDashboard() {
                                 variant="outline"
                                 size="sm"
                                 className="w-full"
-                                onClick={() => window.open(podcast.podcast_url!, '_blank', 'noopener,noreferrer')}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  window.open(podcast.podcast_url!, '_blank', 'noopener,noreferrer')
+                                }}
                               >
                                 <ExternalLink className="h-4 w-4 mr-2" />
                                 Visit Podcast
@@ -2396,6 +2401,112 @@ export default function PortalDashboard() {
 
               <div className="flex justify-end pt-4 border-t">
                 <Button onClick={() => setViewingBooking(null)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Outreach Podcast Detail Modal */}
+      <Dialog open={!!viewingOutreachPodcast} onOpenChange={() => setViewingOutreachPodcast(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Podcast Details</DialogTitle>
+            <DialogDescription>
+              Detailed information about this outreach podcast
+            </DialogDescription>
+          </DialogHeader>
+          {viewingOutreachPodcast && (
+            <div className="space-y-6">
+              {/* Podcast Header */}
+              <div className="flex gap-4">
+                {viewingOutreachPodcast.podcast_image_url && (
+                  <img
+                    src={viewingOutreachPodcast.podcast_image_url}
+                    alt={viewingOutreachPodcast.podcast_name}
+                    className="w-24 h-24 rounded-lg object-cover shadow-md"
+                  />
+                )}
+                <div className="flex-1 space-y-2">
+                  <h3 className="text-xl font-bold">{viewingOutreachPodcast.podcast_name}</h3>
+                  {viewingOutreachPodcast.publisher_name && (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <User className="h-4 w-4" />
+                      <span className="text-sm">Publisher: {viewingOutreachPodcast.publisher_name}</span>
+                    </div>
+                  )}
+                  {viewingOutreachPodcast.podcast_url && (
+                    <a
+                      href={viewingOutreachPodcast.podcast_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                    >
+                      <Globe className="h-4 w-4" />
+                      Visit Podcast
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              {/* Stats */}
+              {(viewingOutreachPodcast.audience_size || viewingOutreachPodcast.episode_count || viewingOutreachPodcast.itunes_rating) && (
+                <div className="grid grid-cols-3 gap-4">
+                  {viewingOutreachPodcast.audience_size && (
+                    <div className="p-4 bg-muted rounded-lg">
+                      <p className="text-xs text-muted-foreground mb-1">Audience Size</p>
+                      <p className="text-xl font-bold">{viewingOutreachPodcast.audience_size.toLocaleString()}</p>
+                    </div>
+                  )}
+                  {viewingOutreachPodcast.episode_count && (
+                    <div className="p-4 bg-muted rounded-lg">
+                      <p className="text-xs text-muted-foreground mb-1">Episodes</p>
+                      <p className="text-xl font-bold">{viewingOutreachPodcast.episode_count}</p>
+                    </div>
+                  )}
+                  {viewingOutreachPodcast.itunes_rating && (
+                    <div className="p-4 bg-muted rounded-lg">
+                      <p className="text-xs text-muted-foreground mb-1">Rating</p>
+                      <p className="text-xl font-bold">{Number(viewingOutreachPodcast.itunes_rating).toFixed(1)} ⭐</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Description */}
+              {viewingOutreachPodcast.podcast_description && (
+                <div>
+                  <h4 className="font-semibold mb-2">About the Podcast</h4>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {viewingOutreachPodcast.podcast_description}
+                  </p>
+                </div>
+              )}
+
+              {/* Podcast ID */}
+              <div>
+                <h4 className="font-semibold mb-2">Podcast ID</h4>
+                <div className="p-3 bg-muted rounded-lg">
+                  <code className="text-xs">{viewingOutreachPodcast.podcast_id}</code>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-4">
+                {viewingOutreachPodcast.podcast_url && (
+                  <Button
+                    variant="default"
+                    onClick={() => window.open(viewingOutreachPodcast.podcast_url!, '_blank', 'noopener,noreferrer')}
+                    className="flex-1"
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Visit Podcast Website
+                  </Button>
+                )}
+                <Button variant="outline" onClick={() => setViewingOutreachPodcast(null)}>
                   Close
                 </Button>
               </div>
