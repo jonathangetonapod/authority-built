@@ -240,7 +240,7 @@ serve(async (req) => {
       const batchPromises = batch.map(async (podcastId: string) => {
         try {
           const response = await fetch(
-            `https://api.podscan.fm/podcasts/${podcastId}`,
+            `https://podscan.fm/api/v1/podcasts/${podcastId}`,
             {
               headers: {
                 'X-API-KEY': podscanApiKey,

@@ -193,7 +193,7 @@ export async function getClientOutreachPodcasts(
     for (const podcastId of data.podcastIds) {
       try {
         const podcastResponse = await fetch(
-          `https://api.podscan.fm/podcasts/${podcastId}`,
+          `https://podscan.fm/api/v1/podcasts/${podcastId}`,
           {
             headers: {
               'X-API-KEY': podscanApiKey,
