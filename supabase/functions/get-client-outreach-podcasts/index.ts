@@ -210,7 +210,18 @@ serve(async (req) => {
 
     if (podcastIds.length === 0) {
       return new Response(
-        JSON.stringify({ success: true, podcasts: [] }),
+        JSON.stringify({
+          success: true,
+          podcasts: [],
+          debug: {
+            spreadsheetId,
+            sheetName: firstSheetName,
+            range,
+            rowsReturned: rows.length,
+            sampleRows: rows.slice(0, 5),
+            message: 'No podcast IDs found in column E'
+          }
+        }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }

@@ -143,6 +143,11 @@ export default function PortalDashboard() {
   console.log('[Dashboard] Outreach loading:', outreachLoading)
   console.log('[Dashboard] Outreach error:', outreachError)
 
+  // Log debug info if available
+  if (outreachData && 'debug' in outreachData) {
+    console.log('[Dashboard] 🔍 Debug info from Edge Function:', outreachData.debug)
+  }
+
   // Helper functions for date filtering
   const getDateRange = () => {
     const start = new Date(selectedDate)
