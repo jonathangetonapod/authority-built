@@ -56,6 +56,7 @@ export async function createClientGoogleSheet(
       body: JSON.stringify({
         clientId,
         clientName,
+        ownerEmail: session.user.email, // Transfer ownership to logged-in user
       }),
     })
 

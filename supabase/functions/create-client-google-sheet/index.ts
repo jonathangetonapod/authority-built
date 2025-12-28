@@ -109,9 +109,10 @@ serve(async (req) => {
   }
 
   try {
-    const { clientId, clientName } = await req.json() as {
+    const { clientId, clientName, ownerEmail } = await req.json() as {
       clientId: string
       clientName: string
+      ownerEmail?: string
     }
 
     if (!clientId || !clientName) {
@@ -161,6 +162,35 @@ serve(async (req) => {
 
     console.log('[Create Sheet] Created with ID:', spreadsheetId)
     console.log('[Create Sheet] Spreadsheet URL:', spreadsheetUrl)
+
+    // Transfer ownership to the user's email to avoid service account storage quota
+    if (ownerEmail) {
+      console.log('[Create Sheet] Transferring ownership to:', ownerEmail)
+      const ownershipResponse = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${spreadsheetId}/permissions`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            type: 'user',
+            role: 'owner',
+            emailAddress: ownerEmail,
+            transferOwnership: true,
+          }),
+        }
+      )
+
+      if (!ownershipResponse.ok) {
+        const errorText = await ownershipResponse.text()
+        console.error('[Create Sheet] Failed to transfer ownership:', errorText)
+        // Continue anyway - sheet is still created
+      } else {
+        console.log('[Create Sheet] Ownership transferred successfully')
+      }
+    }
 
     // Make the sheet publicly editable by anyone with the link
     const publicPermissionResponse = await fetch(
