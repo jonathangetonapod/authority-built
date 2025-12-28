@@ -50,7 +50,8 @@ import {
   X,
   ChevronDown,
   ChevronUp,
-  SlidersHorizontal
+  SlidersHorizontal,
+  RefreshCw
 } from 'lucide-react'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { getClientBookings } from '@/services/clientPortal'
@@ -122,7 +123,7 @@ export default function PortalDashboard() {
   })
 
   // Fetch outreach podcasts from Google Sheet
-  const { data: outreachData, isLoading: outreachLoading, error: outreachError } = useQuery({
+  const { data: outreachData, isLoading: outreachLoading, error: outreachError, refetch: refetchOutreach } = useQuery({
     queryKey: ['outreach-podcasts', client?.id],
     queryFn: () => {
       console.log('[Dashboard] Fetching outreach podcasts for client:', client?.id)
@@ -1788,13 +1789,25 @@ export default function PortalDashboard() {
                            'Podcasts from your Google Sheet'}
                         </CardDescription>
                       </div>
-                      <Button
-                        variant="outline"
-                        onClick={() => window.open(client.google_sheet_url!, '_blank', 'noopener,noreferrer')}
-                      >
-                        <ExternalLink className="h-4 w-4 mr-2" />
-                        Open in Google Sheets
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => refetchOutreach()}
+                          disabled={outreachLoading}
+                        >
+                          <RefreshCw className={`h-4 w-4 mr-2 ${outreachLoading ? 'animate-spin' : ''}`} />
+                          Refresh
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => window.open(client.google_sheet_url!, '_blank', 'noopener,noreferrer')}
+                        >
+                          <ExternalLink className="h-4 w-4 mr-2" />
+                          Open in Google Sheets
+                        </Button>
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -1882,29 +1895,6 @@ export default function PortalDashboard() {
                         </p>
                       </div>
                     )}
-                  </CardContent>
-                </Card>
-
-                {/* Embedded Google Sheet */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Full Outreach List</CardTitle>
-                    <CardDescription>
-                      View and manage your complete outreach list
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="w-full h-[600px] border rounded-lg overflow-hidden bg-muted/20">
-                      <iframe
-                        src={`${client.google_sheet_url.replace('/edit', '/preview')}`}
-                        className="w-full h-full"
-                        title="Outreach List"
-                        style={{ border: 'none' }}
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-4 text-center">
-                      This is a live view of your outreach list. Open in Google Sheets to see formulas and make edits.
-                    </p>
                   </CardContent>
                 </Card>
               </>
