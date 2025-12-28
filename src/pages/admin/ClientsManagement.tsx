@@ -334,6 +334,8 @@ export default function ClientsManagement() {
                     <TableHead className="text-center">Total</TableHead>
                     <TableHead className="text-center">Booked</TableHead>
                     <TableHead className="text-center">In Progress</TableHead>
+                    <TableHead className="text-center">Recorded</TableHead>
+                    <TableHead className="text-center">Published</TableHead>
                     <TableHead>Last Booking</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -377,6 +379,18 @@ export default function ClientsManagement() {
                         <span className="inline-flex items-center gap-1">
                           <span className="w-2 h-2 rounded-full bg-yellow-500" />
                           {client.inProgressCount}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <span className="inline-flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-blue-500" />
+                          {client.recordedCount}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <span className="inline-flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-purple-500" />
+                          {client.publishedCount}
                         </span>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
@@ -451,6 +465,8 @@ export default function ClientsManagement() {
                         <TableHead className="text-center">Total</TableHead>
                         <TableHead className="text-center">Booked</TableHead>
                         <TableHead className="text-center">In Progress</TableHead>
+                        <TableHead className="text-center">Recorded</TableHead>
+                        <TableHead className="text-center">Published</TableHead>
                         <TableHead>Last Booking</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -494,6 +510,18 @@ export default function ClientsManagement() {
                             <span className="inline-flex items-center gap-1">
                               <span className="w-2 h-2 rounded-full bg-yellow-500" />
                               {client.inProgressCount}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <span className="inline-flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-blue-500" />
+                              {client.recordedCount}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <span className="inline-flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-purple-500" />
+                              {client.publishedCount}
                             </span>
                           </TableCell>
                           <TableCell className="text-muted-foreground">

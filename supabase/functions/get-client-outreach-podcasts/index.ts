@@ -156,8 +156,30 @@ serve(async (req) => {
     // Get Google access token
     const accessToken = await getGoogleAccessToken()
 
+    // First, get the sheet metadata to find the first sheet's name
+    const metadataResponse = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`,
+      {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      }
+    )
+
+    if (!metadataResponse.ok) {
+      const error = await metadataResponse.text()
+      throw new Error(`Failed to get sheet metadata: ${error}`)
+    }
+
+    const metadata = await metadataResponse.json()
+    const firstSheetName = metadata.sheets[0]?.properties?.title || 'Sheet1'
+
+    console.log('[Get Outreach Podcasts] First sheet name:', firstSheetName)
+
     // Read column E (Podscan Podcast ID) - assuming data starts at row 2 (skip header)
-    const range = 'Sheet1!E2:E1000' // Read up to 1000 rows
+    const range = `${firstSheetName}!E2:E1000` // Read up to 1000 rows
+    console.log('[Get Outreach Podcasts] Reading range:', range)
+
     const sheetsResponse = await fetch(
       `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}`,
       {
@@ -175,12 +197,16 @@ serve(async (req) => {
     const sheetsData = await sheetsResponse.json()
     const rows = sheetsData.values || []
 
+    console.log('[Get Outreach Podcasts] Raw rows returned:', rows.length)
+    console.log('[Get Outreach Podcasts] First few rows:', JSON.stringify(rows.slice(0, 5)))
+
     // Extract podcast IDs (column E), filter out empty values
     const podcastIds = rows
       .map((row: string[]) => row[0]) // Column E is index 0 in our range
       .filter((id: string) => id && id.trim() !== '')
 
     console.log('[Get Outreach Podcasts] Found', podcastIds.length, 'podcast IDs')
+    console.log('[Get Outreach Podcasts] Sample IDs:', JSON.stringify(podcastIds.slice(0, 3)))
 
     if (podcastIds.length === 0) {
       return new Response(
