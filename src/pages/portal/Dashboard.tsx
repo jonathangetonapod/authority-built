@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useClientPortal } from '@/contexts/ClientPortalContext'
 import { PortalLayout } from '@/components/portal/PortalLayout'
@@ -100,6 +100,8 @@ export default function PortalDashboard() {
   const [completedActions, setCompletedActions] = useState<Set<string>>(new Set())
   const [viewingDayBookings, setViewingDayBookings] = useState<{ date: Date; bookings: Booking[] } | null>(null)
   const [viewingOutreachPodcast, setViewingOutreachPodcast] = useState<OutreachPodcast | null>(null)
+  const [outreachPage, setOutreachPage] = useState(1)
+  const outreachPerPage = 12
 
   // Premium Placements state
   const [premiumSearchQuery, setPremiumSearchQuery] = useState('')
@@ -135,6 +137,13 @@ export default function PortalDashboard() {
     enabled: !!client?.id && !!client?.google_sheet_url,
     retry: 1,
   })
+
+  // Reset outreach pagination when data changes
+  useEffect(() => {
+    if (outreachData?.podcasts) {
+      setOutreachPage(1)
+    }
+  }, [outreachData?.total])
 
   // Debug logging
   console.log('[Dashboard] Client object:', client)
@@ -1826,8 +1835,11 @@ export default function PortalDashboard() {
                         </p>
                       </div>
                     ) : outreachData?.podcasts && outreachData.podcasts.length > 0 ? (
-                      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                        {outreachData.podcasts.map((podcast) => (
+                      <>
+                        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                          {outreachData.podcasts
+                            .slice((outreachPage - 1) * outreachPerPage, outreachPage * outreachPerPage)
+                            .map((podcast) => (
                           <div
                             key={podcast.podcast_id}
                             className="flex flex-col gap-4 p-4 rounded-lg border bg-card hover:shadow-lg transition-shadow cursor-pointer"
@@ -1889,8 +1901,69 @@ export default function PortalDashboard() {
                               </Button>
                             )}
                           </div>
-                        ))}
-                      </div>
+                            ))}
+                        </div>
+
+                        {/* Pagination */}
+                        {outreachData.podcasts.length > outreachPerPage && (
+                          <div className="flex items-center justify-between pt-6 border-t">
+                            <div className="text-sm text-muted-foreground">
+                              Showing {((outreachPage - 1) * outreachPerPage) + 1}-{Math.min(outreachPage * outreachPerPage, outreachData.podcasts.length)} of {outreachData.podcasts.length} podcasts
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setOutreachPage(p => Math.max(1, p - 1))}
+                                disabled={outreachPage === 1}
+                              >
+                                <ChevronLeft className="h-4 w-4" />
+                                Previous
+                              </Button>
+                              <div className="flex gap-1">
+                                {Array.from({ length: Math.ceil(outreachData.podcasts.length / outreachPerPage) }, (_, i) => i + 1)
+                                  .filter(page => {
+                                    // Show first page, last page, current page, and pages adjacent to current
+                                    const totalPages = Math.ceil(outreachData.podcasts.length / outreachPerPage)
+                                    return page === 1 ||
+                                           page === totalPages ||
+                                           Math.abs(page - outreachPage) <= 1
+                                  })
+                                  .map((page, idx, arr) => {
+                                    // Add ellipsis if there's a gap
+                                    const prevPage = arr[idx - 1]
+                                    const showEllipsis = prevPage && page - prevPage > 1
+
+                                    return (
+                                      <div key={page} className="flex gap-1">
+                                        {showEllipsis && (
+                                          <span className="px-3 py-1 text-sm text-muted-foreground">...</span>
+                                        )}
+                                        <Button
+                                          variant={outreachPage === page ? "default" : "outline"}
+                                          size="sm"
+                                          onClick={() => setOutreachPage(page)}
+                                          className="w-9"
+                                        >
+                                          {page}
+                                        </Button>
+                                      </div>
+                                    )
+                                  })}
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setOutreachPage(p => Math.min(Math.ceil(outreachData.podcasts.length / outreachPerPage), p + 1))}
+                                disabled={outreachPage === Math.ceil(outreachData.podcasts.length / outreachPerPage)}
+                              >
+                                Next
+                                <ChevronRight className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <div className="flex flex-col items-center justify-center py-12 text-center">
                         <FileText className="h-12 w-12 text-muted-foreground/50 mb-3" />
