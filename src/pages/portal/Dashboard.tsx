@@ -1855,7 +1855,7 @@ export default function PortalDashboard() {
                                 )}
                                 {podcast.itunes_rating && (
                                   <Badge variant="secondary" className="text-xs">
-                                    ⭐ {podcast.itunes_rating.toFixed(1)}
+                                    ⭐ {Number(podcast.itunes_rating).toFixed(1)}
                                   </Badge>
                                 )}
                                 {podcast.episode_count && (
