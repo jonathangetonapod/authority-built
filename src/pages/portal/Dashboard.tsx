@@ -1437,13 +1437,33 @@ export default function PortalDashboard() {
                             {dayData.bookings.slice(0, 2).map(booking => (
                               <div
                                 key={booking.id}
-                                onClick={() => setViewingBooking(booking)}
-                                className="text-xs p-1 rounded bg-muted truncate cursor-pointer hover:bg-muted/80"
+                                className="text-xs p-1 rounded bg-muted cursor-pointer hover:bg-muted/80 group"
                                 title={booking.podcast_name}
                               >
-                                <div className="flex items-center gap-1">
-                                  <span className={`w-2 h-2 rounded-full ${getStatusColor(booking.status)}`} />
-                                  <span className="truncate font-medium">{booking.podcast_name}</span>
+                                <div className="flex items-center gap-1 justify-between">
+                                  <div
+                                    className="flex items-center gap-1 flex-1 min-w-0"
+                                    onClick={() => setViewingBooking(booking)}
+                                  >
+                                    <span className={`w-2 h-2 rounded-full ${getStatusColor(booking.status)}`} />
+                                    <span className="truncate font-medium">{booking.podcast_name}</span>
+                                  </div>
+                                  {(booking.recording_date || booking.scheduled_date) && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        const calendarEvent = createCalendarEventFromBooking(booking)
+                                        if (calendarEvent) {
+                                          openGoogleCalendar(calendarEvent)
+                                          toast.success('Opening Google Calendar...')
+                                        }
+                                      }}
+                                      className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 hover:text-primary"
+                                      title="Add to Google Calendar"
+                                    >
+                                      <CalendarPlus className="h-3 w-3" />
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             ))}
