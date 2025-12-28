@@ -190,9 +190,9 @@ serve(async (req) => {
     }
 
     // Fetch podcast details from Podscan API
-    const podscanApiKey = Deno.env.get('VITE_PODSCAN_API_KEY')
+    const podscanApiKey = Deno.env.get('PODSCAN_API_KEY')
     if (!podscanApiKey) {
-      throw new Error('VITE_PODSCAN_API_KEY not configured')
+      throw new Error('PODSCAN_API_KEY not configured')
     }
 
     const podcasts = []
