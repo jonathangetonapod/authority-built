@@ -96,6 +96,7 @@ export default function PortalDashboard() {
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [calendarDate, setCalendarDate] = useState(new Date())
   const [completedActions, setCompletedActions] = useState<Set<string>>(new Set())
+  const [viewingDayBookings, setViewingDayBookings] = useState<{ date: Date; bookings: Booking[] } | null>(null)
 
   // Premium Placements state
   const [premiumSearchQuery, setPremiumSearchQuery] = useState('')
@@ -1420,6 +1421,11 @@ export default function PortalDashboard() {
                     return (
                       <div
                         key={index}
+                        onClick={() => {
+                          if (hasBookings) {
+                            setViewingDayBookings({ date: dayData.date, bookings: dayData.bookings })
+                          }
+                        }}
                         className={`
                           min-h-[100px] p-2 border rounded-lg transition-colors
                           ${!dayData.isCurrentMonth ? 'bg-muted/30 text-muted-foreground' : 'bg-background'}
@@ -1443,7 +1449,10 @@ export default function PortalDashboard() {
                                 <div className="flex items-center gap-1 justify-between">
                                   <div
                                     className="flex items-center gap-1 flex-1 min-w-0"
-                                    onClick={() => setViewingBooking(booking)}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setViewingBooking(booking)
+                                    }}
                                   >
                                     <span className={`w-2 h-2 rounded-full ${getStatusColor(booking.status)}`} />
                                     <span className="truncate font-medium">{booking.podcast_name}</span>
@@ -2222,6 +2231,112 @@ export default function PortalDashboard() {
                   Close
                 </Button>
               </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Day Bookings Modal */}
+      <Dialog open={!!viewingDayBookings} onOpenChange={() => setViewingDayBookings(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Bookings for {viewingDayBookings?.date.toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric'
+              })}
+            </DialogTitle>
+            <DialogDescription>
+              {viewingDayBookings?.bookings.length} {viewingDayBookings?.bookings.length === 1 ? 'booking' : 'bookings'} scheduled for this day
+            </DialogDescription>
+          </DialogHeader>
+          {viewingDayBookings && (
+            <div className="space-y-3">
+              {viewingDayBookings.bookings.map(booking => (
+                <div
+                  key={booking.id}
+                  className="flex items-start gap-4 p-4 rounded-lg border bg-card hover:shadow-md transition-shadow"
+                >
+                  {booking.podcast_image_url && (
+                    <img
+                      src={booking.podcast_image_url}
+                      alt={booking.podcast_name}
+                      className="w-20 h-20 rounded-lg object-cover flex-shrink-0"
+                    />
+                  )}
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <div>
+                      <h4 className="font-semibold text-lg truncate">{booking.podcast_name}</h4>
+                      {booking.host_name && (
+                        <p className="text-sm text-muted-foreground">Host: {booking.host_name}</p>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 text-sm">
+                      {booking.audience_size && (
+                        <span className="text-muted-foreground">
+                          👥 {booking.audience_size.toLocaleString()} listeners
+                        </span>
+                      )}
+                      {booking.itunes_rating && (
+                        <span className="text-muted-foreground">
+                          ⭐ {booking.itunes_rating.toFixed(1)}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {getStatusBadge(booking.status)}
+                      {booking.recording_date && (
+                        <span className="text-xs text-muted-foreground">
+                          📅 Recording: {formatDate(booking.recording_date)}
+                        </span>
+                      )}
+                    </div>
+
+                    {booking.podcast_description && (
+                      <p className="text-sm text-muted-foreground line-clamp-2">
+                        {booking.podcast_description}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-2 flex-shrink-0">
+                    {(booking.recording_date || booking.scheduled_date) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          const calendarEvent = createCalendarEventFromBooking(booking)
+                          if (calendarEvent) {
+                            openGoogleCalendar(calendarEvent)
+                            toast.success('Opening Google Calendar...')
+                          } else {
+                            toast.error('No date available for this booking')
+                          }
+                        }}
+                        className="w-full"
+                      >
+                        <CalendarPlus className="h-4 w-4 mr-2" />
+                        Add to Calendar
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setViewingDayBookings(null)
+                        setViewingBooking(booking)
+                      }}
+                    >
+                      View Details
+                    </Button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </DialogContent>
