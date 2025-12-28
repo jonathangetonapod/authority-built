@@ -819,7 +819,7 @@ export default function PortalDashboard() {
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="calendar">Calendar</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
-            <TabsTrigger value="podcast-list">My Podcast List</TabsTrigger>
+            <TabsTrigger value="podcast-list">Outreach List</TabsTrigger>
             <TabsTrigger value="premium">Premium Placements</TabsTrigger>
           </TabsList>
 
@@ -1744,14 +1744,14 @@ export default function PortalDashboard() {
         )}
           </TabsContent>
 
-          {/* MY PODCAST LIST TAB */}
+          {/* OUTREACH LIST TAB */}
           <TabsContent value="podcast-list" className="space-y-6">
             {client?.google_sheet_url ? (
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div>
-                      <CardTitle>My Podcast List</CardTitle>
+                      <CardTitle>Outreach List</CardTitle>
                       <CardDescription>
                         Your personalized list of podcast opportunities
                       </CardDescription>
@@ -1770,12 +1770,12 @@ export default function PortalDashboard() {
                     <iframe
                       src={`${client.google_sheet_url.replace('/edit', '/preview')}`}
                       className="w-full h-full"
-                      title="My Podcast List"
+                      title="Outreach List"
                       style={{ border: 'none' }}
                     />
                   </div>
                   <p className="text-xs text-muted-foreground mt-4 text-center">
-                    This is a live view of your podcast list. Open in Google Sheets to see formulas and make edits.
+                    This is a live view of your outreach list. Open in Google Sheets to see formulas and make edits.
                   </p>
                 </CardContent>
               </Card>
@@ -1783,9 +1783,9 @@ export default function PortalDashboard() {
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-20 text-center">
                   <FileText className="h-16 w-16 text-muted-foreground/50 mb-4" />
-                  <h3 className="text-xl font-semibold mb-2">No Podcast List Yet</h3>
+                  <h3 className="text-xl font-semibold mb-2">No Outreach List Yet</h3>
                   <p className="text-muted-foreground max-w-md">
-                    Your personalized podcast list hasn't been created yet. Contact your account manager to get started.
+                    Your personalized outreach list hasn't been created yet. Contact your account manager to get started.
                   </p>
                 </CardContent>
               </Card>
