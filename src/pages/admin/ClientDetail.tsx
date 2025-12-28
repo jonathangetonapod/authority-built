@@ -42,12 +42,14 @@ import {
   Upload,
   Image,
   X,
-  FileText
+  FileText,
+  Sparkles
 } from 'lucide-react'
 import { getClientById, updateClient, uploadClientPhoto, removeClientPhoto } from '@/services/clients'
 import { getBookings, createBooking, updateBooking, deleteBooking } from '@/services/bookings'
 import { getPodcastById } from '@/services/podscan'
 import { updatePortalAccess, sendPortalInvitation } from '@/services/clientPortal'
+import { createClientGoogleSheet } from '@/services/googleSheets'
 import { useToast } from '@/hooks/use-toast'
 
 type TimeRange = 30 | 60 | 90 | 180
@@ -71,6 +73,7 @@ export default function ClientDetail() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [creatingSheet, setCreatingSheet] = useState(false)
   const [editBookingForm, setEditBookingForm] = useState({
     podcast_name: '',
     host_name: '',
@@ -520,6 +523,46 @@ export default function ClientDetail() {
     }
   }
 
+  const handleCreateGoogleSheet = async () => {
+    if (!client || !id) return
+
+    setCreatingSheet(true)
+    try {
+      const result = await createClientGoogleSheet(id, client.name)
+
+      // Update local state
+      setEditClientForm(prev => ({ ...prev, google_sheet_url: result.spreadsheetUrl }))
+
+      // Refresh client data
+      queryClient.invalidateQueries({ queryKey: ['client', id] })
+
+      toast({
+        title: 'Google Sheet Created!',
+        description: (
+          <div className="flex flex-col gap-2">
+            <p>{result.message}</p>
+            <a
+              href={result.spreadsheetUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline flex items-center gap-1"
+            >
+              Open Sheet <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
+        )
+      })
+    } catch (error) {
+      toast({
+        title: 'Creation Failed',
+        description: error instanceof Error ? error.message : 'Failed to create Google Sheet',
+        variant: 'destructive'
+      })
+    } finally {
+      setCreatingSheet(false)
+    }
+  }
+
   const handleTogglePortalAccess = async (enabled: boolean) => {
     if (!client) return
     setTogglingPortalAccess(true)
@@ -841,7 +884,7 @@ export default function ClientDetail() {
                   </div>
                 </div>
               )}
-              {client.google_sheet_url && (
+              {client.google_sheet_url ? (
                 <div className="flex items-center gap-3">
                   <FileText className="h-4 w-4 text-muted-foreground" />
                   <div>
@@ -856,6 +899,32 @@ export default function ClientDetail() {
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border-2 border-dashed">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Google Sheet Not Set Up</p>
+                    <p className="text-xs text-muted-foreground">Create a formatted sheet for podcast exports</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={handleCreateGoogleSheet}
+                    disabled={creatingSheet}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    {creatingSheet ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4 mr-2" />
+                        Create Sheet
+                      </>
+                    )}
+                  </Button>
                 </div>
               )}
 
@@ -1612,15 +1681,41 @@ export default function ClientDetail() {
                 <FileText className="h-4 w-4" />
                 Google Sheet URL (for Podcast Export)
               </Label>
-              <Input
-                id="edit-google-sheet"
-                type="url"
-                placeholder="https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit"
-                value={editClientForm.google_sheet_url}
-                onChange={(e) => setEditClientForm({ ...editClientForm, google_sheet_url: e.target.value })}
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="edit-google-sheet"
+                  type="url"
+                  placeholder="https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit"
+                  value={editClientForm.google_sheet_url}
+                  onChange={(e) => setEditClientForm({ ...editClientForm, google_sheet_url: e.target.value })}
+                  className="flex-1"
+                />
+                {!editClientForm.google_sheet_url && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleCreateGoogleSheet}
+                    disabled={creatingSheet}
+                    className="border-green-600 text-green-600 hover:bg-green-50"
+                  >
+                    {creatingSheet ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4 mr-2" />
+                        Auto-Create
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">
-                Podcast Finder results will be exported to this Google Sheet. Make sure to share the sheet with the service account.
+                {editClientForm.google_sheet_url
+                  ? 'Podcast Finder results will be exported to this Google Sheet.'
+                  : 'Click Auto-Create to generate a formatted Google Sheet with headers automatically.'}
               </p>
             </div>
           </div>
