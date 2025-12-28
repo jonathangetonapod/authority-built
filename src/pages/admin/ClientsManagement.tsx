@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Search, Plus, Users, TrendingUp, CheckCircle2, Clock, Loader2, ChevronLeft, ChevronRight, Unlock, Lock } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { getClients, createClient } from '@/services/clients'
@@ -21,6 +22,7 @@ export default function ClientsManagement() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [selectedDate, setSelectedDate] = useState(new Date())
+  const [activeTab, setActiveTab] = useState('all')
   const [newClientForm, setNewClientForm] = useState({
     name: '',
     email: '',
@@ -98,6 +100,27 @@ export default function ClientsManagement() {
     }
   })
 
+  // Calculate stats for ALL clients (not filtered by month)
+  const allClientsWithStats = clients.map(client => {
+    // Get all bookings for this client (regardless of month)
+    const clientBookings = allBookings.filter(b => b.client_id === client.id)
+
+    // Get last booking overall
+    const lastBooking = clientBookings
+      .filter(b => b.scheduled_date)
+      .sort((a, b) => new Date(b.scheduled_date!).getTime() - new Date(a.scheduled_date!).getTime())[0]
+
+    return {
+      ...client,
+      totalBookings: clientBookings.length,
+      bookedCount: clientBookings.filter(b => b.status === 'booked').length,
+      inProgressCount: clientBookings.filter(b => b.status === 'in_progress').length,
+      recordedCount: clientBookings.filter(b => b.status === 'recorded').length,
+      publishedCount: clientBookings.filter(b => b.status === 'published').length,
+      lastBookingDate: lastBooking?.scheduled_date || null
+    }
+  })
+
   const filteredClients = clientsWithStats.filter(client => {
     const matchesSearch = client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          (client.email && client.email.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -106,13 +129,21 @@ export default function ClientsManagement() {
     return matchesSearch && matchesStatus && hasBookingsInMonth
   })
 
+  const filteredAllClients = allClientsWithStats.filter(client => {
+    const matchesSearch = client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (client.email && client.email.toLowerCase().includes(searchTerm.toLowerCase()))
+    const matchesStatus = statusFilter === 'all' || client.status === statusFilter
+    return matchesSearch && matchesStatus
+  })
+
   // Get clients active in selected month (clients with bookings in that month)
   const clientIdsInMonth = new Set(bookingsInSelectedMonth.map(b => b.client_id))
   const activeClientsInMonth = clients.filter(c => clientIdsInMonth.has(c.id)).length
 
   const totalBookingsInMonth = bookingsInSelectedMonth.length
-  const bookedInMonth = bookingsInSelectedMonth.filter(b => b.status === 'booked').length
   const inProgressInMonth = bookingsInSelectedMonth.filter(b => b.status === 'in_progress').length
+  const bookedInMonth = bookingsInSelectedMonth.filter(b => b.status === 'booked').length
+  const recordedInMonth = bookingsInSelectedMonth.filter(b => b.status === 'recorded').length
   const publishedInMonth = bookingsInSelectedMonth.filter(b => b.status === 'published').length
 
   const goToPreviousMonth = () => {
@@ -207,26 +238,15 @@ export default function ClientsManagement() {
         </Card>
 
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Clients</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">In Progress</CardTitle>
+              <Clock className="h-4 w-4 text-yellow-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{activeClientsInMonth}</div>
-              <p className="text-xs text-muted-foreground">With bookings this month</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Bookings</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{totalBookingsInMonth}</div>
-              <p className="text-xs text-muted-foreground">Scheduled this month</p>
+              <div className="text-2xl font-bold text-yellow-600">{inProgressInMonth}</div>
+              <p className="text-xs text-muted-foreground">Coordinating</p>
             </CardContent>
           </Card>
 
@@ -243,12 +263,12 @@ export default function ClientsManagement() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">In Progress</CardTitle>
-              <Clock className="h-4 w-4 text-yellow-600" />
+              <CardTitle className="text-sm font-medium">Recorded</CardTitle>
+              <CheckCircle2 className="h-4 w-4 text-blue-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">{inProgressInMonth}</div>
-              <p className="text-xs text-muted-foreground">Coordinating</p>
+              <div className="text-2xl font-bold text-blue-600">{recordedInMonth}</div>
+              <p className="text-xs text-muted-foreground">Episodes recorded</p>
             </CardContent>
           </Card>
 
@@ -270,8 +290,16 @@ export default function ClientsManagement() {
             <CardTitle>Client List</CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Filters */}
-            <div className="flex flex-col sm:flex-row gap-4 mb-6">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="grid w-full max-w-md grid-cols-2 mb-6">
+                <TabsTrigger value="all">All Clients</TabsTrigger>
+                <TabsTrigger value="monthly">Monthly View</TabsTrigger>
+              </TabsList>
+
+              {/* All Clients Tab */}
+              <TabsContent value="all" className="space-y-4">
+                {/* Filters */}
+                <div className="flex flex-col sm:flex-row gap-4">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -310,7 +338,7 @@ export default function ClientsManagement() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredClients.map((client) => (
+                  {filteredAllClients.map((client) => (
                     <TableRow
                       key={client.id}
                       onClick={() => navigate(`/admin/clients/${client.id}`)}
@@ -360,11 +388,130 @@ export default function ClientsManagement() {
               </Table>
             </div>
 
-            {filteredClients.length === 0 && (
+            {filteredAllClients.length === 0 && (
               <div className="text-center py-12">
                 <p className="text-muted-foreground">No clients found</p>
               </div>
             )}
+              </TabsContent>
+
+              {/* Monthly View Tab */}
+              <TabsContent value="monthly" className="space-y-4">
+                {/* Month Navigation */}
+                <div className="flex items-center justify-between gap-4 mb-6">
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="icon" onClick={goToPreviousMonth}>
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <div className="text-lg font-semibold min-w-[180px] text-center">
+                      {monthNames[selectedMonth]} {selectedYear}
+                    </div>
+                    <Button variant="outline" size="icon" onClick={goToNextMonth}>
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <Button variant="outline" onClick={goToThisMonth}>
+                    This Month
+                  </Button>
+                </div>
+
+                {/* Filters */}
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by name or email..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-full sm:w-[180px]">
+                      <SelectValue placeholder="Filter by status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="paused">Paused</SelectItem>
+                      <SelectItem value="churned">Churned</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Table */}
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead className="text-center">Status</TableHead>
+                        <TableHead className="text-center">Portal</TableHead>
+                        <TableHead className="text-center">Total</TableHead>
+                        <TableHead className="text-center">Booked</TableHead>
+                        <TableHead className="text-center">In Progress</TableHead>
+                        <TableHead>Last Booking</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredClients.map((client) => (
+                        <TableRow
+                          key={client.id}
+                          onClick={() => navigate(`/admin/clients/${client.id}`)}
+                          className="cursor-pointer hover:bg-muted/50"
+                        >
+                          <TableCell className="font-medium">
+                            {client.name}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">{client.email || '-'}</TableCell>
+                          <TableCell className="text-center">
+                            {getStatusBadge(client.status)}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {client.portal_access_enabled ? (
+                              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-400 dark:border-green-900">
+                                <Unlock className="h-3 w-3 mr-1" />
+                                Enabled
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200 dark:bg-gray-950 dark:text-gray-400 dark:border-gray-900">
+                                <Lock className="h-3 w-3 mr-1" />
+                                Disabled
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center font-semibold">
+                            {client.totalBookings}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <span className="inline-flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-green-500" />
+                              {client.bookedCount}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <span className="inline-flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-yellow-500" />
+                              {client.inProgressCount}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {client.lastBookingDate ? formatDate(client.lastBookingDate) : 'No bookings'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {filteredClients.length === 0 && (
+                  <div className="text-center py-12">
+                    <p className="text-muted-foreground">No clients found in {monthNames[selectedMonth]} {selectedYear}</p>
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
       </div>
