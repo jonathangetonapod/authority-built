@@ -451,15 +451,17 @@ export default function PortalDashboard() {
       .slice(0, 10)
   }, [filteredByTimeRange])
 
-  // Next Steps / Action Items
+  // Next Steps / Action Items (using selected time range)
   const nextSteps = useMemo(() => {
     if (!bookings) return []
 
     const now = new Date()
-    const sevenDaysFromNow = new Date()
-    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
-    const fourteenDaysFromNow = new Date()
-    fourteenDaysFromNow.setDate(fourteenDaysFromNow.getDate() + 14)
+    const futureDate = new Date()
+    if (timeRange !== 'all') {
+      futureDate.setDate(futureDate.getDate() + timeRange)
+    } else {
+      futureDate.setFullYear(futureDate.getFullYear() + 10) // Far future for 'all'
+    }
 
     const actions: Array<{
       id: string
@@ -472,10 +474,10 @@ export default function PortalDashboard() {
     }> = []
 
     bookings.forEach(booking => {
-      // Recording coming up in next 7 days - prepare talking points
+      // Recording coming up - prepare talking points
       if (booking.recording_date && (booking.status === 'booked' || booking.status === 'in_progress' || booking.status === 'conversation_started')) {
         const recordingDate = new Date(booking.recording_date)
-        if (recordingDate >= now && recordingDate <= sevenDaysFromNow) {
+        if (recordingDate >= now && recordingDate <= futureDate) {
           const daysUntil = Math.ceil((recordingDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
           actions.push({
             id: `recording-prep-${booking.id}`,
@@ -489,10 +491,10 @@ export default function PortalDashboard() {
         }
       }
 
-      // Episode going live in next 7 days - share on social
+      // Episode going live - share on social
       if (booking.publish_date && (booking.status === 'recorded' || booking.status === 'published')) {
         const publishDate = new Date(booking.publish_date)
-        if (publishDate >= now && publishDate <= sevenDaysFromNow) {
+        if (publishDate >= now && publishDate <= futureDate) {
           const daysUntil = Math.ceil((publishDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
           actions.push({
             id: `going-live-${booking.id}`,
@@ -506,12 +508,16 @@ export default function PortalDashboard() {
         }
       }
 
-      // Episode published in last 14 days - share it
+      // Episode published recently - share it (use same time range backwards)
       if (booking.publish_date && booking.status === 'published' && booking.episode_url) {
         const publishDate = new Date(booking.publish_date)
-        const fourteenDaysAgo = new Date(now)
-        fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
-        if (publishDate >= fourteenDaysAgo && publishDate <= now) {
+        const pastDate = new Date(now)
+        if (timeRange !== 'all') {
+          pastDate.setDate(pastDate.getDate() - timeRange)
+        } else {
+          pastDate.setFullYear(pastDate.getFullYear() - 10) // Far past for 'all'
+        }
+        if (publishDate >= pastDate && publishDate <= now) {
           actions.push({
             id: `share-episode-${booking.id}`,
             type: 'share-episode',
@@ -540,7 +546,7 @@ export default function PortalDashboard() {
         return a.date.getTime() - b.date.getTime()
       })
       .slice(0, 10) // Show up to 10 total (completed + uncompleted)
-  }, [bookings, completedActions])
+  }, [bookings, completedActions, timeRange])
 
   // Calendar functions
   const calendarYear = calendarDate.getFullYear()
