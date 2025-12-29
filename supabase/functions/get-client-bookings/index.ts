@@ -40,6 +40,7 @@ serve(async (req) => {
     })
 
     // If session token provided, validate it
+    // If no session token, allow it (for admin impersonation)
     if (sessionToken) {
       const { data: session, error: sessionError } = await supabase
         .from('client_portal_sessions')
@@ -48,27 +49,34 @@ serve(async (req) => {
         .single()
 
       if (sessionError || !session) {
+        console.error('[Get Client Bookings] Invalid session:', sessionError)
         return new Response(
-          JSON.stringify({ error: 'Invalid session' }),
+          JSON.stringify({ error: 'Invalid session. Please log out and log back in.' }),
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
       // Check if session expired
       if (new Date(session.expires_at) < new Date()) {
+        console.log('[Get Client Bookings] Session expired for client:', clientId)
         return new Response(
-          JSON.stringify({ error: 'Session expired' }),
+          JSON.stringify({ error: 'Session expired. Please log in again.' }),
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
       // Verify client ID matches session
       if (session.client_id !== clientId) {
+        console.error('[Get Client Bookings] Client ID mismatch:', session.client_id, 'vs', clientId)
         return new Response(
           JSON.stringify({ error: 'Unauthorized' }),
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
+
+      console.log('[Get Client Bookings] Session validated for client:', clientId)
+    } else {
+      console.log('[Get Client Bookings] No session token - allowing (admin impersonation)')
     }
 
     // Fetch bookings with service role (bypasses RLS)
