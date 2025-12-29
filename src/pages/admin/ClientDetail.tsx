@@ -394,12 +394,17 @@ export default function ClientDetail() {
 
   const handleSaveBooking = () => {
     if (editingBooking && editBookingForm.podcast_name) {
-      // Clean up form data - convert empty strings to undefined for date fields
+      // Clean up form data - convert empty strings to null for nullable fields
+      // Use null instead of undefined so Supabase actually clears the fields
       const cleanedUpdates = {
         ...editBookingForm,
-        scheduled_date: editBookingForm.scheduled_date || undefined,
-        recording_date: editBookingForm.recording_date || undefined,
-        publish_date: editBookingForm.publish_date || undefined,
+        scheduled_date: editBookingForm.scheduled_date || null,
+        recording_date: editBookingForm.recording_date || null,
+        publish_date: editBookingForm.publish_date || null,
+        episode_url: editBookingForm.episode_url || null,
+        host_name: editBookingForm.host_name || null,
+        podcast_url: editBookingForm.podcast_url || null,
+        notes: editBookingForm.notes || null,
       }
 
       updateBookingMutation.mutate({
