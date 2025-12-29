@@ -57,9 +57,9 @@ export default function Dashboard() {
     return (booking.status === 'booked' || booking.status === 'in_progress') && !booking.recording_date
   })
 
-  // Bookings that need attention - recorded but missing publish date
+  // Bookings that need attention - recorded or published but missing publish date
   const needsPublishDate = allBookings.filter(booking => {
-    return booking.status === 'recorded' && !booking.publish_date
+    return (booking.status === 'recorded' || booking.status === 'published') && !booking.publish_date
   })
 
   // Upcoming recordings (filtered by time range)
@@ -324,7 +324,7 @@ export default function Dashboard() {
                       📺 Missing Publish Date ({needsPublishDate.length})
                     </p>
                     <p className="text-xs text-amber-800 dark:text-amber-200 mb-2">
-                      Recorded episodes need publish dates set
+                      Episodes need publish dates set
                     </p>
                     <div className="space-y-2">
                       {needsPublishDate.slice(0, 3).map(booking => (
@@ -339,7 +339,9 @@ export default function Dashboard() {
                               Client: {booking.client?.name || 'Unknown'}
                             </p>
                           </div>
-                          <Badge variant="secondary">Recorded</Badge>
+                          <Badge variant="secondary">
+                            {booking.status === 'recorded' ? 'Recorded' : 'Published'}
+                          </Badge>
                         </Link>
                       ))}
                     </div>

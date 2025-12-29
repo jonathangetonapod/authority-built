@@ -855,11 +855,11 @@ export default function PortalDashboard() {
     })
   }, [bookings])
 
-  // Bookings that need attention - recorded but missing publish date
+  // Bookings that need attention - recorded or published but missing publish date
   const needsPublishDate = useMemo(() => {
     if (!bookings) return []
     return bookings.filter(booking => {
-      return booking.status === 'recorded' && !booking.publish_date
+      return (booking.status === 'recorded' || booking.status === 'published') && !booking.publish_date
     })
   }, [bookings])
 
@@ -1480,7 +1480,7 @@ export default function PortalDashboard() {
                             {booking.podcast_name}
                           </button>
                           <Badge variant="outline" className="text-xs">
-                            Recorded
+                            {booking.status === 'recorded' ? 'Recorded' : 'Published'}
                           </Badge>
                         </div>
                       ))}
