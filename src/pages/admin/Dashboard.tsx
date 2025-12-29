@@ -181,21 +181,21 @@ export default function Dashboard() {
                 {/* Status Breakdown */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 pt-2">
                   <div className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg border">
-                    <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center flex-shrink-0">
-                      <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5 text-green-600" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-lg sm:text-xl font-bold">{bookedThisMonth}</div>
-                      <div className="text-xs text-muted-foreground">Booked</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg border">
                     <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-yellow-100 dark:bg-yellow-900/20 flex items-center justify-center flex-shrink-0">
                       <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-yellow-600" />
                     </div>
                     <div className="min-w-0">
                       <div className="text-lg sm:text-xl font-bold">{inProgressThisMonth}</div>
                       <div className="text-xs text-muted-foreground">In Progress</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg border">
+                    <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center flex-shrink-0">
+                      <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5 text-green-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-lg sm:text-xl font-bold">{bookedThisMonth}</div>
+                      <div className="text-xs text-muted-foreground">Booked</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg border">
