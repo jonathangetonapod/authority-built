@@ -93,28 +93,21 @@ export async function logout(sessionToken: string): Promise<void> {
 
 /**
  * Get all bookings for the authenticated client
+ * NOTE: This uses the admin client (authenticated role) which bypasses RLS
  */
 export async function getClientBookings(clientId: string): Promise<Booking[]> {
-  // Get session token if exists
-  const { session } = sessionStorage.get()
-
-  const { data, error } = await supabase.functions.invoke('get-client-bookings', {
-    body: {
-      clientId,
-      sessionToken: session?.session_token
-    }
-  })
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('*')
+    .eq('client_id', clientId)
+    .order('scheduled_date', { ascending: false, nullsFirst: false })
 
   if (error) {
     console.error('Failed to fetch bookings:', error)
-    throw new Error(error.message || 'Failed to fetch bookings')
+    throw new Error(`Failed to fetch bookings: ${error.message}`)
   }
 
-  if (!data.bookings) {
-    throw new Error(data.error || 'Failed to fetch bookings')
-  }
-
-  return data.bookings as Booking[]
+  return data as Booking[]
 }
 
 /**

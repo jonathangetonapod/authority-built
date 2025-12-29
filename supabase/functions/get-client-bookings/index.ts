@@ -20,6 +20,8 @@ serve(async (req) => {
   try {
     const { sessionToken, clientId }: RequestBody = await req.json()
 
+    console.log('[Get Client Bookings] Request:', { clientId, hasSessionToken: !!sessionToken })
+
     if (!clientId) {
       return new Response(
         JSON.stringify({ error: 'Client ID is required' }),
@@ -28,8 +30,21 @@ serve(async (req) => {
     }
 
     // Get environment variables
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+
+    console.log('[Get Client Bookings] Env check:', {
+      hasUrl: !!supabaseUrl,
+      hasKey: !!supabaseServiceKey
+    })
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('[Get Client Bookings] Missing environment variables!')
+      return new Response(
+        JSON.stringify({ error: 'Server configuration error' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
 
     // Initialize Supabase client with service role
     const supabase = createClient(supabaseUrl, supabaseServiceKey, {
