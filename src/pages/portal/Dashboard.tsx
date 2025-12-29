@@ -53,7 +53,7 @@ import {
   SlidersHorizontal,
   RefreshCw
 } from 'lucide-react'
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, LineChart, Line, ComposedChart, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { getClientBookings } from '@/services/clientPortal'
 import type { Booking } from '@/services/bookings'
 import { getActivePremiumPodcasts, type PremiumPodcast } from '@/services/premiumPodcasts'
@@ -110,6 +110,7 @@ export default function PortalDashboard() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [selectedAudienceTier, setSelectedAudienceTier] = useState('all')
   const [selectedPriceRange, setSelectedPriceRange] = useState('all')
+  const [analyticsTimeRange, setAnalyticsTimeRange] = useState<'3months' | '6months' | '1year' | 'all'>('6months')
   const { addItem, isInCart } = useCartStore()
 
   // Fetch bookings
@@ -854,6 +855,174 @@ export default function PortalDashboard() {
     })
   }, [bookings])
 
+  // Analytics calculations
+  const analyticsData = useMemo(() => {
+    if (!bookings || bookings.length === 0) return null
+
+    // Filter published bookings with publish_date
+    const publishedBookings = bookings.filter(b => b.status === 'published' && b.publish_date)
+
+    if (publishedBookings.length === 0) return null
+
+    // Filter by analytics time range
+    const now = new Date()
+    const cutoffDate = new Date()
+
+    if (analyticsTimeRange === '3months') {
+      cutoffDate.setMonth(now.getMonth() - 3)
+    } else if (analyticsTimeRange === '6months') {
+      cutoffDate.setMonth(now.getMonth() - 6)
+    } else if (analyticsTimeRange === '1year') {
+      cutoffDate.setFullYear(now.getFullYear() - 1)
+    } else {
+      // 'all' - no filter
+      cutoffDate.setFullYear(2000) // far past
+    }
+
+    const filteredBookings = publishedBookings.filter(b => {
+      const publishDate = new Date(b.publish_date!)
+      return publishDate >= cutoffDate
+    })
+
+    if (filteredBookings.length === 0) return null
+
+    // Group by month
+    const monthlyData: Record<string, {
+      month: string
+      year: number
+      monthNum: number
+      episodes: number
+      totalReach: number
+      ratings: number[]
+      bookings: Booking[]
+    }> = {}
+
+    filteredBookings.forEach(booking => {
+      const publishDate = new Date(booking.publish_date!)
+      const monthKey = `${publishDate.getFullYear()}-${String(publishDate.getMonth() + 1).padStart(2, '0')}`
+
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = {
+          month: monthNames[publishDate.getMonth()],
+          year: publishDate.getFullYear(),
+          monthNum: publishDate.getMonth(),
+          episodes: 0,
+          totalReach: 0,
+          ratings: [],
+          bookings: []
+        }
+      }
+
+      monthlyData[monthKey].episodes++
+      monthlyData[monthKey].totalReach += booking.audience_size || 0
+      if (booking.itunes_rating && !isNaN(Number(booking.itunes_rating))) {
+        monthlyData[monthKey].ratings.push(Number(booking.itunes_rating))
+      }
+      monthlyData[monthKey].bookings.push(booking)
+    })
+
+    // Convert to array and sort by date
+    const monthlyArray = Object.entries(monthlyData)
+      .map(([key, data]) => ({
+        key,
+        ...data,
+        avgRating: data.ratings.length > 0
+          ? data.ratings.reduce((sum, r) => sum + r, 0) / data.ratings.length
+          : 0
+      }))
+      .sort((a, b) => {
+        const dateA = new Date(a.year, a.monthNum)
+        const dateB = new Date(b.year, b.monthNum)
+        return dateA.getTime() - dateB.getTime()
+      })
+
+    // Calculate growth rates
+    const monthlyWithGrowth = monthlyArray.map((month, idx) => {
+      if (idx === 0) {
+        return { ...month, growth: 0 }
+      }
+      const prev = monthlyArray[idx - 1]
+      const growth = prev.totalReach > 0
+        ? ((month.totalReach - prev.totalReach) / prev.totalReach) * 100
+        : 0
+      return { ...month, growth }
+    })
+
+    // Find best month
+    const bestMonth = [...monthlyArray].sort((a, b) => b.totalReach - a.totalReach)[0]
+
+    // Calculate overall growth
+    const firstMonth = monthlyArray[0]
+    const lastMonth = monthlyArray[monthlyArray.length - 1]
+    const overallGrowth = firstMonth.totalReach > 0
+      ? ((lastMonth.totalReach - firstMonth.totalReach) / firstMonth.totalReach) * 100
+      : 0
+
+    // Calculate projections
+    const avgMonthlyReach = monthlyArray.reduce((sum, m) => sum + m.totalReach, 0) / monthlyArray.length
+    const monthsUntilEndOfYear = 12 - now.getMonth()
+    const projectedYearEndReach = filteredBookings.reduce((sum, b) => sum + (b.audience_size || 0), 0) + (avgMonthlyReach * monthsUntilEndOfYear)
+
+    // Period comparison (if we have enough data)
+    let periodComparison = null
+    const halfPoint = Math.floor(monthlyArray.length / 2)
+    if (monthlyArray.length >= 4) {
+      const firstHalf = monthlyArray.slice(0, halfPoint)
+      const secondHalf = monthlyArray.slice(halfPoint)
+
+      const firstHalfStats = {
+        episodes: firstHalf.reduce((sum, m) => sum + m.episodes, 0),
+        reach: firstHalf.reduce((sum, m) => sum + m.totalReach, 0),
+        avgRating: firstHalf.reduce((sum, m) => sum + m.avgRating, 0) / firstHalf.length,
+        avgAudience: firstHalf.reduce((sum, m) => sum + m.totalReach, 0) / firstHalf.reduce((sum, m) => sum + m.episodes, 0)
+      }
+
+      const secondHalfStats = {
+        episodes: secondHalf.reduce((sum, m) => sum + m.episodes, 0),
+        reach: secondHalf.reduce((sum, m) => sum + m.totalReach, 0),
+        avgRating: secondHalf.reduce((sum, m) => sum + m.avgRating, 0) / secondHalf.length,
+        avgAudience: secondHalf.reduce((sum, m) => sum + m.totalReach, 0) / secondHalf.reduce((sum, m) => sum + m.episodes, 0)
+      }
+
+      periodComparison = {
+        episodes: {
+          before: firstHalfStats.episodes,
+          after: secondHalfStats.episodes,
+          growth: firstHalfStats.episodes > 0 ? ((secondHalfStats.episodes - firstHalfStats.episodes) / firstHalfStats.episodes) * 100 : 0
+        },
+        reach: {
+          before: firstHalfStats.reach,
+          after: secondHalfStats.reach,
+          growth: firstHalfStats.reach > 0 ? ((secondHalfStats.reach - firstHalfStats.reach) / firstHalfStats.reach) * 100 : 0
+        },
+        avgRating: {
+          before: firstHalfStats.avgRating,
+          after: secondHalfStats.avgRating,
+          growth: firstHalfStats.avgRating > 0 ? ((secondHalfStats.avgRating - firstHalfStats.avgRating) / firstHalfStats.avgRating) * 100 : 0
+        },
+        avgAudience: {
+          before: firstHalfStats.avgAudience,
+          after: secondHalfStats.avgAudience,
+          growth: firstHalfStats.avgAudience > 0 ? ((secondHalfStats.avgAudience - firstHalfStats.avgAudience) / firstHalfStats.avgAudience) * 100 : 0
+        }
+      }
+    }
+
+    return {
+      monthlyData: monthlyWithGrowth,
+      bestMonth,
+      overallGrowth,
+      totalEpisodes: filteredBookings.length,
+      totalReach: filteredBookings.reduce((sum, b) => sum + (b.audience_size || 0), 0),
+      avgRating: monthlyArray.reduce((sum, m) => sum + m.avgRating, 0) / monthlyArray.length,
+      avgMonthlyReach,
+      projectedYearEndReach,
+      periodComparison,
+      firstMonth,
+      lastMonth
+    }
+  }, [bookings, analyticsTimeRange])
+
   return (
     <PortalLayout>
       <div className="space-y-6">
@@ -880,8 +1049,9 @@ export default function PortalDashboard() {
 
         {/* Tabs */}
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full max-w-4xl grid-cols-5">
+          <TabsList className="grid w-full max-w-4xl grid-cols-6">
             <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="analytics">Analytics</TabsTrigger>
             <TabsTrigger value="calendar">Calendar</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
             <TabsTrigger value="podcast-list">Outreach List</TabsTrigger>
@@ -1565,6 +1735,395 @@ export default function PortalDashboard() {
             )}
           </CardContent>
         </Card>
+          </TabsContent>
+
+          {/* ANALYTICS TAB */}
+          <TabsContent value="analytics" className="space-y-6">
+            {/* Time Range Selector */}
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    variant={analyticsTimeRange === '3months' ? 'default' : 'outline'}
+                    onClick={() => setAnalyticsTimeRange('3months')}
+                    size="sm"
+                  >
+                    Last 3 Months
+                  </Button>
+                  <Button
+                    variant={analyticsTimeRange === '6months' ? 'default' : 'outline'}
+                    onClick={() => setAnalyticsTimeRange('6months')}
+                    size="sm"
+                  >
+                    Last 6 Months
+                  </Button>
+                  <Button
+                    variant={analyticsTimeRange === '1year' ? 'default' : 'outline'}
+                    onClick={() => setAnalyticsTimeRange('1year')}
+                    size="sm"
+                  >
+                    Last Year
+                  </Button>
+                  <Button
+                    variant={analyticsTimeRange === 'all' ? 'default' : 'outline'}
+                    onClick={() => setAnalyticsTimeRange('all')}
+                    size="sm"
+                  >
+                    All Time
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {analyticsData ? (
+              <>
+                {/* Top Stats Row */}
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Episodes Published</CardTitle>
+                      <Video className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{analyticsData.totalEpisodes}</div>
+                      {analyticsData.periodComparison && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          <span className={analyticsData.periodComparison.episodes.growth >= 0 ? 'text-green-600' : 'text-red-600'}>
+                            {analyticsData.periodComparison.episodes.growth >= 0 ? '↑' : '↓'} {Math.abs(analyticsData.periodComparison.episodes.growth).toFixed(0)}%
+                          </span> vs earlier period
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Total Reach</CardTitle>
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">
+                        {analyticsData.totalReach >= 1000000
+                          ? `${(analyticsData.totalReach / 1000000).toFixed(1)}M`
+                          : analyticsData.totalReach >= 1000
+                          ? `${(analyticsData.totalReach / 1000).toFixed(0)}K`
+                          : analyticsData.totalReach.toLocaleString()}
+                      </div>
+                      {analyticsData.periodComparison && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          <span className={analyticsData.periodComparison.reach.growth >= 0 ? 'text-green-600' : 'text-red-600'}>
+                            {analyticsData.periodComparison.reach.growth >= 0 ? '↑' : '↓'} {Math.abs(analyticsData.periodComparison.reach.growth).toFixed(0)}%
+                          </span> vs earlier period
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Avg Podcast Rating</CardTitle>
+                      <Star className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">
+                        ⭐ {analyticsData.avgRating.toFixed(1)}
+                      </div>
+                      {analyticsData.periodComparison && analyticsData.periodComparison.avgRating.before > 0 && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          <span className={analyticsData.periodComparison.avgRating.growth >= 0 ? 'text-green-600' : 'text-red-600'}>
+                            {analyticsData.periodComparison.avgRating.growth >= 0 ? '↑' : '↓'} {Math.abs(analyticsData.periodComparison.avgRating.growth).toFixed(1)}%
+                          </span> vs earlier period
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Growth Rate</CardTitle>
+                      <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className={`text-2xl font-bold ${analyticsData.overallGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {analyticsData.overallGrowth >= 0 ? '↑' : '↓'} {Math.abs(analyticsData.overallGrowth).toFixed(0)}%
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Overall trend
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Main Chart */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Episodes & Reach Over Time</CardTitle>
+                    <CardDescription>Monthly performance showing episodes published and cumulative reach</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={400}>
+                      <ComposedChart data={analyticsData.monthlyData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="month"
+                          tick={{ fontSize: 12 }}
+                          tickFormatter={(value, index) => {
+                            const item = analyticsData.monthlyData[index]
+                            return `${value.substring(0, 3)} '${item.year.toString().substring(2)}`
+                          }}
+                        />
+                        <YAxis
+                          yAxisId="left"
+                          label={{ value: 'Reach', angle: -90, position: 'insideLeft' }}
+                          tick={{ fontSize: 12 }}
+                          tickFormatter={(value) => {
+                            if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`
+                            if (value >= 1000) return `${(value / 1000).toFixed(0)}K`
+                            return value
+                          }}
+                        />
+                        <YAxis
+                          yAxisId="right"
+                          orientation="right"
+                          label={{ value: 'Episodes', angle: 90, position: 'insideRight' }}
+                          tick={{ fontSize: 12 }}
+                        />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #ccc' }}
+                          formatter={(value: any, name: string) => {
+                            if (name === 'totalReach') return [value.toLocaleString(), 'Total Reach']
+                            if (name === 'episodes') return [value, 'Episodes']
+                            if (name === 'avgRating') return [Number(value).toFixed(1), 'Avg Rating']
+                            return value
+                          }}
+                          labelFormatter={(label, payload) => {
+                            if (payload && payload[0]) {
+                              const data = payload[0].payload
+                              return `${data.month} ${data.year}`
+                            }
+                            return label
+                          }}
+                        />
+                        <Legend />
+                        <Bar yAxisId="right" dataKey="episodes" fill="#8b5cf6" name="Episodes Published" />
+                        <Line yAxisId="left" type="monotone" dataKey="totalReach" stroke="#3b82f6" strokeWidth={2} name="Total Reach" />
+                        <Line yAxisId="left" type="monotone" dataKey="avgRating" stroke="#f59e0b" strokeWidth={2} name="Avg Rating (0-5)" />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                {/* Month by Month Table */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Month-by-Month Performance</CardTitle>
+                    <CardDescription>Detailed breakdown of your podcast growth</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Month</TableHead>
+                          <TableHead className="text-right">Episodes</TableHead>
+                          <TableHead className="text-right">Total Reach</TableHead>
+                          <TableHead className="text-right">Avg Rating</TableHead>
+                          <TableHead className="text-right">Growth</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {analyticsData.monthlyData.slice().reverse().map((month) => (
+                          <TableRow key={month.key}>
+                            <TableCell className="font-medium">
+                              {month.month} {month.year}
+                            </TableCell>
+                            <TableCell className="text-right">{month.episodes}</TableCell>
+                            <TableCell className="text-right">
+                              {month.totalReach >= 1000000
+                                ? `${(month.totalReach / 1000000).toFixed(1)}M`
+                                : month.totalReach >= 1000
+                                ? `${(month.totalReach / 1000).toFixed(0)}K`
+                                : month.totalReach.toLocaleString()}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {month.avgRating > 0 ? `⭐ ${month.avgRating.toFixed(1)}` : 'N/A'}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {month.growth !== 0 && (
+                                <span className={month.growth >= 0 ? 'text-green-600' : 'text-red-600'}>
+                                  {month.growth >= 0 ? '↑' : '↓'} {Math.abs(month.growth).toFixed(0)}%
+                                </span>
+                              )}
+                              {month.growth === 0 && <span className="text-muted-foreground">-</span>}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+
+                {/* Key Insights */}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Card className="bg-gradient-to-br from-amber-50 to-yellow-50 dark:from-amber-950 dark:to-yellow-950 border-amber-200">
+                    <CardHeader>
+                      <div className="flex items-center gap-2">
+                        <Trophy className="h-5 w-5 text-amber-600" />
+                        <CardTitle className="text-amber-900 dark:text-amber-100">Best Month</CardTitle>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-lg font-semibold text-amber-900 dark:text-amber-100">
+                        {analyticsData.bestMonth.month} {analyticsData.bestMonth.year}
+                      </p>
+                      <p className="text-sm text-amber-800 dark:text-amber-200 mt-2">
+                        {analyticsData.bestMonth.episodes} episodes reaching{' '}
+                        {analyticsData.bestMonth.totalReach >= 1000000
+                          ? `${(analyticsData.bestMonth.totalReach / 1000000).toFixed(1)}M`
+                          : analyticsData.bestMonth.totalReach >= 1000
+                          ? `${(analyticsData.bestMonth.totalReach / 1000).toFixed(0)}K`
+                          : analyticsData.bestMonth.totalReach.toLocaleString()}{' '}
+                        listeners
+                      </p>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950 dark:to-teal-950 border-emerald-200">
+                    <CardHeader>
+                      <div className="flex items-center gap-2">
+                        <TrendingUp className="h-5 w-5 text-emerald-600" />
+                        <CardTitle className="text-emerald-900 dark:text-emerald-100">Overall Growth</CardTitle>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-lg font-semibold text-emerald-900 dark:text-emerald-100">
+                        {analyticsData.overallGrowth >= 0 ? '+' : ''}{analyticsData.overallGrowth.toFixed(0)}% Growth
+                      </p>
+                      <p className="text-sm text-emerald-800 dark:text-emerald-200 mt-2">
+                        From {analyticsData.firstMonth.month} {analyticsData.firstMonth.year} to{' '}
+                        {analyticsData.lastMonth.month} {analyticsData.lastMonth.year}
+                      </p>
+                    </CardContent>
+                  </Card>
+
+                  {analyticsData.avgRating >= 4.0 && (
+                    <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950 border-blue-200">
+                      <CardHeader>
+                        <div className="flex items-center gap-2">
+                          <Star className="h-5 w-5 text-blue-600 fill-blue-600" />
+                          <CardTitle className="text-blue-900 dark:text-blue-100">Quality Improvement</CardTitle>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-lg font-semibold text-blue-900 dark:text-blue-100">
+                          ⭐ {analyticsData.avgRating.toFixed(1)} Average Rating
+                        </p>
+                        <p className="text-sm text-blue-800 dark:text-blue-200 mt-2">
+                          You're consistently appearing on high-quality shows
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  <Card className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950 dark:to-pink-950 border-purple-200">
+                    <CardHeader>
+                      <div className="flex items-center gap-2">
+                        <Target className="h-5 w-5 text-purple-600" />
+                        <CardTitle className="text-purple-900 dark:text-purple-100">Projected Year-End</CardTitle>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-lg font-semibold text-purple-900 dark:text-purple-100">
+                        {analyticsData.projectedYearEndReach >= 1000000
+                          ? `${(analyticsData.projectedYearEndReach / 1000000).toFixed(1)}M`
+                          : analyticsData.projectedYearEndReach >= 1000
+                          ? `${(analyticsData.projectedYearEndReach / 1000).toFixed(0)}K`
+                          : analyticsData.projectedYearEndReach.toLocaleString()}{' '}
+                        Total Reach
+                      </p>
+                      <p className="text-sm text-purple-800 dark:text-purple-200 mt-2">
+                        At your current pace by end of {new Date().getFullYear()}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Period Comparison */}
+                {analyticsData.periodComparison && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Period Comparison</CardTitle>
+                      <CardDescription>Earlier vs later half of selected time range</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground mb-2">Episodes</p>
+                          <div className="flex items-baseline gap-2">
+                            <p className="text-2xl font-bold">{analyticsData.periodComparison.episodes.after}</p>
+                            <span className="text-xs text-muted-foreground">from {analyticsData.periodComparison.episodes.before}</span>
+                          </div>
+                          <p className={`text-sm mt-1 ${analyticsData.periodComparison.episodes.growth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {analyticsData.periodComparison.episodes.growth >= 0 ? '↑' : '↓'} {Math.abs(analyticsData.periodComparison.episodes.growth).toFixed(0)}%
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground mb-2">Total Reach</p>
+                          <div className="flex items-baseline gap-2">
+                            <p className="text-2xl font-bold">
+                              {analyticsData.periodComparison.reach.after >= 1000000
+                                ? `${(analyticsData.periodComparison.reach.after / 1000000).toFixed(1)}M`
+                                : analyticsData.periodComparison.reach.after >= 1000
+                                ? `${(analyticsData.periodComparison.reach.after / 1000).toFixed(0)}K`
+                                : analyticsData.periodComparison.reach.after.toLocaleString()}
+                            </p>
+                          </div>
+                          <p className={`text-sm mt-1 ${analyticsData.periodComparison.reach.growth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {analyticsData.periodComparison.reach.growth >= 0 ? '↑' : '↓'} {Math.abs(analyticsData.periodComparison.reach.growth).toFixed(0)}%
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground mb-2">Avg Rating</p>
+                          <div className="flex items-baseline gap-2">
+                            <p className="text-2xl font-bold">⭐ {analyticsData.periodComparison.avgRating.after.toFixed(1)}</p>
+                          </div>
+                          {analyticsData.periodComparison.avgRating.before > 0 && (
+                            <p className={`text-sm mt-1 ${analyticsData.periodComparison.avgRating.growth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {analyticsData.periodComparison.avgRating.growth >= 0 ? '↑' : '↓'} {Math.abs(analyticsData.periodComparison.avgRating.growth).toFixed(1)}%
+                            </p>
+                          )}
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground mb-2">Avg Audience</p>
+                          <div className="flex items-baseline gap-2">
+                            <p className="text-2xl font-bold">
+                              {analyticsData.periodComparison.avgAudience.after >= 1000
+                                ? `${(analyticsData.periodComparison.avgAudience.after / 1000).toFixed(0)}K`
+                                : Math.round(analyticsData.periodComparison.avgAudience.after).toLocaleString()}
+                            </p>
+                          </div>
+                          <p className={`text-sm mt-1 ${analyticsData.periodComparison.avgAudience.growth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {analyticsData.periodComparison.avgAudience.growth >= 0 ? '↑' : '↓'} {Math.abs(analyticsData.periodComparison.avgAudience.growth).toFixed(0)}%
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
+            ) : (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <BarChart3 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-lg font-semibold text-muted-foreground">No Analytics Data Yet</p>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Analytics will appear once you have published episodes in the selected time range.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* CALENDAR TAB */}
