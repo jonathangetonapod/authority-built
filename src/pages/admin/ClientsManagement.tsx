@@ -125,8 +125,15 @@ export default function ClientsManagement() {
     const matchesSearch = client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          (client.email && client.email.toLowerCase().includes(searchTerm.toLowerCase()))
     const matchesStatus = statusFilter === 'all' || client.status === statusFilter
-    const hasBookingsInMonth = client.totalBookings > 0 // Only show clients with bookings in selected month
-    return matchesSearch && matchesStatus && hasBookingsInMonth
+
+    // Show clients if they have bookings in month OR were created in month
+    const hasBookingsInMonth = client.totalBookings > 0
+    const createdInMonth = client.created_at &&
+                          new Date(client.created_at).getMonth() === selectedMonth &&
+                          new Date(client.created_at).getFullYear() === selectedYear
+    const isRelevantForMonth = hasBookingsInMonth || createdInMonth
+
+    return matchesSearch && matchesStatus && isRelevantForMonth
   })
 
   const filteredAllClients = allClientsWithStats.filter(client => {
