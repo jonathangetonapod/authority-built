@@ -47,19 +47,19 @@ export default function Dashboard() {
   const publishedThisMonth = thisMonthBookings.filter(b => b.status === 'published').length
   const completionRate = totalThisMonth > 0 ? (publishedThisMonth / totalThisMonth) * 100 : 0
 
-  // Bookings that need attention - missing scheduled date
+  // Bookings that need attention - missing scheduled date (any status)
   const needsScheduledDate = allBookings.filter(booking => {
-    return (booking.status === 'booked' || booking.status === 'in_progress' || booking.status === 'conversation_started') && !booking.scheduled_date
+    return !booking.scheduled_date
   })
 
-  // Bookings that need attention - scheduled but missing recording date
+  // Bookings that need attention - missing recording date (any status)
   const needsRecordingDate = allBookings.filter(booking => {
-    return (booking.status === 'booked' || booking.status === 'in_progress') && !booking.recording_date
+    return !booking.recording_date
   })
 
-  // Bookings that need attention - recorded or published but missing publish date
+  // Bookings that need attention - missing publish date (any status)
   const needsPublishDate = allBookings.filter(booking => {
-    return (booking.status === 'recorded' || booking.status === 'published') && !booking.publish_date
+    return !booking.publish_date
   })
 
   // Upcoming recordings (filtered by time range)
@@ -262,7 +262,7 @@ export default function Dashboard() {
                       🗓️ Missing Scheduled Date ({needsScheduledDate.length})
                     </p>
                     <p className="text-xs text-amber-800 dark:text-amber-200 mb-2">
-                      Bookings need scheduled dates set
+                      All bookings need scheduled dates set
                     </p>
                     <div className="space-y-2">
                       {needsScheduledDate.slice(0, 3).map(booking => (
@@ -277,8 +277,12 @@ export default function Dashboard() {
                               Client: {booking.client?.name || 'Unknown'}
                             </p>
                           </div>
-                          <Badge variant={booking.status === 'booked' ? 'default' : 'secondary'}>
-                            {booking.status === 'booked' ? 'Booked' : booking.status === 'in_progress' ? 'In Progress' : 'Conversation Started'}
+                          <Badge variant={
+                            booking.status === 'published' ? 'default' :
+                            booking.status === 'recorded' ? 'secondary' :
+                            'outline'
+                          }>
+                            {booking.status.charAt(0).toUpperCase() + booking.status.slice(1).replace('_', ' ')}
                           </Badge>
                         </Link>
                       ))}
@@ -293,7 +297,7 @@ export default function Dashboard() {
                       📅 Missing Recording Date ({needsRecordingDate.length})
                     </p>
                     <p className="text-xs text-amber-800 dark:text-amber-200 mb-2">
-                      Scheduled bookings need recording dates set
+                      All bookings need recording dates set
                     </p>
                     <div className="space-y-2">
                       {needsRecordingDate.slice(0, 3).map(booking => (
@@ -308,8 +312,12 @@ export default function Dashboard() {
                               Client: {booking.client?.name || 'Unknown'}
                             </p>
                           </div>
-                          <Badge variant={booking.status === 'booked' ? 'default' : 'secondary'}>
-                            {booking.status === 'booked' ? 'Booked' : 'In Progress'}
+                          <Badge variant={
+                            booking.status === 'published' ? 'default' :
+                            booking.status === 'recorded' ? 'secondary' :
+                            'outline'
+                          }>
+                            {booking.status.charAt(0).toUpperCase() + booking.status.slice(1).replace('_', ' ')}
                           </Badge>
                         </Link>
                       ))}
@@ -324,7 +332,7 @@ export default function Dashboard() {
                       📺 Missing Publish Date ({needsPublishDate.length})
                     </p>
                     <p className="text-xs text-amber-800 dark:text-amber-200 mb-2">
-                      Episodes need publish dates set
+                      All bookings need publish dates set
                     </p>
                     <div className="space-y-2">
                       {needsPublishDate.slice(0, 3).map(booking => (
@@ -339,8 +347,12 @@ export default function Dashboard() {
                               Client: {booking.client?.name || 'Unknown'}
                             </p>
                           </div>
-                          <Badge variant="secondary">
-                            {booking.status === 'recorded' ? 'Recorded' : 'Published'}
+                          <Badge variant={
+                            booking.status === 'published' ? 'default' :
+                            booking.status === 'recorded' ? 'secondary' :
+                            'outline'
+                          }>
+                            {booking.status.charAt(0).toUpperCase() + booking.status.slice(1).replace('_', ' ')}
                           </Badge>
                         </Link>
                       ))}

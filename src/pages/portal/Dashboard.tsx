@@ -839,27 +839,27 @@ export default function PortalDashboard() {
     published: filteredByTimeRange?.filter(b => b.status === 'published').length || 0,
   }
 
-  // Bookings that need attention - missing scheduled date
+  // Bookings that need attention - missing scheduled date (any status)
   const needsScheduledDate = useMemo(() => {
     if (!bookings) return []
     return bookings.filter(booking => {
-      return (booking.status === 'booked' || booking.status === 'in_progress' || booking.status === 'conversation_started') && !booking.scheduled_date
+      return !booking.scheduled_date
     })
   }, [bookings])
 
-  // Bookings that need attention - scheduled but missing recording date
+  // Bookings that need attention - missing recording date (any status)
   const needsRecordingDate = useMemo(() => {
     if (!bookings) return []
     return bookings.filter(booking => {
-      return (booking.status === 'booked' || booking.status === 'in_progress') && !booking.recording_date
+      return !booking.recording_date
     })
   }, [bookings])
 
-  // Bookings that need attention - recorded or published but missing publish date
+  // Bookings that need attention - missing publish date (any status)
   const needsPublishDate = useMemo(() => {
     if (!bookings) return []
     return bookings.filter(booking => {
-      return (booking.status === 'recorded' || booking.status === 'published') && !booking.publish_date
+      return !booking.publish_date
     })
   }, [bookings])
 
@@ -1432,7 +1432,7 @@ export default function PortalDashboard() {
                             {booking.podcast_name}
                           </button>
                           <Badge variant="outline" className="text-xs">
-                            {booking.status === 'booked' ? 'Booked' : booking.status === 'in_progress' ? 'In Progress' : 'Conversation Started'}
+                            {booking.status.charAt(0).toUpperCase() + booking.status.slice(1).replace('_', ' ')}
                           </Badge>
                         </div>
                       ))}
@@ -1456,7 +1456,7 @@ export default function PortalDashboard() {
                             {booking.podcast_name}
                           </button>
                           <Badge variant="outline" className="text-xs">
-                            {booking.status === 'booked' ? 'Booked' : 'In Progress'}
+                            {booking.status.charAt(0).toUpperCase() + booking.status.slice(1).replace('_', ' ')}
                           </Badge>
                         </div>
                       ))}
@@ -1480,7 +1480,7 @@ export default function PortalDashboard() {
                             {booking.podcast_name}
                           </button>
                           <Badge variant="outline" className="text-xs">
-                            {booking.status === 'recorded' ? 'Recorded' : 'Published'}
+                            {booking.status.charAt(0).toUpperCase() + booking.status.slice(1).replace('_', ' ')}
                           </Badge>
                         </div>
                       ))}
