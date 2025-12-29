@@ -12,10 +12,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Users, Calendar as CalendarIcon, CheckCircle2, Clock, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Search, Filter, CheckCheck, Loader2, Video, Trash2 } from 'lucide-react'
+import { Users, Calendar as CalendarIcon, CheckCircle2, Clock, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Search, Filter, CheckCheck, Loader2, Video, Trash2, CalendarPlus } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { getClients } from '@/services/clients'
 import { getBookings, getBookingsByMonth, updateBooking, deleteBooking } from '@/services/bookings'
+import { createCalendarEventFromBooking, openGoogleCalendar } from '@/lib/googleCalendar'
+import { toast } from 'sonner'
 
 const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -698,10 +700,10 @@ export default function CalendarDashboard() {
                             {clientBookings.map(booking => (
                               <div
                                 key={booking.id}
-                                className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                                className="flex items-center justify-between p-3 bg-muted rounded-lg gap-2"
                               >
-                                <div className="flex-1">
-                                  <p className="font-medium">{booking.podcast_name}</p>
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium truncate">{booking.podcast_name}</p>
                                   <p className="text-sm text-muted-foreground">
                                     {booking.scheduled_date ? new Date(booking.scheduled_date).toLocaleDateString('en-US', {
                                       month: 'short',
@@ -710,7 +712,28 @@ export default function CalendarDashboard() {
                                     }) : 'No date set'}
                                   </p>
                                 </div>
-                                {getStatusBadge(booking.status)}
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  {(booking.recording_date || booking.scheduled_date) && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        const calendarEvent = createCalendarEventFromBooking(booking)
+                                        if (calendarEvent) {
+                                          openGoogleCalendar(calendarEvent)
+                                          toast.success('Opening Google Calendar...')
+                                        } else {
+                                          toast.error('No date available for this booking')
+                                        }
+                                      }}
+                                      title="Add to Google Calendar"
+                                    >
+                                      <CalendarPlus className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  {getStatusBadge(booking.status)}
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -953,6 +976,24 @@ export default function CalendarDashboard() {
                                 >
                                   Edit
                                 </Button>
+                                {(booking.recording_date || booking.scheduled_date) && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      const calendarEvent = createCalendarEventFromBooking(booking)
+                                      if (calendarEvent) {
+                                        openGoogleCalendar(calendarEvent)
+                                        toast.success('Opening Google Calendar...')
+                                      } else {
+                                        toast.error('No date available for this booking')
+                                      }
+                                    }}
+                                    title="Add to Google Calendar"
+                                  >
+                                    <CalendarPlus className="h-4 w-4" />
+                                  </Button>
+                                )}
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1132,6 +1173,24 @@ export default function CalendarDashboard() {
                   >
                     Edit Status
                   </Button>
+                  {(booking.recording_date || booking.scheduled_date) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const calendarEvent = createCalendarEventFromBooking(booking)
+                        if (calendarEvent) {
+                          openGoogleCalendar(calendarEvent)
+                          toast.success('Opening Google Calendar...')
+                        } else {
+                          toast.error('No date available for this booking')
+                        }
+                      }}
+                    >
+                      <CalendarPlus className="h-4 w-4 mr-2" />
+                      Add to Calendar
+                    </Button>
+                  )}
                   <Button
                     variant="destructive"
                     size="sm"
