@@ -2013,6 +2013,65 @@ export default function PortalDashboard() {
                   </CardContent>
                 </Card>
 
+                {/* Bookings Over Time Chart */}
+                <Card className="border-2 border-blue-200 bg-gradient-to-br from-blue-50/50 to-indigo-50/50 dark:from-blue-950/20 dark:to-indigo-950/20">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <CheckCircle2 className="h-5 w-5 text-blue-600" />
+                      Bookings Secured Month Over Month
+                    </CardTitle>
+                    <CardDescription>
+                      Total podcast bookings secured each month showing our booking velocity
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={350}>
+                      <BarChart data={analyticsData.monthlyData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="month"
+                          tick={{ fontSize: 12 }}
+                          tickFormatter={(value, index) => {
+                            const item = analyticsData.monthlyData[index]
+                            return `${value.substring(0, 3)} '${item.year.toString().substring(2)}`
+                          }}
+                        />
+                        <YAxis
+                          label={{ value: 'Number of Bookings', angle: -90, position: 'insideLeft' }}
+                          tick={{ fontSize: 12 }}
+                        />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #ccc' }}
+                          formatter={(value: any, name: string) => {
+                            if (name === 'totalBookings') return [value, 'Bookings Secured']
+                            return value
+                          }}
+                          labelFormatter={(label, payload) => {
+                            if (payload && payload[0]) {
+                              const data = payload[0].payload
+                              return `${data.month} ${data.year}`
+                            }
+                            return label
+                          }}
+                        />
+                        <Legend />
+                        <Bar
+                          dataKey="totalBookings"
+                          fill="#3b82f6"
+                          name="Total Bookings"
+                          radius={[8, 8, 0, 0]}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                    <div className="mt-4 p-4 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                      <p className="text-sm text-blue-900 dark:text-blue-100 font-medium">
+                        📊 <strong>What this shows:</strong> Each bar represents the number of podcast bookings we secured for you that month.
+                        Growing bars demonstrate our increasing momentum and effectiveness in getting you booked!
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
                 {/* Quality Improvement Chart */}
                 <Card className="border-2 border-emerald-200 bg-gradient-to-br from-emerald-50/50 to-teal-50/50 dark:from-emerald-950/20 dark:to-teal-950/20">
                   <CardHeader>
