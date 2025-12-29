@@ -116,13 +116,19 @@ export default function PortalDashboard() {
   const { data: bookings, isLoading } = useQuery({
     queryKey: ['client-bookings', client?.id],
     queryFn: () => getClientBookings(client!.id),
-    enabled: !!client
+    enabled: !!client,
+    staleTime: 0, // Always fetch fresh data
+    refetchOnWindowFocus: true, // Refetch when user focuses the tab
+    refetchOnMount: true // Refetch when component mounts
   })
 
   // Fetch premium podcasts
   const { data: premiumPodcasts, isLoading: premiumLoading } = useQuery({
     queryKey: ['premium-podcasts'],
-    queryFn: () => getActivePremiumPodcasts()
+    queryFn: () => getActivePremiumPodcasts(),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true
   })
 
   // Fetch outreach podcasts from Google Sheet
@@ -136,6 +142,9 @@ export default function PortalDashboard() {
     },
     enabled: !!client?.id && !!client?.google_sheet_url,
     retry: 1,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true
   })
 
   // Reset outreach pagination when data changes
