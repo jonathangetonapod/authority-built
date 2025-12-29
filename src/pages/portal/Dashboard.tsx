@@ -1859,6 +1859,80 @@ export default function PortalDashboard() {
                       </div>
                     ) : outreachData?.podcasts && outreachData.podcasts.length > 0 ? (
                       <>
+                        {/* Impact Stats */}
+                        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 mb-8">
+                          {/* Total Potential Reach */}
+                          <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
+                            <CardContent className="pt-6">
+                              <div className="space-y-2">
+                                <p className="text-sm font-medium text-muted-foreground">Total Potential Reach</p>
+                                <p className="text-3xl font-bold text-primary">
+                                  {(() => {
+                                    const totalReach = outreachData.podcasts.reduce((sum, p) => sum + (p.audience_size || 0), 0)
+                                    if (totalReach >= 1000000) {
+                                      return `${(totalReach / 1000000).toFixed(1)}M`
+                                    } else if (totalReach >= 1000) {
+                                      return `${(totalReach / 1000).toFixed(0)}K`
+                                    }
+                                    return totalReach.toLocaleString()
+                                  })()}
+                                </p>
+                                <p className="text-xs text-muted-foreground">Combined audience</p>
+                              </div>
+                            </CardContent>
+                          </Card>
+
+                          {/* Average Rating */}
+                          <Card className="bg-gradient-to-br from-amber-500/10 to-amber-500/5 border-amber-500/20">
+                            <CardContent className="pt-6">
+                              <div className="space-y-2">
+                                <p className="text-sm font-medium text-muted-foreground">Average Rating</p>
+                                <p className="text-3xl font-bold text-amber-600">
+                                  {(() => {
+                                    const rated = outreachData.podcasts.filter(p => p.itunes_rating)
+                                    if (rated.length === 0) return 'N/A'
+                                    const avg = rated.reduce((sum, p) => sum + (p.itunes_rating || 0), 0) / rated.length
+                                    return `⭐ ${avg.toFixed(1)}`
+                                  })()}
+                                </p>
+                                <p className="text-xs text-muted-foreground">Quality shows</p>
+                              </div>
+                            </CardContent>
+                          </Card>
+
+                          {/* Total Podcasts */}
+                          <Card className="bg-gradient-to-br from-green-500/10 to-green-500/5 border-green-500/20">
+                            <CardContent className="pt-6">
+                              <div className="space-y-2">
+                                <p className="text-sm font-medium text-muted-foreground">Total Podcasts</p>
+                                <p className="text-3xl font-bold text-green-600">
+                                  {outreachData.podcasts.length}
+                                </p>
+                                <p className="text-xs text-muted-foreground">In your outreach</p>
+                              </div>
+                            </CardContent>
+                          </Card>
+
+                          {/* Total Episodes */}
+                          <Card className="bg-gradient-to-br from-purple-500/10 to-purple-500/5 border-purple-500/20">
+                            <CardContent className="pt-6">
+                              <div className="space-y-2">
+                                <p className="text-sm font-medium text-muted-foreground">Total Episodes</p>
+                                <p className="text-3xl font-bold text-purple-600">
+                                  {(() => {
+                                    const totalEpisodes = outreachData.podcasts.reduce((sum, p) => sum + (p.episode_count || 0), 0)
+                                    if (totalEpisodes >= 1000) {
+                                      return `${(totalEpisodes / 1000).toFixed(1)}K`
+                                    }
+                                    return totalEpisodes.toLocaleString()
+                                  })()}
+                                </p>
+                                <p className="text-xs text-muted-foreground">Content library</p>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+
                         <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
                           {outreachData.podcasts
                             .slice((outreachPage - 1) * outreachPerPage, outreachPage * outreachPerPage)
