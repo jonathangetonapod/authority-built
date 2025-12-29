@@ -839,6 +839,14 @@ export default function PortalDashboard() {
     published: filteredByTimeRange?.filter(b => b.status === 'published').length || 0,
   }
 
+  // Bookings that need attention - missing scheduled date
+  const needsScheduledDate = useMemo(() => {
+    if (!bookings) return []
+    return bookings.filter(booking => {
+      return (booking.status === 'booked' || booking.status === 'in_progress' || booking.status === 'conversation_started') && !booking.scheduled_date
+    })
+  }, [bookings])
+
   // Bookings that need attention - scheduled but missing recording date
   const needsRecordingDate = useMemo(() => {
     if (!bookings) return []
@@ -1366,27 +1374,27 @@ export default function PortalDashboard() {
 
         {/* Attention Needed Alert */}
         <Card className={
-          needsRecordingDate.length > 0 || needsPublishDate.length > 0
+          needsScheduledDate.length > 0 || needsRecordingDate.length > 0 || needsPublishDate.length > 0
             ? "border-2 border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-700"
             : "border-2 border-green-300 bg-green-50 dark:bg-green-950/20 dark:border-green-700"
         }>
           <CardHeader>
             <div className="flex items-center gap-2">
-              {needsRecordingDate.length > 0 || needsPublishDate.length > 0 ? (
+              {needsScheduledDate.length > 0 || needsRecordingDate.length > 0 || needsPublishDate.length > 0 ? (
                 <AlertCircle className="h-5 w-5 text-amber-600" />
               ) : (
                 <CheckCircle2 className="h-5 w-5 text-green-600" />
               )}
               <CardTitle className={
-                needsRecordingDate.length > 0 || needsPublishDate.length > 0
+                needsScheduledDate.length > 0 || needsRecordingDate.length > 0 || needsPublishDate.length > 0
                   ? "text-amber-900 dark:text-amber-100"
                   : "text-green-900 dark:text-green-100"
               }>
                 Attention Needed
               </CardTitle>
-              {needsRecordingDate.length > 0 || needsPublishDate.length > 0 ? (
+              {needsScheduledDate.length > 0 || needsRecordingDate.length > 0 || needsPublishDate.length > 0 ? (
                 <Badge variant="destructive" className="ml-auto">
-                  {needsRecordingDate.length + needsPublishDate.length}
+                  {needsScheduledDate.length + needsRecordingDate.length + needsPublishDate.length}
                 </Badge>
               ) : (
                 <Badge variant="outline" className="ml-auto bg-green-100 text-green-800 border-green-300">
@@ -1395,19 +1403,43 @@ export default function PortalDashboard() {
               )}
             </div>
             <CardDescription className={
-              needsRecordingDate.length > 0 || needsPublishDate.length > 0
+              needsScheduledDate.length > 0 || needsRecordingDate.length > 0 || needsPublishDate.length > 0
                 ? "text-amber-800 dark:text-amber-200"
                 : "text-green-800 dark:text-green-200"
             }>
-              {needsRecordingDate.length > 0 || needsPublishDate.length > 0
+              {needsScheduledDate.length > 0 || needsRecordingDate.length > 0 || needsPublishDate.length > 0
                 ? "Some of your bookings need scheduling information"
                 : "All your bookings are up to date!"
               }
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {needsRecordingDate.length > 0 || needsPublishDate.length > 0 ? (
+            {needsScheduledDate.length > 0 || needsRecordingDate.length > 0 || needsPublishDate.length > 0 ? (
               <>
+                {needsScheduledDate.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                      🗓️ Missing Scheduled Date ({needsScheduledDate.length})
+                    </p>
+                    <div className="space-y-1 pl-4">
+                      {needsScheduledDate.map(booking => (
+                        <div key={booking.id} className="flex items-center gap-2 text-sm">
+                          <div className="h-1.5 w-1.5 rounded-full bg-amber-600" />
+                          <button
+                            onClick={() => setViewingBooking(booking)}
+                            className="text-amber-900 dark:text-amber-100 hover:underline cursor-pointer"
+                          >
+                            {booking.podcast_name}
+                          </button>
+                          <Badge variant="outline" className="text-xs">
+                            {booking.status === 'booked' ? 'Booked' : booking.status === 'in_progress' ? 'In Progress' : 'Conversation Started'}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {needsRecordingDate.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
