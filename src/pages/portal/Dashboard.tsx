@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useClientPortal } from '@/contexts/ClientPortalContext'
 import { PortalLayout } from '@/components/portal/PortalLayout'
 import { AddonUpsellBanner } from '@/components/portal/AddonUpsellBanner'
+import { UpgradeHeroBanner } from '@/components/portal/UpgradeHeroBanner'
 import { getActiveAddonServices, getBookingAddons } from '@/services/addonServices'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -130,6 +131,26 @@ export default function PortalDashboard() {
     queryKey: ['addon-services'],
     queryFn: () => getActiveAddonServices(),
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  })
+
+  // Fetch all client addons
+  const { data: clientAddons } = useQuery({
+    queryKey: ['client-addons', client?.id],
+    queryFn: async () => {
+      const { supabase } = await import('@/lib/supabase')
+      const { data, error } = await supabase
+        .from('booking_addons')
+        .select(`
+          *,
+          service:addon_services(*)
+        `)
+        .eq('client_id', client!.id)
+
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!client,
+    staleTime: 0,
   })
 
   // Fetch booking addons for the viewing booking
@@ -1079,9 +1100,28 @@ export default function PortalDashboard() {
     }
   }, [bookings, analyticsTimeRange])
 
+  // Get published bookings for upgrade opportunities
+  const publishedBookings = useMemo(() => {
+    return bookings?.filter(b => b.status === 'published') || []
+  }, [bookings])
+
   return (
     <PortalLayout>
       <div className="space-y-6">
+        {/* Upgrade Hero Banner */}
+        {addonServices && addonServices[0] && publishedBookings.length > 0 && (
+          <UpgradeHeroBanner
+            publishedBookings={publishedBookings}
+            service={addonServices[0]}
+            existingAddons={clientAddons || []}
+            onPurchaseClick={(booking) => {
+              setViewingBooking(booking)
+              toast.info('Checkout coming soon!')
+              // TODO: Implement Stripe checkout
+            }}
+          />
+        )}
+
         {/* Welcome Header */}
         <div className="flex items-center gap-4">
           {client?.photo_url ? (
