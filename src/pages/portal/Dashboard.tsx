@@ -2,6 +2,8 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useClientPortal } from '@/contexts/ClientPortalContext'
 import { PortalLayout } from '@/components/portal/PortalLayout'
+import { AddonUpsellBanner } from '@/components/portal/AddonUpsellBanner'
+import { getActiveAddonServices, getBookingAddons } from '@/services/addonServices'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -121,6 +123,21 @@ export default function PortalDashboard() {
     staleTime: 0, // Always fetch fresh data
     refetchOnWindowFocus: true, // Refetch when user focuses the tab
     refetchOnMount: true // Refetch when component mounts
+  })
+
+  // Fetch active addon services
+  const { data: addonServices } = useQuery({
+    queryKey: ['addon-services'],
+    queryFn: () => getActiveAddonServices(),
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  })
+
+  // Fetch booking addons for the viewing booking
+  const { data: bookingAddons } = useQuery({
+    queryKey: ['booking-addons', viewingBooking?.id],
+    queryFn: () => getBookingAddons(viewingBooking!.id),
+    enabled: !!viewingBooking,
+    staleTime: 0,
   })
 
   // Fetch premium podcasts
@@ -3469,6 +3486,19 @@ export default function PortalDashboard() {
           </DialogHeader>
           {viewingBooking && (
             <div className="space-y-6">
+              {/* Addon Upsell Banner - Show for published episodes */}
+              {viewingBooking.status === 'published' && addonServices && addonServices[0] && (
+                <AddonUpsellBanner
+                  bookingId={viewingBooking.id}
+                  service={addonServices[0]}
+                  existingAddon={bookingAddons?.[0] || null}
+                  onPurchaseClick={() => {
+                    toast.info('Checkout coming soon!')
+                    // TODO: Implement Stripe checkout
+                  }}
+                />
+              )}
+
               {/* Podcast Header */}
               <div className="flex gap-4">
                 {viewingBooking.podcast_image_url && (
