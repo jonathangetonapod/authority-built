@@ -215,30 +215,81 @@ export default function Onboarding() {
     setLoading(true)
 
     try {
-      // Prepare bio with all information
-      const fullBio = `${data.bio}
+      // Generate AI bio from all the onboarding information
+      toast.info('Generating your professional bio...')
 
-Areas of Expertise: ${data.expertise.join(', ')}
+      const bioResponse = await fetch(
+        'https://ysjwveqnwjysldpfqzov.supabase.co/functions/v1/generate-client-bio',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: data.name,
+            title: data.title,
+            company: data.company,
+            bio: data.bio,
+            expertise: data.expertise,
+            compellingStory: data.compellingStory,
+            uniqueJourney: data.uniqueJourney,
+            topicsConfident: data.topicsConfident,
+            passions: data.passions,
+            audienceValue: data.audienceValue,
+            personalStories: data.personalStories,
+            hobbies: data.hobbies,
+            futureVision: data.futureVision,
+            specificAngles: data.specificAngles,
+            idealAudience: data.idealAudience,
+            goals: data.goals,
+            socialFollowers: data.socialFollowers,
+            previousPodcasts: data.previousPodcasts,
+          }),
+        }
+      )
 
-Compelling Story: ${data.compellingStory}
+      if (!bioResponse.ok) {
+        console.error('Bio generation failed, using original bio')
+      }
 
-What Makes Me Unique: ${data.uniqueJourney}
+      const bioData = await bioResponse.json()
+      const generatedBio = bioData.bio || data.bio
 
-Topics I Speak About: ${data.topicsConfident.join(', ')}
+      // Store additional context in notes
+      const detailedNotes = `=== ONBOARDING INFORMATION ===
 
-Passions: ${data.passions}
+Goals: ${data.goals.join(', ')}
+Ideal Audience: ${data.idealAudience}
+Social Followers: ${data.socialFollowers}
+Previous Podcasts: ${data.previousPodcasts || 'None'}
+Specific Podcasts: ${data.specificPodcasts || 'N/A'}
+Availability: ${data.availability}
 
-Value to Audiences: ${data.audienceValue}
+=== DETAILED RESPONSES ===
 
-Personal Stories: ${data.personalStories}
+Expertise: ${data.expertise.join(', ')}
 
-Hobbies: ${data.hobbies}
+Compelling Story:
+${data.compellingStory}
 
-Future Vision: ${data.futureVision}
+What Makes Them Unique:
+${data.uniqueJourney}
 
-Specific Angles: ${data.specificAngles}`
+Topics Confident Speaking About: ${data.topicsConfident.join(', ')}
+
+Passions:
+${data.passions}
+
+${data.audienceValue ? `Value to Audiences:\n${data.audienceValue}\n` : ''}
+${data.personalStories ? `Personal Stories:\n${data.personalStories}\n` : ''}
+${data.hobbies ? `Hobbies:\n${data.hobbies}\n` : ''}
+${data.futureVision ? `Future Vision:\n${data.futureVision}\n` : ''}
+${data.specificAngles ? `Specific Angles:\n${data.specificAngles}\n` : ''}
+${data.additionalInfo ? `Additional Info:\n${data.additionalInfo}` : ''}`
 
       // Create client account via API
+      toast.info('Creating your account...')
+
       const response = await fetch(
         'https://ysjwveqnwjysldpfqzov.supabase.co/functions/v1/create-client-account',
         {
@@ -249,12 +300,12 @@ Specific Angles: ${data.specificAngles}`
           body: JSON.stringify({
             name: data.name,
             email: data.email,
-            bio: fullBio,
+            bio: generatedBio,
             linkedin_url: data.linkedin_url || undefined,
             website: data.website,
             calendar_link: data.calendarLink || undefined,
             contact_person: data.name,
-            notes: `Goals: ${data.goals.join(', ')}\nIdeal Audience: ${data.idealAudience}\nSocial Followers: ${data.socialFollowers}\nPrevious Podcasts: ${data.previousPodcasts || 'None'}\nSpecific Podcasts: ${data.specificPodcasts || 'N/A'}\nKey Messages: ${data.keyMessages.join(', ')}\nAvailability: ${data.availability}\nAdditional Info: ${data.additionalInfo}`,
+            notes: detailedNotes,
             status: 'active',
             enable_portal_access: true,
             send_invitation_email: true,
