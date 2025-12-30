@@ -105,7 +105,7 @@ export default function PortalDashboard() {
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [calendarDate, setCalendarDate] = useState(new Date())
   const [completedActions, setCompletedActions] = useState<Set<string>>(new Set())
-  const [viewingDayBookings, setViewingDayBookings] = useState<{ date: Date; bookings: Booking[] } | null>(null)
+  const [viewingDayBookings, setViewingDayBookings] = useState<{ date: Date; bookings: Array<{ booking: Booking; dateType: 'scheduled' | 'recording' | 'publish' }> } | null>(null)
   const [viewingOutreachPodcast, setViewingOutreachPodcast] = useState<OutreachPodcast | null>(null)
   const [outreachPage, setOutreachPage] = useState(1)
   const outreachPerPage = 12
@@ -641,13 +641,21 @@ export default function PortalDashboard() {
   const getBookingsForDate = (date: Date) => {
     if (!bookings) return []
     const dateStr = date.toISOString().split('T')[0]
-    const matchingBookings = bookings.filter(b => {
-      const dates = [b.scheduled_date, b.recording_date, b.publish_date].filter(Boolean)
-      return dates.some(d => d?.split('T')[0] === dateStr)
+    const matchingBookings: Array<{ booking: Booking; dateType: 'scheduled' | 'recording' | 'publish' }> = []
+
+    bookings.forEach(b => {
+      if (b.scheduled_date?.split('T')[0] === dateStr) {
+        matchingBookings.push({ booking: b, dateType: 'scheduled' })
+      }
+      if (b.recording_date?.split('T')[0] === dateStr) {
+        matchingBookings.push({ booking: b, dateType: 'recording' })
+      }
+      if (b.publish_date?.split('T')[0] === dateStr) {
+        matchingBookings.push({ booking: b, dateType: 'publish' })
+      }
     })
-    // Deduplicate by booking ID to prevent the same booking appearing multiple times
-    const uniqueBookings = Array.from(new Map(matchingBookings.map(b => [b.id, b])).values())
-    return uniqueBookings
+
+    return matchingBookings
   }
 
   const firstDayOfMonth = new Date(calendarYear, calendarMonth, 1).getDay()
@@ -2693,42 +2701,51 @@ export default function PortalDashboard() {
                         {/* Bookings for this day */}
                         {dayData.bookings.length > 0 && (
                           <div className="space-y-1">
-                            {dayData.bookings.slice(0, 2).map(booking => (
-                              <div
-                                key={booking.id}
-                                className="text-xs p-1 rounded bg-muted cursor-pointer hover:bg-muted/80 group"
-                                title={booking.podcast_name}
-                              >
-                                <div className="flex items-center gap-1 justify-between">
-                                  <div
-                                    className="flex items-center gap-1 flex-1 min-w-0"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      setViewingBooking(booking)
-                                    }}
-                                  >
-                                    <span className={`w-2 h-2 rounded-full ${getStatusColor(booking.status)}`} />
-                                    <span className="truncate font-medium">{booking.podcast_name}</span>
-                                  </div>
-                                  {(booking.recording_date || booking.scheduled_date) && (
-                                    <button
+                            {dayData.bookings.slice(0, 2).map((item, idx) => {
+                              const { booking, dateType } = item
+                              const dateTypeColor = dateType === 'scheduled' ? 'bg-amber-500' :
+                                                   dateType === 'recording' ? 'bg-blue-500' :
+                                                   'bg-purple-500'
+                              const dateTypeLabel = dateType === 'scheduled' ? 'Scheduled' :
+                                                   dateType === 'recording' ? 'Recording' :
+                                                   'Published'
+                              return (
+                                <div
+                                  key={`${booking.id}-${dateType}-${idx}`}
+                                  className="text-xs p-1 rounded bg-muted cursor-pointer hover:bg-muted/80 group"
+                                  title={`${booking.podcast_name} - ${dateTypeLabel}`}
+                                >
+                                  <div className="flex items-center gap-1 justify-between">
+                                    <div
+                                      className="flex items-center gap-1 flex-1 min-w-0"
                                       onClick={(e) => {
                                         e.stopPropagation()
-                                        const calendarEvent = createCalendarEventFromBooking(booking)
-                                        if (calendarEvent) {
-                                          openGoogleCalendar(calendarEvent)
-                                          toast.success('Opening Google Calendar...')
-                                        }
+                                        setViewingBooking(booking)
                                       }}
-                                      className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 hover:text-primary"
-                                      title="Add to Google Calendar"
                                     >
-                                      <CalendarPlus className="h-3 w-3" />
-                                    </button>
-                                  )}
+                                      <span className={`w-2 h-2 rounded-full ${dateTypeColor}`} />
+                                      <span className="truncate font-medium">{booking.podcast_name}</span>
+                                    </div>
+                                    {(booking.recording_date || booking.scheduled_date) && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          const calendarEvent = createCalendarEventFromBooking(booking)
+                                          if (calendarEvent) {
+                                            openGoogleCalendar(calendarEvent)
+                                            toast.success('Opening Google Calendar...')
+                                          }
+                                        }}
+                                        className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 hover:text-primary"
+                                        title="Add to Google Calendar"
+                                      >
+                                        <CalendarPlus className="h-3 w-3" />
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              )
+                            })}
                             {dayData.bookings.length > 2 && (
                               <div className="text-xs text-muted-foreground text-center">
                                 +{dayData.bookings.length - 2} more
@@ -2745,15 +2762,11 @@ export default function PortalDashboard() {
                 <div className="flex flex-wrap gap-4 mt-6 pt-4 border-t">
                   <div className="flex items-center gap-2">
                     <span className="inline-block w-3 h-3 rounded-full bg-amber-500" />
-                    <span className="text-sm text-muted-foreground">Conversation</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="inline-block w-3 h-3 rounded-full bg-green-500" />
-                    <span className="text-sm text-muted-foreground">Booked</span>
+                    <span className="text-sm text-muted-foreground">Scheduled</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="inline-block w-3 h-3 rounded-full bg-blue-500" />
-                    <span className="text-sm text-muted-foreground">Recorded</span>
+                    <span className="text-sm text-muted-foreground">Recording</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="inline-block w-3 h-3 rounded-full bg-purple-500" />
@@ -4113,89 +4126,102 @@ export default function PortalDashboard() {
           </DialogHeader>
           {viewingDayBookings && (
             <div className="space-y-3">
-              {viewingDayBookings.bookings.map(booking => (
-                <div
-                  key={booking.id}
-                  className="flex items-start gap-4 p-4 rounded-lg border bg-card hover:shadow-md transition-shadow"
-                >
-                  {booking.podcast_image_url && (
-                    <img
-                      src={booking.podcast_image_url}
-                      alt={booking.podcast_name}
-                      className="w-20 h-20 rounded-lg object-cover flex-shrink-0"
-                    />
-                  )}
-                  <div className="flex-1 min-w-0 space-y-2">
-                    <div>
-                      <h4 className="font-semibold text-lg truncate">{booking.podcast_name}</h4>
-                      {booking.host_name && (
-                        <p className="text-sm text-muted-foreground">Host: {booking.host_name}</p>
-                      )}
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-3 text-sm">
-                      {booking.audience_size && (
-                        <span className="text-muted-foreground">
-                          👥 {booking.audience_size.toLocaleString()} listeners
-                        </span>
-                      )}
-                      {booking.itunes_rating && (
-                        <span className="text-muted-foreground">
-                          ⭐ {booking.itunes_rating.toFixed(1)}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      {getStatusBadge(booking.status)}
-                      {booking.recording_date && (
-                        <span className="text-xs text-muted-foreground">
-                          📅 Recording: {formatDate(booking.recording_date)}
-                        </span>
-                      )}
-                    </div>
-
-                    {booking.podcast_description && (
-                      <p className="text-sm text-muted-foreground line-clamp-2">
-                        {booking.podcast_description}
-                      </p>
+              {viewingDayBookings.bookings.map((item, idx) => {
+                const { booking, dateType } = item
+                const dateTypeColor = dateType === 'scheduled' ? 'bg-amber-500' :
+                                     dateType === 'recording' ? 'bg-blue-500' :
+                                     'bg-purple-500'
+                const dateTypeLabel = dateType === 'scheduled' ? 'Scheduled' :
+                                     dateType === 'recording' ? 'Recording' :
+                                     'Published'
+                return (
+                  <div
+                    key={`${booking.id}-${dateType}-${idx}`}
+                    className="flex items-start gap-4 p-4 rounded-lg border bg-card hover:shadow-md transition-shadow"
+                  >
+                    {booking.podcast_image_url && (
+                      <img
+                        src={booking.podcast_image_url}
+                        alt={booking.podcast_name}
+                        className="w-20 h-20 rounded-lg object-cover flex-shrink-0"
+                      />
                     )}
-                  </div>
+                    <div className="flex-1 min-w-0 space-y-2">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`w-3 h-3 rounded-full ${dateTypeColor}`} title={dateTypeLabel} />
+                          <span className="text-xs text-muted-foreground font-medium">{dateTypeLabel}</span>
+                        </div>
+                        <h4 className="font-semibold text-lg truncate">{booking.podcast_name}</h4>
+                        {booking.host_name && (
+                          <p className="text-sm text-muted-foreground">Host: {booking.host_name}</p>
+                        )}
+                      </div>
 
-                  <div className="flex flex-col gap-2 flex-shrink-0">
-                    {(booking.recording_date || booking.scheduled_date) && (
+                      <div className="flex flex-wrap items-center gap-3 text-sm">
+                        {booking.audience_size && (
+                          <span className="text-muted-foreground">
+                            👥 {booking.audience_size.toLocaleString()} listeners
+                          </span>
+                        )}
+                        {booking.itunes_rating && (
+                          <span className="text-muted-foreground">
+                            ⭐ {booking.itunes_rating.toFixed(1)}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        {getStatusBadge(booking.status)}
+                        {booking.recording_date && (
+                          <span className="text-xs text-muted-foreground">
+                            📅 Recording: {formatDate(booking.recording_date)}
+                          </span>
+                        )}
+                      </div>
+
+                      {booking.podcast_description && (
+                        <p className="text-sm text-muted-foreground line-clamp-2">
+                          {booking.podcast_description}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col gap-2 flex-shrink-0">
+                      {(booking.recording_date || booking.scheduled_date) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const calendarEvent = createCalendarEventFromBooking(booking)
+                            if (calendarEvent) {
+                              openGoogleCalendar(calendarEvent)
+                              toast.success('Opening Google Calendar...')
+                            } else {
+                              toast.error('No date available for this booking')
+                            }
+                          }}
+                          className="w-full"
+                        >
+                          <CalendarPlus className="h-4 w-4 mr-2" />
+                          Add to Calendar
+                        </Button>
+                      )}
                       <Button
                         size="sm"
-                        variant="outline"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          const calendarEvent = createCalendarEventFromBooking(booking)
-                          if (calendarEvent) {
-                            openGoogleCalendar(calendarEvent)
-                            toast.success('Opening Google Calendar...')
-                          } else {
-                            toast.error('No date available for this booking')
-                          }
+                        variant="ghost"
+                        onClick={() => {
+                          setViewingDayBookings(null)
+                          setViewingBooking(booking)
                         }}
-                        className="w-full"
                       >
-                        <CalendarPlus className="h-4 w-4 mr-2" />
-                        Add to Calendar
+                        View Details
                       </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        setViewingDayBookings(null)
-                        setViewingBooking(booking)
-                      }}
-                    >
-                      View Details
-                    </Button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </DialogContent>
