@@ -143,9 +143,11 @@ export default function PortalDashboard() {
         .from('booking_addons')
         .select(`
           *,
-          service:addon_services(*)
+          service:addon_services(*),
+          booking:bookings(*)
         `)
         .eq('client_id', client!.id)
+        .order('purchased_at', { ascending: false })
 
       if (error) throw error
       return data || []
