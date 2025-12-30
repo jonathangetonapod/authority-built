@@ -7,24 +7,28 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { useToast } from '@/hooks/use-toast'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Search, Plus, Users, TrendingUp, CheckCircle2, Clock, Loader2, ChevronLeft, ChevronRight, Unlock, Lock, BarChart3, UserPlus, UserX, PauseCircle } from 'lucide-react'
+import { Search, Plus, Users, TrendingUp, CheckCircle2, Clock, Loader2, ChevronLeft, ChevronRight, Unlock, Lock, BarChart3, UserPlus, UserX, PauseCircle, Trash2 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
-import { getClients, createClient } from '@/services/clients'
+import { getClients, createClient, deleteClient } from '@/services/clients'
 import { getBookings, getClientBookingStats } from '@/services/bookings'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
 
 export default function ClientsManagement() {
   const navigate = useNavigate()
+  const { toast } = useToast()
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [activeTab, setActiveTab] = useState('all')
   const [analyticsTimeRange, setAnalyticsTimeRange] = useState<30 | 60 | 90 | 180 | 365 | 'all'>(90)
+  const [clientToDelete, setClientToDelete] = useState<{ id: string; name: string } | null>(null)
   const [newClientForm, setNewClientForm] = useState({
     name: '',
     email: '',
@@ -70,6 +74,33 @@ export default function ClientsManagement() {
       })
     }
   })
+
+  // Delete client mutation
+  const deleteClientMutation = useMutation({
+    mutationFn: deleteClient,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clients'] })
+      queryClient.invalidateQueries({ queryKey: ['bookings'] })
+      setClientToDelete(null)
+      toast({
+        title: 'Client Deleted',
+        description: 'Client has been successfully deleted',
+      })
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete client',
+        variant: 'destructive',
+      })
+    }
+  })
+
+  const handleDeleteClient = () => {
+    if (clientToDelete) {
+      deleteClientMutation.mutate(clientToDelete.id)
+    }
+  }
 
   const clients = clientsData?.clients || []
   const allBookings = bookingsData?.bookings || []
@@ -440,6 +471,7 @@ export default function ClientsManagement() {
                     <TableHead className="text-center">Recorded</TableHead>
                     <TableHead className="text-center">Published</TableHead>
                     <TableHead>Last Booking</TableHead>
+                    <TableHead className="text-center">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -498,6 +530,19 @@ export default function ClientsManagement() {
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {client.lastBookingDate ? formatDate(client.lastBookingDate) : 'No bookings'}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setClientToDelete({ id: client.id, name: client.name })
+                          }}
+                          className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -571,6 +616,7 @@ export default function ClientsManagement() {
                         <TableHead className="text-center">Recorded</TableHead>
                         <TableHead className="text-center">Published</TableHead>
                         <TableHead>Last Booking</TableHead>
+                        <TableHead className="text-center">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -629,6 +675,19 @@ export default function ClientsManagement() {
                           </TableCell>
                           <TableCell className="text-muted-foreground">
                             {client.lastBookingDate ? formatDate(client.lastBookingDate) : 'No bookings'}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setClientToDelete({ id: client.id, name: client.name })
+                              }}
+                              className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -948,6 +1007,35 @@ export default function ClientsManagement() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!clientToDelete} onOpenChange={(open) => !open && setClientToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete <strong>{clientToDelete?.name}</strong> and all associated data. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteClientMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteClient}
+              disabled={deleteClientMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteClientMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete Client'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   )
 }

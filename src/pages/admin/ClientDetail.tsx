@@ -8,6 +8,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { useToast } from '@/hooks/use-toast'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -47,7 +49,7 @@ import {
   Sparkles,
   Eye
 } from 'lucide-react'
-import { getClientById, updateClient, uploadClientPhoto, removeClientPhoto } from '@/services/clients'
+import { getClientById, updateClient, uploadClientPhoto, removeClientPhoto, deleteClient } from '@/services/clients'
 import { getBookings, createBooking, updateBooking, deleteBooking } from '@/services/bookings'
 import { getPodcastById } from '@/services/podscan'
 import { updatePortalAccess, sendPortalInvitation } from '@/services/clientPortal'
@@ -71,6 +73,7 @@ export default function ClientDetail() {
   const [goingLiveTimeRange, setGoingLiveTimeRange] = useState<TimeRange>(30)
   const [editingBooking, setEditingBooking] = useState<any>(null)
   const [deletingBooking, setDeletingBooking] = useState<any>(null)
+  const [isDeleteClientDialogOpen, setIsDeleteClientDialogOpen] = useState(false)
   const [fetchingPodcast, setFetchingPodcast] = useState(false)
   const [sendingInvitation, setSendingInvitation] = useState(false)
   const [togglingPortalAccess, setTogglingPortalAccess] = useState(false)
@@ -228,6 +231,32 @@ export default function ClientDetail() {
       setIsEditClientModalOpen(false)
     }
   })
+
+  // Delete client mutation
+  const deleteClientMutation = useMutation({
+    mutationFn: deleteClient,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clients'] })
+      toast({
+        title: 'Client Deleted',
+        description: 'Client has been successfully deleted',
+      })
+      navigate('/admin/clients')
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete client',
+        variant: 'destructive',
+      })
+    }
+  })
+
+  const handleDeleteClient = () => {
+    if (id) {
+      deleteClientMutation.mutate(id)
+    }
+  }
 
   const bookings = bookingsData?.bookings || []
 
@@ -750,6 +779,13 @@ export default function ClientDetail() {
             <Button variant="outline" onClick={handleEditClient}>
               <Edit className="h-4 w-4 mr-2" />
               Edit Client
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => setIsDeleteClientDialogOpen(true)}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
             </Button>
             <Button onClick={() => setIsAddBookingModalOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />
@@ -2105,6 +2141,35 @@ export default function ClientDetail() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Delete Client Confirmation Dialog */}
+      <AlertDialog open={isDeleteClientDialogOpen} onOpenChange={setIsDeleteClientDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete <strong>{client.name}</strong> and all associated bookings. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteClientMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteClient}
+              disabled={deleteClientMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteClientMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete Client'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   )
 }
