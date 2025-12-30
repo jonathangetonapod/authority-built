@@ -115,7 +115,7 @@ export default function PortalDashboard() {
   const [selectedAudienceTier, setSelectedAudienceTier] = useState('all')
   const [selectedPriceRange, setSelectedPriceRange] = useState('all')
   const [analyticsTimeRange, setAnalyticsTimeRange] = useState<'3months' | '6months' | '1year' | 'all'>('6months')
-  const { addItem, isInCart } = useCartStore()
+  const { addItem, isInCart, addAddonItem, openCart, isAddonInCart } = useCartStore()
 
   // Fetch bookings
   const { data: bookings, isLoading } = useQuery({
@@ -3684,14 +3684,25 @@ export default function PortalDashboard() {
           {viewingBooking && (
             <div className="space-y-6">
               {/* Addon Upsell Banner - Show for published episodes */}
-              {viewingBooking.status === 'published' && addonServices && addonServices[0] && (
+              {viewingBooking.status === 'published' && addonServices && addonServices[0] && client && (
                 <AddonUpsellBanner
                   bookingId={viewingBooking.id}
                   service={addonServices[0]}
                   existingAddon={bookingAddons?.[0] || null}
                   onPurchaseClick={() => {
-                    toast.info('Checkout coming soon!')
-                    // TODO: Implement Stripe checkout
+                    const service = addonServices[0]
+
+                    // Check if already in cart
+                    if (isAddonInCart(viewingBooking.id, service.id)) {
+                      sonnerToast.info('Already in cart')
+                      openCart()
+                      return
+                    }
+
+                    // Add to cart
+                    addAddonItem(viewingBooking, service, client.id)
+                    sonnerToast.success('Added to cart!')
+                    openCart()
                   }}
                 />
               )}
