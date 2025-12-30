@@ -31,6 +31,18 @@ export interface BookingAddon {
   updated_at: string
   // Joined data
   service?: AddonService
+  booking?: {
+    id: string
+    podcast_name: string
+    podcast_image_url: string | null
+    host_name: string | null
+    publish_date: string | null
+  }
+  client?: {
+    id: string
+    name: string
+    email: string | null
+  }
 }
 
 /**
@@ -191,6 +203,27 @@ export async function updateBookingAddonStatus(
   }
 
   return data as BookingAddon
+}
+
+/**
+ * Get all booking addons (Admin only)
+ */
+export async function getAllBookingAddons(): Promise<BookingAddon[]> {
+  const { data, error } = await supabase
+    .from('booking_addons')
+    .select(`
+      *,
+      service:addon_services(*),
+      booking:bookings(id, podcast_name, podcast_image_url, host_name, publish_date),
+      client:clients(id, name, email)
+    `)
+    .order('purchased_at', { ascending: false })
+
+  if (error) {
+    throw new Error(`Failed to fetch all booking addons: ${error.message}`)
+  }
+
+  return data as BookingAddon[]
 }
 
 /**

@@ -34,6 +34,7 @@ import PremiumPlacementsManagement from "./pages/admin/PremiumPlacementsManageme
 import GuestResourcesManagement from "./pages/admin/GuestResourcesManagement";
 import CustomersManagement from "./pages/admin/CustomersManagement";
 import LeadsManagement from "./pages/admin/LeadsManagement";
+import OrdersManagement from "./pages/admin/OrdersManagement";
 import Settings from "./pages/admin/Settings";
 import Analytics from "./pages/admin/Analytics";
 import AnalyticsTest from "./pages/AnalyticsTest";
@@ -210,6 +211,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <LeadsManagement />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/orders"
+              element={
+                <ProtectedRoute>
+                  <OrdersManagement />
                 </ProtectedRoute>
               }
             />
