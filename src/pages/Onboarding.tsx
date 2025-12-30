@@ -287,6 +287,9 @@ ${data.futureVision ? `Future Vision:\n${data.futureVision}\n` : ''}
 ${data.specificAngles ? `Specific Angles:\n${data.specificAngles}\n` : ''}
 ${data.additionalInfo ? `Additional Info:\n${data.additionalInfo}` : ''}`
 
+      // Generate a simple password for immediate login
+      const generatedPassword = `GetOnAPod${Math.floor(Math.random() * 10000)}!`
+
       // Create client account via API
       toast.info('Creating your account...')
 
@@ -308,6 +311,7 @@ ${data.additionalInfo ? `Additional Info:\n${data.additionalInfo}` : ''}`
             notes: detailedNotes,
             status: 'active',
             enable_portal_access: true,
+            password: generatedPassword,
             send_invitation_email: true,
             create_google_sheet: true,
           }),
@@ -369,22 +373,85 @@ ${data.additionalInfo ? `Additional Info:\n${data.additionalInfo}` : ''}`
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => window.open(accountDetails.portal_url, '_blank')}
+                      onClick={() => {
+                        navigator.clipboard.writeText(accountDetails.portal_url)
+                        toast.success('Portal URL copied!')
+                      }}
                     >
-                      <ExternalLink className="h-4 w-4" />
+                      <Copy className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground">Email</Label>
-                  <Input value={accountDetails.email} readOnly className="mt-1" />
-                </div>
-                <div className="bg-purple-50 dark:bg-purple-950/20 p-4 rounded-lg">
-                  <p className="text-sm font-medium mb-2">✉️ Check your inbox!</p>
-                  <p className="text-sm text-muted-foreground">
-                    We've sent you an email with a magic login link. Click it to access your portal instantly.
+
+                {/* Login Credentials */}
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 border-2 border-green-200 dark:border-green-800 rounded-lg p-4">
+                  <p className="text-sm font-semibold text-green-900 dark:text-green-100 mb-3">
+                    🔑 Your Login Credentials
+                  </p>
+                  <div className="space-y-3">
+                    <div>
+                      <Label className="text-xs text-green-700 dark:text-green-300">Email</Label>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Input
+                          value={accountDetails.email}
+                          readOnly
+                          className="bg-white dark:bg-gray-800 border-green-200 dark:border-green-800"
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            navigator.clipboard.writeText(accountDetails.email)
+                            toast.success('Email copied!')
+                          }}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    {accountDetails.password && (
+                      <div>
+                        <Label className="text-xs text-green-700 dark:text-green-300">Password</Label>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Input
+                            value={accountDetails.password}
+                            readOnly
+                            className="bg-white dark:bg-gray-800 border-green-200 dark:border-green-800 font-mono"
+                          />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              navigator.clipboard.writeText(accountDetails.password)
+                              toast.success('Password copied!')
+                            }}
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-green-700 dark:text-green-300 mt-3">
+                    💡 Save these credentials - you'll need them to log in
                   </p>
                 </div>
+
+                <div className="bg-purple-50 dark:bg-purple-950/20 p-4 rounded-lg">
+                  <p className="text-sm font-medium mb-2">✉️ Magic Link Email Sent!</p>
+                  <p className="text-sm text-muted-foreground">
+                    We've also sent you an email with a magic login link. Check your inbox (and spam folder) for quick access.
+                  </p>
+                </div>
+
+                <Button
+                  className="w-full"
+                  size="lg"
+                  onClick={() => window.open(accountDetails.portal_url, '_blank')}
+                >
+                  <ExternalLink className="mr-2 h-5 w-5" />
+                  Login to Your Portal Now
+                </Button>
               </CardContent>
             </Card>
 
