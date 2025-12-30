@@ -83,3 +83,40 @@ export const getCheckoutSession = async (sessionId: string) => {
     throw error
   }
 }
+
+/**
+ * Create a Stripe Checkout Session for addon service purchase
+ */
+export const createAddonCheckoutSession = async (
+  bookingId: string,
+  serviceId: string,
+  clientId: string
+): Promise<{ sessionId: string; url: string }> => {
+  try {
+    console.log('🛒 Creating addon checkout session for booking:', bookingId, 'service:', serviceId)
+
+    // Call Supabase Edge Function
+    const { data, error } = await supabase.functions.invoke('create-addon-checkout', {
+      body: {
+        bookingId,
+        serviceId,
+        clientId,
+      },
+    })
+
+    if (error) {
+      console.error('❌ Edge Function error:', error)
+      throw new Error(error.message || 'Failed to create addon checkout session')
+    }
+
+    if (!data || !data.sessionId || !data.url) {
+      throw new Error('Invalid response from addon checkout session creation')
+    }
+
+    console.log('✅ Addon checkout session created:', data.sessionId)
+    return data
+  } catch (error) {
+    console.error('❌ Failed to create addon checkout session:', error)
+    throw error
+  }
+}

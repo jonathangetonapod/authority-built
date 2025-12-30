@@ -74,6 +74,56 @@ serve(async (req) => {
 
         console.log('💳 Processing completed checkout session:', session.id)
 
+        // Check if this is an addon order
+        if (session.metadata?.type === 'addon_order') {
+          console.log('🎁 Processing addon order')
+
+          const { bookingId, serviceId, clientId } = session.metadata
+
+          if (!bookingId || !serviceId || !clientId) {
+            console.error('❌ Missing addon order metadata')
+            break
+          }
+
+          // Check if addon already exists (idempotency)
+          const { data: existingAddon } = await supabase
+            .from('booking_addons')
+            .select('id')
+            .eq('booking_id', bookingId)
+            .eq('service_id', serviceId)
+            .single()
+
+          if (existingAddon) {
+            console.log('♻️ Addon order already exists:', existingAddon.id)
+            break
+          }
+
+          // Create addon order
+          const { data: addonOrder, error: addonError } = await supabase
+            .from('booking_addons')
+            .insert({
+              booking_id: bookingId,
+              service_id: serviceId,
+              client_id: clientId,
+              stripe_payment_intent_id: session.payment_intent as string,
+              amount_paid_cents: session.amount_total || 0,
+              status: 'pending',
+              purchased_at: new Date().toISOString(),
+            })
+            .select()
+            .single()
+
+          if (addonError) {
+            console.error('❌ Error creating addon order:', addonError)
+            throw addonError
+          }
+
+          console.log('✅ Addon order created:', addonOrder.id)
+          break
+        }
+
+        // Regular premium placement order processing
+
         // Extract customer data
         const customerEmail = session.customer_email || session.metadata?.customerEmail
         const customerName = session.metadata?.customerName
