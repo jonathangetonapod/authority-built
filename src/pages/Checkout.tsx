@@ -133,6 +133,10 @@ export default function Checkout() {
   const totalItems = getTotalItems()
   const totalPrice = getTotalPriceDisplay()
 
+  // Determine back navigation based on cart contents
+  const backPath = addonServices.length > 0 ? '/portal/dashboard' : '/premium-placements'
+  const backLabel = addonServices.length > 0 ? 'Back to Dashboard' : 'Back to Podcasts'
+
   return (
     <div className="min-h-screen bg-background">
       {/* Minimal Header */}
@@ -141,11 +145,11 @@ export default function Checkout() {
           <div className="flex items-center justify-between">
             <Button
               variant="ghost"
-              onClick={() => navigate('/premium-placements')}
+              onClick={() => navigate(backPath)}
               className="gap-2"
             >
               <ArrowLeft className="h-4 w-4" />
-              Back to Podcasts
+              {backLabel}
             </Button>
             <h1 className="text-xl font-bold">Checkout</h1>
             <div className="w-32" /> {/* Spacer for centering */}
