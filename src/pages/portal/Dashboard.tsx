@@ -3866,6 +3866,83 @@ export default function PortalDashboard() {
                 </div>
               )}
 
+              {/* Why This is a Great Fit */}
+              {client?.bio && (
+                <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 border-2 border-purple-200 dark:border-purple-800 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="h-10 w-10 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center flex-shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-white">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-purple-900 dark:text-purple-100 mb-2">Why This Podcast is Perfect for You</h4>
+                      <div className="text-sm text-purple-800 dark:text-purple-200 space-y-2">
+                        {(() => {
+                          const reasons = []
+
+                          // Check audience size alignment
+                          if (viewingBooking.audience_size) {
+                            const audienceSize = viewingBooking.audience_size
+                            if (audienceSize >= 10000) {
+                              reasons.push(`🎯 Large, engaged audience of ${audienceSize.toLocaleString()}+ listeners for maximum reach`)
+                            } else if (audienceSize >= 5000) {
+                              reasons.push(`🎯 Established audience of ${audienceSize.toLocaleString()}+ listeners in your niche`)
+                            } else {
+                              reasons.push(`🎯 Targeted audience of ${audienceSize.toLocaleString()}+ highly engaged listeners`)
+                            }
+                          }
+
+                          // Check rating
+                          if (viewingBooking.itunes_rating && viewingBooking.itunes_rating >= 4.5) {
+                            reasons.push(`⭐ Top-rated podcast (${viewingBooking.itunes_rating.toFixed(1)}/5.0) with loyal, satisfied listeners`)
+                          }
+
+                          // Check bio keywords against podcast description
+                          if (viewingBooking.podcast_description && client.bio) {
+                            const bioLower = client.bio.toLowerCase()
+                            const podcastLower = viewingBooking.podcast_description.toLowerCase()
+
+                            // Common business/expertise keywords
+                            const keywords = ['business', 'entrepreneur', 'startup', 'founder', 'CEO', 'marketing', 'sales', 'leadership', 'growth', 'technology', 'innovation', 'strategy', 'consulting', 'coach', 'expert', 'author', 'speaker']
+
+                            const matches = keywords.filter(keyword =>
+                              bioLower.includes(keyword.toLowerCase()) && podcastLower.includes(keyword.toLowerCase())
+                            )
+
+                            if (matches.length > 0) {
+                              reasons.push(`🤝 Perfect audience alignment - this podcast covers ${matches.slice(0, 2).join(' and ')} topics that match your expertise`)
+                            }
+                          }
+
+                          // Check episode count for authority
+                          if (viewingBooking.episode_count && viewingBooking.episode_count >= 100) {
+                            reasons.push(`📚 Established show with ${viewingBooking.episode_count}+ episodes, demonstrating consistency and audience trust`)
+                          }
+
+                          // Default reason if no specific matches
+                          if (reasons.length === 0) {
+                            reasons.push(`✨ Hand-picked by our team to match your background and expertise`)
+                            reasons.push(`🎙️ Great opportunity to share your story and insights with an engaged audience`)
+                          }
+
+                          // Add a personal touch based on status
+                          if (viewingBooking.status === 'published' && viewingBooking.episode_url) {
+                            reasons.push(`🎉 Your episode is now live! Share it to amplify your reach`)
+                          } else if (viewingBooking.status === 'booked' || viewingBooking.status === 'in_progress') {
+                            reasons.push(`🚀 Exciting opportunity ahead - prepare to share your unique insights`)
+                          }
+
+                          return reasons.map((reason, idx) => (
+                            <p key={idx} className="leading-relaxed">{reason}</p>
+                          ))
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Booking Info */}
               <div className="space-y-3">
                 <h4 className="font-semibold">Booking Information</h4>
