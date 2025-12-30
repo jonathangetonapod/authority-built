@@ -1109,14 +1109,14 @@ export default function PortalDashboard() {
     <PortalLayout>
       <div className="space-y-6">
         {/* Upgrade Hero Banner */}
-        {addonServices && addonServices[0] && publishedBookings.length > 0 && (
+        {addonServices && addonServices.length > 0 && publishedBookings.length > 0 && (
           <UpgradeHeroBanner
             publishedBookings={publishedBookings}
-            service={addonServices[0]}
+            services={addonServices}
             existingAddons={clientAddons || []}
-            onPurchaseClick={(booking) => {
+            onPurchaseClick={(booking, service) => {
               setViewingBooking(booking)
-              toast.info('Checkout coming soon!')
+              toast.info(`${service.name} checkout coming soon!`)
               // TODO: Implement Stripe checkout
             }}
           />
