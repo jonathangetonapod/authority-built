@@ -60,8 +60,15 @@ export default function Checkout() {
       return
     }
 
-    if (!isFormValid()) {
+    // Only validate form fields for premium podcasts (addon services use client session)
+    if (premiumPodcasts.length > 0 && !isFormValid()) {
       toast.error('Please fill in all required fields correctly')
+      return
+    }
+
+    // For addon services, ensure client is logged in
+    if (addonServices.length > 0 && !client) {
+      toast.error('Please log in to purchase addon services')
       return
     }
 
@@ -77,13 +84,6 @@ export default function Checkout() {
 
       // Handle addon services checkout
       if (addonServices.length > 0) {
-        // For addon services, we need the client to be logged in
-        if (!client) {
-          toast.error('Please log in to purchase addon services')
-          setIsProcessing(false)
-          return
-        }
-
         // Validate all addons have required data
         const validAddons = addonServices.filter(
           addon => addon.bookingId && addon.serviceId
@@ -99,7 +99,7 @@ export default function Checkout() {
           serviceId: addon.serviceId!,
         }))
 
-        const response = await createAddonCheckoutSession(addonsData, client.id)
+        const response = await createAddonCheckoutSession(addonsData, client!.id)
         url = response.url
       }
       // Handle premium podcast checkout
