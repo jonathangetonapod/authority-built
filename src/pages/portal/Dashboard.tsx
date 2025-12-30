@@ -4201,13 +4201,79 @@ export default function PortalDashboard() {
         {/* Sidebar - Upsells */}
         {addonServices && addonServices.length > 0 && publishedBookings.length > 0 && client && (
           <div className="hidden lg:block w-80 flex-shrink-0">
-            <div className="sticky top-6">
-              <UpgradeHeroBanner
-                publishedBookings={publishedBookings}
-                services={addonServices}
-                existingAddons={clientAddons || []}
-                clientId={client.id}
-              />
+            <div className="sticky top-6 space-y-4">
+              {addonServices.map((service, index) => {
+                const availableEpisodes = publishedBookings.filter(booking =>
+                  !(clientAddons || []).some(addon =>
+                    addon.booking_id === booking.id && addon.service_id === service.id
+                  )
+                )
+
+                const Icon = service.name.toLowerCase().includes('clip') ? Video :
+                             service.name.toLowerCase().includes('blog') ? FileText :
+                             service.name.toLowerCase().includes('bundle') ? Package : Sparkles
+
+                const gradients = [
+                  'from-purple-600 to-pink-600',
+                  'from-blue-600 to-cyan-600',
+                  'from-orange-600 to-red-600',
+                ]
+                const gradient = gradients[index % gradients.length]
+                const isBestValue = service.name.toLowerCase().includes('bundle')
+
+                return (
+                  <Card key={service.id} className="overflow-hidden">
+                    {isBestValue && (
+                      <div className="bg-green-600 text-white text-xs font-semibold text-center py-1">
+                        Best Value
+                      </div>
+                    )}
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-lg bg-gradient-to-r ${gradient} flex items-center justify-center flex-shrink-0`}>
+                          <Icon className="h-5 w-5 text-white" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <CardTitle className="text-base leading-tight">{service.name}</CardTitle>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pb-3">
+                      <p className="text-sm text-muted-foreground mb-4">
+                        {service.short_description}
+                      </p>
+                      <div className="flex items-baseline justify-between mb-4">
+                        <div className="text-2xl font-bold text-primary">
+                          {formatPrice(service.price_cents)}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {service.delivery_days}d delivery
+                        </div>
+                      </div>
+                      <Button
+                        onClick={() => {
+                          // Add logic to open episode selection
+                          toast.info('Select an episode to add this service')
+                        }}
+                        disabled={availableEpisodes.length === 0}
+                        className={`w-full bg-gradient-to-r ${gradient} hover:opacity-90 text-white`}
+                      >
+                        {availableEpisodes.length === 0 ? 'Sold Out' : (
+                          <>
+                            <ShoppingCart className="mr-2 h-4 w-4" />
+                            Add to Cart
+                          </>
+                        )}
+                      </Button>
+                      {availableEpisodes.length > 0 && (
+                        <p className="text-xs text-center text-muted-foreground mt-2">
+                          {availableEpisodes.length} {availableEpisodes.length === 1 ? 'episode' : 'episodes'} available
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                )
+              })}
             </div>
           </div>
         )}
