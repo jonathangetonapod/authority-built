@@ -1144,13 +1144,13 @@ export default function PortalDashboard() {
 
         {/* Tabs */}
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full max-w-4xl grid-cols-7">
+          <TabsList className="grid w-full max-w-6xl grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-1">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
             <TabsTrigger value="calendar">Calendar</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
             <TabsTrigger value="podcast-list">Outreach List</TabsTrigger>
-            <TabsTrigger value="premium">Premium Placements</TabsTrigger>
+            <TabsTrigger value="premium">Premium</TabsTrigger>
             <TabsTrigger value="orders">My Orders</TabsTrigger>
           </TabsList>
 
