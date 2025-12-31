@@ -21,7 +21,8 @@ import {
   Calendar,
   Search,
   BookOpen,
-  Package
+  Package,
+  Database
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -57,6 +58,7 @@ interface NavItem {
 const defaultNavItems: NavItem[] = [
   { id: 'overview', name: 'Overview', href: '/admin/dashboard', icon: LayoutDashboard },
   { id: 'podcast-finder', name: 'Podcast Finder', href: '/admin/podcast-finder', icon: Search },
+  { id: 'podcast-database', name: 'Podcast Database', href: '/admin/podcast-database', icon: Database },
   { id: 'ai-sales-director', name: 'AI Sales Director', href: '/admin/ai-sales-director', icon: Brain },
   { id: 'calendar', name: 'Client Podcast System', href: '/admin/calendar', icon: Calendar },
   { id: 'clients', name: 'Clients', href: '/admin/clients', icon: Users },
