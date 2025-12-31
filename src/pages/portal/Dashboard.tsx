@@ -171,10 +171,10 @@ export default function PortalDashboard() {
     staleTime: 0,
   })
 
-  // Analyze podcast fit when viewing a booking
+  // Analyze podcast fit when viewing a booking (with caching)
   useEffect(() => {
     const analyzePodcastFit = async () => {
-      if (!viewingBooking || !client?.bio) {
+      if (!viewingBooking || !client?.bio || !client?.id) {
         setPodcastFitAnalysis(null)
         return
       }
@@ -183,25 +183,19 @@ export default function PortalDashboard() {
       setPodcastFitAnalysis(null)
 
       try {
-        const { supabase } = await import('@/lib/supabase')
-        const { data, error } = await supabase.functions.invoke('analyze-podcast-fit', {
-          body: {
-            clientBio: client.bio,
-            podcastName: viewingBooking.podcast_name,
-            podcastDescription: viewingBooking.podcast_description || '',
-            hostName: viewingBooking.host_name || undefined,
-            audienceSize: viewingBooking.audience_size || undefined,
-            itunesRating: viewingBooking.itunes_rating || undefined,
-            episodeCount: viewingBooking.episode_count || undefined,
-          }
-        })
+        const { getPodcastFitAnalysis } = await import('@/services/clientPortal')
 
-        if (error) {
-          console.error('Failed to analyze podcast fit:', error)
-          setPodcastFitAnalysis(null)
-        } else if (data?.analysis) {
-          setPodcastFitAnalysis(data.analysis)
-        }
+        const analysis = await getPodcastFitAnalysis(
+          client.id,
+          viewingBooking.id,
+          client.bio,
+          viewingBooking.podcast_name,
+          viewingBooking.podcast_description || undefined,
+          viewingBooking.host_name || undefined,
+          viewingBooking.audience_size || undefined
+        )
+
+        setPodcastFitAnalysis(analysis)
       } catch (error) {
         console.error('Error analyzing podcast fit:', error)
         setPodcastFitAnalysis(null)
@@ -211,7 +205,7 @@ export default function PortalDashboard() {
     }
 
     analyzePodcastFit()
-  }, [viewingBooking, client?.bio])
+  }, [viewingBooking, client?.bio, client?.id])
 
   // Fetch premium podcasts
   const { data: premiumPodcasts, isLoading: premiumLoading } = useQuery({
@@ -3895,7 +3889,7 @@ export default function PortalDashboard() {
 
         {/* Booking Detail Modal */}
       <Dialog open={!!viewingBooking} onOpenChange={() => setViewingBooking(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto w-[95vw] sm:w-full">
           <DialogHeader>
             <DialogTitle>Podcast Details</DialogTitle>
             <DialogDescription>
@@ -4011,7 +4005,7 @@ export default function PortalDashboard() {
                           <span>Analyzing podcast fit...</span>
                         </div>
                       ) : podcastFitAnalysis ? (
-                        <div className="text-sm text-purple-800 dark:text-purple-200 space-y-2 whitespace-pre-line leading-relaxed">
+                        <div className="text-sm text-purple-800 dark:text-purple-200 space-y-2 whitespace-pre-line leading-relaxed break-words overflow-wrap-anywhere">
                           {podcastFitAnalysis}
                         </div>
                       ) : (

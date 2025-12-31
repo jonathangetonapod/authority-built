@@ -253,6 +253,97 @@ export async function getPortalStats() {
 }
 
 /**
+ * Get cached podcast fit analysis or generate new one if not cached
+ */
+export async function getPodcastFitAnalysis(
+  clientId: string,
+  bookingId: string,
+  clientBio: string,
+  podcastName: string,
+  podcastDescription?: string,
+  hostName?: string,
+  audienceSize?: number
+): Promise<string | null> {
+  // Check cache first
+  const { data: cached, error: cacheError } = await supabase
+    .from('podcast_fit_analyses')
+    .select('analysis')
+    .eq('client_id', clientId)
+    .eq('booking_id', bookingId)
+    .maybeSingle()
+
+  if (!cacheError && cached?.analysis) {
+    console.log('[PodcastFitCache] Using cached analysis')
+    return cached.analysis
+  }
+
+  console.log('[PodcastFitCache] No cache found, generating new analysis')
+
+  // Generate new analysis via Edge Function
+  try {
+    const { data, error } = await supabase.functions.invoke('analyze-podcast-fit', {
+      body: {
+        clientBio,
+        podcastName,
+        podcastDescription: podcastDescription || '',
+        hostName,
+        audienceSize,
+      }
+    })
+
+    if (error) {
+      console.error('Failed to analyze podcast fit:', error)
+      return null
+    }
+
+    if (!data?.analysis) {
+      console.error('No analysis returned from Edge Function')
+      return null
+    }
+
+    // Save to cache
+    const { error: saveError } = await supabase
+      .from('podcast_fit_analyses')
+      .insert({
+        client_id: clientId,
+        booking_id: bookingId,
+        podcast_name: podcastName,
+        podcast_description: podcastDescription,
+        analysis: data.analysis
+      })
+
+    if (saveError) {
+      console.error('Failed to cache analysis:', saveError)
+      // Don't fail if cache save fails - we still have the analysis
+    } else {
+      console.log('[PodcastFitCache] Analysis cached successfully')
+    }
+
+    return data.analysis
+  } catch (error) {
+    console.error('Error generating podcast fit analysis:', error)
+    return null
+  }
+}
+
+/**
+ * Invalidate cached analysis for a booking (e.g., when client bio changes)
+ */
+export async function invalidatePodcastFitAnalysis(clientId: string, bookingId: string): Promise<void> {
+  const { error } = await supabase
+    .from('podcast_fit_analyses')
+    .delete()
+    .eq('client_id', clientId)
+    .eq('booking_id', bookingId)
+
+  if (error) {
+    console.error('Failed to invalidate cache:', error)
+  } else {
+    console.log('[PodcastFitCache] Cache invalidated for booking:', bookingId)
+  }
+}
+
+/**
  * Session storage helpers
  */
 export const sessionStorage = {
