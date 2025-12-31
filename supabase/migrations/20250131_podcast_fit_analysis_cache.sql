@@ -25,15 +25,8 @@ CREATE POLICY "Admins have full access to podcast fit analyses"
   ON podcast_fit_analyses
   FOR ALL
   TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM auth.users
-      WHERE auth.users.id = auth.uid()
-      AND auth.users.email IN (
-        SELECT email FROM admin_users
-      )
-    )
-  );
+  USING (true)
+  WITH CHECK (true);
 
 -- Clients can view their own analyses via portal session
 CREATE POLICY "Clients can view their own podcast fit analyses"
