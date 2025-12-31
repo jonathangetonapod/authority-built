@@ -125,6 +125,14 @@ export async function getClientBookings(clientId: string): Promise<Booking[]> {
   // Get session token if exists
   const { session } = sessionStorage.get()
 
+  console.log('[getClientBookings] Session from storage:', {
+    hasSession: !!session,
+    sessionToken: session?.session_token ? 'exists' : 'missing',
+    clientId,
+    sessionClientId: session?.client_id,
+    expiresAt: session?.expires_at
+  })
+
   // Use client ID from session if available (to ensure it matches the session token)
   const effectiveClientId = session?.client_id || clientId
 
@@ -136,12 +144,12 @@ export async function getClientBookings(clientId: string): Promise<Booking[]> {
   })
 
   if (error) {
-    console.error('Failed to fetch bookings:', error)
+    console.error('[getClientBookings] Failed to fetch bookings:', error)
     throw new Error(error.message || 'Failed to fetch bookings')
   }
 
   if (data.error) {
-    console.error('Edge Function returned error:', data.error)
+    console.error('[getClientBookings] Edge Function returned error:', data.error)
     throw new Error(data.error || 'Failed to fetch bookings')
   }
 
