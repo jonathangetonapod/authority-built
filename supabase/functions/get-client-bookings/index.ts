@@ -12,15 +12,23 @@ interface RequestBody {
 }
 
 serve(async (req) => {
+  console.log('[Get Client Bookings] ========== FUNCTION INVOKED ==========')
+  console.log('[Get Client Bookings] Method:', req.method)
+  console.log('[Get Client Bookings] URL:', req.url)
+
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
+    console.log('[Get Client Bookings] CORS preflight request')
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const { sessionToken, clientId }: RequestBody = await req.json()
+    const body = await req.json()
+    console.log('[Get Client Bookings] Raw request body:', JSON.stringify(body))
 
-    console.log('[Get Client Bookings] Request:', { clientId, hasSessionToken: !!sessionToken })
+    const { sessionToken, clientId }: RequestBody = body
+
+    console.log('[Get Client Bookings] Request:', { clientId, hasSessionToken: !!sessionToken, sessionTokenLength: sessionToken?.length })
 
     if (!clientId) {
       return new Response(
