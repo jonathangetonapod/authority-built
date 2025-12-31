@@ -1747,12 +1747,17 @@ export default function PortalDashboard() {
               <div className="text-center py-12 text-muted-foreground">
                 <Target className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p className="text-lg font-medium mb-2">You're all caught up! 🎉</p>
-                <p className="text-sm">No urgent action items right now. New tasks will appear here when:</p>
-                <ul className="text-sm mt-3 space-y-1 max-w-md mx-auto">
-                  <li>• You have a recording coming up in the next 7 days</li>
-                  <li>• An episode is scheduled to go live soon</li>
-                  <li>• You have recently published episodes to share</li>
+                <p className="text-sm">No action items for the selected time range. New tasks appear when:</p>
+                <ul className="text-sm mt-3 space-y-2 max-w-md mx-auto text-left">
+                  <li>• <strong>Recording Prep:</strong> You have a recording scheduled (status: booked/in progress)</li>
+                  <li>• <strong>Going Live:</strong> An episode publish date is upcoming (status: recorded/published)</li>
+                  <li>• <strong>Share Episode:</strong> Episode was recently published with an episode URL added</li>
                 </ul>
+                {bookings && bookings.length > 0 && (
+                  <p className="text-xs mt-4 text-muted-foreground/70">
+                    Tip: Make sure your published episodes have their Episode URL filled in
+                  </p>
+                )}
               </div>
             )}
           </CardContent>
