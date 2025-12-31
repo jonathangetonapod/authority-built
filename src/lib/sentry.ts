@@ -1,8 +1,12 @@
 import * as Sentry from '@sentry/react'
 
 export function initSentry() {
+  console.log('[Sentry] Initializing Sentry...')
+
   // Temporary: Hardcoded DSN until Railway environment variable issue is resolved
   const sentryDsn = import.meta.env.VITE_SENTRY_DSN || 'https://8afda039e36f8ba008a91b0069894718@o4510627480731648.ingest.us.sentry.io/4510627502096384'
+
+  console.log('[Sentry] DSN:', sentryDsn ? 'Found' : 'Missing')
 
   if (!sentryDsn) {
     console.warn('[Sentry] DSN not configured - error tracking disabled')
@@ -51,6 +55,14 @@ export function initSentry() {
       return event
     },
   })
+
+  // Expose Sentry globally for debugging
+  if (typeof window !== 'undefined') {
+    (window as any).Sentry = Sentry
+  }
+
+  console.log('[Sentry] ✅ Sentry initialized successfully!')
+  console.log('[Sentry] window.Sentry:', typeof (window as any).Sentry)
 }
 
 // Helper to capture exceptions with context
