@@ -57,14 +57,30 @@ serve(async (req) => {
     // If session token provided, validate it
     // If no session token, allow it (for admin impersonation)
     if (sessionToken) {
+      console.log('[Get Client Bookings] Validating session token:', sessionToken.substring(0, 10) + '...')
+
       const { data: session, error: sessionError } = await supabase
         .from('client_portal_sessions')
         .select('client_id, expires_at')
         .eq('session_token', sessionToken)
         .single()
 
+      console.log('[Get Client Bookings] Session query result:', {
+        hasSession: !!session,
+        hasError: !!sessionError,
+        errorCode: sessionError?.code,
+        errorMessage: sessionError?.message,
+        sessionClientId: session?.client_id,
+        expiresAt: session?.expires_at
+      })
+
       if (sessionError || !session) {
-        console.error('[Get Client Bookings] Invalid session:', sessionError)
+        console.error('[Get Client Bookings] Invalid session:', {
+          error: sessionError,
+          code: sessionError?.code,
+          message: sessionError?.message,
+          hint: sessionError?.hint
+        })
         return new Response(
           JSON.stringify({ error: 'Invalid session. Please log out and log back in.' }),
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -72,7 +88,15 @@ serve(async (req) => {
       }
 
       // Check if session expired
-      if (new Date(session.expires_at) < new Date()) {
+      const now = new Date()
+      const expiresAt = new Date(session.expires_at)
+      console.log('[Get Client Bookings] Time check:', {
+        now: now.toISOString(),
+        expiresAt: expiresAt.toISOString(),
+        expired: expiresAt < now
+      })
+
+      if (expiresAt < now) {
         console.log('[Get Client Bookings] Session expired for client:', clientId)
         return new Response(
           JSON.stringify({ error: 'Session expired. Please log in again.' }),
@@ -82,7 +106,11 @@ serve(async (req) => {
 
       // Verify client ID matches session
       if (session.client_id !== clientId) {
-        console.error('[Get Client Bookings] Client ID mismatch:', session.client_id, 'vs', clientId)
+        console.error('[Get Client Bookings] Client ID mismatch:', {
+          sessionClientId: session.client_id,
+          requestedClientId: clientId,
+          match: session.client_id === clientId
+        })
         return new Response(
           JSON.stringify({ error: 'Unauthorized' }),
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
