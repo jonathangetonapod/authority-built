@@ -19,9 +19,7 @@ vi.mock('@/services/clients', () => ({ getWorkspaceClientDetail: vi.fn() }))
 vi.mock('@/services/workspaceCampaigns', () => ({
   getWorkspaceCampaign: vi.fn(),
   saveWorkspaceCampaign: vi.fn(),
-  saveWorkspaceCampaignPitch: vi.fn(),
   setWorkspaceCampaignRunning: vi.fn(),
-  updateWorkspaceCampaignContact: vi.fn(),
   updateWorkspaceCampaignSettings: vi.fn(),
 }))
 vi.mock('@/components/workspace/WorkspaceLayout', () => ({
@@ -130,28 +128,69 @@ describe('WorkspaceCampaignDetail', () => {
     expect(screen.queryByText('Needs pitch')).not.toBeInTheDocument()
     expect(screen.queryByText(/Current wave|podcasts in view/i)).not.toBeInTheDocument()
 
+    const summary = screen.getByLabelText('Podcast outreach summary')
+    expect(within(summary).getByText('In campaign')).toBeInTheDocument()
+    expect(within(summary).getByText('Emailed')).toBeInTheDocument()
+    expect(within(summary).getByText('Opened')).toBeInTheDocument()
+    expect(within(summary).getByText('Replied')).toBeInTheDocument()
+    expect(within(summary).getByText('Reply rate')).toBeInTheDocument()
+    expect(within(summary).getByText('0%')).toBeInTheDocument()
+
     const table = screen.getByRole('table')
-    expect(within(table).getByRole('columnheader', { name: 'Sequence' })).toBeInTheDocument()
-    expect(within(table).getByRole('columnheader', { name: 'Outreach status' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Delivery' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Opens' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Replies' })).toBeInTheDocument()
+    expect(within(table).queryByRole('columnheader', { name: 'Sequence' })).not.toBeInTheDocument()
     expect(within(table).queryByRole('columnheader', { name: 'Client decision' })).not.toBeInTheDocument()
     expect(within(table).queryByText('Operator Stories')).not.toBeInTheDocument()
     const founderRow = within(table).getByText('Founder Show').closest('tr')
     expect(founderRow).not.toBeNull()
-    expect(within(founderRow as HTMLElement).getByText('3 emails ready')).toBeInTheDocument()
-    expect(within(founderRow as HTMLElement).getByText('Ready for outreach')).toBeInTheDocument()
-    fireEvent.click(within(founderRow as HTMLElement).getByRole('button', { name: /view sequence/i }))
+    expect(within(founderRow as HTMLElement).getByText('Not emailed')).toBeInTheDocument()
+    expect(within(founderRow as HTMLElement).getByText('Ready for campaign')).toBeInTheDocument()
+    fireEvent.click(within(founderRow as HTMLElement).getByRole('button', { name: /view details/i }))
     expect(await screen.findByRole('heading', { name: 'Founder Show' })).toBeInTheDocument()
-    expect(screen.getByText('Dallas has direct founder experience.')).toBeInTheDocument()
-    expect(screen.getByLabelText('Subject line')).toBeEnabled()
-    expect(screen.getByLabelText('Opening email')).toBeEnabled()
-    expect(screen.getByLabelText('Follow-up 1 reply')).toBeEnabled()
-    expect(screen.getByLabelText('Follow-up 2 reply')).toBeEnabled()
-    expect(screen.queryByLabelText('Follow-up 1 subject')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Follow-up 2 subject')).not.toBeInTheDocument()
+    expect(screen.getByText('Final contact and approved three-email sequence for this campaign.')).toBeInTheDocument()
+    expect(screen.getAllByText('Final sequence').length).toBeGreaterThan(0)
+    expect(screen.getByText('A tailored guest idea')).toBeInTheDocument()
+    expect(screen.getByText('A reviewed opening pitch.')).toBeInTheDocument()
+    expect(screen.getByText('A reviewed first follow-up.')).toBeInTheDocument()
+    expect(screen.getByText('A reviewed final follow-up.')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     expect(screen.getByText(/reply in the original thread/i)).toBeInTheDocument()
     expect(screen.getByText(/reply in the same thread/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Save contact' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /approve & start outreach/i })).not.toBeInTheDocument()
+    const pitchContext = screen.getByText('Pitch context').closest('details')
+    expect(pitchContext).not.toHaveAttribute('open')
+  })
+
+  it('shows delivery and engagement for an emailed podcast lead', async () => {
+    mockedCampaign.mockResolvedValueOnce({
+      ...campaignState,
+      targets: [{
+        ...sentTargets[0],
+        status: 'replied',
+        instantly_lead_id: 'lead-one',
+        instantly_lead_status: 1,
+        email_open_count: 3,
+        email_reply_count: 1,
+        launched_at: '2026-07-23T00:00:00Z',
+        last_activity_at: '2026-07-24T00:00:00Z',
+      }],
+    })
+    renderPage()
+
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Podcasts' }), { button: 0 })
+    const summary = screen.getByLabelText('Podcast outreach summary')
+    expect(within(summary).getByText('100%')).toBeInTheDocument()
+
+    const founderRow = within(screen.getByRole('table')).getByText('Founder Show').closest('tr')
+    expect(founderRow).not.toBeNull()
+    expect(within(founderRow as HTMLElement).getByText('Replied')).toBeInTheDocument()
+    expect(within(founderRow as HTMLElement).getByText('Follow-ups stopped')).toBeInTheDocument()
+    expect(within(founderRow as HTMLElement).getByText('3')).toBeInTheDocument()
+    expect(within(founderRow as HTMLElement).getByText('1')).toBeInTheDocument()
   })
 
   it('shows only podcasts sent through the Write Pitch modal', async () => {

@@ -5,7 +5,6 @@ import {
   AlertCircle,
   ArrowLeft,
   ArrowRight,
-  CheckCircle2,
   ExternalLink,
   Inbox,
   Loader2,
@@ -38,9 +37,7 @@ import {
 } from '@/components/ui/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Textarea } from '@/components/ui/textarea'
 import { useAuth } from '@/contexts/AuthContext'
-import { buildPodcastCampaignSequenceDraft, buildThreadReplySubject } from '@/lib/campaignSequence'
 import { safeExternalUrl } from '@/lib/externalUrl'
 import { workspaceLogoUrl } from '@/lib/workspaceLogo'
 import { MY_WORKSPACE_BASE_HREF, selectedWorkspaceBaseHref } from '@/lib/workspaceRoutes'
@@ -49,9 +46,7 @@ import { getWorkspaceClientDetail } from '@/services/clients'
 import {
   getWorkspaceCampaign,
   saveWorkspaceCampaign,
-  saveWorkspaceCampaignPitch,
   setWorkspaceCampaignRunning,
-  updateWorkspaceCampaignContact,
   updateWorkspaceCampaignSettings,
   type WorkspaceCampaignTarget,
 } from '@/services/workspaceCampaigns'
@@ -104,6 +99,16 @@ function stageClass(stage: PitchStage): string {
   if (stage === 'in-outreach' || stage === 'launching') return 'border-sky-200 bg-sky-50 text-sky-800'
   if (stage === 'replied' || stage === 'completed') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
   return 'border-slate-200 bg-slate-50 text-slate-700'
+}
+
+function leadDelivery(target?: WorkspaceCampaignTarget): { label: string; detail: string; className: string } {
+  const stage = pitchStage(target)
+  if (stage === 'ready') return { label: 'Not emailed', detail: 'Ready for campaign', className: 'border-slate-200 bg-slate-50 text-slate-700' }
+  if (stage === 'launching') return { label: 'Queued', detail: 'Preparing first email', className: 'border-violet-200 bg-violet-50 text-violet-800' }
+  if (stage === 'in-outreach') return { label: 'Emailed', detail: 'Sequence running', className: 'border-sky-200 bg-sky-50 text-sky-800' }
+  if (stage === 'replied') return { label: 'Replied', detail: 'Follow-ups stopped', className: 'border-emerald-200 bg-emerald-50 text-emerald-800' }
+  if (stage === 'completed') return { label: 'Completed', detail: 'Sequence finished', className: 'border-emerald-200 bg-emerald-50 text-emerald-800' }
+  return { label: 'Delivery issue', detail: 'Needs attention', className: 'border-amber-200 bg-amber-50 text-amber-800' }
 }
 
 function Metric({ label, value, detail, icon: Icon }: { label: string; value: number | string; detail: string; icon: typeof Mic2 }) {
@@ -185,12 +190,6 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
     && persistedPodcastIds.has(podcast.id)
   )), [data?.shortlist.podcasts, persistedPodcastIds])
   const [selectedPodcastId, setSelectedPodcastId] = useState<string | null>(null)
-  const [subjectDraft, setSubjectDraft] = useState('')
-  const [pitchDraft, setPitchDraft] = useState('')
-  const [followUpOneBodyDraft, setFollowUpOneBodyDraft] = useState('')
-  const [followUpTwoBodyDraft, setFollowUpTwoBodyDraft] = useState('')
-  const [hostNameDraft, setHostNameDraft] = useState('')
-  const [contactEmailDraft, setContactEmailDraft] = useState('')
   const [settingsName, setSettingsName] = useState('')
   const [settingsTimezone, setSettingsTimezone] = useState('America/New_York')
   const [settingsDailyLimit, setSettingsDailyLimit] = useState(30)
@@ -199,29 +198,6 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
 
   const selectedPodcast = campaignPodcasts.find((podcast) => podcast.id === selectedPodcastId) || null
   const selectedTarget = selectedPodcast ? targetByShortlistId.get(selectedPodcast.id) || null : null
-  useEffect(() => {
-    setHostNameDraft(selectedTarget?.host_name || selectedPodcast?.publisher_name || '')
-    setContactEmailDraft(selectedTarget?.contact_email || selectedPodcast?.podcast_email || '')
-  }, [selectedPodcast, selectedTarget])
-
-  useEffect(() => {
-    if (!selectedPodcast || !client) {
-      setSubjectDraft('')
-      setPitchDraft('')
-      setFollowUpOneBodyDraft('')
-      setFollowUpTwoBodyDraft('')
-      return
-    }
-    const starter = buildPodcastCampaignSequenceDraft({
-      podcast: selectedPodcast,
-      clientName: client.name,
-      clientBio: client.bio,
-    })
-    setSubjectDraft(selectedTarget?.pitch_subject || starter.subject)
-    setPitchDraft(selectedTarget?.pitch_body || starter.pitchBody)
-    setFollowUpOneBodyDraft(selectedTarget?.follow_up_1_body || starter.followUpOneBody)
-    setFollowUpTwoBodyDraft(selectedTarget?.follow_up_2_body || starter.followUpTwoBody)
-  }, [client, selectedPodcast, selectedTarget])
 
   useEffect(() => {
     setSettingsName(campaign?.name || (client ? `${client.name} Podcast Outreach` : ''))
@@ -236,22 +212,6 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
       queryClient.invalidateQueries({ queryKey: ['workspace-client-campaigns', workspaceId] }),
     ])
   }
-  const savePitchMutation = useMutation({
-    mutationFn: saveWorkspaceCampaignPitch,
-    onSuccess: async () => {
-      await refreshCampaignData()
-      toast.success('Pitch draft saved.')
-    },
-    onError: (error) => toast.error(error instanceof Error ? error.message : 'The pitch could not be saved.'),
-  })
-  const saveContactMutation = useMutation({
-    mutationFn: updateWorkspaceCampaignContact,
-    onSuccess: async () => {
-      await refreshCampaignData()
-      toast.success('Podcast contact saved.')
-    },
-    onError: (error) => toast.error(error instanceof Error ? error.message : 'The podcast contact could not be saved.'),
-  })
   const runningMutation = useMutation({
     mutationFn: (running: boolean) => setWorkspaceCampaignRunning(workspaceId, clientId, running),
     onMutate: (running) => setCampaignRunningPreview(running),
@@ -364,25 +324,16 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
   const activityTargets = [...campaignTargets]
     .filter((target) => target.launched_at || ['in_outreach', 'replied', 'completed', 'failed'].includes(target.status))
     .sort((left, right) => (right.last_activity_at || right.updated_at).localeCompare(left.last_activity_at || left.updated_at))
+  const emailedPodcastCount = campaignTargets.filter((target) => (
+    Boolean(target.launched_at) || ['in_outreach', 'replied', 'completed'].includes(target.status)
+  )).length
+  const openedPodcastCount = campaignTargets.filter((target) => target.email_open_count > 0).length
+  const repliedPodcastCount = campaignTargets.filter((target) => target.email_reply_count > 0 || target.status === 'replied').length
+  const podcastReplyRate = emailedPodcastCount > 0 ? Math.round((repliedPodcastCount / emailedPodcastCount) * 100) : 0
   const providerAccounts = integration?.accounts || []
   const canManageCampaign = Boolean(campaignState?.can_manage_campaigns)
-  const selectedContactEmail = selectedTarget?.contact_email || selectedPodcast?.podcast_email || null
-  const selectedPitchLocked = Boolean(selectedTarget && (
-    selectedTarget.instantly_lead_id
-    || ['launching', 'in_outreach', 'replied', 'completed'].includes(selectedTarget.status)
-  ))
-  const savedHostName = selectedTarget?.host_name || selectedPodcast?.publisher_name || ''
-  const savedContactEmail = selectedContactEmail || ''
-  const normalizedContactDraft = contactEmailDraft.trim().toLowerCase()
-  const contactDraftDirty = hostNameDraft.trim() !== savedHostName.trim()
-    || normalizedContactDraft !== savedContactEmail.trim().toLowerCase()
-  const contactEmailValid = normalizedContactDraft === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedContactDraft)
-  const canSaveContact = canManageCampaign
-    && Boolean(selectedPodcast)
-    && !selectedPitchLocked
-    && contactDraftDirty
-    && contactEmailValid
-  const canSaveSelectedPitch = canManageCampaign && Boolean(selectedPodcast) && !selectedPitchLocked
+  const selectedHostName = selectedTarget?.host_name || selectedPodcast?.publisher_name || 'Host not identified'
+  const selectedContactEmail = selectedTarget?.contact_email || selectedPodcast?.podcast_email || 'No contact email found'
 
   return (
     <WorkspaceLayout platformWorkspace={platformWorkspace}>
@@ -429,6 +380,28 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
 
           <TabsContent value="leads" className="mt-0 space-y-4">
             <Card className="overflow-hidden">
+              {campaignPodcasts.length > 0 && (
+                <>
+                  <div className="border-b p-4">
+                    <h2 className="font-semibold">Podcast lead list</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Track delivery and engagement for every podcast contact in this campaign.</p>
+                  </div>
+                  <div className="grid grid-cols-2 border-b bg-muted/10 sm:grid-cols-5" aria-label="Podcast outreach summary">
+                    {[
+                      ['In campaign', campaignTargets.length],
+                      ['Emailed', emailedPodcastCount],
+                      ['Opened', openedPodcastCount],
+                      ['Replied', repliedPodcastCount],
+                      ['Reply rate', `${podcastReplyRate}%`],
+                    ].map(([label, value]) => (
+                      <div key={String(label)} className="border-b p-3 last:border-b-0 odd:border-r sm:border-b-0 sm:border-r sm:last:border-r-0">
+                        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+                        <p className="mt-1 text-lg font-semibold tabular-nums">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
               {campaignPodcasts.length === 0 ? (
                 <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
                   <Mic2 className="h-9 w-9 text-muted-foreground/50" />
@@ -442,33 +415,37 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                     {campaignPodcasts.map((podcast) => {
                       const target = targetByShortlistId.get(podcast.id)
                       const stage = pitchStage(target)
+                      const delivery = leadDelivery(target)
                       const contactEmail = target?.contact_email || podcast.podcast_email
                       return (
                         <button key={podcast.id} type="button" onClick={() => setSelectedPodcastId(podcast.id)} className="w-full rounded-xl border p-4 text-left hover:bg-muted/30">
                           <div className="flex items-start justify-between gap-3"><p className="font-semibold">{podcast.podcast_name}</p><Badge variant="outline" className={stageClass(stage)}>{stageLabel(stage)}</Badge></div>
                           <p className="mt-2 text-xs text-muted-foreground">{target?.host_name || podcast.publisher_name || 'Host not identified'} · {contactEmail || 'Contact needed'}</p>
-                          <p className="mt-3 text-sm font-medium text-primary">{stage === 'failed' ? 'View issue' : 'View sequence'}<ArrowRight className="ml-1 inline h-3.5 w-3.5" /></p>
+                          <div className="mt-3 flex items-center justify-between gap-3 text-xs"><span className="font-medium">{delivery.label} · {delivery.detail}</span><span className="text-muted-foreground">{target?.email_open_count || 0} opens · {target?.email_reply_count || 0} replies</span></div>
+                          <p className="mt-3 text-sm font-medium text-primary">{stage === 'failed' ? 'View issue' : 'View details'}<ArrowRight className="ml-1 inline h-3.5 w-3.5" /></p>
                         </button>
                       )
                     })}
                   </div>
                   <div className="hidden overflow-x-auto md:block">
                     <Table>
-                      <TableHeader><TableRow><TableHead className="min-w-64">Podcast</TableHead><TableHead className="min-w-48">Host / contact</TableHead><TableHead>Sequence</TableHead><TableHead>Outreach status</TableHead><TableHead>Last activity</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+                      <TableHeader><TableRow><TableHead className="min-w-64">Podcast</TableHead><TableHead className="min-w-48">Contact</TableHead><TableHead className="min-w-40">Delivery</TableHead><TableHead className="text-center">Opens</TableHead><TableHead className="text-center">Replies</TableHead><TableHead>Last activity</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
                       <TableBody>
                         {campaignPodcasts.map((podcast) => {
                           const target = targetByShortlistId.get(podcast.id)
                           const stage = pitchStage(target)
+                          const delivery = leadDelivery(target)
                           const contactEmail = target?.contact_email || podcast.podcast_email
                           const podcastUrl = podcast.podcast_url ? safeExternalUrl(podcast.podcast_url) : null
                           return (
                             <TableRow key={podcast.id}>
                               <TableCell><div className="flex items-center gap-3">{podcast.podcast_image_url ? <img src={podcast.podcast_image_url} alt="" className="h-10 w-10 rounded-lg border object-cover" /> : <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted"><Mic2 className="h-4 w-4" /></div>}<div className="min-w-0"><p className="font-semibold">{podcast.podcast_name}</p>{podcastUrl && <a href={podcastUrl} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground hover:text-primary">Open podcast<ExternalLink className="ml-1 inline h-3 w-3" /></a>}</div></div></TableCell>
                               <TableCell><p className="font-medium">{target?.host_name || podcast.publisher_name || 'Host needed'}</p><p className="text-xs text-muted-foreground">{contactEmail || 'Email not found'}</p></TableCell>
-                              <TableCell><Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">3 emails ready</Badge></TableCell>
-                              <TableCell><Badge variant="outline" className={stageClass(stage)}>{stageLabel(stage)}</Badge></TableCell>
+                              <TableCell><Badge variant="outline" className={delivery.className}>{delivery.label}</Badge><p className="mt-1 text-xs text-muted-foreground">{delivery.detail}</p></TableCell>
+                              <TableCell className="text-center font-medium tabular-nums">{target?.email_open_count || 0}</TableCell>
+                              <TableCell className="text-center font-medium tabular-nums">{target?.email_reply_count || 0}</TableCell>
                               <TableCell><span className="text-sm text-muted-foreground">{formatDate(target?.last_activity_at || target?.updated_at || podcast.feedback_updated_at || podcast.updated_at)}</span></TableCell>
-                              <TableCell className="text-right"><Button type="button" size="sm" variant="ghost" className="text-primary" onClick={() => setSelectedPodcastId(podcast.id)}>{stage === 'failed' ? 'View issue' : 'View sequence'}<ArrowRight className="ml-2 h-3.5 w-3.5" /></Button></TableCell>
+                              <TableCell className="text-right"><Button type="button" size="sm" variant="ghost" className="text-primary" onClick={() => setSelectedPodcastId(podcast.id)}>{stage === 'failed' ? 'View issue' : 'View details'}<ArrowRight className="ml-2 h-3.5 w-3.5" /></Button></TableCell>
                             </TableRow>
                           )
                         })}
@@ -621,89 +598,60 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
           {selectedPodcast && (
             <>
               <SheetHeader className="border-b p-5 pr-12 sm:p-6 sm:pr-12">
-                <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className={stageClass(pitchStage(selectedTarget || undefined))}>{stageLabel(pitchStage(selectedTarget || undefined))}</Badge><Badge variant="outline">{selectedPodcast.feedback_status === 'approved' ? 'Client positive' : 'Owner selected'}</Badge></div>
+                <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className={stageClass(pitchStage(selectedTarget || undefined))}>{stageLabel(pitchStage(selectedTarget || undefined))}</Badge><Badge variant="outline">Final sequence</Badge></div>
                 <SheetTitle className="text-2xl">{selectedPodcast.podcast_name}</SheetTitle>
-                <SheetDescription>View or edit the saved contact and three-email outreach sequence.</SheetDescription>
+                <SheetDescription>Final contact and approved three-email sequence for this campaign.</SheetDescription>
               </SheetHeader>
 
               <div className="space-y-6 p-5 sm:p-6">
                 <section className="rounded-xl border p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Host contact</p><p className="mt-1 text-sm text-muted-foreground">The saved recipient for this campaign.</p></div>
-                    {selectedContactEmail && !contactDraftDirty ? <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" /> : <AlertCircle className="h-5 w-5 shrink-0 text-amber-600" />}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Host contact</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Finalized when this podcast was sent to the campaign.</p>
                   </div>
-                  {selectedPitchLocked || !canManageCampaign ? (
-                    <div className="mt-4 rounded-lg bg-muted/30 p-3">
-                      <p className="font-medium">{savedHostName || 'Host not identified'}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">{savedContactEmail || 'No contact email found'}</p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-lg bg-muted/25 p-3">
+                      <p className="text-xs font-medium text-muted-foreground">Host name</p>
+                      <p className="mt-1 font-medium">{selectedHostName}</p>
                     </div>
-                  ) : (
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-2"><Label htmlFor="host-name">Host name</Label><Input id="host-name" value={hostNameDraft} onChange={(event) => setHostNameDraft(event.target.value)} placeholder="Host or booking contact" /></div>
-                      <div className="space-y-2"><Label htmlFor="contact-email">Contact email</Label><Input id="contact-email" type="email" value={contactEmailDraft} onChange={(event) => setContactEmailDraft(event.target.value)} placeholder="host@podcast.com" aria-invalid={!contactEmailValid} /></div>
-                      <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={!canSaveContact || saveContactMutation.isPending}
-                          onClick={() => saveContactMutation.mutate({ workspaceId, clientId, shortlistPodcastId: selectedPodcast.id, contactEmail: normalizedContactDraft, hostName: hostNameDraft.trim() })}
-                        >
-                          {saveContactMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save contact
-                        </Button>
-                        {!contactEmailValid
-                          ? <p className="text-xs text-destructive">Enter a valid email address.</p>
-                          : contactDraftDirty
-                            ? <p className="text-xs text-amber-700">Save this contact to update the campaign.</p>
-                            : <p className="text-xs text-muted-foreground">Contact details are saved only to this client campaign.</p>}
-                      </div>
+                    <div className="rounded-lg bg-muted/25 p-3">
+                      <p className="text-xs font-medium text-muted-foreground">Contact email</p>
+                      <p className="mt-1 break-all font-medium">{selectedContactEmail}</p>
                     </div>
-                  )}
+                  </div>
                 </section>
 
-                {(selectedTarget?.research_notes || selectedPodcast.ai_fit_reasons?.length || selectedPodcast.ai_pitch_angles?.length) && (
-                  <section className="rounded-xl border bg-muted/20 p-4">
-                    <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /><h3 className="font-semibold">Pitch context</h3></div>
-                    {selectedTarget?.research_notes ? <div className="mt-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Research notes</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{selectedTarget.research_notes}</p></div> : null}
-                    {selectedPodcast.ai_fit_reasons?.length ? <div className="mt-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Why this show fits</p><ul className="mt-2 space-y-2 text-sm text-muted-foreground">{selectedPodcast.ai_fit_reasons.slice(0, 3).map((reason) => <li key={reason} className="flex gap-2"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />{reason}</li>)}</ul></div> : null}
-                    {selectedPodcast.ai_pitch_angles?.length ? <div className="mt-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Suggested talking points</p><div className="mt-2 space-y-2">{selectedPodcast.ai_pitch_angles.slice(0, 3).map((angle) => <div key={angle.title} className="rounded-lg bg-background p-3"><p className="text-sm font-medium">{angle.title}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{angle.description}</p></div>)}</div></div> : null}
-                  </section>
-                )}
-
                 <section className="space-y-4">
-                  <div><h3 className="font-semibold">Three-email sequence</h3><p className="mt-1 text-sm text-muted-foreground">The saved opening pitch and two podcast-specific follow-ups.</p></div>
+                  <div><h3 className="font-semibold">Final three-email sequence</h3><p className="mt-1 text-sm text-muted-foreground">Read-only copy approved before this podcast entered the campaign.</p></div>
                   <div className="space-y-3 rounded-xl border p-4">
                     <Badge variant="secondary">Email 1 · Opening pitch</Badge>
-                    <div className="space-y-2"><Label htmlFor="pitch-subject">Subject line</Label><Input id="pitch-subject" value={subjectDraft} onChange={(event) => setSubjectDraft(event.target.value)} placeholder={`Podcast guest idea for ${selectedPodcast.podcast_name}`} disabled={!canManageCampaign || selectedPitchLocked} /></div>
-                    <div className="space-y-2"><Label htmlFor="pitch-body">Opening email</Label><Textarea id="pitch-body" value={pitchDraft} onChange={(event) => setPitchDraft(event.target.value)} placeholder="Write a custom pitch using the client profile and podcast context…" className="min-h-52 resize-y" disabled={!canManageCampaign || selectedPitchLocked} /></div>
+                    <div><p className="text-xs font-medium text-muted-foreground">Subject line</p><p className="mt-1 rounded-lg bg-muted/25 p-3 text-sm font-medium">{selectedTarget?.pitch_subject || 'Subject unavailable'}</p></div>
+                    <div><p className="text-xs font-medium text-muted-foreground">Opening email</p><p className="mt-1 whitespace-pre-wrap rounded-lg bg-muted/25 p-3 text-sm leading-6">{selectedTarget?.pitch_body || 'Opening email unavailable'}</p></div>
                   </div>
                   <div className="space-y-3 rounded-xl border p-4">
                     <div><Badge variant="secondary">Email 2 · Follow-up</Badge><p className="mt-2 text-xs text-muted-foreground">Wait 3 days and reply in the original thread.</p></div>
-                    <div className="space-y-2"><Label htmlFor="follow-up-one-body">Follow-up 1 reply</Label><Textarea id="follow-up-one-body" value={followUpOneBodyDraft} onChange={(event) => setFollowUpOneBodyDraft(event.target.value)} className="min-h-40 resize-y" disabled={!canManageCampaign || selectedPitchLocked} /></div>
+                    <div><p className="text-xs font-medium text-muted-foreground">Follow-up 1 reply</p><p className="mt-1 whitespace-pre-wrap rounded-lg bg-muted/25 p-3 text-sm leading-6">{selectedTarget?.follow_up_1_body || 'First follow-up unavailable'}</p></div>
                   </div>
                   <div className="space-y-3 rounded-xl border p-4">
                     <div><Badge variant="secondary">Email 3 · Close the loop</Badge><p className="mt-2 text-xs text-muted-foreground">Wait 5 more days and reply in the same thread.</p></div>
-                    <div className="space-y-2"><Label htmlFor="follow-up-two-body">Follow-up 2 reply</Label><Textarea id="follow-up-two-body" value={followUpTwoBodyDraft} onChange={(event) => setFollowUpTwoBodyDraft(event.target.value)} className="min-h-40 resize-y" disabled={!canManageCampaign || selectedPitchLocked} /></div>
+                    <div><p className="text-xs font-medium text-muted-foreground">Follow-up 2 reply</p><p className="mt-1 whitespace-pre-wrap rounded-lg bg-muted/25 p-3 text-sm leading-6">{selectedTarget?.follow_up_2_body || 'Final follow-up unavailable'}</p></div>
                   </div>
                   <div className="rounded-xl border border-dashed bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
-                    {selectedPitchLocked
-                      ? 'This sequence is locked because outreach has started. Reply activity updates automatically.'
-                      : contactDraftDirty
-                        ? 'Save the host contact above to update this campaign.'
-                        : 'This sequence is ready for outreach. Launch or pause delivery for the entire campaign from Options.'}
+                    {selectedTarget?.last_error
+                      || (selectedTarget?.launched_at
+                        ? `Outreach started ${formatDate(selectedTarget.launched_at)}. Reply activity updates automatically.`
+                        : 'This final sequence is ready for outreach. Launch or pause delivery for the entire campaign from Options.')}
                   </div>
                 </section>
-              </div>
 
-              <div className="sticky bottom-0 flex flex-col gap-2 border-t bg-background/95 p-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-xs text-muted-foreground">{selectedTarget?.last_error || (selectedPitchLocked ? `Outreach started ${formatDate(selectedTarget?.launched_at)}` : 'Changes are saved to this campaign. Nothing sends from this panel.')}</p>
-                <div className="flex gap-2">
-                  <Button
-                    disabled={!canSaveSelectedPitch || savePitchMutation.isPending || saveContactMutation.isPending}
-                    onClick={() => savePitchMutation.mutate({ workspaceId, clientId, shortlistPodcastId: selectedPodcast.id, subject: subjectDraft, pitchBody: pitchDraft, followUpOneSubject: buildThreadReplySubject(subjectDraft), followUpOneBody: followUpOneBodyDraft, followUpTwoSubject: buildThreadReplySubject(subjectDraft), followUpTwoBody: followUpTwoBodyDraft })}
-                  >
-                    {savePitchMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save changes
-                  </Button>
-                </div>
+                {(selectedTarget?.research_notes || selectedPodcast.ai_fit_reasons?.length || selectedPodcast.ai_pitch_angles?.length) && (
+                  <details className="rounded-xl border bg-muted/15 p-4">
+                    <summary className="flex cursor-pointer list-none items-center gap-2 font-semibold"><Sparkles className="h-4 w-4 text-primary" />Pitch context</summary>
+                    {selectedTarget?.research_notes ? <div className="mt-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Research notes</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{selectedTarget.research_notes}</p></div> : null}
+                    {selectedPodcast.ai_fit_reasons?.length ? <div className="mt-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Why this show fits</p><ul className="mt-2 space-y-2 text-sm text-muted-foreground">{selectedPodcast.ai_fit_reasons.slice(0, 3).map((reason) => <li key={reason} className="flex gap-2"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />{reason}</li>)}</ul></div> : null}
+                    {selectedPodcast.ai_pitch_angles?.length ? <div className="mt-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Suggested talking points</p><div className="mt-2 space-y-2">{selectedPodcast.ai_pitch_angles.slice(0, 3).map((angle) => <div key={angle.title} className="rounded-lg bg-background p-3"><p className="text-sm font-medium">{angle.title}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{angle.description}</p></div>)}</div></div> : null}
+                  </details>
+                )}
               </div>
             </>
           )}
