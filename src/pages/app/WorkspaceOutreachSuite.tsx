@@ -82,7 +82,7 @@ const moduleConfigs: Record<OutreachWorkspaceModule, ModuleConfig> = {
   'master-inbox': {
     ...suiteItems[1],
     eyebrow: 'One reply queue',
-    description: 'Review conversations across every client and campaign, with the context needed to respond quickly and accurately.',
+    description: 'See every reply in one place or filter by client and campaign, with ownership and outreach context attached to every conversation.',
     metrics: [
       { label: 'Unread', detail: 'New conversations' },
       { label: 'Interested', detail: 'Positive intent' },

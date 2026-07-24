@@ -146,10 +146,13 @@ describe('WorkspaceOutreachSuite', () => {
     renderPage('master-inbox')
 
     const scope = screen.getByRole('radiogroup', { name: 'Inbox scope' })
-    expect(within(scope).getByRole('radio', { name: /interested/i })).toHaveAttribute('aria-checked', 'true')
+    expect(within(scope).getByRole('radio', { name: /all replies/i })).toHaveAttribute('aria-checked', 'true')
+    expect(within(scope).getByRole('radio', { name: /^interested/i })).toHaveAttribute('aria-checked', 'false')
     expect(within(scope).getByRole('radio', { name: /other replies/i })).toHaveAttribute('aria-checked', 'false')
     expect(screen.getByPlaceholderText('Search conversations')).toBeInTheDocument()
-    expect(screen.getByLabelText('Conversation workflow filters')).toHaveTextContent('Needs reply')
+    expect(screen.getByRole('combobox', { name: 'Filter by client' })).toHaveTextContent('All clients')
+    expect(screen.getByRole('combobox', { name: 'Filter by client campaign' })).toHaveTextContent('All campaigns')
+    expect(screen.getByLabelText('Conversation filters')).toHaveTextContent('Needs reply')
     expect(screen.getByRole('heading', { name: 'Conversations' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Conversation thread' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Conversation context' })).toBeInTheDocument()
@@ -158,9 +161,9 @@ describe('WorkspaceOutreachSuite', () => {
 
     fireEvent.click(within(scope).getByRole('radio', { name: /other replies/i }))
     expect(within(scope).getByRole('radio', { name: /other replies/i })).toHaveAttribute('aria-checked', 'true')
-    expect(screen.getByLabelText('Conversation workflow filters')).not.toHaveTextContent('Needs reply')
-    expect(screen.getByLabelText('Conversation workflow filters')).toHaveTextContent('Booked')
-    expect(screen.getByLabelText('Conversation workflow filters')).toHaveTextContent('Ended')
+    expect(screen.getByLabelText('Conversation filters')).not.toHaveTextContent('Needs reply')
+    expect(screen.getByLabelText('Conversation filters')).toHaveTextContent('Booked')
+    expect(screen.getByLabelText('Conversation filters')).toHaveTextContent('Ended')
   })
 
   it('loads a selected workspace and scopes every suite route to it', async () => {

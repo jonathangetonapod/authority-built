@@ -7,13 +7,15 @@ import {
   Radio,
   Search,
   Send,
+  UserRound,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
-type InboxScope = 'interested' | 'other'
+type InboxScope = 'all' | 'interested' | 'other'
 type InboxFilter = 'all' | 'attention' | 'needs-reply' | 'review' | 'sent' | 'ai' | 'booked' | 'ended'
 
 const inboxFilters: Array<{ value: InboxFilter; label: string; title: string }> = [
@@ -30,13 +32,14 @@ const inboxFilters: Array<{ value: InboxFilter; label: string; title: string }> 
 const interestedWorkflowFilters: InboxFilter[] = ['attention', 'needs-reply', 'review', 'sent']
 
 const contextItems = [
-  { title: 'Client and campaign', detail: 'See which client owns the conversation and what outreach created it.', icon: Megaphone },
+  { title: 'Client', detail: 'Every reply is assigned to the client who owns the outreach.', icon: UserRound },
+  { title: 'Client campaign', detail: 'The mapped campaign identifies exactly where the conversation belongs.', icon: Megaphone },
   { title: 'Podcast and contact', detail: 'Keep the show, host, and verified recipient beside the thread.', icon: Mic2 },
   { title: 'Reply status', detail: 'Know whether the conversation needs a response, review, or no action.', icon: MessageSquare },
 ]
 
 const MasterInboxPreview = () => {
-  const [scope, setScope] = useState<InboxScope>('interested')
+  const [scope, setScope] = useState<InboxScope>('all')
   const [filter, setFilter] = useState<InboxFilter>('all')
   const [search, setSearch] = useState('')
 
@@ -49,6 +52,18 @@ const MasterInboxPreview = () => {
               <button
                 type="button"
                 role="radio"
+                aria-checked={scope === 'all'}
+                onClick={() => setScope('all')}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                  scope === 'all' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                All replies <span className="ml-1 text-muted-foreground">0</span>
+              </button>
+              <button
+                type="button"
+                role="radio"
                 aria-checked={scope === 'interested'}
                 onClick={() => setScope('interested')}
                 className={cn(
@@ -56,7 +71,7 @@ const MasterInboxPreview = () => {
                   scope === 'interested' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
-                Interested only <span className="ml-1 text-muted-foreground">0</span>
+                Interested <span className="ml-1 text-muted-foreground">0</span>
               </button>
               <button
                 type="button"
@@ -93,14 +108,33 @@ const MasterInboxPreview = () => {
           </Badge>
         </div>
 
-        <div className="flex max-w-full gap-1.5 overflow-x-auto border-t bg-muted/10 px-3 py-2 lg:px-4" aria-label="Conversation workflow filters">
+        <div className="flex max-w-full items-center gap-1.5 overflow-x-auto border-t bg-muted/10 px-3 py-2 lg:px-4" aria-label="Conversation filters">
+          <Select defaultValue="all-clients">
+            <SelectTrigger aria-label="Filter by client" className="h-7 w-36 shrink-0 gap-1.5 bg-background px-2.5 text-xs">
+              <UserRound className="h-3.5 w-3.5 text-muted-foreground" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all-clients">All clients</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select defaultValue="all-campaigns">
+            <SelectTrigger aria-label="Filter by client campaign" className="h-7 w-40 shrink-0 gap-1.5 bg-background px-2.5 text-xs">
+              <Megaphone className="h-3.5 w-3.5 text-muted-foreground" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all-campaigns">All campaigns</SelectItem>
+            </SelectContent>
+          </Select>
+          <span className="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden="true" />
           {scope === 'other' && (
             <span className="mr-1 shrink-0 self-center text-[11px] text-muted-foreground">
               Workflow stages apply to interested replies.
             </span>
           )}
           {inboxFilters
-            .filter((item) => scope === 'interested' || !interestedWorkflowFilters.includes(item.value))
+            .filter((item) => scope !== 'other' || !interestedWorkflowFilters.includes(item.value))
             .map((item) => (
               <button
                 key={item.value}
@@ -126,7 +160,7 @@ const MasterInboxPreview = () => {
           <div className="flex items-center justify-between border-b px-4 py-3">
             <div>
               <h2 className="text-sm font-semibold">Conversations</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">Newest activity first</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Client and campaign shown on every reply</p>
             </div>
             <span className="text-xs tabular-nums text-muted-foreground">0</span>
           </div>
@@ -136,7 +170,7 @@ const MasterInboxPreview = () => {
             </div>
             <h3 className="mt-4 text-sm font-semibold">{search.trim() ? 'No matching conversations' : 'No conversations yet'}</h3>
             <p className="mt-1 max-w-52 text-xs leading-5 text-muted-foreground">
-              {search.trim() ? 'Try another name, podcast, client, or campaign.' : 'New podcast replies will appear here automatically.'}
+              {search.trim() ? 'Try another name, podcast, client, or campaign.' : 'Replies from mapped client campaigns will appear here automatically.'}
             </p>
           </div>
         </aside>
