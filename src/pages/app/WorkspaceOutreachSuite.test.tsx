@@ -134,25 +134,12 @@ describe('WorkspaceOutreachSuite', () => {
     expect(await screen.findByRole('heading', { name: emptyState })).toBeInTheDocument()
     if (module === 'client-campaigns') {
       expect(await screen.findByTestId('instantly-connection-card')).toHaveTextContent('Connect Instantly')
-      expect(screen.queryByRole('navigation', { name: 'Outreach suite' })).not.toBeInTheDocument()
     } else {
       expect(screen.getByTestId('instantly-connection-state')).toHaveTextContent('not connected')
     }
+    expect(screen.queryByRole('navigation', { name: 'Outreach suite' })).not.toBeInTheDocument()
     expect(screen.getByText('My Workspace')).toBeInTheDocument()
     expect(mockedView).not.toHaveBeenCalled()
-  })
-
-  it('keeps all outreach links inside the current workspace', () => {
-    renderPage('master-inbox')
-
-    const navigation = screen.getByRole('navigation', { name: 'Outreach suite' })
-    expect(navigation).toHaveTextContent('Client Campaigns')
-    expect(navigation).toHaveTextContent('Master Inbox')
-    expect(navigation).toHaveTextContent('Mailboxes')
-    expect(within(navigation).getByRole('link', { name: 'Client Campaigns' })).toHaveAttribute('href', '/app/client-campaigns')
-    expect(within(navigation).getByRole('link', { name: 'Master Inbox' })).toHaveAttribute('href', '/app/master-inbox')
-    expect(within(navigation).getByRole('link', { name: 'Master Inbox' })).toHaveAttribute('aria-current', 'page')
-    expect(within(navigation).getByRole('link', { name: 'Mailboxes' })).toHaveAttribute('href', '/app/mailboxes')
   })
 
   it('uses a scoped three-pane workflow for the master inbox without fake replies', () => {

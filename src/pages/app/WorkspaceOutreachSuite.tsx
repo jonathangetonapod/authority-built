@@ -11,19 +11,16 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react'
-import { Link } from 'react-router-dom'
 import { WorkspaceLayout, type PlatformWorkspaceConfig } from '@/components/workspace/WorkspaceLayout'
 import MasterInboxPreview from '@/components/workspace/MasterInboxPreview'
 import WorkspaceCampaigns from '@/pages/app/WorkspaceCampaigns'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/contexts/AuthContext'
-import { cn } from '@/lib/utils'
 import { workspaceLogoUrl } from '@/lib/workspaceLogo'
 import {
   MY_WORKSPACE_BASE_HREF,
   selectedWorkspaceBaseHref,
-  workspaceModuleHref,
   type WorkspaceModule,
 } from '@/lib/workspaceRoutes'
 import { getAdminWorkspaceView } from '@/services/adminWorkspaces'
@@ -285,31 +282,6 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
             </div>
           )}
         </header>
-
-        {module !== 'client-campaigns' && (
-          <nav aria-label="Outreach suite" className="flex max-w-full gap-1 overflow-x-auto border-b border-border">
-            {suiteItems.map((item) => {
-              const Icon = item.icon
-              const active = item.module === module
-              return (
-                <Link
-                  key={item.module}
-                  to={workspaceModuleHref(baseHref, item.module)}
-                  aria-current={active ? 'page' : undefined}
-                  className={cn(
-                    'group inline-flex shrink-0 items-center gap-2 border-b-2 px-3 py-3 text-sm font-medium transition-colors',
-                    active
-                      ? 'border-primary text-foreground'
-                      : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground',
-                  )}
-                >
-                  <Icon className={cn('h-4 w-4', active ? 'text-primary' : 'text-muted-foreground')} />
-                  <span>{item.name}</span>
-                </Link>
-              )
-            })}
-          </nav>
-        )}
 
         {module === 'client-campaigns' && (
           <WorkspaceCampaigns
