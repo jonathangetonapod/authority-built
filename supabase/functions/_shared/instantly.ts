@@ -5,6 +5,8 @@ const INSTANTLY_API_PREFIX = "/api/v2";
 const REQUEST_TIMEOUT_MS = 20_000;
 const MAX_PROVIDER_RESPONSE_BYTES = 2_000_000;
 const MAX_ACCOUNT_PAGES = 10;
+const MAX_DAILY_ANALYTICS_EMAILS = 200;
+const MAX_WARMUP_ANALYTICS_EMAILS = 100;
 
 export interface EncryptedCredential {
   ciphertext: string;
@@ -21,8 +23,31 @@ export interface InstantlyAccountSummary {
   first_name: string | null;
   last_name: string | null;
   status: number;
+  status_message: InstantlyAccountStatusMessage | null;
   warmup_status: number | null;
   daily_limit: number | null;
+  warmup_limit: number | null;
+  stat_warmup_score: number | null;
+  tags: InstantlyAccountTag[];
+}
+
+export interface InstantlyAccountTag {
+  id: string;
+  label: string;
+  description: string | null;
+}
+
+export interface InstantlyAccountStatusMessage {
+  code: string | null;
+  command: string | null;
+  response: string | null;
+  e_message: string | null;
+  response_code: number | null;
+}
+
+export interface InstantlyWarmupAccountAnalytics {
+  sent: number | null;
+  health_score: number | null;
 }
 
 export interface InstantlyAnalyticsSummary {
@@ -284,6 +309,98 @@ function finiteInteger(value: unknown, fallback = 0): number {
     : fallback;
 }
 
+function optionalFiniteInteger(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : null;
+}
+
+function optionalPercentage(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 &&
+      value <= 100
+    ? value
+    : null;
+}
+
+function shortText(value: unknown, max: number): string | null {
+  if (typeof value !== "string") return null;
+  const cleaned = value.trim();
+  return cleaned ? cleaned.slice(0, max) : null;
+}
+
+function batches<T>(items: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+  return result;
+}
+
+function normalizedAccountEmails(emails: string[]): string[] {
+  return Array.from(new Set(emails.map((email) => email.trim().toLowerCase())))
+    .filter((email) =>
+      email.length > 3 && email.length <= 254 && email.includes("@")
+    );
+}
+
+export function safeInstantlyAccount(
+  value: unknown,
+): InstantlyAccountSummary | null {
+  const account = record(value);
+  const email = typeof account?.email === "string"
+    ? account.email.trim().toLowerCase()
+    : "";
+  const status = typeof account?.status === "number" &&
+      Number.isInteger(account.status)
+    ? account.status
+    : null;
+  if (!email || email.length > 254 || status === null) return null;
+
+  const warmup = record(account?.warmup);
+  const providerMessage = record(account?.status_message);
+  const statusMessage = providerMessage
+    ? {
+      code: shortText(providerMessage.code, 100),
+      command: shortText(providerMessage.command, 100),
+      response: shortText(providerMessage.response, 1_000),
+      e_message: shortText(providerMessage.e_message, 1_000),
+      response_code: optionalFiniteInteger(providerMessage.responseCode),
+    }
+    : null;
+  const tags = Array.isArray(account?.tags)
+    ? account.tags.flatMap((value) => {
+      const tag = record(value);
+      const id = shortText(tag?.id, 100);
+      const label = shortText(tag?.label, 300);
+      if (!id || !label) return [];
+      return [{
+        id,
+        label,
+        description: shortText(tag?.description, 1_000),
+      }];
+    }).sort((left, right) => left.label.localeCompare(right.label))
+    : [];
+
+  return {
+    email,
+    first_name: shortText(account?.first_name, 200),
+    last_name: shortText(account?.last_name, 200),
+    status,
+    status_message: statusMessage &&
+        Object.values(statusMessage).some((item) => item !== null)
+      ? statusMessage
+      : null,
+    warmup_status: typeof account?.warmup_status === "number" &&
+        Number.isInteger(account.warmup_status)
+      ? account.warmup_status
+      : null,
+    daily_limit: optionalFiniteInteger(account?.daily_limit),
+    warmup_limit: optionalFiniteInteger(warmup?.limit),
+    stat_warmup_score: optionalPercentage(account?.stat_warmup_score),
+    tags,
+  };
+}
+
 export async function getInstantlyWorkspace(
   apiKey: string,
 ): Promise<InstantlyWorkspace> {
@@ -309,7 +426,7 @@ export async function listInstantlyAccounts(
   let startingAfter = "";
 
   for (let page = 0; page < MAX_ACCOUNT_PAGES; page += 1) {
-    const query = new URLSearchParams({ limit: "100" });
+    const query = new URLSearchParams({ limit: "100", include_tags: "true" });
     if (startingAfter) query.set("starting_after", startingAfter);
     const response = record(
       await instantlyRequest<unknown>(apiKey, "/accounts", { query }),
@@ -323,33 +440,8 @@ export async function listInstantlyAccounts(
       );
     }
     for (const item of items) {
-      const account = record(item);
-      const email = typeof account?.email === "string"
-        ? account.email.trim().toLowerCase()
-        : "";
-      const status =
-        typeof account?.status === "number" && Number.isInteger(account.status)
-          ? account.status
-          : null;
-      if (!email || email.length > 254 || status === null) continue;
-      accounts.set(email, {
-        email,
-        first_name: typeof account?.first_name === "string"
-          ? account.first_name.slice(0, 200)
-          : null,
-        last_name: typeof account?.last_name === "string"
-          ? account.last_name.slice(0, 200)
-          : null,
-        status,
-        warmup_status: typeof account?.warmup_status === "number" &&
-            Number.isInteger(account.warmup_status)
-          ? account.warmup_status
-          : null,
-        daily_limit: typeof account?.daily_limit === "number" &&
-            Number.isInteger(account.daily_limit)
-          ? account.daily_limit
-          : null,
-      });
+      const account = safeInstantlyAccount(item);
+      if (account) accounts.set(account.email, account);
     }
     const next = typeof response?.next_starting_after === "string"
       ? response.next_starting_after.trim()
@@ -361,6 +453,100 @@ export async function listInstantlyAccounts(
   return Array.from(accounts.values()).sort((left, right) =>
     left.email.localeCompare(right.email)
   );
+}
+
+export async function getInstantlyDailyAccountSends(
+  apiKey: string,
+  accountEmails: string[],
+  date = new Date(),
+): Promise<Map<string, number>> {
+  const emails = normalizedAccountEmails(accountEmails);
+  const sentByEmail = new Map(emails.map((email) => [email, 0]));
+  if (emails.length === 0) return sentByEmail;
+
+  const endDate = date.toISOString().slice(0, 10);
+  const start = new Date(`${endDate}T00:00:00.000Z`);
+  start.setUTCDate(start.getUTCDate() - 1);
+  const startDate = start.toISOString().slice(0, 10);
+  const responses = await Promise.all(
+    batches(emails, MAX_DAILY_ANALYTICS_EMAILS).map(async (batch) => {
+      const query = new URLSearchParams({
+        start_date: startDate,
+        end_date: endDate,
+      });
+      for (const email of batch) query.append("emails", email);
+      const response = await instantlyRequest<unknown>(
+        apiKey,
+        "/accounts/analytics/daily",
+        { query },
+      );
+      if (!Array.isArray(response)) {
+        throw new InstantlyApiError(
+          502,
+          "INSTANTLY_RESPONSE_INVALID",
+          "Instantly returned invalid daily account analytics",
+        );
+      }
+      return response;
+    }),
+  );
+
+  for (const response of responses) {
+    for (const item of response) {
+      const analytics = record(item);
+      const email = typeof analytics?.email_account === "string"
+        ? analytics.email_account.trim().toLowerCase()
+        : "";
+      if (
+        analytics?.date !== endDate || !sentByEmail.has(email) ||
+        optionalFiniteInteger(analytics?.sent) === null
+      ) continue;
+      sentByEmail.set(
+        email,
+        (sentByEmail.get(email) || 0) + finiteInteger(analytics?.sent),
+      );
+    }
+  }
+  return sentByEmail;
+}
+
+export async function getInstantlyWarmupAnalytics(
+  apiKey: string,
+  accountEmails: string[],
+): Promise<Map<string, InstantlyWarmupAccountAnalytics>> {
+  const emails = normalizedAccountEmails(accountEmails);
+  const requested = new Set(emails);
+  const analyticsByEmail = new Map<string, InstantlyWarmupAccountAnalytics>();
+  if (emails.length === 0) return analyticsByEmail;
+
+  const responses = await Promise.all(
+    batches(emails, MAX_WARMUP_ANALYTICS_EMAILS).map((batch) =>
+      instantlyRequest<unknown>(apiKey, "/accounts/warmup-analytics", {
+        method: "POST",
+        body: { emails: batch },
+      })
+    ),
+  );
+  for (const response of responses) {
+    const aggregate = record(record(response)?.aggregate_data);
+    if (!aggregate) {
+      throw new InstantlyApiError(
+        502,
+        "INSTANTLY_RESPONSE_INVALID",
+        "Instantly returned invalid warmup analytics",
+      );
+    }
+    for (const [providerEmail, value] of Object.entries(aggregate)) {
+      const email = providerEmail.trim().toLowerCase();
+      if (!requested.has(email)) continue;
+      const item = record(value);
+      analyticsByEmail.set(email, {
+        sent: optionalFiniteInteger(item?.sent),
+        health_score: optionalPercentage(item?.health_score),
+      });
+    }
+  }
+  return analyticsByEmail;
 }
 
 export function safeInstantlyAnalytics(

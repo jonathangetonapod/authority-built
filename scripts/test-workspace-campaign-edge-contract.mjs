@@ -20,6 +20,9 @@ assert.match(edge, /const CAMPAIGN_MANAGER_ROLES = new Set\(\["owner", "admin", 
 assert.match(edge, /function requireIntegrationOwner[\s\S]*?access\.role !== "owner"/u)
 assert.match(edge, /action === "connect-instantly"[\s\S]*?requireIntegrationOwner\(access\)/u)
 assert.match(edge, /action === "disconnect-instantly"[\s\S]*?requireIntegrationOwner\(access\)/u)
+assert.match(edge, /action === "mailboxes"[\s\S]*?requireOnlyKeys\(body, \["action", "workspace_id"\]\)/u)
+assert.match(edge, /action === "mailboxes"[\s\S]*?integrationApiKey\(connection, false\)[\s\S]*?refreshProviderAccounts/u)
+assert.match(edge, /action === "mailboxes"[\s\S]*?Promise\.allSettled/u)
 assert.match(edge, /action === "launch-pitch"[\s\S]*?requireCampaignManager\(access\)/u)
 assert.match(edge, /action === "prepare-podcast"[\s\S]*?requireCampaignManager\(access\)/u)
 assert.match(edge, /action === "prepare-podcast"[\s\S]*?CAMPAIGN_NOT_ASSIGNED[\s\S]*?requireApproved: true/u)
@@ -59,6 +62,11 @@ assert.match(provider, /Authorization: `Bearer \$\{apiKey\}`/u)
 assert.match(provider, /path\.includes\(":\/\/"\)/u)
 assert.match(provider, /"\/workspaces\/current"/u)
 assert.match(provider, /"\/accounts"/u)
+assert.match(provider, /include_tags: "true"/u)
+assert.match(provider, /"\/accounts\/analytics\/daily"/u)
+assert.match(provider, /"\/accounts\/warmup-analytics"/u)
+assert.match(provider, /const MAX_DAILY_ANALYTICS_EMAILS = 200/u)
+assert.match(provider, /const MAX_WARMUP_ANALYTICS_EMAILS = 100/u)
 
 for (const table of [
   'workspace_instantly_integrations',

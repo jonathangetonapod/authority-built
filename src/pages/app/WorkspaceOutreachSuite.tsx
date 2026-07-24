@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import {
+  AlertCircle,
   Inbox,
   Loader2,
   Mailbox,
@@ -12,6 +13,7 @@ import { WorkspaceLayout, type PlatformWorkspaceConfig } from '@/components/work
 import MasterInboxPreview from '@/components/workspace/MasterInboxPreview'
 import WorkspaceCampaigns from '@/pages/app/WorkspaceCampaigns'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useAuth } from '@/contexts/AuthContext'
@@ -23,6 +25,11 @@ import {
 } from '@/lib/workspaceRoutes'
 import { getAdminWorkspaceView } from '@/services/adminWorkspaces'
 import { getWorkspaceClients } from '@/services/clients'
+import {
+  getWorkspaceMailboxes,
+  type WorkspaceMailboxAccount,
+  type WorkspaceMailboxesResponse,
+} from '@/services/workspaceCampaigns'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -83,40 +90,61 @@ const moduleConfigs: Record<OutreachWorkspaceModule, ModuleConfig> = {
   },
 }
 
-interface MailboxPreviewAccount {
-  email: string
-  label: string
-  sent: number
-  dailyLimit: number
-  warmupEmails: number
-  healthScore: number
-  sendingError?: boolean
+function mailboxStatus(status: number): { label: string; className: string } | null {
+  if (status === 1) return null
+  if (status === 2) return { label: 'Paused', className: 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-50' }
+  if (status === 3) return { label: 'Maintenance', className: 'border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-50' }
+  if (status === -1) return { label: 'Connection error', className: 'border-red-200 bg-red-50 text-red-700 hover:bg-red-50' }
+  if (status === -2) return { label: 'Soft bounce error', className: 'border-red-200 bg-red-50 text-red-700 hover:bg-red-50' }
+  if (status === -3) return { label: 'Sending error', className: 'border-red-200 bg-red-50 text-red-700 hover:bg-red-50' }
+  return { label: 'Account issue', className: 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-50' }
 }
 
-const mailboxPreviewAccounts: MailboxPreviewAccount[] = [
-  { email: 'admin@solaraccountreview.help', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 70, healthScore: 100 },
-  { email: 'admin@solaraccountreview.homes', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 70, healthScore: 100 },
-  { email: 'admin@solarserviceupdate.help', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 0, healthScore: 100, sendingError: true },
-  { email: 'admin@solarserviceupdate.homes', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 70, healthScore: 100 },
-  { email: 'admin@solarsupportcenter.help', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 70, healthScore: 100 },
-  { email: 'admin@solarsupportcenter.homes', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 70, healthScore: 97 },
-  { email: 'admin@titanbankruptcy.lat', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 70, healthScore: 100 },
-  { email: 'admin@titanbankruptcyupdate.help', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 0, healthScore: 99, sendingError: true },
-  { email: 'admin@titanbankruptcyupdates.help', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 70, healthScore: 99 },
-  { email: 'admin@titansolarbankrupcy.help', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 0, healthScore: 100, sendingError: true },
-]
+function mailboxLabel(account: WorkspaceMailboxAccount): string {
+  if (account.tags[0]?.label) return account.tags[0].label
+  const name = [account.first_name, account.last_name].filter(Boolean).join(' ').trim()
+  return name || 'No account tag'
+}
 
-const MailboxesContent = () => (
+function healthDot(score: number | null): string {
+  if (score === null) return 'bg-muted-foreground/40'
+  if (score >= 95) return 'bg-emerald-500'
+  if (score >= 80) return 'bg-amber-500'
+  return 'bg-red-500'
+}
+
+interface MailboxesContentProps {
+  data?: WorkspaceMailboxesResponse
+  loading: boolean
+  error: Error | null
+  onRetry: () => void
+}
+
+const MailboxesContent = ({ data, loading, error, onRetry }: MailboxesContentProps) => {
+  const accounts = data?.accounts || []
+  const connected = Boolean(data?.connected)
+
+  return (
   <Card className="overflow-hidden shadow-none">
     <CardHeader className="border-b border-border/70 bg-muted/20 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0 sm:px-5">
       <div>
         <CardTitle className="text-lg">Sending accounts</CardTitle>
-        <CardDescription className="mt-1">Daily sends, warmup activity, and health for every mailbox.</CardDescription>
+        <CardDescription className="mt-1">
+          {data?.provider_workspace_name
+            ? `Live from ${data.provider_workspace_name}.`
+            : 'Daily sends, warmup activity, and health for every mailbox.'}
+        </CardDescription>
       </div>
       <Badge variant="outline" className="mt-3 w-fit bg-background text-muted-foreground sm:mt-0">
-        {mailboxPreviewAccounts.length} mailboxes
+        {loading ? 'Loading mailboxes' : connected ? `${accounts.length} mailboxes` : 'Not connected'}
       </Badge>
     </CardHeader>
+    {data?.analytics_errors.length ? (
+      <div role="status" className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-5 py-3 text-xs leading-5 text-amber-900">
+        <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        Account details are current, but some sending or warmup analytics could not be refreshed.
+      </div>
+    ) : null}
     <CardContent className="p-0">
       <Table aria-label="Mailbox accounts" className="min-w-[760px]">
         <caption className="sr-only">Sending volume, warmup activity, and health by mailbox.</caption>
@@ -129,18 +157,61 @@ const MailboxesContent = () => (
           </TableRow>
         </TableHeader>
         <TableBody>
-          {mailboxPreviewAccounts.map((account) => {
-            const sendProgress = account.dailyLimit > 0 ? (account.sent / account.dailyLimit) * 100 : 0
+          {loading && (
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={4} className="h-52 text-center">
+                <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />Loading mailboxes
+                </div>
+              </TableCell>
+            </TableRow>
+          )}
+          {!loading && error && (
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={4} className="h-52 text-center">
+                <div className="mx-auto max-w-md">
+                  <AlertCircle className="mx-auto h-6 w-6 text-amber-600" />
+                  <h2 className="mt-3 font-semibold">Mailbox data unavailable</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">{error.message}</p>
+                  <Button type="button" variant="outline" size="sm" className="mt-4" onClick={onRetry}>Try again</Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          )}
+          {!loading && !error && !connected && (
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={4} className="h-52 text-center">
+                <h2 className="font-semibold">Instantly is not connected</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Connect this workspace to load its sending accounts.</p>
+              </TableCell>
+            </TableRow>
+          )}
+          {!loading && !error && connected && accounts.length === 0 && (
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={4} className="h-52 text-center">
+                <h2 className="font-semibold">No mailboxes found</h2>
+                <p className="mt-1 text-sm text-muted-foreground">This Instantly workspace has no sending accounts.</p>
+              </TableCell>
+            </TableRow>
+          )}
+          {!loading && !error && connected && accounts.map((account) => {
+            const status = mailboxStatus(account.status)
+            const sendingError = account.status < 0
+            const sendProgress = account.daily_limit && account.sent_today !== null
+              ? Math.min((account.sent_today / account.daily_limit) * 100, 100)
+              : 0
+            const healthScore = account.health_score === null ? null : Math.round(account.health_score)
             return (
-              <TableRow key={account.email} className={account.sendingError ? 'bg-red-50/30 hover:bg-red-50/50' : 'hover:bg-muted/30'}>
+              <TableRow key={account.email} className={sendingError ? 'bg-red-50/30 hover:bg-red-50/50' : 'hover:bg-muted/30'}>
                 <TableCell className="px-5 py-4">
                   <div className="min-w-0">
                     <p className="font-semibold text-foreground">{account.email}</p>
                     <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-muted-foreground">{account.label}</span>
-                      {account.sendingError && (
-                        <Badge variant="outline" className="border-red-200 bg-red-50 px-2 py-0 text-[10px] font-semibold text-red-700 hover:bg-red-50">
-                          Sending error
+                      <span className="text-xs text-muted-foreground">{mailboxLabel(account)}</span>
+                      {account.tags.length > 1 && <span className="text-[10px] text-muted-foreground">+{account.tags.length - 1}</span>}
+                      {status && (
+                        <Badge variant="outline" title={account.status_message || status.label} className={`px-2 py-0 text-[10px] font-semibold ${status.className}`}>
+                          {status.label}
                         </Badge>
                       )}
                     </div>
@@ -148,21 +219,23 @@ const MailboxesContent = () => (
                 </TableCell>
                 <TableCell className="py-4">
                   <div className="w-24">
-                    <p className="font-semibold tabular-nums">{account.sent} of {account.dailyLimit}</p>
+                    <p className="font-semibold tabular-nums">
+                      {account.sent_today ?? '—'} of {account.daily_limit ?? '—'}
+                    </p>
                     <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
                       <div className="h-full rounded-full bg-primary" style={{ width: `${sendProgress}%` }} />
                     </div>
                   </div>
                 </TableCell>
                 <TableCell className="py-4">
-                  <span className={`font-semibold tabular-nums ${account.sendingError ? 'text-red-700' : 'text-foreground'}`}>
-                    {account.warmupEmails}
+                  <span className={`font-semibold tabular-nums ${sendingError ? 'text-red-700' : 'text-foreground'}`}>
+                    {account.warmup_emails ?? '—'}
                   </span>
                 </TableCell>
                 <TableCell className="py-4 pr-5">
                   <div className="flex items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full ${account.healthScore >= 95 ? 'bg-emerald-500' : account.healthScore >= 80 ? 'bg-amber-500' : 'bg-red-500'}`} aria-hidden="true" />
-                    <span className="font-semibold tabular-nums">{account.healthScore}%</span>
+                    <span className={`h-2 w-2 rounded-full ${healthDot(healthScore)}`} aria-hidden="true" />
+                    <span className="font-semibold tabular-nums">{healthScore === null ? '—' : `${healthScore}%`}</span>
                   </div>
                 </TableCell>
               </TableRow>
@@ -172,7 +245,8 @@ const MailboxesContent = () => (
       </Table>
     </CardContent>
   </Card>
-)
+  )
+}
 
 const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutreachSuiteProps) => {
   const { user, workspace } = useAuth()
@@ -193,6 +267,22 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
     queryFn: () => getWorkspaceClients(workspace?.id || ''),
     enabled: module === 'client-campaigns' && !isSelectedWorkspace && Boolean(workspace?.id),
     retry: false,
+  })
+  const mailboxWorkspaceId = isSelectedWorkspace ? selectedWorkspaceId : workspace?.id || ''
+  const mailboxesQuery = useQuery({
+    queryKey: [
+      isSelectedWorkspace ? 'platform' : 'tenant',
+      user?.id || 'unknown',
+      'workspace',
+      mailboxWorkspaceId || 'missing',
+      'mailboxes',
+    ],
+    queryFn: () => getWorkspaceMailboxes(mailboxWorkspaceId),
+    enabled: module === 'mailboxes'
+      && UUID_PATTERN.test(mailboxWorkspaceId)
+      && (!isSelectedWorkspace || Boolean(selectedWorkspaceQuery.data?.workspace)),
+    retry: false,
+    staleTime: 60_000,
   })
 
   const effectiveWorkspace = isSelectedWorkspace
@@ -291,9 +381,16 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
           />
         )}
         {module === 'master-inbox' && <MasterInboxPreview />}
-        {module === 'mailboxes' && <MailboxesContent />}
+        {module === 'mailboxes' && (
+          <MailboxesContent
+            data={mailboxesQuery.data}
+            loading={mailboxesQuery.isLoading}
+            error={mailboxesQuery.error instanceof Error ? mailboxesQuery.error : null}
+            onRetry={() => void mailboxesQuery.refetch()}
+          />
+        )}
 
-        {module !== 'client-campaigns' && (
+        {module === 'master-inbox' && (
           <div className="flex items-start gap-3 rounded-2xl border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
             <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
             <p className="leading-6">

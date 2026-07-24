@@ -3,13 +3,17 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import {
   decryptInstantlyApiKey,
   encryptInstantlyApiKey,
+  getInstantlyDailyAccountSends,
+  getInstantlyWarmupAnalytics,
   getInstantlyWorkspace,
   type InstantlyAccountSummary,
   InstantlyApiError,
   instantlyCampaignStatus,
   instantlyRequest,
+  type InstantlyWarmupAccountAnalytics,
   listInstantlyAccounts,
   localCampaignStatus,
+  safeInstantlyAccount,
   safeInstantlyAnalytics,
   safeInstantlyError,
 } from "../_shared/instantly.ts";
@@ -321,34 +325,8 @@ async function readTargets(
 function accountsFromSnapshot(value: unknown): InstantlyAccountSummary[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
-    const account = item as Record<string, unknown>;
-    const email = typeof account.email === "string"
-      ? account.email.trim().toLowerCase()
-      : "";
-    const status =
-      typeof account.status === "number" && Number.isInteger(account.status)
-        ? account.status
-        : null;
-    if (!email || status === null) return [];
-    return [{
-      email,
-      first_name: typeof account.first_name === "string"
-        ? account.first_name
-        : null,
-      last_name: typeof account.last_name === "string"
-        ? account.last_name
-        : null,
-      status,
-      warmup_status: typeof account.warmup_status === "number" &&
-          Number.isInteger(account.warmup_status)
-        ? account.warmup_status
-        : null,
-      daily_limit: typeof account.daily_limit === "number" &&
-          Number.isInteger(account.daily_limit)
-        ? account.daily_limit
-        : null,
-    }];
+    const account = safeInstantlyAccount(item);
+    return account ? [account] : [];
   });
 }
 
@@ -1838,6 +1816,75 @@ serve(async (req) => {
     const workspaceId = requireUuid(body.workspace_id, "workspace_id");
     const context = await requireAuthenticatedUser(req);
     const access = await requireWorkspaceFeatureAccess(context, workspaceId);
+
+    if (action === "mailboxes") {
+      requireOnlyKeys(body, ["action", "workspace_id"]);
+      const connection = await readConnection(context.admin, workspaceId);
+      if (
+        !connection || connection.status === "disconnected" ||
+        !connection.api_key_ciphertext || !connection.api_key_iv
+      ) {
+        return jsonResponse(req, METHODS, 200, {
+          connected: false,
+          provider_workspace_name: connection?.provider_workspace_name || null,
+          accounts: [],
+          last_synced_at: connection?.last_verified_at || null,
+          analytics_errors: [],
+        });
+      }
+
+      const apiKey = await integrationApiKey(connection, false);
+      const accounts = await refreshProviderAccounts(
+        context.admin,
+        connection,
+        apiKey,
+      );
+      const emails = accounts.map((account) => account.email);
+      const [dailyResult, warmupResult] = await Promise.allSettled([
+        getInstantlyDailyAccountSends(apiKey, emails),
+        getInstantlyWarmupAnalytics(apiKey, emails),
+      ]);
+      const dailySends = dailyResult.status === "fulfilled"
+        ? dailyResult.value
+        : new Map<string, number>();
+      const warmupAnalytics = warmupResult.status === "fulfilled"
+        ? warmupResult.value
+        : new Map<string, InstantlyWarmupAccountAnalytics>();
+      const analyticsErrors = [
+        dailyResult.status === "rejected"
+          ? safeInstantlyError(dailyResult.reason).message
+          : null,
+        warmupResult.status === "rejected"
+          ? safeInstantlyError(warmupResult.reason).message
+          : null,
+      ].filter((message): message is string => Boolean(message));
+      const lastSyncedAt = new Date().toISOString();
+
+      return jsonResponse(req, METHODS, 200, {
+        connected: true,
+        provider_workspace_name: connection.provider_workspace_name,
+        accounts: accounts.map((account) => {
+          const warmup = warmupAnalytics.get(account.email);
+          return {
+            email: account.email,
+            first_name: account.first_name,
+            last_name: account.last_name,
+            status: account.status,
+            status_message: account.status_message?.e_message ||
+              account.status_message?.response || null,
+            warmup_status: account.warmup_status,
+            daily_limit: account.daily_limit,
+            sent_today: dailySends.get(account.email) ?? null,
+            warmup_emails: warmup?.sent ?? null,
+            warmup_limit: account.warmup_limit,
+            health_score: warmup?.health_score ?? account.stat_warmup_score,
+            tags: account.tags,
+          };
+        }),
+        last_synced_at: lastSyncedAt,
+        analytics_errors: analyticsErrors,
+      });
+    }
 
     if (action === "overview") {
       requireOnlyKeys(body, ["action", "workspace_id"]);

@@ -28,6 +28,35 @@ export interface WorkspaceInstantlyIntegration {
   required_scopes: string[]
 }
 
+export interface WorkspaceMailboxTag {
+  id: string
+  label: string
+  description: string | null
+}
+
+export interface WorkspaceMailboxAccount {
+  email: string
+  first_name: string | null
+  last_name: string | null
+  status: number
+  status_message: string | null
+  warmup_status: number | null
+  daily_limit: number | null
+  sent_today: number | null
+  warmup_emails: number | null
+  warmup_limit: number | null
+  health_score: number | null
+  tags: WorkspaceMailboxTag[]
+}
+
+export interface WorkspaceMailboxesResponse {
+  connected: boolean
+  provider_workspace_name: string | null
+  accounts: WorkspaceMailboxAccount[]
+  last_synced_at: string | null
+  analytics_errors: string[]
+}
+
 export interface WorkspaceCampaignAnalytics {
   emails_sent_count: number
   contacted_count: number
@@ -142,6 +171,13 @@ export async function getWorkspaceCampaignOverview(workspaceId: string): Promise
     action: 'overview',
     workspace_id: workspaceId,
   }, 'Client campaigns could not be loaded.')
+}
+
+export async function getWorkspaceMailboxes(workspaceId: string): Promise<WorkspaceMailboxesResponse> {
+  return await invokeWorkspaceCampaigns<WorkspaceMailboxesResponse>({
+    action: 'mailboxes',
+    workspace_id: workspaceId,
+  }, 'Mailboxes could not be loaded.')
 }
 
 export async function getWorkspaceCampaign(

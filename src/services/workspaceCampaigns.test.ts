@@ -4,6 +4,7 @@ import {
   addWorkspaceCampaignPodcasts,
   connectWorkspaceInstantly,
   getWorkspaceCampaignOverview,
+  getWorkspaceMailboxes,
   launchWorkspaceCampaignPitch,
   prepareWorkspaceCampaignPodcast,
   saveWorkspaceCampaign,
@@ -46,6 +47,24 @@ describe('workspaceCampaigns service', () => {
     await expect(getWorkspaceCampaignOverview(workspaceId)).resolves.toMatchObject({ campaigns: [] })
     expect(invoke).toHaveBeenCalledWith('workspace-client-campaigns', {
       body: { action: 'overview', workspace_id: workspaceId },
+    })
+  })
+
+  it('loads mailboxes through the workspace-scoped function', async () => {
+    invoke.mockResolvedValueOnce({
+      data: {
+        connected: true,
+        provider_workspace_name: 'Solar workspace',
+        accounts: [],
+        last_synced_at: '2026-07-24T12:00:00.000Z',
+        analytics_errors: [],
+      },
+      error: null,
+    } as never)
+
+    await expect(getWorkspaceMailboxes(workspaceId)).resolves.toMatchObject({ connected: true })
+    expect(invoke).toHaveBeenCalledWith('workspace-client-campaigns', {
+      body: { action: 'mailboxes', workspace_id: workspaceId },
     })
   })
 
