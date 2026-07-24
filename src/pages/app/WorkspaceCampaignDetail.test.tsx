@@ -113,6 +113,7 @@ describe('WorkspaceCampaignDetail', () => {
     renderPage()
 
     expect(await screen.findByRole('heading', { name: 'Dallas Fontaine Podcast Outreach', level: 1 })).toBeInTheDocument()
+    expect(screen.getByText('Campaign active')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Analytics' })).toHaveAttribute('data-state', 'active')
     expect(screen.getByRole('tab', { name: 'Podcasts' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Sequences' })).toBeInTheDocument()
@@ -202,6 +203,7 @@ describe('WorkspaceCampaignDetail', () => {
     mockedRunning.mockResolvedValueOnce({ ...activeCampaign, status: 'paused' })
     renderPage()
 
+    expect(await screen.findByText('Campaign active')).toBeInTheDocument()
     fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Options' }), { button: 0 })
     const pauseButtons = screen.getAllByRole('button', { name: 'Pause Campaign' })
     expect(pauseButtons).toHaveLength(2)
@@ -211,6 +213,7 @@ describe('WorkspaceCampaignDetail', () => {
     fireEvent.click(pauseButtons[0])
     await waitFor(() => expect(mockedRunning).toHaveBeenCalledWith(workspaceId, clientId, false))
     await waitFor(() => expect(screen.getAllByRole('button', { name: 'Resume Campaign' })).toHaveLength(2))
+    expect(screen.getByText('Campaign inactive · Paused')).toBeInTheDocument()
   })
 
   it('turns a draft campaign launch action into a red pause action', async () => {
@@ -219,6 +222,7 @@ describe('WorkspaceCampaignDetail', () => {
     mockedRunning.mockResolvedValueOnce({ ...activeCampaign, status: 'active' })
     renderPage()
 
+    expect(await screen.findByText('Campaign inactive · Not launched')).toBeInTheDocument()
     fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Options' }), { button: 0 })
     const launchButtons = screen.getAllByRole('button', { name: 'Launch Campaign' })
     expect(launchButtons).toHaveLength(1)
@@ -226,6 +230,7 @@ describe('WorkspaceCampaignDetail', () => {
 
     await waitFor(() => expect(mockedRunning).toHaveBeenCalledWith(workspaceId, clientId, true))
     await waitFor(() => expect(screen.getAllByRole('button', { name: 'Pause Campaign' })).toHaveLength(2))
+    expect(screen.getByText('Campaign active')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Pause Campaign' })[0]).toHaveClass('bg-destructive')
   })
 

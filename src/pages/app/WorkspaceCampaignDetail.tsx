@@ -336,6 +336,15 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
   const campaignStatus = campaignRunningPreview === null
     ? persistedCampaignStatus
     : campaignIsRunning ? 'Active' : 'Paused'
+  const campaignHeaderStatus = campaignIsRunning
+    ? 'Campaign active'
+    : campaignStatus === 'Paused'
+      ? 'Campaign inactive · Paused'
+      : campaignStatus === 'Needs attention'
+        ? 'Campaign inactive · Needs attention'
+        : campaignStatus === 'Completed'
+          ? 'Campaign inactive · Completed'
+          : 'Campaign inactive · Not launched'
   const campaignRunningAction = campaignIsRunning
     ? 'Pause Campaign'
     : persistedCampaignStatus === 'Draft' ? 'Launch Campaign' : 'Resume Campaign'
@@ -386,7 +395,10 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-sm font-semibold text-primary">Client · {client.name}</p>
-              <Badge variant="outline" className={campaignStatusClass}>{campaignStatus}</Badge>
+              <Badge variant="outline" className={campaignStatusClass}>
+                <span className={`mr-1.5 h-1.5 w-1.5 rounded-full ${campaignIsRunning ? 'bg-emerald-600' : 'bg-current opacity-60'}`} />
+                {campaignHeaderStatus}
+              </Badge>
               <Badge
                 variant="outline"
                 className={integration?.connected
