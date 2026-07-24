@@ -142,7 +142,7 @@ describe('WorkspaceOutreachSuite', () => {
     expect(mockedView).not.toHaveBeenCalled()
   })
 
-  it('uses a scoped three-pane workflow for the master inbox without fake replies', () => {
+  it('visualizes deterministic client AI SDR routing without fake replies', () => {
     renderPage('master-inbox')
 
     const scope = screen.getByRole('radiogroup', { name: 'Inbox scope' })
@@ -156,7 +156,13 @@ describe('WorkspaceOutreachSuite', () => {
     expect(screen.getByRole('heading', { name: 'Conversations' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Conversation thread' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Conversation context' })).not.toBeInTheDocument()
-    expect(screen.getByText('Automatic sync on connection')).toBeInTheDocument()
+    expect(screen.getByText('Client AI SDRs activate after connection')).toBeInTheDocument()
+    const routing = screen.getByRole('list', { name: 'AI SDR reply routing' })
+    expect(within(routing).getByText('Reply received')).toBeInTheDocument()
+    expect(within(routing).getByText('Client resolved')).toBeInTheDocument()
+    expect(within(routing).getByText('Client AI SDR loaded')).toBeInTheDocument()
+    expect(within(routing).getByText('Review or act')).toBeInTheDocument()
+    expect(screen.getByText('No client match, no AI response.')).toBeInTheDocument()
     expect(screen.queryByText('Your master inbox is ready')).not.toBeInTheDocument()
 
     fireEvent.click(within(scope).getByRole('radio', { name: /other replies/i }))

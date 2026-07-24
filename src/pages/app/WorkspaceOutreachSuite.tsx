@@ -81,8 +81,8 @@ const moduleConfigs: Record<OutreachWorkspaceModule, ModuleConfig> = {
   },
   'master-inbox': {
     ...suiteItems[1],
-    eyebrow: 'One reply queue',
-    description: 'See every reply in one place or filter by client and campaign, with ownership and outreach context attached to every conversation.',
+    eyebrow: 'AI SDR command center',
+    description: 'See every reply in one place, resolve it to the right client and campaign, and give each conversation the correct client AI SDR context and response policy.',
     metrics: [
       { label: 'Unread', detail: 'New conversations' },
       { label: 'Interested', detail: 'Positive intent' },
