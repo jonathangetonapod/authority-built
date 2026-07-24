@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
   Inbox,
-  Layers3,
   Loader2,
   Mailbox,
   Megaphone,
@@ -14,6 +13,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { WorkspaceLayout, type PlatformWorkspaceConfig } from '@/components/workspace/WorkspaceLayout'
+import MasterInboxPreview from '@/components/workspace/MasterInboxPreview'
 import WorkspaceCampaigns from '@/pages/app/WorkspaceCampaigns'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -143,49 +143,6 @@ const DetailList = ({
         </div>
       )
     })}
-  </div>
-)
-
-const InboxContent = () => (
-  <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(18rem,0.8fr)]">
-    <Card className="overflow-hidden">
-      <CardHeader className="border-b border-border/70 bg-muted/20">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <CardTitle>Reply queue</CardTitle>
-            <CardDescription>One place for replies from every client campaign.</CardDescription>
-          </div>
-          <div className="flex flex-wrap gap-2" aria-label="Planned inbox views">
-            {['All replies', 'Unread', 'Interested', 'Needs response'].map((label, index) => (
-              <Badge key={label} variant={index === 0 ? 'secondary' : 'outline'}>{label}</Badge>
-            ))}
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="flex min-h-72 flex-col items-center justify-center px-6 py-12 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-          <Inbox className="h-7 w-7" />
-        </div>
-        <h2 className="mt-5 text-xl font-semibold">Your master inbox is ready</h2>
-        <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-          Replies will appear here after the Instantly connection is enabled. Until then, no external conversations are fetched or displayed.
-        </p>
-      </CardContent>
-    </Card>
-
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-lg">Context travels with every reply</CardTitle>
-        <CardDescription>The queue will make the next action clear without opening another system.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <DetailList items={[
-          { title: 'Client and campaign', description: 'Know who the reply belongs to and which message generated it.', icon: Layers3 },
-          { title: 'Complete thread', description: 'Read the original outreach and reply history before responding.', icon: Inbox },
-          { title: 'Response workflow', description: 'Prioritize interest, unread conversations, and replies needing action.', icon: Send },
-        ]} />
-      </CardContent>
-    </Card>
   </div>
 )
 
@@ -367,8 +324,8 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
             }}
           />
         )}
-        {module !== 'client-campaigns' && <MetricStrip metrics={config.metrics} />}
-        {module === 'master-inbox' && <InboxContent />}
+        {module === 'mailboxes' && <MetricStrip metrics={config.metrics} />}
+        {module === 'master-inbox' && <MasterInboxPreview />}
         {module === 'mailboxes' && <MailboxesContent />}
 
         {module !== 'client-campaigns' && (

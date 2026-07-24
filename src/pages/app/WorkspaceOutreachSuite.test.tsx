@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuth } from '@/contexts/AuthContext'
@@ -125,7 +125,7 @@ describe('WorkspaceOutreachSuite', () => {
 
   it.each([
     ['client-campaigns', 'Client Campaigns', 'No active clients'],
-    ['master-inbox', 'Master Inbox', 'Your master inbox is ready'],
+    ['master-inbox', 'Master Inbox', 'No conversations yet'],
     ['mailboxes', 'Mailboxes', 'No mailboxes synced yet'],
   ] as const)('renders the %s workspace foundation without invented provider data', async (module, title, emptyState) => {
     renderPage(module)
@@ -153,6 +153,27 @@ describe('WorkspaceOutreachSuite', () => {
     expect(within(navigation).getByRole('link', { name: 'Master Inbox' })).toHaveAttribute('href', '/app/master-inbox')
     expect(within(navigation).getByRole('link', { name: 'Master Inbox' })).toHaveAttribute('aria-current', 'page')
     expect(within(navigation).getByRole('link', { name: 'Mailboxes' })).toHaveAttribute('href', '/app/mailboxes')
+  })
+
+  it('uses a scoped three-pane workflow for the master inbox without fake replies', () => {
+    renderPage('master-inbox')
+
+    const scope = screen.getByRole('radiogroup', { name: 'Inbox scope' })
+    expect(within(scope).getByRole('radio', { name: /interested/i })).toHaveAttribute('aria-checked', 'true')
+    expect(within(scope).getByRole('radio', { name: /other replies/i })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByPlaceholderText('Search conversations')).toBeInTheDocument()
+    expect(screen.getByLabelText('Conversation workflow filters')).toHaveTextContent('Needs reply')
+    expect(screen.getByRole('heading', { name: 'Conversations' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Conversation thread' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Conversation context' })).toBeInTheDocument()
+    expect(screen.getByText('Automatic sync on connection')).toBeInTheDocument()
+    expect(screen.queryByText('Your master inbox is ready')).not.toBeInTheDocument()
+
+    fireEvent.click(within(scope).getByRole('radio', { name: /other replies/i }))
+    expect(within(scope).getByRole('radio', { name: /other replies/i })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByLabelText('Conversation workflow filters')).not.toHaveTextContent('Needs reply')
+    expect(screen.getByLabelText('Conversation workflow filters')).toHaveTextContent('Booked')
+    expect(screen.getByLabelText('Conversation workflow filters')).toHaveTextContent('Ended')
   })
 
   it('loads a selected workspace and scopes every suite route to it', async () => {
