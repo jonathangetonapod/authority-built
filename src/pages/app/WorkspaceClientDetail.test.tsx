@@ -8,6 +8,7 @@ import {
   getWorkspaceClientDetail,
   setWorkspaceClientPassword,
   updateWorkspaceClient,
+  updateWorkspaceClientProfile,
   type WorkspaceClientDetail as WorkspaceClientDetailData,
 } from '@/services/clients'
 
@@ -17,6 +18,7 @@ vi.mock('@/services/clients', () => ({
   getWorkspaceClientDetail: vi.fn(),
   setWorkspaceClientPassword: vi.fn(),
   updateWorkspaceClient: vi.fn(),
+  updateWorkspaceClientProfile: vi.fn(),
 }))
 vi.mock('@/components/admin/WorkspaceSwitcher', () => ({ WorkspaceSwitcher: () => <div>Workspace switcher</div> }))
 vi.mock('@/components/workspace/ClientShortlistEditor', () => ({
@@ -27,6 +29,7 @@ const mockedUseAuth = vi.mocked(useAuth)
 const mockedDetail = vi.mocked(getWorkspaceClientDetail)
 const mockedSetPortalPassword = vi.mocked(setWorkspaceClientPassword)
 const mockedUpdateClient = vi.mocked(updateWorkspaceClient)
+const mockedUpdateProfile = vi.mocked(updateWorkspaceClientProfile)
 const workspaceId = '11111111-1111-4111-8111-111111111111'
 const clientId = '22222222-2222-4222-8222-222222222222'
 const onboardingId = '33333333-3333-4333-8333-333333333333'
@@ -258,6 +261,50 @@ describe('WorkspaceClientDetail', () => {
 
     fireEvent.click(within(profileDialog).getByRole('button', { name: 'Done' }))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Approved client profile' })).not.toBeInTheDocument())
+  })
+
+  it('lets a workspace manager edit the approved profile where it is used', async () => {
+    mockedUpdateProfile.mockResolvedValue({
+      id: clientId,
+      workspace_id: workspaceId,
+      bio: 'Taylor helps operational leaders turn complexity into durable growth.',
+      updated_at: '2026-07-24T00:00:00.000Z',
+    })
+
+    renderPage()
+    await screen.findByRole('heading', { name: 'Taylor Client' })
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Onboarding & files' }), { button: 0 })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit profile' }))
+    const editor = screen.getByRole('dialog', { name: 'Edit approved client profile' })
+    const profile = within(editor).getByLabelText('Approved client profile')
+    expect(profile).toHaveValue('Taylor helps founders build durable operations.')
+    expect(within(editor).getByText(/6 words · 47 \/ 20,000 characters/i)).toBeInTheDocument()
+
+    fireEvent.change(profile, {
+      target: { value: 'Taylor helps operational leaders turn complexity into durable growth.' },
+    })
+    fireEvent.click(within(editor).getByRole('button', { name: 'Save profile' }))
+
+    await waitFor(() => expect(mockedUpdateProfile).toHaveBeenCalledWith(
+      workspaceId,
+      clientId,
+      'Taylor helps operational leaders turn complexity into durable growth.',
+      '2026-07-23T00:00:00.000Z',
+    ))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit approved client profile' })).not.toBeInTheDocument())
+  })
+
+  it('keeps approved profile editing manager-only', async () => {
+    mockedDetail.mockResolvedValueOnce({ ...detail, viewer_role: 'member', can_manage: false })
+
+    renderPage()
+    await screen.findByRole('heading', { name: 'Taylor Client' })
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Onboarding & files' }), { button: 0 })
+
+    expect(screen.getByRole('button', { name: 'View full profile' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit profile' })).not.toBeInTheDocument()
+    expect(mockedUpdateProfile).not.toHaveBeenCalled()
   })
 
   it('treats every configured approval dashboard as live even for a legacy disabled row', async () => {

@@ -51,6 +51,7 @@ import {
   generatePassword,
   setWorkspaceClientPassword,
   updateWorkspaceClient,
+  updateWorkspaceClientProfile,
   type WorkspaceClientBooking,
   type WorkspaceClientOnboardingSummary,
 } from '@/services/clients'
@@ -270,6 +271,11 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const [portalPasswordError, setPortalPasswordError] = useState<string | null>(null)
   const [portalPasswordBusy, setPortalPasswordBusy] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [profileEditorOpen, setProfileEditorOpen] = useState(false)
+  const [profileDraft, setProfileDraft] = useState('')
+  const [profileExpectedUpdatedAt, setProfileExpectedUpdatedAt] = useState('')
+  const [profileBusy, setProfileBusy] = useState(false)
+  const [profileError, setProfileError] = useState<string | null>(null)
   const [notesEditing, setNotesEditing] = useState(false)
   const [notesExpanded, setNotesExpanded] = useState(false)
   const [notesDraft, setNotesDraft] = useState('')
@@ -372,6 +378,8 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const profilePreview = client.bio ? textPreview(client.bio, 420) : ''
   const profileWordCount = client.bio ? wordCount(client.bio) : 0
   const profileWordLabel = `${profileWordCount.toLocaleString()} ${profileWordCount === 1 ? 'word' : 'words'}`
+  const profileDraftWordCount = wordCount(profileDraft)
+  const profileDraftChanged = profileDraft.trim() !== (client.bio || '').trim()
   const normalizedNotes = client.notes ? normalizedText(client.notes) : ''
   const notesPreview = client.notes ? textPreview(client.notes, 320) : ''
   const notesAreTruncated = normalizedNotes.length > 320
@@ -459,6 +467,44 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
       toast.success(`${label} copied.`)
     } catch {
       toast.error('Copy failed. Open the page and copy the address manually.')
+    }
+  }
+
+  const openProfileEditor = () => {
+    if (!canManage) return
+    setProfileDraft(client.bio || '')
+    setProfileExpectedUpdatedAt(client.updated_at)
+    setProfileError(null)
+    setProfileOpen(false)
+    setProfileEditorOpen(true)
+  }
+
+  const closeProfileEditor = () => {
+    if (profileBusy) return
+    setProfileEditorOpen(false)
+    setProfileError(null)
+  }
+
+  const saveClientProfile = async () => {
+    if (!canManage || profileBusy || !profileDraftChanged || !profileExpectedUpdatedAt) return
+    setProfileBusy(true)
+    setProfileError(null)
+    try {
+      await updateWorkspaceClientProfile(
+        workspaceId,
+        canonicalClientId,
+        profileDraft,
+        profileExpectedUpdatedAt,
+      )
+      await detailQuery.refetch()
+      setProfileEditorOpen(false)
+      toast.success(profileDraft.trim() ? 'Approved client profile updated.' : 'Approved client profile removed.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'The approved client profile could not be updated.'
+      setProfileError(message)
+      if (/changed since you opened/i.test(message)) await detailQuery.refetch()
+    } finally {
+      setProfileBusy(false)
     }
   }
 
@@ -835,7 +881,10 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                     <CardTitle>Approved client profile</CardTitle>
                     <CardDescription>Positioning used across discovery and outreach.</CardDescription>
                   </div>
-                  {client.bio && <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => setProfileOpen(true)}><BookOpenCheck className="mr-2 h-4 w-4" />View full profile</Button>}
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    {client.bio && <Button type="button" variant="outline" size="sm" onClick={() => setProfileOpen(true)}><BookOpenCheck className="mr-2 h-4 w-4" />View full profile</Button>}
+                    {canManage && <Button type="button" size="sm" onClick={openProfileEditor}><Pencil className="mr-2 h-4 w-4" />{client.bio ? 'Edit profile' : 'Add profile'}</Button>}
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {client.bio ? (
@@ -843,7 +892,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                       <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Approved source · {profileWordLabel}</p>
                       <p className="leading-7 text-muted-foreground">{profilePreview}</p>
                     </div>
-                  ) : <div className="rounded-xl border border-dashed p-4"><p className="font-medium">No approved bio</p><p className="mt-1 text-sm text-muted-foreground">Complete onboarding before running personalized research.</p></div>}
+                  ) : <div className="rounded-xl border border-dashed p-4"><p className="font-medium">No approved profile yet</p><p className="mt-1 text-sm text-muted-foreground">Add a focused profile before running personalized research or preparing outreach.</p></div>}
                   <div className="flex flex-wrap gap-2 border-t pt-4">
                     {websiteUrl && <Button asChild variant="outline" size="sm"><a href={websiteUrl} target="_blank" rel="noreferrer"><Globe2 className="mr-2 h-4 w-4" />Website<ExternalLink className="ml-2 h-3.5 w-3.5" /></a></Button>}
                     {linkedInUrl && <Button asChild variant="outline" size="sm"><a href={linkedInUrl} target="_blank" rel="noreferrer"><Linkedin className="mr-2 h-4 w-4" />LinkedIn<ExternalLink className="ml-2 h-3.5 w-3.5" /></a></Button>}
@@ -914,7 +963,68 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
             {client.bio ? <article className="whitespace-pre-wrap text-sm leading-7 text-foreground/90">{client.bio}</article> : <p className="text-sm text-muted-foreground">No approved profile is available.</p>}
           </div>
           <DialogFooter className="border-t px-6 py-4">
+            {canManage && <Button type="button" onClick={openProfileEditor}><Pencil className="mr-2 h-4 w-4" />Edit profile</Button>}
             <Button type="button" variant="outline" onClick={() => setProfileOpen(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={profileEditorOpen}
+        onOpenChange={(open) => {
+          if (open) return
+          closeProfileEditor()
+        }}
+      >
+        <DialogContent
+          className="grid max-h-[94vh] w-[calc(100%-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-4xl"
+          onEscapeKeyDown={(event) => {
+            if (profileBusy) event.preventDefault()
+          }}
+          onPointerDownOutside={(event) => {
+            if (profileBusy) event.preventDefault()
+          }}
+        >
+          <DialogHeader className="border-b py-5 pl-6 pr-12 text-left">
+            <DialogTitle>{client.bio ? 'Edit approved client profile' : 'Add approved client profile'}</DialogTitle>
+            <DialogDescription>
+              This is the source used for podcast discovery, fit analysis, pitch writing, and outreach.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 space-y-4 overflow-y-auto px-6 py-5">
+            <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
+              <p className="font-medium">Keep it focused and host-ready</p>
+              <p className="mt-1 leading-6 text-sky-900">Aim for 150–500 words covering credible experience, specific expertise, strong story angles, and the audiences this client can help.</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="approved-client-profile">Approved client profile</Label>
+              <Textarea
+                id="approved-client-profile"
+                value={profileDraft}
+                maxLength={20_000}
+                disabled={profileBusy}
+                className="min-h-[340px] resize-y leading-7"
+                placeholder="Summarize the client’s background, authority, strongest stories, areas of expertise, and ideal podcast audiences."
+                onChange={(event) => {
+                  setProfileDraft(event.target.value)
+                  setProfileError(null)
+                }}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span>{profileDraftWordCount.toLocaleString()} {profileDraftWordCount === 1 ? 'word' : 'words'} · {profileDraft.length.toLocaleString()} / 20,000 characters</span>
+                {profileDraftWordCount > 600 && <span className="font-medium text-amber-700">Consider tightening this for stronger matching.</span>}
+                {!profileDraft.trim() && client.bio && <span className="font-medium text-destructive">Saving an empty profile removes it from research and outreach.</span>}
+              </div>
+            </div>
+            <p className="text-xs leading-5 text-muted-foreground">Approving a future onboarding response mapped to Client bio may replace this profile.</p>
+            {profileError && <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive" role="alert">{profileError}</p>}
+          </div>
+          <DialogFooter className="border-t px-6 py-4">
+            <Button type="button" variant="outline" disabled={profileBusy} onClick={closeProfileEditor}>Cancel</Button>
+            <Button type="button" disabled={profileBusy || !profileDraftChanged} onClick={() => void saveClientProfile()}>
+              {profileBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save profile
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

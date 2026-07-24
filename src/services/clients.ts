@@ -66,6 +66,13 @@ export interface WorkspaceClientProfile extends WorkspaceClient {
   password_set_at: string | null
 }
 
+export interface WorkspaceClientProfileUpdate {
+  id: string
+  workspace_id: string
+  bio: string | null
+  updated_at: string
+}
+
 export interface WorkspaceClientDashboardSummary {
   configured: boolean
   enabled: boolean
@@ -359,6 +366,38 @@ export async function updateWorkspaceClient(
 
   if (error) throw await toFunctionError(error, 'Failed to update client.')
   return data.client as WorkspaceClient
+}
+
+export async function updateWorkspaceClientProfile(
+  workspaceId: string,
+  clientId: string,
+  bio: string,
+  expectedUpdatedAt: string,
+): Promise<WorkspaceClientProfileUpdate> {
+  const canonicalWorkspaceId = workspaceId.toLowerCase()
+  const canonicalClientId = clientId.toLowerCase()
+  const { data, error } = await supabase.functions.invoke('workspace-clients', {
+    body: {
+      action: 'profile-update',
+      workspace_id: canonicalWorkspaceId,
+      client_id: canonicalClientId,
+      bio: bio.trim() || null,
+      expected_updated_at: expectedUpdatedAt,
+    },
+  })
+
+  if (error) throw await toFunctionError(error, 'Failed to update the approved client profile.')
+  const updated = data?.client as WorkspaceClientProfileUpdate | null
+  if (
+    !updated
+    || updated.id !== canonicalClientId
+    || updated.workspace_id !== canonicalWorkspaceId
+    || (updated.bio !== null && typeof updated.bio !== 'string')
+    || typeof updated.updated_at !== 'string'
+  ) {
+    throw new Error('The updated client profile did not match the workspace client address.')
+  }
+  return updated
 }
 
 export async function deleteWorkspaceClient(workspaceId: string, clientId: string): Promise<void> {

@@ -4,6 +4,7 @@ import {
   getWorkspaceClientDetail,
   getWorkspaceResearchContext,
   setWorkspaceClientPassword,
+  updateWorkspaceClientProfile,
 } from '@/services/clients'
 
 const { from, invoke } = vi.hoisted(() => ({ from: vi.fn(), invoke: vi.fn() }))
@@ -292,6 +293,74 @@ describe('getWorkspaceClientDetail', () => {
     await expect(getWorkspaceClientDetail(workspaceId, clientId)).rejects.toThrow(
       'The client detail response did not match the workspace client address.',
     )
+  })
+})
+
+describe('updateWorkspaceClientProfile', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('updates only the canonical profile through the workspace-scoped contract', async () => {
+    const workspaceId = '11111111-1111-4111-8111-111111111111'
+    const clientId = '22222222-2222-4222-8222-222222222222'
+    const expectedUpdatedAt = '2026-07-23T00:00:00.000Z'
+    const updatedAt = '2026-07-24T00:00:00.000Z'
+    invoke.mockResolvedValue({
+      data: {
+        client: {
+          id: clientId,
+          workspace_id: workspaceId,
+          bio: 'A concise approved profile.',
+          updated_at: updatedAt,
+        },
+      },
+      error: null,
+    })
+
+    await expect(updateWorkspaceClientProfile(
+      workspaceId.toUpperCase(),
+      clientId.toUpperCase(),
+      '  A concise approved profile.  ',
+      expectedUpdatedAt,
+    )).resolves.toEqual({
+      id: clientId,
+      workspace_id: workspaceId,
+      bio: 'A concise approved profile.',
+      updated_at: updatedAt,
+    })
+    expect(invoke).toHaveBeenCalledWith('workspace-clients', {
+      body: {
+        action: 'profile-update',
+        workspace_id: workspaceId,
+        client_id: clientId,
+        bio: 'A concise approved profile.',
+        expected_updated_at: expectedUpdatedAt,
+      },
+    })
+  })
+
+  it('rejects a profile response outside the requested client scope', async () => {
+    const workspaceId = '11111111-1111-4111-8111-111111111111'
+    const clientId = '22222222-2222-4222-8222-222222222222'
+    invoke.mockResolvedValue({
+      data: {
+        client: {
+          id: clientId,
+          workspace_id: '33333333-3333-4333-8333-333333333333',
+          bio: 'Wrong workspace.',
+          updated_at: '2026-07-24T00:00:00.000Z',
+        },
+      },
+      error: null,
+    })
+
+    await expect(updateWorkspaceClientProfile(
+      workspaceId,
+      clientId,
+      'Wrong workspace.',
+      '2026-07-23T00:00:00.000Z',
+    )).rejects.toThrow('did not match the workspace client address')
   })
 })
 

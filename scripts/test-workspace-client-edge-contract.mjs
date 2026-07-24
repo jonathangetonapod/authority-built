@@ -36,6 +36,10 @@ const dashboardAlwaysLiveMigration = readFileSync(
   'supabase/migrations/20260724000200_client_dashboards_always_live.sql',
   'utf8',
 )
+const clientProfileEditingMigration = readFileSync(
+  'supabase/migrations/20260724000400_workspace_client_profile_editing.sql',
+  'utf8',
+)
 
 assert.match(edge, /if \(req\.method === 'OPTIONS'\) return optionsResponse\(req, METHODS\)/u)
 assert.match(edge, /return errorResponse\(req, METHODS, error\)/u)
@@ -43,6 +47,8 @@ assert.match(edge, /const authContext = await requireAuthenticatedUser\(req\)/u)
 assert.match(edge, /if \(!workspaceCredentialIsFresh\(authContext\)\)/u)
 assert.match(edge, /const workspaceId = requireUuid\(body\.workspace_id, 'workspace_id'\)/u)
 assert.match(edge, /if \(action === 'research-get' \|\| action === 'detail-get'\)[\s\S]*?clientId = requireUuid\(body\.client_id, 'client_id'\)/u)
+assert.match(edge, /action === 'profile-update'[\s\S]*?requireOnlyKeys\(body, \['action', 'workspace_id', 'client_id', 'bio', 'expected_updated_at'\]\)[\s\S]*?optionalString\(body\.bio, 'bio', 20_000\)/u)
+assert.match(edge, /if \(action === 'profile-update'\)[\s\S]*?await requireWorkspaceFeatureAccess\(authContext, workspaceId\)[\s\S]*?\['owner', 'admin', 'platform_admin'\]\.includes\(access\.role\)[\s\S]*?admin\.rpc\('update_workspace_client_profile_v1'/u)
 assert.match(edge, /if \(action === 'detail-get'\)[\s\S]*?await requireWorkspaceFeatureAccess\(authContext, workspaceId\)/u)
 assert.match(edge, /\.from\('clients'\)[\s\S]*?\.eq\('id', clientId!\)[\s\S]*?\.eq\('workspace_id', workspaceId\)/u)
 assert.match(edge, /\.from\('bookings'\)[\s\S]*?\.eq\('client_id', clientId!\)[\s\S]*?\.limit\(500\)/u)
@@ -127,6 +133,11 @@ assert.match(dashboardAlwaysLiveMigration, /UPDATE public\.client_dashboard_podc
 assert.match(dashboardAlwaysLiveMigration, /CHECK \(visibility IN \('visible', 'archived'\)\)/u)
 assert.match(dashboardAlwaysLiveMigration, /CHECK \(dashboard_slug IS NULL OR dashboard_enabled\)/u)
 assert.match(dashboardAlwaysLiveMigration, /DROP FUNCTION IF EXISTS public\.set_workspace_client_dashboard_visibility_v1/u)
+assert.match(clientProfileEditingMigration, /CREATE OR REPLACE FUNCTION public\.update_workspace_client_profile_v1\([\s\S]*?p_workspace_id UUID[\s\S]*?p_client_id UUID[\s\S]*?p_expected_updated_at TIMESTAMPTZ[\s\S]*?SECURITY DEFINER[\s\S]*?SET search_path = ''/u)
+assert.match(clientProfileEditingMigration, /workspace_staff_actor_role_v1\([\s\S]*?true[\s\S]*?actor_role NOT IN \('owner', 'admin', 'platform_admin'\)/u)
+assert.match(clientProfileEditingMigration, /client\.id = p_client_id[\s\S]*?client\.workspace_id = p_workspace_id[\s\S]*?current_updated_at IS DISTINCT FROM p_expected_updated_at/u)
+assert.match(clientProfileEditingMigration, /'workspace\.client\.profile_updated'[\s\S]*?'previous_character_count'[\s\S]*?'character_count'[\s\S]*?'cleared'/u)
+assert.match(clientProfileEditingMigration, /REVOKE ALL ON FUNCTION public\.update_workspace_client_profile_v1\([\s\S]*?FROM PUBLIC, anon, authenticated, service_role;[\s\S]*?GRANT EXECUTE[\s\S]*?TO service_role;/u)
 assert.doesNotMatch(shortlistEdge, /'hidden'/u)
 assert.doesNotMatch(publicDashboardEdge, /dashboard_enabled/u)
 assert.doesNotMatch(clientPodcastsEdge, /dashboard_enabled/u)

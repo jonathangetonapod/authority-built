@@ -43,6 +43,14 @@ function optionalUrl(value: unknown, field: string): string | null {
   return parsed.toString()
 }
 
+function requireTimestamp(value: unknown, field: string): string {
+  const result = requireString(value, field, { max: 64 })
+  if (Number.isNaN(Date.parse(result))) {
+    throw new HttpError(400, 'INVALID_FIELD', `${field} must be a valid timestamp`)
+  }
+  return result
+}
+
 function clientPayload(value: unknown): Record<string, string | null> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new HttpError(400, 'INVALID_CLIENT', 'client must be an object')
@@ -82,6 +90,9 @@ function rpcError(error: { message?: string }): never {
   if (message.includes('dashboard address is not configured')) {
     throw new HttpError(409, 'DASHBOARD_NOT_CONFIGURED', 'Client dashboard address is not configured')
   }
+  if (message.includes('client profile changed')) {
+    throw new HttpError(409, 'PROFILE_CHANGED', 'This client profile changed since you opened it. Reopen the editor and try again.')
+  }
   if (message.includes('invalid')) {
     throw new HttpError(400, 'INVALID_REQUEST', 'Workspace client request is invalid')
   }
@@ -106,10 +117,17 @@ serve(async (req) => {
     const workspaceId = requireUuid(body.workspace_id, 'workspace_id')
     let clientId: string | null = null
     let payload: Record<string, string | null> = {}
+    let profileBio: string | null = null
+    let expectedUpdatedAt: string | null = null
 
     if (action === 'research-get' || action === 'detail-get') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'client_id'])
       clientId = requireUuid(body.client_id, 'client_id')
+    } else if (action === 'profile-update') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'bio', 'expected_updated_at'])
+      clientId = requireUuid(body.client_id, 'client_id')
+      profileBio = optionalString(body.bio, 'bio', 20_000)
+      expectedUpdatedAt = requireTimestamp(body.expected_updated_at, 'expected_updated_at')
     } else if (action === 'list') {
       requireOnlyKeys(body, ['action', 'workspace_id'])
     } else if (action === 'create') {
@@ -124,6 +142,23 @@ serve(async (req) => {
       clientId = requireUuid(body.client_id, 'client_id')
     } else {
       throw new HttpError(400, 'INVALID_ACTION', 'Unknown workspace client action')
+    }
+
+    if (action === 'profile-update') {
+      const access = await requireWorkspaceFeatureAccess(authContext, workspaceId)
+      if (!['owner', 'admin', 'platform_admin'].includes(access.role)) {
+        throw new HttpError(403, 'WORKSPACE_ACCESS_REQUIRED', 'Workspace manager access is required')
+      }
+      const { data, error } = await admin.rpc('update_workspace_client_profile_v1', {
+        p_workspace_id: workspaceId,
+        p_client_id: clientId!,
+        p_bio: profileBio,
+        p_expected_updated_at: expectedUpdatedAt!,
+        p_actor_user_id: user.id,
+        p_token_issued_at: tokenIssuedAt,
+      })
+      if (error) rpcError(error)
+      return jsonResponse(req, METHODS, 200, { client: data })
     }
 
     if (action === 'detail-get') {
