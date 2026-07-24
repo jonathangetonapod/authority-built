@@ -155,7 +155,7 @@ describe('WorkspaceOutreachSuite', () => {
     expect(screen.getByLabelText('Conversation filters')).toHaveTextContent('Needs reply')
     expect(screen.getByRole('heading', { name: 'Conversations' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Conversation thread' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Conversation context' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Conversation context' })).not.toBeInTheDocument()
     expect(screen.getByText('Automatic sync on connection')).toBeInTheDocument()
     expect(screen.queryByText('Your master inbox is ready')).not.toBeInTheDocument()
 

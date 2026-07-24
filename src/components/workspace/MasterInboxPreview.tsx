@@ -3,8 +3,6 @@ import {
   Inbox,
   Megaphone,
   MessageSquare,
-  Mic2,
-  Radio,
   Search,
   Send,
   UserRound,
@@ -30,13 +28,6 @@ const inboxFilters: Array<{ value: InboxFilter; label: string; title: string }> 
 ]
 
 const interestedWorkflowFilters: InboxFilter[] = ['attention', 'needs-reply', 'review', 'sent']
-
-const contextItems = [
-  { title: 'Client', detail: 'Every reply is assigned to the client who owns the outreach.', icon: UserRound },
-  { title: 'Client campaign', detail: 'The mapped campaign identifies exactly where the conversation belongs.', icon: Megaphone },
-  { title: 'Podcast and contact', detail: 'Keep the show, host, and verified recipient beside the thread.', icon: Mic2 },
-  { title: 'Reply status', detail: 'Know whether the conversation needs a response, review, or no action.', icon: MessageSquare },
-]
 
 const MasterInboxPreview = () => {
   const [scope, setScope] = useState<InboxScope>('all')
@@ -155,7 +146,7 @@ const MasterInboxPreview = () => {
         </div>
       </div>
 
-      <div className="grid min-h-[620px] md:grid-cols-[19rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)_18rem]">
+      <div className="grid min-h-[620px] md:grid-cols-[21rem_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-r bg-muted/10">
           <div className="flex items-center justify-between border-b px-4 py-3">
             <div>
@@ -216,36 +207,6 @@ const MasterInboxPreview = () => {
           </div>
         </section>
 
-        <aside className="hidden min-h-0 flex-col border-l bg-muted/10 xl:flex">
-          <div className="border-b px-4 py-3.5">
-            <h2 className="text-sm font-semibold">Conversation context</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">Everything needed to respond.</p>
-          </div>
-          <div className="flex-1 divide-y">
-            {contextItems.map((item) => {
-              const Icon = item.icon
-              return (
-                <div key={item.title} className="p-4">
-                  <div className="flex gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border bg-background text-muted-foreground">
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold">{item.title}</p>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{item.detail}</p>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          <div className="border-t p-4">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Radio className="h-3.5 w-3.5" />
-              Context loads with the selected reply
-            </div>
-          </div>
-        </aside>
       </div>
     </Card>
   )
