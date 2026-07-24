@@ -126,7 +126,6 @@ describe('WorkspaceOutreachSuite', () => {
   it.each([
     ['client-campaigns', 'Client Campaigns', 'No active clients'],
     ['master-inbox', 'Master Inbox', 'No conversations yet'],
-    ['mailboxes', 'Mailboxes', 'No mailboxes synced yet'],
   ] as const)('renders the %s workspace foundation without invented provider data', async (module, title, emptyState) => {
     renderPage(module)
 
@@ -140,6 +139,29 @@ describe('WorkspaceOutreachSuite', () => {
     expect(screen.queryByRole('navigation', { name: 'Outreach suite' })).not.toBeInTheDocument()
     expect(screen.getByText('My Workspace')).toBeInTheDocument()
     expect(mockedView).not.toHaveBeenCalled()
+  })
+
+  it('uses the supplied operational table layout for mailbox accounts', () => {
+    renderPage('mailboxes')
+
+    expect(screen.getByRole('heading', { name: 'Mailboxes', level: 1 })).toBeInTheDocument()
+    expect(screen.queryByTestId('instantly-connection-state')).not.toBeInTheDocument()
+    const table = screen.getByRole('table', { name: 'Mailbox accounts' })
+    expect(within(table).getByRole('columnheader', { name: 'Email' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Emails sent' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Warmup emails' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Health score' })).toBeInTheDocument()
+    expect(within(table).getAllByRole('row')).toHaveLength(11)
+    expect(within(table).getAllByText('Solar - CI 04/23/2026')).toHaveLength(10)
+    expect(within(table).getAllByText('Sending error')).toHaveLength(3)
+
+    const account = within(table).getByText('admin@solaraccountreview.help').closest('tr')
+    expect(account).not.toBeNull()
+    expect(within(account as HTMLElement).getByText('0 of 15')).toBeInTheDocument()
+    expect(within(account as HTMLElement).getByText('70')).toBeInTheDocument()
+    expect(within(account as HTMLElement).getByText('100%')).toBeInTheDocument()
+    expect(screen.queryByText('No mailboxes synced yet')).not.toBeInTheDocument()
+    expect(screen.queryByText('Mailbox health signals')).not.toBeInTheDocument()
   })
 
   it('visualizes deterministic client AI SDR routing without fake replies', () => {

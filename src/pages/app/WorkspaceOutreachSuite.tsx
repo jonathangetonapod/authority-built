@@ -1,14 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import {
-  Activity,
   Inbox,
   Loader2,
   Mailbox,
   Megaphone,
   PlugZap,
-  Send,
   ShieldCheck,
-  Users,
   type LucideIcon,
 } from 'lucide-react'
 import { WorkspaceLayout, type PlatformWorkspaceConfig } from '@/components/workspace/WorkspaceLayout'
@@ -16,6 +13,7 @@ import MasterInboxPreview from '@/components/workspace/MasterInboxPreview'
 import WorkspaceCampaigns from '@/pages/app/WorkspaceCampaigns'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useAuth } from '@/contexts/AuthContext'
 import { workspaceLogoUrl } from '@/lib/workspaceLogo'
 import {
@@ -47,7 +45,6 @@ interface SuiteItem {
 interface ModuleConfig extends SuiteItem {
   eyebrow: string
   description: string
-  metrics: Array<{ label: string; detail: string }>
 }
 
 const suiteItems = [
@@ -73,111 +70,108 @@ const moduleConfigs: Record<OutreachWorkspaceModule, ModuleConfig> = {
     ...suiteItems[0],
     eyebrow: 'Outreach command center',
     description: 'Plan, launch, and monitor Instantly-powered outreach without losing the client context behind each campaign.',
-    metrics: [
-      { label: 'Campaigns', detail: 'Synced from Instantly' },
-      { label: 'Active clients', detail: 'Assigned to outreach' },
-      { label: 'Replies', detail: 'Across all campaigns' },
-    ],
   },
   'master-inbox': {
     ...suiteItems[1],
     eyebrow: 'AI SDR command center',
     description: 'See every reply in one place, resolve it to the right client and campaign, and give each conversation the correct client AI SDR context and response policy.',
-    metrics: [
-      { label: 'Unread', detail: 'New conversations' },
-      { label: 'Interested', detail: 'Positive intent' },
-      { label: 'Needs response', detail: 'Open follow-up work' },
-    ],
   },
   mailboxes: {
     ...suiteItems[2],
     eyebrow: 'Sending infrastructure',
-    description: 'See every sending account, its warmup and health signals, capacity, and the clients it supports.',
-    metrics: [
-      { label: 'Connected', detail: 'Sending accounts' },
-      { label: 'Healthy', detail: 'Ready to send' },
-      { label: 'Daily capacity', detail: 'Across the workspace' },
-    ],
+    description: 'Monitor daily sending volume, warmup activity, and account health across every connected mailbox.',
   },
 }
 
-const MetricStrip = ({ metrics }: { metrics: ModuleConfig['metrics'] }) => (
-  <div className="grid gap-3 sm:grid-cols-3">
-    {metrics.map((metric) => (
-      <Card key={metric.label} className="border-border/70 shadow-none">
-        <CardContent className="p-4 sm:p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">{metric.label}</p>
-              <p className="mt-2 text-2xl font-bold tracking-tight">—</p>
-            </div>
-            <Activity className="h-4 w-4 text-muted-foreground/60" />
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">{metric.detail} after connection</p>
-        </CardContent>
-      </Card>
-    ))}
-  </div>
-)
+interface MailboxPreviewAccount {
+  email: string
+  label: string
+  sent: number
+  dailyLimit: number
+  warmupEmails: number
+  healthScore: number
+  sendingError?: boolean
+}
 
-const DetailList = ({
-  items,
-}: {
-  items: Array<{ title: string; description: string; icon: LucideIcon }>
-}) => (
-  <div className="divide-y divide-border">
-    {items.map((item) => {
-      const Icon = item.icon
-      return (
-        <div key={item.title} className="flex gap-3 py-4 first:pt-0 last:pb-0">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <Icon className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold">{item.title}</p>
-            <p className="mt-1 text-sm leading-5 text-muted-foreground">{item.description}</p>
-          </div>
-        </div>
-      )
-    })}
-  </div>
-)
+const mailboxPreviewAccounts: MailboxPreviewAccount[] = [
+  { email: 'admin@solaraccountreview.help', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 70, healthScore: 100 },
+  { email: 'admin@solaraccountreview.homes', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 70, healthScore: 100 },
+  { email: 'admin@solarserviceupdate.help', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 0, healthScore: 100, sendingError: true },
+  { email: 'admin@solarserviceupdate.homes', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 70, healthScore: 100 },
+  { email: 'admin@solarsupportcenter.help', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 70, healthScore: 100 },
+  { email: 'admin@solarsupportcenter.homes', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 70, healthScore: 97 },
+  { email: 'admin@titanbankruptcy.lat', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 70, healthScore: 100 },
+  { email: 'admin@titanbankruptcyupdate.help', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 0, healthScore: 99, sendingError: true },
+  { email: 'admin@titanbankruptcyupdates.help', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 70, healthScore: 99 },
+  { email: 'admin@titansolarbankrupcy.help', label: 'Solar - CI 04/23/2026', sent: 0, dailyLimit: 15, warmupEmails: 0, healthScore: 100, sendingError: true },
+]
 
 const MailboxesContent = () => (
-  <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(18rem,0.8fr)]">
-    <Card className="overflow-hidden">
-      <CardHeader className="border-b border-border/70 bg-muted/20 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
-        <div>
-          <CardTitle>Sending accounts</CardTitle>
-          <CardDescription>Health, warmup, limits, and assignments across the workspace.</CardDescription>
-        </div>
-        <Badge variant="outline" className="mt-3 w-fit sm:mt-0">No accounts connected</Badge>
-      </CardHeader>
-      <CardContent className="flex min-h-72 flex-col items-center justify-center px-6 py-12 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-          <Mailbox className="h-7 w-7" />
-        </div>
-        <h2 className="mt-5 text-xl font-semibold">No mailboxes synced yet</h2>
-        <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-          Instantly sending accounts will appear here only after a secure server-side connection is configured for this workspace.
-        </p>
-      </CardContent>
-    </Card>
-
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-lg">Mailbox health signals</CardTitle>
-        <CardDescription>Spot capacity and deliverability risks before they affect a campaign.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <DetailList items={[
-          { title: 'Warmup and status', description: 'See which accounts are healthy, paused, or need attention.', icon: Activity },
-          { title: 'Daily capacity', description: 'Understand limits at the mailbox and workspace level.', icon: Send },
-          { title: 'Client assignment', description: 'Know exactly which campaigns each sending account supports.', icon: Users },
-        ]} />
-      </CardContent>
-    </Card>
-  </div>
+  <Card className="overflow-hidden shadow-none">
+    <CardHeader className="border-b border-border/70 bg-muted/20 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0 sm:px-5">
+      <div>
+        <CardTitle className="text-lg">Sending accounts</CardTitle>
+        <CardDescription className="mt-1">Daily sends, warmup activity, and health for every mailbox.</CardDescription>
+      </div>
+      <Badge variant="outline" className="mt-3 w-fit bg-background text-muted-foreground sm:mt-0">
+        {mailboxPreviewAccounts.length} mailboxes
+      </Badge>
+    </CardHeader>
+    <CardContent className="p-0">
+      <Table aria-label="Mailbox accounts" className="min-w-[760px]">
+        <caption className="sr-only">Sending volume, warmup activity, and health by mailbox.</caption>
+        <TableHeader className="bg-muted/30">
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-[52%] px-5">Email</TableHead>
+            <TableHead className="w-[16%]">Emails sent</TableHead>
+            <TableHead className="w-[16%]">Warmup emails</TableHead>
+            <TableHead className="w-[16%] pr-5">Health score</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {mailboxPreviewAccounts.map((account) => {
+            const sendProgress = account.dailyLimit > 0 ? (account.sent / account.dailyLimit) * 100 : 0
+            return (
+              <TableRow key={account.email} className={account.sendingError ? 'bg-red-50/30 hover:bg-red-50/50' : 'hover:bg-muted/30'}>
+                <TableCell className="px-5 py-4">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-foreground">{account.email}</p>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-muted-foreground">{account.label}</span>
+                      {account.sendingError && (
+                        <Badge variant="outline" className="border-red-200 bg-red-50 px-2 py-0 text-[10px] font-semibold text-red-700 hover:bg-red-50">
+                          Sending error
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell className="py-4">
+                  <div className="w-24">
+                    <p className="font-semibold tabular-nums">{account.sent} of {account.dailyLimit}</p>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                      <div className="h-full rounded-full bg-primary" style={{ width: `${sendProgress}%` }} />
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell className="py-4">
+                  <span className={`font-semibold tabular-nums ${account.sendingError ? 'text-red-700' : 'text-foreground'}`}>
+                    {account.warmupEmails}
+                  </span>
+                </TableCell>
+                <TableCell className="py-4 pr-5">
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-full ${account.healthScore >= 95 ? 'bg-emerald-500' : account.healthScore >= 80 ? 'bg-amber-500' : 'bg-red-500'}`} aria-hidden="true" />
+                    <span className="font-semibold tabular-nums">{account.healthScore}%</span>
+                  </div>
+                </TableCell>
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
+    </CardContent>
+  </Card>
 )
 
 const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutreachSuiteProps) => {
@@ -276,7 +270,7 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
             </div>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">{config.description}</p>
           </div>
-          {module !== 'client-campaigns' && (
+          {module === 'master-inbox' && (
             <div data-testid="instantly-connection-state" className="flex w-fit shrink-0 items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
               <PlugZap className="h-3.5 w-3.5" />Instantly not connected
             </div>
@@ -296,7 +290,6 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
             }}
           />
         )}
-        {module === 'mailboxes' && <MetricStrip metrics={config.metrics} />}
         {module === 'master-inbox' && <MasterInboxPreview />}
         {module === 'mailboxes' && <MailboxesContent />}
 
