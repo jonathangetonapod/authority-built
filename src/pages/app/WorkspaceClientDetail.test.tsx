@@ -228,8 +228,36 @@ describe('WorkspaceClientDetail', () => {
     expect(screen.getByRole('link', { name: 'Review onboarding' })).toHaveAttribute('href', `/app/onboarding?client=${clientId}&instance=${onboardingId}`)
     expect(screen.queryByText(/google sheet/i)).not.toBeInTheDocument()
     expect(screen.getByText('Taylor helps founders build durable operations.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View full profile' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Reorder sidebar pages' })).toBeInTheDocument()
     expect(mockedDetail).toHaveBeenCalledWith(workspaceId, clientId)
+  })
+
+  it('keeps long approved profiles compact until the full profile is opened', async () => {
+    const longProfile = [
+      'PODCAST OUTREACH STRATEGY FOR TAYLOR CLIENT',
+      'EXECUTIVE SUMMARY',
+      'Taylor helps founders build durable operations and repeatable growth systems. '.repeat(12),
+      'FINAL APPROVED TOPIC: The operator playbook for sustainable scale.',
+    ].join('\n\n')
+    mockedDetail.mockResolvedValueOnce({
+      ...detail,
+      client: { ...detail.client, bio: longProfile },
+    })
+
+    renderPage()
+    await screen.findByRole('heading', { name: 'Taylor Client' })
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Onboarding & files' }), { button: 0 })
+
+    expect(screen.queryByText(/FINAL APPROVED TOPIC/)).not.toBeInTheDocument()
+    expect(screen.getByText(/PODCAST OUTREACH STRATEGY FOR TAYLOR CLIENT/)).toHaveTextContent(/…$/)
+
+    fireEvent.click(screen.getByRole('button', { name: 'View full profile' }))
+    const profileDialog = screen.getByRole('dialog', { name: 'Approved client profile' })
+    expect(within(profileDialog).getByText(/FINAL APPROVED TOPIC/)).toBeInTheDocument()
+
+    fireEvent.click(within(profileDialog).getByRole('button', { name: 'Done' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Approved client profile' })).not.toBeInTheDocument())
   })
 
   it('treats every configured approval dashboard as live even for a legacy disabled row', async () => {

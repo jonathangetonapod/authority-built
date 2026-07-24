@@ -126,7 +126,7 @@ function isUpcomingRelease(booking: WorkspaceClientBooking): boolean {
   return !['cancelled', 'published'].includes(booking.status) && isFutureDate(booking.publish_date)
 }
 
-function ResourceCard({
+function ConnectedResource({
   icon: Icon,
   title,
   description,
@@ -142,18 +142,39 @@ function ResourceCard({
   children: React.ReactNode
 }) {
   return (
-    <Card className="flex h-full flex-col overflow-hidden">
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="rounded-xl bg-primary/10 p-2.5 text-primary"><Icon className="h-5 w-5" /></div>
-          <Badge variant="outline" className={statusClassName}>{status}</Badge>
+    <div className="flex min-w-0 flex-col p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="shrink-0 rounded-lg bg-primary/10 p-2 text-primary"><Icon className="h-4 w-4" /></div>
+          <div className="min-w-0">
+            <p className="font-medium leading-6">{title}</p>
+            <p className="mt-0.5 line-clamp-2 text-sm leading-5 text-muted-foreground">{description}</p>
+          </div>
         </div>
-        <CardTitle className="pt-2 text-lg">{title}</CardTitle>
-        <CardDescription className="min-h-10 leading-5">{description}</CardDescription>
-      </CardHeader>
-      <CardContent className="mt-auto">{children}</CardContent>
-    </Card>
+        <Badge variant="outline" className={`shrink-0 ${statusClassName || ''}`}>{status}</Badge>
+      </div>
+      <div className="mt-3 pl-11">{children}</div>
+    </div>
   )
+}
+
+function normalizedText(value: string): string {
+  return value.replace(/\s+/gu, ' ').trim()
+}
+
+function textPreview(value: string, maxLength: number): string {
+  const normalized = normalizedText(value)
+  if (normalized.length <= maxLength) return normalized
+
+  const candidate = normalized.slice(0, maxLength + 1)
+  const lastWordBoundary = candidate.lastIndexOf(' ')
+  const end = lastWordBoundary >= Math.floor(maxLength * 0.75) ? lastWordBoundary : maxLength
+  return `${candidate.slice(0, end).trimEnd()}…`
+}
+
+function wordCount(value: string): number {
+  const normalized = normalizedText(value)
+  return normalized ? normalized.split(/\s+/u).length : 0
 }
 
 function MetricCard({
@@ -248,7 +269,9 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const [portalPasswordSaved, setPortalPasswordSaved] = useState(false)
   const [portalPasswordError, setPortalPasswordError] = useState<string | null>(null)
   const [portalPasswordBusy, setPortalPasswordBusy] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   const [notesEditing, setNotesEditing] = useState(false)
+  const [notesExpanded, setNotesExpanded] = useState(false)
   const [notesDraft, setNotesDraft] = useState('')
   const [notesBusy, setNotesBusy] = useState(false)
   const isPlatformWorkspace = platformWorkspaceId !== undefined
@@ -346,6 +369,12 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const onboardingHref = `${baseHref}/onboarding?client=${encodeURIComponent(client.id)}${onboarding ? `&instance=${encodeURIComponent(onboarding.id)}` : ''}`
   const finderHref = `${baseHref}/podcast-finder?client=${encodeURIComponent(client.id)}`
   const campaignHref = `${baseHref}/client-campaigns/${encodeURIComponent(client.id)}`
+  const profilePreview = client.bio ? textPreview(client.bio, 420) : ''
+  const profileWordCount = client.bio ? wordCount(client.bio) : 0
+  const profileWordLabel = `${profileWordCount.toLocaleString()} ${profileWordCount === 1 ? 'word' : 'words'}`
+  const normalizedNotes = client.notes ? normalizedText(client.notes) : ''
+  const notesPreview = client.notes ? textPreview(client.notes, 320) : ''
+  const notesAreTruncated = normalizedNotes.length > 320
   const clientInitials = client.name.split(/\s+/u).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'C'
   const dashboardStatus = dashboard.configured
     ? 'Live'
@@ -435,6 +464,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
 
   const beginEditingNotes = () => {
     setNotesDraft(client.notes || '')
+    setNotesExpanded(false)
     setNotesEditing(true)
   }
 
@@ -780,30 +810,44 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
           </TabsContent>
 
           <TabsContent value="files" className="mt-0 space-y-6">
-            <section aria-labelledby="client-resources-heading">
-              <div className="mb-3"><h2 id="client-resources-heading" className="text-xl font-semibold">Onboarding and connected files</h2><p className="text-sm text-muted-foreground">The source material behind research, outreach, and client delivery.</p></div>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                <ResourceCard icon={BookOpenCheck} title="Onboarding form" description={onboarding ? `Latest activity for ${onboarding.recipient_name}.` : 'Start or review this client’s intake and approved profile.'} status={onboarding ? labelForStatus(onboarding.status) : 'Not started'} statusClassName={onboarding ? onboardingStatusStyles[onboarding.status] : undefined}>
-                  <Button asChild variant="outline" className="w-full"><Link to={onboardingHref}>{onboarding ? 'Review onboarding' : 'Open onboarding'}</Link></Button>
-                </ResourceCard>
-                <ResourceCard icon={Activity} title="Media kit" description="The approved bio, positioning, and speaking assets shared with hosts." status={mediaKitUrl ? 'Connected' : 'Not connected'} statusClassName={mediaKitUrl ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : undefined}>
-                  {mediaKitUrl ? <Button asChild variant="outline" className="w-full"><a href={mediaKitUrl} target="_blank" rel="noreferrer">Open media kit<ExternalLink className="ml-2 h-3.5 w-3.5" /></a></Button> : <Button disabled variant="outline" className="w-full">No media kit connected</Button>}
-                </ResourceCard>
-                <ResourceCard icon={LayoutDashboard} title="Original prospect page" description="The pre-client sales dashboard remains separate from active delivery." status={prospectDashboardHref ? 'Linked' : 'Not linked'} statusClassName={prospectDashboardHref ? 'border-sky-200 bg-sky-50 text-sky-800' : undefined}>
-                  {prospectDashboardHref ? <Button asChild variant="outline" className="w-full"><a href={prospectDashboardHref} target="_blank" rel="noreferrer">Open prospect page<ExternalLink className="ml-2 h-3.5 w-3.5" /></a></Button> : <Button disabled variant="outline" className="w-full">No prospect page linked</Button>}
-                </ResourceCard>
-              </div>
-            </section>
+            <Card aria-labelledby="client-resources-heading" className="overflow-hidden">
+              <CardHeader className="pb-4">
+                <CardTitle id="client-resources-heading">Onboarding and connected files</CardTitle>
+                <CardDescription>The source material behind research, outreach, and client delivery.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid divide-y border-t p-0 lg:grid-cols-3 lg:divide-x lg:divide-y-0">
+                <ConnectedResource icon={BookOpenCheck} title="Onboarding form" description={onboarding ? `Latest activity for ${onboarding.recipient_name}.` : 'Start or review this client’s intake and approved profile.'} status={onboarding ? labelForStatus(onboarding.status) : 'Not started'} statusClassName={onboarding ? onboardingStatusStyles[onboarding.status] : undefined}>
+                  <Button asChild variant="ghost" size="sm" className="-ml-3 h-8"><Link to={onboardingHref}>{onboarding ? 'Review onboarding' : 'Open onboarding'}</Link></Button>
+                </ConnectedResource>
+                <ConnectedResource icon={Activity} title="Media kit" description="Approved bio, positioning, and speaking assets shared with hosts." status={mediaKitUrl ? 'Connected' : 'Not connected'} statusClassName={mediaKitUrl ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : undefined}>
+                  {mediaKitUrl ? <Button asChild variant="ghost" size="sm" className="-ml-3 h-8"><a href={mediaKitUrl} target="_blank" rel="noreferrer">Open media kit<ExternalLink className="ml-2 h-3.5 w-3.5" /></a></Button> : <span className="text-xs text-muted-foreground">No file connected</span>}
+                </ConnectedResource>
+                <ConnectedResource icon={LayoutDashboard} title="Original prospect page" description="The pre-client sales dashboard remains separate from active delivery." status={prospectDashboardHref ? 'Linked' : 'Not linked'} statusClassName={prospectDashboardHref ? 'border-sky-200 bg-sky-50 text-sky-800' : undefined}>
+                  {prospectDashboardHref ? <Button asChild variant="ghost" size="sm" className="-ml-3 h-8"><a href={prospectDashboardHref} target="_blank" rel="noreferrer">Open prospect page<ExternalLink className="ml-2 h-3.5 w-3.5" /></a></Button> : <span className="text-xs text-muted-foreground">No prospect page linked</span>}
+                </ConnectedResource>
+              </CardContent>
+            </Card>
 
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(340px,.75fr)]">
-              <Card>
-                <CardHeader><CardTitle>Approved client profile</CardTitle><CardDescription>Positioning used across discovery and outreach.</CardDescription></CardHeader>
-                <CardContent className="space-y-5">
-                  {client.bio ? <p className="whitespace-pre-wrap leading-7 text-muted-foreground">{client.bio}</p> : <div className="rounded-xl border border-dashed p-4"><p className="font-medium">No approved bio</p><p className="mt-1 text-sm text-muted-foreground">Complete onboarding before running personalized research.</p></div>}
-                  <div className="grid gap-2 border-t pt-4 sm:grid-cols-2">
-                    {websiteUrl && <a href={websiteUrl} target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-lg border px-3 py-3 hover:bg-muted"><span className="inline-flex items-center gap-2"><Globe2 className="h-4 w-4 text-muted-foreground" />Website</span><ExternalLink className="h-3.5 w-3.5 text-muted-foreground" /></a>}
-                    {linkedInUrl && <a href={linkedInUrl} target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-lg border px-3 py-3 hover:bg-muted"><span className="inline-flex items-center gap-2"><Linkedin className="h-4 w-4 text-muted-foreground" />LinkedIn</span><ExternalLink className="h-3.5 w-3.5 text-muted-foreground" /></a>}
-                    {calendarUrl && <a href={calendarUrl} target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-lg border px-3 py-3 hover:bg-muted"><span className="inline-flex items-center gap-2"><CalendarDays className="h-4 w-4 text-muted-foreground" />Calendar</span><ExternalLink className="h-3.5 w-3.5 text-muted-foreground" /></a>}
+              <Card className="overflow-hidden">
+                <CardHeader className="gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Approved client profile</CardTitle>
+                    <CardDescription>Positioning used across discovery and outreach.</CardDescription>
+                  </div>
+                  {client.bio && <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => setProfileOpen(true)}><BookOpenCheck className="mr-2 h-4 w-4" />View full profile</Button>}
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {client.bio ? (
+                    <div className="rounded-xl border bg-muted/20 p-4">
+                      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Approved source · {profileWordLabel}</p>
+                      <p className="leading-7 text-muted-foreground">{profilePreview}</p>
+                    </div>
+                  ) : <div className="rounded-xl border border-dashed p-4"><p className="font-medium">No approved bio</p><p className="mt-1 text-sm text-muted-foreground">Complete onboarding before running personalized research.</p></div>}
+                  <div className="flex flex-wrap gap-2 border-t pt-4">
+                    {websiteUrl && <Button asChild variant="outline" size="sm"><a href={websiteUrl} target="_blank" rel="noreferrer"><Globe2 className="mr-2 h-4 w-4" />Website<ExternalLink className="ml-2 h-3.5 w-3.5" /></a></Button>}
+                    {linkedInUrl && <Button asChild variant="outline" size="sm"><a href={linkedInUrl} target="_blank" rel="noreferrer"><Linkedin className="mr-2 h-4 w-4" />LinkedIn<ExternalLink className="ml-2 h-3.5 w-3.5" /></a></Button>}
+                    {calendarUrl && <Button asChild variant="outline" size="sm"><a href={calendarUrl} target="_blank" rel="noreferrer"><CalendarDays className="mr-2 h-4 w-4" />Calendar<ExternalLink className="ml-2 h-3.5 w-3.5" /></a></Button>}
                     {!websiteUrl && !linkedInUrl && !calendarUrl && <p className="text-sm text-muted-foreground">No external profile links are connected yet.</p>}
                   </div>
                 </CardContent>
@@ -846,7 +890,10 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                       </div>
                     </div>
                   ) : client.notes ? (
-                    <p className="whitespace-pre-wrap leading-7 text-muted-foreground">{client.notes}</p>
+                    <div className="space-y-3">
+                      <p className={`leading-7 text-muted-foreground ${notesExpanded ? 'whitespace-pre-wrap' : ''}`}>{notesExpanded ? client.notes : notesPreview}</p>
+                      {notesAreTruncated && <Button type="button" variant="ghost" size="sm" className="-ml-3" onClick={() => setNotesExpanded((expanded) => !expanded)}>{notesExpanded ? 'Show less' : 'Show all notes'}</Button>}
+                    </div>
                   ) : (
                     <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No internal notes have been added.</div>
                   )}
@@ -856,6 +903,21 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
+        <DialogContent className="grid max-h-[92vh] w-[calc(100%-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-4xl">
+          <DialogHeader className="border-b py-5 pl-6 pr-12 text-left">
+            <DialogTitle>Approved client profile</DialogTitle>
+            <DialogDescription>The complete approved positioning source used for discovery and outreach{profileWordCount ? ` · ${profileWordLabel}` : ''}.</DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 overflow-y-auto px-6 py-5">
+            {client.bio ? <article className="whitespace-pre-wrap text-sm leading-7 text-foreground/90">{client.bio}</article> : <p className="text-sm text-muted-foreground">No approved profile is available.</p>}
+          </div>
+          <DialogFooter className="border-t px-6 py-4">
+            <Button type="button" variant="outline" onClick={() => setProfileOpen(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={portalPasswordOpen}
