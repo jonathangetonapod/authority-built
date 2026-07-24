@@ -136,7 +136,13 @@ const MailboxesContent = ({ data, loading, error, onRetry }: MailboxesContentPro
         </CardDescription>
       </div>
       <Badge variant="outline" className="mt-3 w-fit bg-background text-muted-foreground sm:mt-0">
-        {loading ? 'Loading mailboxes' : connected ? `${accounts.length} mailboxes` : 'Not connected'}
+        {loading
+          ? 'Loading mailboxes'
+          : error
+            ? 'Unavailable'
+            : connected
+              ? `${accounts.length} mailboxes`
+              : 'Not connected'}
       </Badge>
     </CardHeader>
     {data?.analytics_errors.length ? (

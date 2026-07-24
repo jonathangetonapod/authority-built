@@ -216,6 +216,17 @@ describe('WorkspaceOutreachSuite', () => {
     expect(screen.getByText('Connect this workspace to load its sending accounts.')).toBeInTheDocument()
   })
 
+  it('distinguishes a mailbox request error from a disconnected workspace', async () => {
+    mockedMailboxes.mockRejectedValueOnce(new Error('Mailbox request failed'))
+
+    renderPage('mailboxes')
+
+    expect(await screen.findByRole('heading', { name: 'Mailbox data unavailable' })).toBeInTheDocument()
+    expect(screen.getByText('Mailbox request failed')).toBeInTheDocument()
+    expect(screen.getByText('Unavailable')).toBeInTheDocument()
+    expect(screen.queryByText('Not connected')).not.toBeInTheDocument()
+  })
+
   it('visualizes deterministic client AI SDR routing without fake replies', () => {
     renderPage('master-inbox')
 
