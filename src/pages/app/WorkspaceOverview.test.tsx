@@ -71,6 +71,7 @@ describe('WorkspaceOverview', () => {
 
     expect(screen.getByRole('heading', { name: 'My Workspace' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open Podcast Finder' })).toHaveAttribute('href', '/app/podcast-finder')
+    expect(screen.getByRole('link', { name: 'Open Podcast Database' })).toHaveAttribute('href', '/app/podcast-database')
     expect(screen.getByRole('link', { name: 'Open Client Campaigns' })).toHaveAttribute('href', '/app/client-campaigns')
     expect(screen.getByRole('link', { name: 'Open Master Inbox' })).toHaveAttribute('href', '/app/master-inbox')
     expect(screen.getByRole('link', { name: 'Open Mailboxes' })).toHaveAttribute('href', '/app/mailboxes')

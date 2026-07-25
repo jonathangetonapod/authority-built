@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   BookOpen,
   ClipboardList,
+  Database,
   Inbox,
   Loader2,
   Mailbox,
@@ -47,6 +48,12 @@ const moduleCards: Array<{
     name: 'Podcast Finder',
     description: 'Find new podcasts for any client with weekly history deduplication built in.',
     icon: Search,
+  },
+  {
+    module: 'podcast-database',
+    name: 'Podcast Database',
+    description: 'Search the shared catalog built by every workspace and add proven shows to a client shortlist.',
+    icon: Database,
   },
   {
     module: 'clients',

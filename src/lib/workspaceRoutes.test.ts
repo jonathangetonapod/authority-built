@@ -19,6 +19,11 @@ describe('workspace routes', () => {
     )).toBe('podcast-finder')
   })
 
+  it('preserves the shared Podcast Database while switching workspaces', () => {
+    expect(workspaceModuleFromPath('/app/podcast-database')).toBe('podcast-database')
+    expect(workspaceModuleHref('/app', 'podcast-database')).toBe('/app/podcast-database')
+  })
+
   it.each(['client-campaigns', 'master-inbox', 'mailboxes'] as const)(
     'preserves the %s module while switching workspaces',
     (module) => {

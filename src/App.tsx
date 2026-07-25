@@ -41,6 +41,7 @@ import WorkspaceCampaignDetail from "./pages/app/WorkspaceCampaignDetail";
 import WorkspaceOutreachSuite from "./pages/app/WorkspaceOutreachSuite";
 import WorkspacePodcastFinderHome from "./pages/app/WorkspacePodcastFinderHome";
 import WorkspacePodcastFinder from "./pages/app/WorkspacePodcastFinder";
+import WorkspacePodcastDatabase from "./pages/app/WorkspacePodcastDatabase";
 import WorkspaceProspectDashboards from "./pages/app/WorkspaceProspectDashboards";
 import AdminWorkspaceOverview from "./pages/admin/AdminWorkspaceOverview";
 import AdminWorkspaceCampaignDetail from "./pages/admin/AdminWorkspaceCampaignDetail";
@@ -52,6 +53,7 @@ import AdminWorkspaceOnboarding from "./pages/admin/AdminWorkspaceOnboarding";
 import AdminWorkspaceStaff from "./pages/admin/AdminWorkspaceStaff";
 import AdminWorkspacePodcastFinderHome from "./pages/admin/AdminWorkspacePodcastFinderHome";
 import AdminWorkspacePodcastFinder from "./pages/admin/AdminWorkspacePodcastFinder";
+import AdminWorkspacePodcastDatabase from "./pages/admin/AdminWorkspacePodcastDatabase";
 import AdminWorkspaceProspectDashboards from "./pages/admin/AdminWorkspaceProspectDashboards";
 import ChangeInitialPassword from "./pages/account/ChangeInitialPassword";
 import ClientOnboarding from "./pages/onboarding/ClientOnboarding";
@@ -166,6 +168,14 @@ const App = () => (
               }
             />
             <Route
+              path="/app/podcast-database"
+              element={
+                <ProtectedRoute>
+                  <WorkspacePodcastDatabase />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/app/prospects"
               element={
                 <ProtectedRoute>
@@ -255,6 +265,14 @@ const App = () => (
               element={
                 <PlatformAdminRoute>
                   <AdminWorkspacePodcastFinderHome />
+                </PlatformAdminRoute>
+              }
+            />
+            <Route
+              path="/app/workspaces/:workspaceId/podcast-database"
+              element={
+                <PlatformAdminRoute>
+                  <AdminWorkspacePodcastDatabase />
                 </PlatformAdminRoute>
               }
             />
