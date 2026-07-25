@@ -824,3 +824,45 @@ export async function clearWorkspaceAiKey(
   ) as { success?: boolean }
   if (data?.success !== true) throw new Error('The API key could not be removed.')
 }
+
+export interface WorkspaceBillingOverview {
+  plan_key: string
+  billing_status: string
+  base_price_cents: number
+  per_client_price_cents: number
+  included_active_clients: number
+  monthly_credit_allowance: number
+  enforcement_enabled: boolean
+  balance: number
+  expiring_credits: number
+  next_expiry_at: string | null
+  usage_this_month: Record<string, { total: number; byo: number }>
+  prices: Record<string, number>
+  recent_activity: Array<{
+    id: string
+    entry_type: string
+    amount: number
+    operation_type: string | null
+    reference_kind: string | null
+    created_at: string
+  }>
+}
+
+export async function getWorkspaceBillingOverview(workspaceId: string): Promise<WorkspaceBillingOverview> {
+  const canonicalWorkspaceId = canonicalUuid(workspaceId, 'Workspace ID')
+  const data = await invoke(
+    { action: 'billing-overview', workspace_id: canonicalWorkspaceId },
+    'Billing data could not be loaded.',
+  ) as { success?: boolean; billing?: WorkspaceBillingOverview }
+  if (data?.success !== true || !data.billing || typeof data.billing !== 'object') {
+    throw new Error('Billing data could not be loaded.')
+  }
+  return {
+    ...data.billing,
+    balance: Number(data.billing.balance) || 0,
+    expiring_credits: Number(data.billing.expiring_credits) || 0,
+    usage_this_month: data.billing.usage_this_month ?? {},
+    prices: data.billing.prices ?? {},
+    recent_activity: Array.isArray(data.billing.recent_activity) ? data.billing.recent_activity : [],
+  }
+}

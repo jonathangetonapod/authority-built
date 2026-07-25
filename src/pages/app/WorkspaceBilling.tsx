@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ArrowLeft, ArrowRight, CheckCircle2, Coins, CreditCard, Sparkles } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { ArrowLeft, ArrowRight, CheckCircle2, Coins, CreditCard, Loader2, Sparkles, Wallet } from 'lucide-react'
 import { Link, Navigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
@@ -7,6 +8,32 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { getWorkspaceBillingOverview } from '@/services/workspaceStaff'
+
+const OPERATION_LABELS: Record<string, string> = {
+  research_run: 'AI research runs',
+  email_unlock_identify: 'Email unlock · identify',
+  email_unlock_find: 'Email unlock · find',
+  email_unlock_verify: 'Email unlock · verify',
+  dashboard_build: 'Prospect dashboard builds',
+  query_generation: 'Search query generation',
+  compatibility_scoring: 'Compatibility scoring',
+  podscan_lookup: 'Podcast data lookups',
+  semantic_search: 'Semantic catalog search',
+  pitch_profile: 'AI pitch profiles',
+  other: 'Other operations',
+}
+
+const PLAN_LABELS: Record<string, string> = {
+  founding_member: 'Founding member',
+  standard: 'Standard',
+  comped: 'Complimentary',
+}
+
+function formatShortDate(value: string | null): string {
+  if (!value || !Number.isFinite(Date.parse(value))) return '—'
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(value))
+}
 
 interface WaterfallCreditPack {
   credits: number
@@ -21,13 +48,28 @@ const waterfallCreditPacks: WaterfallCreditPack[] = [
 ]
 
 const WorkspaceBilling = () => {
-  const { canManageWorkspaceStaff, isPlatformAdmin } = useAuth()
+  const { canManageWorkspaceStaff, isPlatformAdmin, user, workspace } = useAuth()
   const [selectedCredits, setSelectedCredits] = useState(500)
+  const workspaceId = workspace?.id || ''
+
+  const overviewQuery = useQuery({
+    queryKey: ['tenant', user?.id || 'unknown', workspaceId, 'billing-overview'],
+    queryFn: () => getWorkspaceBillingOverview(workspaceId),
+    enabled: Boolean(workspaceId) && (canManageWorkspaceStaff || isPlatformAdmin),
+    retry: false,
+    staleTime: 30_000,
+  })
+  const overview = overviewQuery.data
 
   if (!canManageWorkspaceStaff && !isPlatformAdmin) return <Navigate to="/app/clients" replace />
 
   const selectedPack = waterfallCreditPacks.find((pack) => pack.credits === selectedCredits)
     || waterfallCreditPacks[1]
+  const usageEntries = Object.entries(overview?.usage_this_month ?? {})
+    .sort((left, right) => right[1].total - left[1].total)
+  const priceEntries = Object.entries(overview?.prices ?? {})
+    .filter(([type]) => type !== 'other')
+    .sort((left, right) => (OPERATION_LABELS[left[0]] || left[0]).localeCompare(OPERATION_LABELS[right[0]] || right[0]))
 
   return (
     <WorkspaceLayout>
@@ -43,6 +85,101 @@ const WorkspaceBilling = () => {
             <Badge variant="outline" className="w-fit rounded-full px-3 py-1.5">One-time top-ups</Badge>
           </div>
         </header>
+
+        {overviewQuery.isLoading ? (
+          <Card><CardContent className="flex min-h-32 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading your credit balance…</CardContent></Card>
+        ) : overview ? (
+          <section aria-labelledby="credit-balance-title" className="space-y-4">
+            <h2 id="credit-balance-title" className="sr-only">Credit balance</h2>
+            {!overview.enforcement_enabled && (
+              <p className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900" role="status">
+                Usage is being recorded, but credits are not being charged yet. Your balance will only
+                start moving once credit billing is switched on.
+              </p>
+            )}
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Card>
+                <CardHeader className="pb-2"><CardDescription className="flex items-center gap-1.5"><Wallet className="h-3.5 w-3.5" />Current balance</CardDescription><CardTitle className="text-3xl">{overview.balance.toLocaleString()}</CardTitle></CardHeader>
+                <CardContent className="text-xs text-muted-foreground">
+                  {overview.expiring_credits > 0
+                    ? `${overview.expiring_credits.toLocaleString()} expire ${formatShortDate(overview.next_expiry_at)}`
+                    : 'No expiring credits'}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2"><CardDescription>Monthly allowance</CardDescription><CardTitle className="text-3xl">{overview.monthly_credit_allowance.toLocaleString()}</CardTitle></CardHeader>
+                <CardContent className="text-xs text-muted-foreground">Included credits, granted automatically each month</CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2"><CardDescription>Plan</CardDescription><CardTitle className="text-2xl">{PLAN_LABELS[overview.plan_key] || overview.plan_key}</CardTitle></CardHeader>
+                <CardContent className="text-xs text-muted-foreground">
+                  ${(overview.base_price_cents / 100).toFixed(0)}/mo base · ${(overview.per_client_price_cents / 100).toFixed(0)}/mo per additional active client
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid items-start gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader><CardTitle className="text-lg">Usage this month</CardTitle><CardDescription>Operations recorded across your workspace. Runs on your own API keys are free.</CardDescription></CardHeader>
+                <CardContent>
+                  {usageEntries.length === 0 ? (
+                    <p className="rounded-xl border border-dashed p-4 text-center text-sm text-muted-foreground">No metered operations yet this month.</p>
+                  ) : (
+                    <ul className="divide-y">
+                      {usageEntries.map(([type, counts]) => (
+                        <li key={type} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                          <span>{OPERATION_LABELS[type] || type}</span>
+                          <span className="text-muted-foreground">
+                            {counts.total.toLocaleString()}
+                            {counts.byo > 0 && ` (${counts.byo.toLocaleString()} on your key)`}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle className="text-lg">Credit prices</CardTitle><CardDescription>What each operation costs when it runs on platform keys.</CardDescription></CardHeader>
+                <CardContent>
+                  <ul className="divide-y">
+                    {priceEntries.map(([type, cost]) => (
+                      <li key={type} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                        <span>{OPERATION_LABELS[type] || type}</span>
+                        <span className="font-medium">{cost === 0 ? 'Free' : `${cost} ${cost === 1 ? 'credit' : 'credits'}`}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            </div>
+
+            {overview.recent_activity.length > 0 && (
+              <Card>
+                <CardHeader><CardTitle className="text-lg">Recent credit activity</CardTitle><CardDescription>Grants and charges on your credit balance.</CardDescription></CardHeader>
+                <CardContent>
+                  <ul className="divide-y">
+                    {overview.recent_activity.slice(0, 10).map((entry) => (
+                      <li key={entry.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                        <span>
+                          {entry.entry_type === 'grant'
+                            ? 'Credits added'
+                            : entry.operation_type
+                              ? OPERATION_LABELS[entry.operation_type] || entry.operation_type
+                              : entry.entry_type}
+                          <span className="ml-2 text-xs text-muted-foreground">{formatShortDate(entry.created_at)}</span>
+                        </span>
+                        <span className={entry.amount > 0 ? 'font-medium text-emerald-700' : 'font-medium'}>
+                          {entry.amount > 0 ? `+${entry.amount}` : entry.amount}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            )}
+          </section>
+        ) : null}
 
         <ol aria-label="Credit purchase steps" className="grid overflow-hidden rounded-2xl border bg-card sm:grid-cols-3">
           <li className="flex items-center gap-3 border-b bg-violet-50/60 px-4 py-3.5 sm:border-b-0 sm:border-r">

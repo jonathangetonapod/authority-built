@@ -2758,6 +2758,93 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, result);
     }
 
+    if (action === "billing-overview") {
+      requireOnlyKeys(body, ["action", "workspace_id"]);
+      const access = await requireWorkspaceFeatureAccess(authContext, workspaceId);
+      if (!["owner", "admin", "platform_admin"].includes(access.role)) {
+        throw new HttpError(403, "WORKSPACE_ACCESS_REQUIRED", "Workspace manager access is required");
+      }
+
+      const monthStart = new Date();
+      monthStart.setUTCDate(1);
+      monthStart.setUTCHours(0, 0, 0, 0);
+
+      const [profileResult, lotsResult, ledgerResult, usageResult, pricesResult] = await Promise.all([
+        admin.from("workspace_billing_profiles")
+          .select("plan_key, billing_status, base_price_cents, per_client_price_cents, included_active_clients, monthly_credit_allowance")
+          .eq("workspace_id", workspaceId)
+          .maybeSingle(),
+        admin.from("workspace_credit_lots")
+          .select("remaining, expires_at, source")
+          .eq("workspace_id", workspaceId)
+          .gt("remaining", 0),
+        admin.from("workspace_credit_ledger")
+          .select("id, entry_type, amount, operation_type, reference_kind, created_at")
+          .eq("workspace_id", workspaceId)
+          .order("created_at", { ascending: false })
+          .limit(25),
+        admin.from("workspace_operation_costs")
+          .select("operation_type, used_byo_key")
+          .eq("workspace_id", workspaceId)
+          .gte("created_at", monthStart.toISOString())
+          .limit(5000),
+        admin.from("operation_credit_costs")
+          .select("operation_type, credit_cost, effective_from")
+          .lte("effective_from", new Date().toISOString())
+          .order("effective_from", { ascending: false }),
+      ]);
+      if (lotsResult.error || ledgerResult.error || usageResult.error || pricesResult.error) {
+        throw new HttpError(503, "BILLING_UNAVAILABLE", "Billing data is temporarily unavailable");
+      }
+
+      const now = Date.now();
+      const activeLots = (lotsResult.data ?? []).filter((lot) =>
+        !lot.expires_at || Date.parse(String(lot.expires_at)) > now
+      );
+      const balance = activeLots.reduce((sum, lot) => sum + (Number(lot.remaining) || 0), 0);
+      const expiringLots = activeLots
+        .filter((lot) => lot.expires_at)
+        .sort((left, right) => String(left.expires_at).localeCompare(String(right.expires_at)));
+      const usageByType: Record<string, { total: number; byo: number }> = {};
+      for (const row of usageResult.data ?? []) {
+        const key = String(row.operation_type);
+        usageByType[key] = usageByType[key] ?? { total: 0, byo: 0 };
+        usageByType[key].total += 1;
+        if (row.used_byo_key === true) usageByType[key].byo += 1;
+      }
+      const currentPrices: Record<string, number> = {};
+      for (const row of pricesResult.data ?? []) {
+        const key = String(row.operation_type);
+        if (!(key in currentPrices)) currentPrices[key] = Number(row.credit_cost) || 0;
+      }
+
+      return jsonResponse(req, METHODS, 200, {
+        success: true,
+        billing: {
+          plan_key: profileResult.data?.plan_key ?? "founding_member",
+          billing_status: profileResult.data?.billing_status ?? "trialing",
+          base_price_cents: profileResult.data?.base_price_cents ?? 3900,
+          per_client_price_cents: profileResult.data?.per_client_price_cents ?? 3900,
+          included_active_clients: profileResult.data?.included_active_clients ?? 1,
+          monthly_credit_allowance: profileResult.data?.monthly_credit_allowance ?? 25,
+          enforcement_enabled: Deno.env.get("CREDIT_ENFORCEMENT_ENABLED")?.trim() === "true",
+          balance,
+          expiring_credits: expiringLots.reduce((sum, lot) => sum + (Number(lot.remaining) || 0), 0),
+          next_expiry_at: expiringLots[0]?.expires_at ?? null,
+          usage_this_month: usageByType,
+          prices: currentPrices,
+          recent_activity: (ledgerResult.data ?? []).map((entry) => ({
+            id: entry.id,
+            entry_type: entry.entry_type,
+            amount: entry.amount,
+            operation_type: entry.operation_type,
+            reference_kind: entry.reference_kind,
+            created_at: entry.created_at,
+          })),
+        },
+      });
+    }
+
     if (action === "ai-keys-status" || action === "ai-keys-set" || action === "ai-keys-clear") {
       const access = await requireWorkspaceFeatureAccess(authContext, workspaceId);
       if (!["owner", "platform_admin"].includes(access.role)) {
