@@ -88,7 +88,7 @@ describe('WorkspaceSwitcher', () => {
     expect(await screen.findByText('Get On A Pod')).toBeInTheDocument()
   })
 
-  it('keeps legacy platform tools anchored to My Workspace', async () => {
+  it('moves the retired admin prospect address into the selected workspace Studio', async () => {
     renderSwitcher({ initialPath: '/admin/prospect-dashboards' })
 
     const trigger = await screen.findByRole('combobox', { name: 'Select a workspace' })
@@ -96,7 +96,7 @@ describe('WorkspaceSwitcher', () => {
     fireEvent.click(trigger)
     fireEvent.click(await screen.findByText('Acme'))
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(
-      '/app/workspaces/11111111-1111-4111-8111-111111111111/overview',
+      '/app/workspaces/11111111-1111-4111-8111-111111111111/prospect-dashboards',
     ))
   })
 

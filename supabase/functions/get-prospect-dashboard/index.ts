@@ -17,6 +17,14 @@ const DASHBOARD_FIELDS = [
   'prospect_name',
   'prospect_bio',
   'prospect_image_url',
+  'prospect_linkedin_url',
+  'prospect_website',
+  'workspace_id',
+  'lifecycle_status',
+  'published_at',
+  'cta_type',
+  'cta_label',
+  'cta_url',
   'is_active',
   'show_pricing_section',
   'personalized_tagline',
@@ -41,7 +49,14 @@ const FEEDBACK_FIELDS = [
 
 type ProspectDashboardRow = Record<string, unknown> & {
   id: string
+  workspace_id: string
   view_count: number | null
+}
+
+function publicLogoUrl(supabaseUrl: string, path: unknown): string | null {
+  if (typeof path !== 'string' || !path.trim()) return null
+  const encodedPath = path.trim().split('/').map(encodeURIComponent).join('/')
+  return `${supabaseUrl}/storage/v1/object/public/workspace-logos/${encodedPath}`
 }
 
 function requireSlug(value: unknown): string {
@@ -70,6 +85,8 @@ serve(async (req) => {
       .select(DASHBOARD_FIELDS)
       .eq('slug', slug)
       .eq('is_active', true)
+      .eq('content_ready', true)
+      .not('published_at', 'is', null)
       .maybeSingle()
 
     if (dashboardError) {
@@ -80,11 +97,21 @@ serve(async (req) => {
     }
     const dashboardRow = dashboard as unknown as ProspectDashboardRow
 
-    const [{ data: feedback, error: feedbackError }, { error: viewError }] = await Promise.all([
+    const [
+      { data: feedback, error: feedbackError },
+      { data: workspace, error: workspaceError },
+      { error: viewError },
+    ] = await Promise.all([
       admin
         .from('prospect_podcast_feedback')
         .select(FEEDBACK_FIELDS)
         .eq('prospect_dashboard_id', dashboardRow.id),
+      admin
+        .from('workspaces')
+        .select('name,logo_path,client_brand_name,client_brand_primary_color,client_brand_accent_color')
+        .eq('id', dashboardRow.workspace_id)
+        .eq('status', 'active')
+        .maybeSingle(),
       admin.rpc('record_public_prospect_dashboard_view', {
         p_dashboard_id: dashboardRow.id,
       }),
@@ -93,10 +120,14 @@ serve(async (req) => {
     if (feedbackError) {
       throw new HttpError(500, 'FEEDBACK_LOOKUP_FAILED', 'Feedback could not be loaded')
     }
+    if (workspaceError || !workspace) {
+      throw new HttpError(404, 'DASHBOARD_NOT_FOUND', 'Dashboard not found')
+    }
     if (viewError) console.error('Public prospect dashboard view count failed')
 
     const publicDashboard: Record<string, unknown> = { ...dashboardRow }
     delete publicDashboard.id
+    delete publicDashboard.workspace_id
     return jsonResponse(req, METHODS, 200, {
       success: true,
       dashboard: {
@@ -104,6 +135,13 @@ serve(async (req) => {
         view_count: (dashboardRow.view_count ?? 0) + 1,
       },
       feedback: feedback ?? [],
+      workspace: {
+        name: workspace.name,
+        brand_name: workspace.client_brand_name || workspace.name,
+        logo_url: publicLogoUrl(Deno.env.get('SUPABASE_URL') || '', workspace.logo_path),
+        primary_color: workspace.client_brand_primary_color,
+        accent_color: workspace.client_brand_accent_color,
+      },
     })
   } catch (error) {
     return errorResponse(req, METHODS, error)

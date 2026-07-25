@@ -16,7 +16,6 @@ import Course from "./pages/Course";
 import WhatToExpect from "./pages/WhatToExpect";
 import NotFound from "./pages/NotFound";
 import AdminLogin from "./pages/admin/Login";
-import ProspectDashboards from "./pages/admin/ProspectDashboards";
 import PodcastDatabase from "./pages/admin/PodcastDatabase";
 import AuthCallback from "./pages/admin/Callback";
 import CalendarDashboard from "./pages/admin/CalendarDashboard";
@@ -42,6 +41,7 @@ import WorkspaceCampaignDetail from "./pages/app/WorkspaceCampaignDetail";
 import WorkspaceOutreachSuite from "./pages/app/WorkspaceOutreachSuite";
 import WorkspacePodcastFinderHome from "./pages/app/WorkspacePodcastFinderHome";
 import WorkspacePodcastFinder from "./pages/app/WorkspacePodcastFinder";
+import WorkspaceProspectDashboards from "./pages/app/WorkspaceProspectDashboards";
 import AdminWorkspaceOverview from "./pages/admin/AdminWorkspaceOverview";
 import AdminWorkspaceCampaignDetail from "./pages/admin/AdminWorkspaceCampaignDetail";
 import AdminWorkspaceOutreachSuite from "./pages/admin/AdminWorkspaceOutreachSuite";
@@ -52,6 +52,7 @@ import AdminWorkspaceOnboarding from "./pages/admin/AdminWorkspaceOnboarding";
 import AdminWorkspaceStaff from "./pages/admin/AdminWorkspaceStaff";
 import AdminWorkspacePodcastFinderHome from "./pages/admin/AdminWorkspacePodcastFinderHome";
 import AdminWorkspacePodcastFinder from "./pages/admin/AdminWorkspacePodcastFinder";
+import AdminWorkspaceProspectDashboards from "./pages/admin/AdminWorkspaceProspectDashboards";
 import ChangeInitialPassword from "./pages/account/ChangeInitialPassword";
 import ClientOnboarding from "./pages/onboarding/ClientOnboarding";
 import { selectedWorkspaceBaseHref, workspaceModuleHref, type WorkspaceModule } from "@/lib/workspaceRoutes";
@@ -165,6 +166,14 @@ const App = () => (
               }
             />
             <Route
+              path="/app/prospect-dashboards"
+              element={
+                <ProtectedRoute>
+                  <WorkspaceProspectDashboards />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/app/clients/:clientId/podcast-finder"
               element={
                 <ProtectedRoute>
@@ -245,6 +254,14 @@ const App = () => (
               element={
                 <PlatformAdminRoute>
                   <AdminWorkspacePodcastFinderHome />
+                </PlatformAdminRoute>
+              }
+            />
+            <Route
+              path="/app/workspaces/:workspaceId/prospect-dashboards"
+              element={
+                <PlatformAdminRoute>
+                  <AdminWorkspaceProspectDashboards />
                 </PlatformAdminRoute>
               }
             />
@@ -390,11 +407,7 @@ const App = () => (
             />
             <Route
               path="/admin/prospect-dashboards"
-              element={
-                <PlatformAdminRoute>
-                  <ProspectDashboards />
-                </PlatformAdminRoute>
-              }
+              element={<Navigate to="/app/prospect-dashboards" replace />}
             />
             <Route
               path="/admin/podcast-database"
@@ -447,6 +460,10 @@ const App = () => (
             <Route
               path="/admin/workspaces/:workspaceId/onboarding"
               element={<LegacyAdminWorkspaceRedirect module="onboarding" />}
+            />
+            <Route
+              path="/admin/workspaces/:workspaceId/prospect-dashboards"
+              element={<LegacyAdminWorkspaceRedirect module="prospect-dashboards" />}
             />
             <Route
               path="/admin/workspaces/:workspaceId/clients"

@@ -21,37 +21,6 @@ ALTER TABLE public.workspaces
   ADD COLUMN IF NOT EXISTS client_brand_accent_color TEXT NOT NULL DEFAULT '#C7794F',
   ADD COLUMN IF NOT EXISTS client_brand_updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp();
 
--- Edge Functions can preserve white-label settings in the existing audit log
--- while a project operator is waiting for database-write access. Promote the
--- newest valid compatibility event when the canonical columns become available.
-WITH latest_compatibility_brand AS (
-  SELECT DISTINCT ON (audit.workspace_id)
-    audit.workspace_id,
-    audit.created_at,
-    btrim(audit.metadata ->> 'client_brand_name') AS client_brand_name,
-    upper(btrim(audit.metadata ->> 'primary_color')) AS primary_color,
-    upper(btrim(audit.metadata ->> 'accent_color')) AS accent_color
-  FROM public.workspace_audit_log AS audit
-  WHERE audit.action = 'workspace.branding.client_identity_updated'
-    AND jsonb_typeof(audit.metadata) = 'object'
-    AND char_length(btrim(audit.metadata ->> 'client_brand_name')) BETWEEN 1 AND 120
-    AND btrim(audit.metadata ->> 'client_brand_name') !~ '[[:cntrl:]]'
-    AND upper(btrim(audit.metadata ->> 'primary_color')) ~ '^#[0-9A-F]{6}$'
-    AND upper(btrim(audit.metadata ->> 'accent_color')) ~ '^#[0-9A-F]{6}$'
-  ORDER BY audit.workspace_id, audit.created_at DESC, audit.id DESC
-)
-UPDATE public.workspaces AS workspace
-SET
-  client_brand_name = compatibility.client_brand_name,
-  client_brand_primary_color = compatibility.primary_color,
-  client_brand_accent_color = compatibility.accent_color,
-  client_brand_updated_at = compatibility.created_at
-FROM latest_compatibility_brand AS compatibility
-WHERE workspace.id = compatibility.workspace_id
-  AND workspace.client_brand_name IS NULL
-  AND workspace.status = 'active'
-  AND NOT workspace.is_default;
-
 DO $workspace_client_branding_constraints$
 BEGIN
   IF NOT EXISTS (
@@ -103,6 +72,38 @@ ALTER TABLE public.workspaces
   VALIDATE CONSTRAINT workspaces_client_brand_primary_color_check;
 ALTER TABLE public.workspaces
   VALIDATE CONSTRAINT workspaces_client_brand_accent_color_check;
+
+-- Edge Functions can preserve white-label settings in the existing audit log
+-- while a project operator is waiting for database-write access. Promote the
+-- newest valid compatibility event after the table shape is finalized so
+-- deferred workspace trigger events cannot block later ALTER TABLE statements.
+WITH latest_compatibility_brand AS (
+  SELECT DISTINCT ON (audit.workspace_id)
+    audit.workspace_id,
+    audit.created_at,
+    btrim(audit.metadata ->> 'client_brand_name') AS client_brand_name,
+    upper(btrim(audit.metadata ->> 'primary_color')) AS primary_color,
+    upper(btrim(audit.metadata ->> 'accent_color')) AS accent_color
+  FROM public.workspace_audit_log AS audit
+  WHERE audit.action = 'workspace.branding.client_identity_updated'
+    AND jsonb_typeof(audit.metadata) = 'object'
+    AND char_length(btrim(audit.metadata ->> 'client_brand_name')) BETWEEN 1 AND 120
+    AND btrim(audit.metadata ->> 'client_brand_name') !~ '[[:cntrl:]]'
+    AND upper(btrim(audit.metadata ->> 'primary_color')) ~ '^#[0-9A-F]{6}$'
+    AND upper(btrim(audit.metadata ->> 'accent_color')) ~ '^#[0-9A-F]{6}$'
+  ORDER BY audit.workspace_id, audit.created_at DESC, audit.id DESC
+)
+UPDATE public.workspaces AS workspace
+SET
+  client_brand_name = compatibility.client_brand_name,
+  client_brand_primary_color = compatibility.primary_color,
+  client_brand_accent_color = compatibility.accent_color,
+  client_brand_updated_at = compatibility.created_at
+FROM latest_compatibility_brand AS compatibility
+WHERE workspace.id = compatibility.workspace_id
+  AND workspace.client_brand_name IS NULL
+  AND workspace.status = 'active'
+  AND NOT workspace.is_default;
 
 CREATE OR REPLACE FUNCTION public.set_workspace_client_brand_v1(
   p_workspace_id UUID,

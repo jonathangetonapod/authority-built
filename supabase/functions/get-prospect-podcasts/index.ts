@@ -1,5 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
 import { getCachedPodcasts, batchUpsertPodcastCache, type PodcastCacheData } from '../_shared/podcastCache.ts'
 import {
   HttpError,
@@ -125,6 +125,7 @@ interface CachedPodcast {
   audience_size: number | null
   podscan_email: string | null
   podcast_categories: PodcastCategory[] | null
+  last_posted_at?: string | null
   ai_clean_description: string | null
   ai_fit_reasons: string[] | null
   ai_pitch_angles: Array<{ title: string; description: string }> | null
@@ -133,6 +134,55 @@ interface CachedPodcast {
   compatibility_score: number | null
   compatibility_reasoning: string | null
 }
+
+interface CanonicalShortlistRecord {
+  podcast_id: string
+  podcast_name: string
+  podcast_description: string | null
+  podcast_image_url: string | null
+  podcast_url: string | null
+  publisher_name: string | null
+  itunes_rating: number | null
+  episode_count: number | null
+  audience_size: number | null
+  podcast_categories: PodcastCategory[] | null
+  last_posted_at: string | null
+  ai_clean_description: string | null
+  ai_fit_reasons: string[] | null
+  ai_pitch_angles: Array<{ title: string; description: string }> | null
+  ai_analyzed_at: string | null
+  relevance_score: number | null
+  relevance_reason: string | null
+}
+
+interface CentralPodcastRecord extends Omit<CanonicalShortlistRecord, 'podcast_id'> {
+  podscan_id: string
+  podscan_email: string | null
+  demographics: Record<string, unknown> | null
+}
+
+interface ProspectAnalysisRecord {
+  podcast_id: string
+  ai_clean_description: string | null
+  ai_fit_reasons: string[] | null
+  ai_pitch_angles: Array<{ title: string; description: string }> | null
+  ai_analyzed_at: string | null
+}
+
+interface LegacyAnalysisJoinRecord {
+  podcast_id: string
+  podcasts: { podscan_id: string }
+}
+
+interface PodcastIdRecord {
+  id: string
+  podscan_id: string
+}
+
+// This legacy function predates generated database types. Keep the untyped
+// client isolated at this boundary while the row DTOs below remain explicit.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ProspectSupabaseClient = SupabaseClient<any, any, any>
 
 interface FitAnalysis {
   clean_description: string
@@ -168,6 +218,152 @@ function normalizeDashboardSlug(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const slug = value.trim().toLowerCase()
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) && slug.length <= 180 ? slug : null
+}
+
+function normalizedRelevanceScore(value: number | null): number | null {
+  if (value === null || !Number.isFinite(value)) return null
+  const score = value > 10 ? value / 10 : value
+  return Math.max(0, Math.min(10, score))
+}
+
+async function getCanonicalShortlist(
+  supabase: ProspectSupabaseClient,
+  prospectDashboardId: string,
+): Promise<CachedPodcast[]> {
+  const { data, error } = await supabase
+    .from('prospect_dashboard_podcasts')
+    .select('podcast_id,podcast_name,podcast_description,podcast_image_url,podcast_url,publisher_name,itunes_rating,episode_count,audience_size,podcast_categories,last_posted_at,ai_clean_description,ai_fit_reasons,ai_pitch_angles,ai_analyzed_at,relevance_score,relevance_reason,is_featured,featured_order,display_order')
+    .eq('prospect_dashboard_id', prospectDashboardId)
+    .eq('visibility', 'visible')
+    .order('is_featured', { ascending: false })
+    .order('featured_order', { ascending: true, nullsFirst: false })
+    .order('display_order', { ascending: true })
+    .order('id', { ascending: true })
+    .limit(500)
+
+  if (error) throw error
+  return ((data || []) as unknown as CanonicalShortlistRecord[]).map((row) => ({
+    podcast_id: row.podcast_id,
+    podcast_name: row.podcast_name,
+    podcast_description: row.podcast_description,
+    podcast_image_url: row.podcast_image_url,
+    podcast_url: row.podcast_url,
+    publisher_name: row.publisher_name,
+    itunes_rating: row.itunes_rating,
+    episode_count: row.episode_count,
+    audience_size: row.audience_size,
+    podscan_email: null,
+    podcast_categories: row.podcast_categories,
+    last_posted_at: row.last_posted_at,
+    ai_clean_description: row.ai_clean_description,
+    ai_fit_reasons: row.ai_fit_reasons,
+    ai_pitch_angles: row.ai_pitch_angles,
+    ai_analyzed_at: row.ai_analyzed_at,
+    demographics: null,
+    compatibility_score: row.relevance_score,
+    compatibility_reasoning: row.relevance_reason,
+  }))
+}
+
+async function upsertCanonicalRows(
+  supabase: ProspectSupabaseClient,
+  prospectDashboardId: string,
+  podcasts: CachedPodcast[],
+  matchSource: 'sheet' | 'legacy' = 'sheet',
+): Promise<void> {
+  if (podcasts.length === 0) return
+  const now = new Date().toISOString()
+  const rows = podcasts.map((podcast, displayOrder) => ({
+    prospect_dashboard_id: prospectDashboardId,
+    podcast_id: podcast.podcast_id,
+    podcast_name: podcast.podcast_name,
+    podcast_description: podcast.podcast_description,
+    podcast_image_url: podcast.podcast_image_url,
+    podcast_url: podcast.podcast_url,
+    publisher_name: podcast.publisher_name,
+    itunes_rating: podcast.itunes_rating,
+    episode_count: podcast.episode_count,
+    audience_size: podcast.audience_size,
+    podcast_categories: podcast.podcast_categories,
+    last_posted_at: podcast.last_posted_at,
+    ai_clean_description: podcast.ai_clean_description,
+    ai_fit_reasons: podcast.ai_fit_reasons,
+    ai_pitch_angles: podcast.ai_pitch_angles,
+    ai_analyzed_at: podcast.ai_analyzed_at,
+    relevance_score: normalizedRelevanceScore(podcast.compatibility_score),
+    relevance_reason: podcast.compatibility_reasoning,
+    visibility: 'visible',
+    display_order: displayOrder,
+    match_source: matchSource,
+    archived_at: null,
+    archived_by: null,
+    updated_at: now,
+  }))
+  const { error } = await supabase
+    .from('prospect_dashboard_podcasts')
+    .upsert(rows, { onConflict: 'prospect_dashboard_id,podcast_id' })
+  if (error) throw error
+}
+
+async function materializeCanonicalShortlist(
+  supabase: ProspectSupabaseClient,
+  prospectDashboardId: string,
+  podcasts: CachedPodcast[],
+): Promise<void> {
+  await upsertCanonicalRows(supabase, prospectDashboardId, podcasts, 'sheet')
+
+  const retainedIds = podcasts.map((podcast) => podcast.podcast_id)
+  const { data: existingRows, error: existingError } = await supabase
+    .from('prospect_dashboard_podcasts')
+    .select('podcast_id')
+    .eq('prospect_dashboard_id', prospectDashboardId)
+    .eq('match_source', 'sheet')
+    .eq('visibility', 'visible')
+  if (existingError) throw existingError
+  const retained = new Set(retainedIds)
+  const staleIds = (existingRows || [])
+    .map((row: { podcast_id: string }) => row.podcast_id)
+    .filter((podcastId: string) => !retained.has(podcastId))
+  if (staleIds.length === 0) return
+
+  const { error: staleError } = await supabase
+    .from('prospect_dashboard_podcasts')
+    .update({
+      visibility: 'archived',
+      is_featured: false,
+      featured_order: null,
+      archived_at: new Date().toISOString(),
+    })
+    .eq('prospect_dashboard_id', prospectDashboardId)
+    .eq('match_source', 'sheet')
+    .eq('visibility', 'visible')
+    .in('podcast_id', staleIds)
+  if (staleError) throw staleError
+}
+
+async function syncCanonicalAnalysis(
+  supabase: ProspectSupabaseClient,
+  prospectDashboardId: string,
+  podcastId: string,
+  analysis: FitAnalysis | null,
+  analyzedAt: string,
+): Promise<void> {
+  const update: Record<string, unknown> = {
+    ai_analyzed_at: analyzedAt,
+    updated_at: analyzedAt,
+  }
+  if (analysis) {
+    update.ai_clean_description = analysis.clean_description
+    update.ai_fit_reasons = analysis.fit_reasons
+    update.ai_pitch_angles = analysis.pitch_angles
+    update.relevance_reason = analysis.fit_reasons[0] || null
+  }
+  const { error } = await supabase
+    .from('prospect_dashboard_podcasts')
+    .update(update)
+    .eq('prospect_dashboard_id', prospectDashboardId)
+    .eq('podcast_id', podcastId)
+  if (error) throw error
 }
 
 /**
@@ -306,6 +502,8 @@ serve(async (req) => {
         .select('id,spreadsheet_id,prospect_name,prospect_bio')
         .eq('slug', slug)
         .eq('is_active', true)
+        .eq('content_ready', true)
+        .not('published_at', 'is', null)
         .maybeSingle()
 
       if (dashboardError || !dashboard) {
@@ -327,90 +525,38 @@ serve(async (req) => {
     if (cacheOnly && prospectDashboardId) {
       console.log('[Get Prospect Podcasts] FAST PATH - querying cache directly')
 
-      // First, check prospect_podcast_analyses for AI-analyzed podcasts
-      const { data: analyses, error: analysisError } = await supabase
-        .from('prospect_podcast_analyses')
-        .select(`
-          podcast_id,
-          ai_clean_description,
-          ai_fit_reasons,
-          ai_pitch_angles,
-          ai_analyzed_at,
-          podcasts!inner(
-            podscan_id,
-            podcast_name,
-            podcast_description,
-            podcast_image_url,
-            podcast_url,
-            publisher_name,
-            itunes_rating,
-            episode_count,
-            audience_size,
-            podcast_categories,
-            last_posted_at,
-            demographics
-          )
-        `)
-        .eq('prospect_dashboard_id', prospectDashboardId)
-        .limit(500)
-
-      if (analysisError) {
-        console.error('[Get Prospect Podcasts] Analysis query error:', analysisError)
-        throw analysisError
-      }
-
-      // If we have analyses, return them with full podcast data
-      if (analyses && analyses.length > 0) {
-        console.log('[Get Prospect Podcasts] FAST PATH - returning', analyses.length, 'analyzed podcasts')
-
-        // Map to expected format
-        const podcasts = analyses.map((a: any) => ({
-          podcast_id: a.podcasts.podscan_id,
-          podcast_name: a.podcasts.podcast_name,
-          podcast_description: a.podcasts.podcast_description,
-          podcast_image_url: a.podcasts.podcast_image_url,
-          podcast_url: a.podcasts.podcast_url,
-          publisher_name: a.podcasts.publisher_name,
-          itunes_rating: a.podcasts.itunes_rating,
-          episode_count: a.podcasts.episode_count,
-          audience_size: a.podcasts.audience_size,
-          podcast_categories: a.podcasts.podcast_categories,
-          last_posted_at: a.podcasts.last_posted_at,
-          demographics: a.podcasts.demographics,
-          ai_clean_description: a.ai_clean_description,
-          ai_fit_reasons: a.ai_fit_reasons,
-          ai_pitch_angles: a.ai_pitch_angles,
-          ai_analyzed_at: a.ai_analyzed_at,
-        }))
+      const canonicalPodcasts = await getCanonicalShortlist(supabase, prospectDashboardId)
+      if (canonicalPodcasts.length > 0) {
+        const analyzed = canonicalPodcasts.filter((podcast) =>
+          Boolean(podcast.compatibility_reasoning)
+          || Boolean(podcast.ai_fit_reasons?.length)
+        ).length
+        console.log('[Get Prospect Podcasts] FAST PATH - returning', canonicalPodcasts.length, 'curated podcasts')
 
         return new Response(
           JSON.stringify({
             success: true,
-            podcasts,
-            total: podcasts.length,
-            cached: podcasts.length,
+            podcasts: canonicalPodcasts,
+            total: canonicalPodcasts.length,
+            cached: canonicalPodcasts.length,
             missing: 0,
             fastPath: true,
-            hasAiAnalysis: true,
+            hasAiAnalysis: analyzed > 0,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
-      // Public dashboard requests are database-cache reads only. Privileged
-      // callers may continue to fall back to Sheets and refresh the cache.
+      // Public dashboard requests are canonical database reads only. A
+      // published dashboard is required to have at least five curated rows,
+      // so an empty result means the publication contract has drifted.
       if (!privileged) {
         return new Response(
           JSON.stringify({
-            success: true,
-            podcasts: [],
-            total: 0,
-            cached: 0,
-            missing: 0,
-            fastPath: true,
-            hasAiAnalysis: false,
+            success: false,
+            error: 'This shortlist is temporarily unavailable',
           }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
@@ -488,11 +634,12 @@ serve(async (req) => {
       }
 
       // Map to expected format (no AI analysis)
-      const podcastMap = new Map((centralPodcasts || []).map((p: any) => [p.podscan_id, p]))
+      const centralRows = (centralPodcasts || []) as unknown as CentralPodcastRecord[]
+      const podcastMap = new Map(centralRows.map((podcast) => [podcast.podscan_id, podcast]))
       const podcasts = podcastIds
         .map(id => podcastMap.get(id))
-        .filter((p): p is any => p !== undefined)
-        .map((p: any) => ({
+        .filter((podcast): podcast is CentralPodcastRecord => podcast !== undefined)
+        .map((p) => ({
           podcast_id: p.podscan_id,
           podcast_name: p.podcast_name,
           podcast_description: p.podcast_description,
@@ -502,6 +649,7 @@ serve(async (req) => {
           itunes_rating: p.itunes_rating,
           episode_count: p.episode_count,
           audience_size: p.audience_size,
+          podscan_email: p.podscan_email ?? null,
           podcast_categories: p.podcast_categories,
           last_posted_at: p.last_posted_at,
           demographics: p.demographics,
@@ -509,9 +657,13 @@ serve(async (req) => {
           ai_fit_reasons: null,
           ai_pitch_angles: null,
           ai_analyzed_at: null,
+          compatibility_score: sheetScores.get(p.podscan_id)?.score ?? null,
+          compatibility_reasoning: sheetScores.get(p.podscan_id)?.reasoning ?? null,
         }))
 
       console.log('[Get Prospect Podcasts] FAST PATH - returning', podcasts.length, 'podcasts from central cache (no AI yet)')
+
+      await materializeCanonicalShortlist(supabase, prospectDashboardId, podcasts)
 
       return new Response(
         JSON.stringify({
@@ -604,13 +756,14 @@ serve(async (req) => {
 
       if (allCached && allCached.length > 0) {
         const sheetPodcastIds = new Set(podcastIds)
-        const staleEntries = allCached
-          .filter((entry: any) => !sheetPodcastIds.has(entry.podcasts.podscan_id))
+        const cachedAnalysisRows = allCached as unknown as LegacyAnalysisJoinRecord[]
+        const staleEntries = cachedAnalysisRows
+          .filter((entry) => !sheetPodcastIds.has(entry.podcasts.podscan_id))
 
         if (staleEntries.length > 0) {
           console.log('[Get Prospect Podcasts] Removing', staleEntries.length, 'stale podcast analyses')
 
-          const staleAnalysisIds = staleEntries.map((entry: any) => entry.podcast_id)
+          const staleAnalysisIds = staleEntries.map((entry) => entry.podcast_id)
 
           // Delete stale analyses
           const { error: deleteError } = await supabase
@@ -659,20 +812,21 @@ serve(async (req) => {
     const { cached: centralCached, missing: centralMissing } = await getCachedPodcasts(supabase, podcastIds, 7)
 
     // Map central cache to CachedPodcast format for compatibility
-    let cachedPodcasts: CachedPodcast[] = centralCached.map((p: any) => {
+    let cachedPodcasts: CachedPodcast[] = centralCached.map((p) => {
       const scores = sheetScores.get(p.podscan_id)
       return {
         podcast_id: p.podscan_id,
         podcast_name: p.podcast_name,
-        podcast_description: p.podcast_description,
-        podcast_image_url: p.podcast_image_url,
-        podcast_url: p.podcast_url,
-        publisher_name: p.publisher_name,
-        itunes_rating: p.itunes_rating,
-        episode_count: p.episode_count,
-        audience_size: p.audience_size,
+        podcast_description: p.podcast_description ?? null,
+        podcast_image_url: p.podcast_image_url ?? null,
+        podcast_url: p.podcast_url ?? null,
+        publisher_name: p.publisher_name ?? null,
+        itunes_rating: p.itunes_rating ?? null,
+        episode_count: p.episode_count ?? null,
+        audience_size: p.audience_size ?? null,
         podscan_email: p.podscan_email ?? null,
-        podcast_categories: p.podcast_categories,
+        podcast_categories: p.podcast_categories ?? null,
+        last_posted_at: p.last_posted_at ?? null,
         demographics: p.demographics,
         ai_clean_description: null,  // Will load from prospect_podcast_analyses if needed
         ai_fit_reasons: null,
@@ -683,7 +837,7 @@ serve(async (req) => {
       }
     })
 
-    const cachedPodcastIds = new Set<string>(centralCached.map((p: any) => p.podscan_id))
+    const cachedPodcastIds = new Set<string>(centralCached.map((p) => p.podscan_id))
 
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     console.log('✅ [CACHE HIT] Found in central database:', centralCached.length, 'podcasts')
@@ -691,7 +845,7 @@ serve(async (req) => {
     console.log('💰 [COST SAVINGS] Estimated savings: $' + (centralCached.length * 2 * 0.01).toFixed(2))
     console.log('🌍 [PUBLIC BENEFIT] These podcasts available for ALL prospects!')
     if (centralCached.length > 0) {
-      console.log('📋 [CACHED PODCASTS]:', centralCached.map((p: any) => p.podcast_name).slice(0, 5).join(', ') + (centralCached.length > 5 ? '...' : ''))
+      console.log('📋 [CACHED PODCASTS]:', centralCached.map((p) => p.podcast_name).slice(0, 5).join(', ') + (centralCached.length > 5 ? '...' : ''))
     }
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
 
@@ -701,14 +855,15 @@ serve(async (req) => {
         .from('prospect_podcast_analyses')
         .select('podcast_id,ai_clean_description,ai_fit_reasons,ai_pitch_angles,ai_analyzed_at')
         .eq('prospect_dashboard_id', prospectDashboardId)
-        .in('podcast_id', centralCached.map((p: any) => p.id))
+        .in('podcast_id', centralCached.map((p) => p.id))
 
       if (analyses && analyses.length > 0) {
         console.log('[Get Prospect Podcasts] Loaded', analyses.length, 'AI analyses from prospect_podcast_analyses')
-        const analysisMap = new Map(analyses.map((a: any) => [a.podcast_id, a]))
+        const analysisRows = analyses as unknown as ProspectAnalysisRecord[]
+        const analysisMap = new Map(analysisRows.map((analysis) => [analysis.podcast_id, analysis]))
 
         cachedPodcasts = cachedPodcasts.map(p => {
-          const centralPodcast = centralCached.find((cp: any) => cp.podscan_id === p.podcast_id)
+          const centralPodcast = centralCached.find((candidate) => candidate.podscan_id === p.podcast_id)
           const analysis = centralPodcast ? analysisMap.get(centralPodcast.id) : null
 
           if (analysis) {
@@ -776,6 +931,10 @@ serve(async (req) => {
         .map(id => cachedPodcasts.find(p => p.podcast_id === id))
         .filter((p): p is CachedPodcast => p !== undefined)
 
+      if (prospectDashboardId) {
+        await materializeCanonicalShortlist(supabase, prospectDashboardId, orderedPodcasts)
+      }
+
       console.log('[Get Prospect Podcasts] Cache only - returning', orderedPodcasts.length, 'of', podcastIds.length, 'podcasts')
       return new Response(
         JSON.stringify({
@@ -816,6 +975,13 @@ serve(async (req) => {
       const podcastsNeedingAi = cachedPodcasts.filter(p => !p.ai_analyzed_at)
       console.log('[Get Prospect Podcasts] AI Analysis Only - need to analyze', podcastsNeedingAi.length, 'podcasts')
 
+      if (prospectDashboardId) {
+        const orderedCachedPodcasts = podcastIds
+          .map(id => cachedPodcasts.find(p => p.podcast_id === id))
+          .filter((podcast): podcast is CachedPodcast => podcast !== undefined)
+        await materializeCanonicalShortlist(supabase, prospectDashboardId, orderedCachedPodcasts)
+      }
+
       if (podcastsNeedingAi.length === 0) {
         return new Response(
           JSON.stringify({
@@ -836,7 +1002,7 @@ serve(async (req) => {
         .in('podscan_id', podcastsNeedingAi.map(p => p.podcast_id))
 
       const uuidMap = new Map<string, string>(
-        (podcastIdRows || []).map((p: any) => [p.podscan_id, p.id])
+        ((podcastIdRows || []) as unknown as PodcastIdRecord[]).map((podcast) => [podcast.podscan_id, podcast.id])
       )
       console.log('[Get Prospect Podcasts] Pre-fetched', uuidMap.size, 'podcast UUIDs for AI analysis')
 
@@ -887,10 +1053,11 @@ serve(async (req) => {
                 }
 
                 // Save AI analysis to prospect_podcast_analyses table
-                const updateData: any = {
+                const analyzedAt = new Date().toISOString()
+                const updateData: Record<string, unknown> = {
                   prospect_dashboard_id: prospectDashboardId,
                   podcast_id: centralPodcastId,
-                  ai_analyzed_at: new Date().toISOString(),
+                  ai_analyzed_at: analyzedAt,
                 }
 
                 if (analysis) {
@@ -904,6 +1071,13 @@ serve(async (req) => {
                   .upsert(updateData, { onConflict: 'prospect_dashboard_id,podcast_id' })
 
                 if (!updateError) {
+                  await syncCanonicalAnalysis(
+                    supabase,
+                    prospectDashboardId!,
+                    podcast.podcast_id,
+                    analysis,
+                    analyzedAt,
+                  )
                   analyzedCount++
                   if (analysis) {
                     stats.aiAnalysesGenerated++
@@ -1039,6 +1213,7 @@ serve(async (req) => {
                 audience_size: podcast.reach?.audience_size || podcast.audience_size || null,
                 podscan_email: podcast.reach?.email || null,
                 podcast_categories: podcast.podcast_categories || null,
+                last_posted_at: podcast.last_posted_at || null,
                 ai_clean_description: null,
                 ai_fit_reasons: null,
                 ai_pitch_angles: null,
@@ -1102,13 +1277,15 @@ serve(async (req) => {
           podcast_image_url: p.podcast_image_url || undefined,
           podcast_url: p.podcast_url || undefined,
           publisher_name: p.publisher_name || undefined,
-          itunes_rating: p.itunes_rating ? parseFloat(p.itunes_rating as any) : undefined,
+          itunes_rating: p.itunes_rating ? Number(p.itunes_rating) : undefined,
           episode_count: p.episode_count || undefined,
           audience_size: p.audience_size || undefined,
           podscan_email: p.podscan_email || undefined,
           podcast_categories: p.podcast_categories || undefined,
           demographics: p.demographics || undefined,
-          demographics_episodes_analyzed: (p.demographics as any)?.episodes_analyzed,
+          demographics_episodes_analyzed: typeof p.demographics?.episodes_analyzed === 'number'
+            ? p.demographics.episodes_analyzed
+            : undefined,
         }))
 
         const { success: batchSuccess, count: batchCount } = await batchUpsertPodcastCache(supabase, cacheDataBatch)
@@ -1130,7 +1307,7 @@ serve(async (req) => {
               .in('podscan_id', podcastsWithAi.map(p => p.podcast_id))
 
             const newUuidMap = new Map<string, string>(
-              (newPodcastIdRows || []).map((p: any) => [p.podscan_id, p.id])
+              ((newPodcastIdRows || []) as unknown as PodcastIdRecord[]).map((podcast) => [podcast.podscan_id, podcast.id])
             )
 
             const analysisRows = podcastsWithAi
@@ -1168,6 +1345,10 @@ serve(async (req) => {
     const orderedPodcasts = podcastIds
       .map(id => allPodcastsMap.get(id))
       .filter((p): p is CachedPodcast => p !== undefined)
+
+    if (prospectDashboardId) {
+      await materializeCanonicalShortlist(supabase, prospectDashboardId, orderedPodcasts)
+    }
 
     const remaining = missingPodcastIds.length - newPodcasts.length
     const cacheHitRate = podcastIds.length > 0 ? ((cachedPodcasts.length / podcastIds.length) * 100).toFixed(1) : '0'

@@ -59,7 +59,7 @@ const workspaceNavItems: WorkspaceNavItem[] = [
   { id: 'overview', name: 'Overview', segment: 'overview', icon: LayoutDashboard, enabled: true },
   { id: 'onboarding', name: 'Onboarding', segment: 'onboarding', icon: ClipboardList, enabled: true },
   { id: 'podcast-finder', name: 'Podcast Finder', segment: 'podcast-finder', icon: Search, enabled: true },
-  { id: 'prospect-dashboards', name: 'Prospect Dashboards', segment: 'prospect-dashboards', icon: Share2, enabled: false },
+  { id: 'prospect-dashboards', name: 'Prospect Studio', segment: 'prospect-dashboards', icon: Share2, enabled: true },
   { id: 'podcast-database', name: 'Podcast Database', segment: 'podcast-database', icon: Database, enabled: false },
   { id: 'client-podcast-system', name: 'Client Podcast System', segment: 'client-podcast-system', icon: Calendar, enabled: false },
   { id: 'clients', name: 'Clients', segment: 'clients', icon: Users, enabled: true },

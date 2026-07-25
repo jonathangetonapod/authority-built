@@ -115,6 +115,9 @@ verify_jwt = true
 [functions.workspace-client-campaigns]
 verify_jwt = true
 
+[functions.workspace-prospect-dashboards]
+verify_jwt = true
+
 [functions.workspace-guest-resources]
 verify_jwt = true
 

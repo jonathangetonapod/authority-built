@@ -1003,7 +1003,12 @@ export default function PodcastDatabase() {
       })
 
       // Helper: build cache rows matching prospect_dashboard_podcasts schema
-      const buildCacheRows = (dashboardId: string) => podcastsToExport.map(p => ({
+      const buildCacheRows = (dashboardId: string) => podcastsToExport.map((p, displayOrder) => {
+        const rawScore = Number(p.compatibility_score)
+        const relevanceScore = Number.isFinite(rawScore)
+          ? Math.max(0, Math.min(10, rawScore > 10 ? rawScore / 10 : rawScore))
+          : null
+        return {
         prospect_dashboard_id: dashboardId,
         podcast_id: p.podcast_id || p.podscan_podcast_id,
         podcast_name: p.podcast_name,
@@ -1015,10 +1020,26 @@ export default function PodcastDatabase() {
         itunes_rating: p.itunes_rating,
         audience_size: p.audience_size,
         podcast_categories: p.podcast_categories,
-      }))
+        relevance_score: relevanceScore,
+        relevance_reason: p.compatibility_reasoning || null,
+        match_source: 'manual',
+        visibility: 'visible',
+        display_order: displayOrder,
+        }
+      })
 
       // Helper: upsert podcast cache for a dashboard
       const cachePodcastsForDashboard = async (dashboardId: string) => {
+        const { error: reviewError } = await supabase
+          .from('prospect_dashboards')
+          .update({
+            lifecycle_status: 'review',
+            content_ready: false,
+            published_at: null,
+          })
+          .eq('id', dashboardId)
+        if (reviewError) throw reviewError
+
         const { error } = await supabase
           .from('prospect_dashboard_podcasts')
           .upsert(buildCacheRows(dashboardId), { onConflict: 'prospect_dashboard_id,podcast_id' })
@@ -1054,22 +1075,19 @@ export default function PodcastDatabase() {
           if (deleteError) console.error('Failed to delete duplicate prospect record:', deleteError)
         }
 
-        // Update the EXISTING prospect with the sheet info + publish
+        // Update the existing prospect with the optional legacy sheet. The
+        // canonical shortlist remains in review until explicitly published.
         await supabase
           .from('prospect_dashboards')
           .update({
             spreadsheet_id: result.spreadsheetId,
             spreadsheet_url: spreadsheetUrl,
-            content_ready: true,
           })
           .eq('id', selectedProspectId)
 
         await cachePodcastsForDashboard(selectedProspectId)
 
-        const dashboardUrl = `https://getonapod.com/prospect/${encodeURIComponent(selectedProspect!.slug)}`
-        toast.success(`Created sheet for ${selectedProspect?.prospect_name}!`)
-        toast.success(dashboardUrl, { duration: 10000 })
-        navigator.clipboard.writeText(dashboardUrl).catch(() => {})
+        toast.success(`Shortlist ready for ${selectedProspect?.prospect_name}. Review and publish it in Prospect Studio.`)
 
       } else if (isNewProspectMode) {
         // Create new prospect + sheet + publish dashboard in one flow
@@ -1080,13 +1098,9 @@ export default function PodcastDatabase() {
           normalizedImageUrl || undefined
         )
 
-        // Auto-publish and cache podcasts
+        // Cache the curated rows, then send the operator to review. Publishing
+        // is intentionally gated inside Prospect Studio.
         if (result.dashboardSlug) {
-          await supabase
-            .from('prospect_dashboards')
-            .update({ content_ready: true })
-            .eq('slug', result.dashboardSlug)
-
           const { data: dashboardRecord } = await supabase
             .from('prospect_dashboards')
             .select('id')
@@ -1098,10 +1112,7 @@ export default function PodcastDatabase() {
           }
         }
 
-        const dashboardUrl = `https://getonapod.com/prospect/${encodeURIComponent(result.dashboardSlug || '')}`
-        toast.success(`Dashboard live for ${prospectName}!`)
-        toast.success(dashboardUrl, { duration: 10000 })
-        navigator.clipboard.writeText(dashboardUrl).catch(() => {})
+        toast.success(`Shortlist ready for ${prospectName}. Review and publish it in Prospect Studio.`)
       }
 
       setSelectedPodcasts(new Set())

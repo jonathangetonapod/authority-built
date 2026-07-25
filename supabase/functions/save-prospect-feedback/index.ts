@@ -71,9 +71,11 @@ serve(async (req) => {
     // dashboard UUID when writing with the service role.
     const { data: dashboard, error: dashboardError } = await supabase
       .from('prospect_dashboards')
-      .select('id,is_active')
+      .select('id,is_active,lifecycle_status,first_engaged_at')
       .eq('slug', dashboardSlug)
       .eq('is_active', true)
+      .eq('content_ready', true)
+      .not('published_at', 'is', null)
       .maybeSingle()
 
     if (dashboardError) {
@@ -93,9 +95,11 @@ serve(async (req) => {
 
     const normalizedPodcastId = podcast_id.trim()
     const { data: podcast, error: podcastError } = await supabase
-      .from('podcasts')
-      .select('id,podcast_name')
-      .eq('podscan_id', normalizedPodcastId)
+      .from('prospect_dashboard_podcasts')
+      .select('podcast_id,podcast_name')
+      .eq('prospect_dashboard_id', dashboard.id)
+      .eq('podcast_id', normalizedPodcastId)
+      .eq('visibility', 'visible')
       .maybeSingle()
 
     if (podcastError) {
@@ -105,23 +109,7 @@ serve(async (req) => {
       )
     }
 
-    const { data: cachedPodcast, error: cachedPodcastError } = podcast
-      ? await supabase
-        .from('prospect_podcast_analyses')
-        .select('id')
-        .eq('prospect_dashboard_id', dashboard.id)
-        .eq('podcast_id', podcast.id)
-        .maybeSingle()
-      : { data: null, error: null }
-
-    if (cachedPodcastError) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Unable to verify the dashboard podcast' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    if (!cachedPodcast) {
+    if (!podcast) {
       return new Response(
         JSON.stringify({ success: false, error: 'Podcast is not available on this dashboard' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -132,7 +120,7 @@ serve(async (req) => {
     const feedbackData: Record<string, unknown> = {
       prospect_dashboard_id: dashboard.id,
       podcast_id: normalizedPodcastId,
-      podcast_name: podcast?.podcast_name ?? null,
+      podcast_name: podcast.podcast_name,
       status: status ?? null,
     }
 
@@ -151,6 +139,22 @@ serve(async (req) => {
     if (upsertError) {
       console.error('[Save Prospect Feedback] Upsert error:', upsertError)
       throw upsertError
+    }
+
+    const { error: engagementError } = await supabase
+      .from('prospect_dashboards')
+      .update({
+        first_engaged_at: dashboard.first_engaged_at || new Date().toISOString(),
+        lifecycle_status: dashboard.lifecycle_status === 'converted' ? 'converted' : 'engaged',
+      })
+      .eq('id', dashboard.id)
+      .eq('is_active', true)
+      .eq('content_ready', true)
+      .not('published_at', 'is', null)
+
+    if (engagementError) {
+      console.error('[Save Prospect Feedback] Dashboard engagement update failed')
+      throw engagementError
     }
 
     console.log(`[Save Prospect Feedback] Saved feedback: ${feedback.id} (status: ${feedback.status})`)

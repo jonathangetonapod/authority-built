@@ -70,24 +70,6 @@ import { PricingFAQ } from '@/components/pricing/PricingFAQ'
 import PageSEO from '@/components/seo/PageSEO'
 import { openExternalUrl } from '@/lib/externalUrl'
 
-const PROSPECT_TUTORIAL_STORAGE_KEY = 'prospect-tutorial-seen-v1'
-
-function hasSeenProspectTutorial(): boolean {
-  try {
-    return window.localStorage.getItem(PROSPECT_TUTORIAL_STORAGE_KEY) === 'true'
-  } catch {
-    return false
-  }
-}
-
-function markProspectTutorialSeen(): void {
-  try {
-    window.localStorage.setItem(PROSPECT_TUTORIAL_STORAGE_KEY, 'true')
-  } catch {
-    // Private/hardened browser contexts may deny persistent storage.
-  }
-}
-
 export default function ProspectView() {
   return (
     <>
@@ -115,6 +97,17 @@ interface ProspectDashboard {
   show_loom_video: boolean
   testimonial_ids: string[] | null
   show_testimonials: boolean
+  cta_type: 'reply' | 'book_call' | 'learn_more' | 'none'
+  cta_label: string
+  cta_url: string | null
+}
+
+interface ProspectWorkspaceBrand {
+  name: string
+  brand_name: string
+  logo_url: string | null
+  primary_color: string | null
+  accent_color: string | null
 }
 
 interface PodcastCategory {
@@ -247,13 +240,14 @@ function ProspectViewContent() {
         throw new Error(result.error || 'Dashboard not found')
       }
 
-      return result as { success: true; dashboard: ProspectDashboard; feedback: PodcastFeedback[] }
+      return result as { success: true; dashboard: ProspectDashboard; feedback: PodcastFeedback[]; workspace: ProspectWorkspaceBrand }
     },
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
     enabled: !!slug,
   })
 
   const dashboard = dashboardResponse?.dashboard ?? null
+  const workspaceBrand = dashboardResponse?.workspace ?? null
 
   // React Query: Fetch podcasts (enabled when dashboard is ready)
   const { data: podcasts = [], isLoading: podcastsLoading, error: podcastsError } = useQuery({
@@ -358,32 +352,17 @@ function ProspectViewContent() {
     setPersonalizedTagline(dashboard?.personalized_tagline ?? null)
   }, [dashboard?.personalized_tagline])
 
-  // Show tutorial on first visit or if ?tour=1 is in URL
+  // The dashboard is designed to be self-explanatory. The guided tour remains
+  // available from Help and via ?tour=1, but never interrupts a first visit.
   useEffect(() => {
-    if (!dashboard || loading) return
-
-    // If ?tour=1 is in URL, always show the tutorial
-    if (forceTour) {
-      const timer = setTimeout(() => {
-        setShowTutorial(true)
-      }, 500)
-      return () => clearTimeout(timer)
-    }
-
-    // Otherwise, check localStorage for first-time visitors
-    if (!hasSeenProspectTutorial()) {
-      const timer = setTimeout(() => {
-        setShowTutorial(true)
-      }, 1000)
-      return () => clearTimeout(timer)
-    }
+    if (!dashboard || loading || !forceTour) return
+    const timer = setTimeout(() => setShowTutorial(true), 500)
+    return () => clearTimeout(timer)
   }, [dashboard, loading, forceTour])
 
-  // Mark tutorial as seen when closed
   const closeTutorial = () => {
     setShowTutorial(false)
     setTutorialStep(0)
-    if (dashboard) markProspectTutorialSeen()
   }
 
   // Populate AI analysis cache from database-cached data (instant, no API calls needed)
@@ -758,6 +737,9 @@ function ProspectViewContent() {
           <div className="grid gap-6 rounded-[32px] border border-[#0d1b2a]/8 bg-white px-5 py-6 shadow-[0_18px_38px_rgba(13,27,42,0.08)] sm:px-6 sm:py-7 lg:grid-cols-[minmax(0,1.2fr)_360px] lg:gap-8">
             <div>
               <div className="flex flex-wrap items-center gap-3">
+                {workspaceBrand?.logo_url && (
+                  <img src={workspaceBrand.logo_url} alt={`${workspaceBrand.brand_name} logo`} className="mr-1 h-9 max-w-28 object-contain" />
+                )}
                 <p className="section-kicker">Prospect dashboard</p>
                 <span className="rounded-full border border-[#0d1b2a]/10 bg-[#f6f9fc] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.22em] text-[#5d7188]">
                   Built for {prospectFirstName}
@@ -793,7 +775,7 @@ function ProspectViewContent() {
                 <Button variant="hero" size="xl" className="rounded-full px-8 text-base" asChild>
                   <a href="#opportunities">Review Opportunities</a>
                 </Button>
-                {dashboard.media_kit_url ? (
+                {dashboard.media_kit_url && (
                   <Button
                     variant="heroOutline"
                     size="xl"
@@ -803,24 +785,25 @@ function ProspectViewContent() {
                     <FileText className="mr-2 h-4 w-4" />
                     View My Media Kit
                   </Button>
-                ) : dashboard.show_pricing_section !== false ? (
+                )}
+                {dashboard.cta_url && (dashboard.cta_type === 'book_call' || dashboard.cta_type === 'learn_more') && (
                   <Button
                     variant="heroOutline"
                     size="xl"
                     className="rounded-full px-8 text-base"
-                    onClick={() => openExternalUrl('https://calendly.com/getonapodjg/30min')}
+                    onClick={() => openExternalUrl(dashboard.cta_url!)}
                   >
-                    <Calendar className="mr-2 h-4 w-4" />
-                    Talk Through My Shortlist
+                    {dashboard.cta_type === 'book_call' ? <Calendar className="mr-2 h-4 w-4" /> : <ExternalLink className="mr-2 h-4 w-4" />}
+                    {dashboard.cta_label}
                   </Button>
-                ) : null}
+                )}
               </div>
 
               <div className="mt-7 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-[22px] border border-[#0d1b2a]/8 bg-[#f8fbff] px-4 py-4">
                   <p className="section-kicker">Total listeners</p>
                   <p className="mt-2 font-display text-3xl font-semibold tracking-[-0.05em] text-[#0d1b2a]">
-                    {formatNumber(totalReach)}+
+                    {totalReach > 0 ? `${formatNumber(totalReach)}+` : '—'}
                   </p>
                 </div>
                 <div className="rounded-[22px] border border-[#0d1b2a]/8 bg-[#f8fbff] px-4 py-4">
@@ -832,7 +815,7 @@ function ProspectViewContent() {
                 <div className="rounded-[22px] border border-[#0d1b2a]/8 bg-[#f8fbff] px-4 py-4">
                   <p className="section-kicker">Average rating</p>
                   <p className="mt-2 font-display text-3xl font-semibold tracking-[-0.05em] text-[#0d1b2a]">
-                    {avgRating > 0 ? avgRating.toFixed(1) : '4.5'}
+                    {avgRating > 0 ? avgRating.toFixed(1) : '—'}
                   </p>
                 </div>
               </div>
@@ -1537,6 +1520,44 @@ function ProspectViewContent() {
         )}
       </div>
 
+      {dashboard?.show_pricing_section === false && dashboard.cta_type !== 'none' && (
+        <section className="px-4 py-12 md:py-16">
+          <div className="container mx-auto">
+            <div className="mx-auto grid gap-6 rounded-[32px] border border-[#0d1b2a]/8 bg-[#0d1b2a] px-6 py-8 text-white shadow-[0_20px_42px_rgba(13,27,42,0.16)] md:px-8 md:py-10 lg:grid-cols-[1fr_auto] lg:items-center">
+              <div className="max-w-2xl">
+                <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-white/60">Next step</p>
+                <h2 className="mt-3 font-editorial text-4xl leading-[0.95] tracking-[-0.045em] sm:text-5xl">
+                  Ready to turn your shortlist into conversations?
+                </h2>
+                <p className="mt-4 max-w-xl text-base leading-7 text-white/72">
+                  Approve the shows that feel right, add any notes, and let us know when you are ready to move forward.
+                </p>
+              </div>
+
+              {dashboard.cta_url && (dashboard.cta_type === 'book_call' || dashboard.cta_type === 'learn_more') ? (
+                <Button
+                  variant="secondary"
+                  size="xl"
+                  className="min-h-[52px] rounded-full bg-white px-7 text-[#0d1b2a] hover:bg-white/90"
+                  onClick={() => openExternalUrl(dashboard.cta_url!)}
+                >
+                  {dashboard.cta_type === 'book_call' ? <Calendar className="mr-2 h-4 w-4" /> : <ExternalLink className="mr-2 h-4 w-4" />}
+                  {dashboard.cta_label}
+                </Button>
+              ) : (
+                <div className="flex max-w-sm items-start gap-3 rounded-[22px] border border-white/14 bg-white/8 px-5 py-4">
+                  <MessageSquare className="mt-0.5 h-5 w-5 flex-shrink-0 text-white/80" />
+                  <div>
+                    <p className="font-semibold">{dashboard.cta_label || 'Reply to move forward'}</p>
+                    <p className="mt-1 text-sm leading-6 text-white/65">Reply to the email that brought you here and we will take care of the next step.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* CTA Section */}
       {dashboard?.show_pricing_section !== false && (
         <section className="px-4 py-12 md:py-16">
@@ -1654,7 +1675,7 @@ function ProspectViewContent() {
       <footer className="border-t border-[#0d1b2a]/8 bg-white/40 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 text-center">
           <p className="text-xs sm:text-sm text-[#5d7188]">
-            Powered by <span className="font-semibold text-[#0d1b2a]">Authority Built</span>
+            Prepared by <span className="font-semibold text-[#0d1b2a]">{workspaceBrand?.brand_name || 'Authority Built'}</span>
           </p>
         </div>
       </footer>
