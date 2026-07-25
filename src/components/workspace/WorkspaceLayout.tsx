@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   closestCenter,
@@ -71,6 +71,7 @@ const workspaceNavItems: WorkspaceNavItem[] = [
 ]
 
 const WORKSPACE_NAV_ORDER_STORAGE_PREFIX = 'workspace-nav-order-v2'
+const WORKSPACE_NAV_SCROLL_STORAGE_PREFIX = 'workspace-nav-scroll-v1'
 export const WORKSPACE_NAV_ORGANIZE_EVENT = 'goap:workspace-navigation-organize'
 
 function orderedWorkspaceNavItems(value: unknown): WorkspaceNavItem[] {
@@ -86,6 +87,46 @@ function orderedWorkspaceNavItems(value: unknown): WorkspaceNavItem[] {
     return [item]
   })
   return [...ordered, ...workspaceNavItems.filter((item) => !seen.has(item.id))]
+}
+
+function storedWorkspaceNavItems(
+  canOrganizeNavigation: boolean,
+  navStorageKey: string,
+  legacyNavStorageKey: string,
+): WorkspaceNavItem[] {
+  if (!canOrganizeNavigation || typeof window === 'undefined') return [...workspaceNavItems]
+
+  try {
+    const currentStored = window.localStorage.getItem(navStorageKey)
+    const legacyStored = currentStored ? null : window.localStorage.getItem(legacyNavStorageKey)
+    const stored = currentStored || legacyStored
+    return orderedWorkspaceNavItems(stored ? JSON.parse(stored) : null)
+  } catch {
+    return [...workspaceNavItems]
+  }
+}
+
+function hasSameWorkspaceNavOrder(left: WorkspaceNavItem[], right: WorkspaceNavItem[]) {
+  return left.length === right.length && left.every((item, index) => item.id === right[index]?.id)
+}
+
+function readWorkspaceNavScroll(storageKey: string) {
+  if (typeof window === 'undefined') return 0
+  try {
+    const stored = Number(window.sessionStorage.getItem(storageKey))
+    return Number.isFinite(stored) && stored > 0 ? stored : 0
+  } catch {
+    return 0
+  }
+}
+
+function saveWorkspaceNavScroll(storageKey: string, scrollTop: number) {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.setItem(storageKey, String(Math.max(0, Math.round(scrollTop))))
+  } catch {
+    // Navigation remains usable when browser storage is unavailable.
+  }
 }
 
 interface SortableWorkspaceNavItemProps {
@@ -143,6 +184,7 @@ const SortableWorkspaceNavItem = ({
         <Link
           to={href}
           onClick={onNavigate}
+          aria-current={isActive ? 'page' : undefined}
           className={cn(
             'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
             isActive
@@ -245,8 +287,6 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
   const navigate = useNavigate()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [navItems, setNavItems] = useState<WorkspaceNavItem[]>(workspaceNavItems)
-  const [isOrganizing, setIsOrganizing] = useState(false)
   const workspaceName = platformWorkspace?.workspaceName || workspace?.name || 'Workspace'
   const workspaceDisplayName = isPlatformAdmin && !platformWorkspace && workspace?.is_default
     ? 'My Workspace'
@@ -274,11 +314,25 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
     && navStorageWorkspace !== 'unavailable-workspace'
   const navStorageKey = `${WORKSPACE_NAV_ORDER_STORAGE_PREFIX}:${navStorageWorkspace}:${navStorageOwner}`
   const legacyNavStorageKey = `workspace-nav-order-v1:${navStorageOwner}`
+  const navScrollStorageKey = `${WORKSPACE_NAV_SCROLL_STORAGE_PREFIX}:${navStorageWorkspace}:${navStorageOwner}`
+  const [navItems, setNavItems] = useState<WorkspaceNavItem[]>(() => (
+    storedWorkspaceNavItems(canOrganizeNavigation, navStorageKey, legacyNavStorageKey)
+  ))
+  const [isOrganizing, setIsOrganizing] = useState(false)
+  const navigationRef = useRef<HTMLElement>(null)
   const isDefaultNavOrder = navItems.every((item, index) => item.id === workspaceNavItems[index]?.id)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
+
+  useLayoutEffect(() => {
+    const navigation = navigationRef.current
+    if (!navigation) return undefined
+
+    navigation.scrollTop = readWorkspaceNavScroll(navScrollStorageKey)
+    return () => saveWorkspaceNavScroll(navScrollStorageKey, navigation.scrollTop)
+  }, [navScrollStorageKey])
 
   useEffect(() => {
     if (!canOrganizeNavigation) {
@@ -299,7 +353,10 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
     } catch {
       // The default order remains available when browser storage is unavailable or invalid.
     }
-    setNavItems(orderedWorkspaceNavItems(savedOrder))
+    const nextItems = orderedWorkspaceNavItems(savedOrder)
+    setNavItems((current) => (
+      hasSameWorkspaceNavOrder(current, nextItems) ? current : nextItems
+    ))
     setIsOrganizing(false)
   }, [canOrganizeNavigation, legacyNavStorageKey, navStorageKey])
 
@@ -344,6 +401,13 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
       // The default order still applies in this tab when storage is unavailable.
     }
     toast.success('Sidebar order reset.')
+  }
+
+  const handleSidebarNavigate = () => {
+    if (navigationRef.current) {
+      saveWorkspaceNavScroll(navScrollStorageKey, navigationRef.current.scrollTop)
+    }
+    setSidebarOpen(false)
   }
 
   const handleSignOut = async () => {
@@ -401,7 +465,12 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
             </div>
           </div>
 
-          <nav aria-label="Workspace navigation" className="flex-1 overflow-y-auto px-3 py-4">
+          <nav
+            ref={navigationRef}
+            aria-label="Workspace navigation"
+            className="flex-1 overflow-y-auto overscroll-contain px-3 py-4 [scrollbar-gutter:stable]"
+            onScroll={(event) => saveWorkspaceNavScroll(navScrollStorageKey, event.currentTarget.scrollTop)}
+          >
             <div className="mb-2 flex items-center justify-between gap-2 px-1">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Navigation</p>
               {canOrganizeNavigation && isOrganizing && (
@@ -463,7 +532,7 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
                         isEnabled={itemEnabled}
                         isOrganizing={isOrganizing}
                         restrictedLabel={isSettings ? 'Owner/Admin' : 'Soon'}
-                        onNavigate={() => setSidebarOpen(false)}
+                        onNavigate={handleSidebarNavigate}
                       />
                     )
                   })}

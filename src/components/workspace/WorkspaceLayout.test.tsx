@@ -32,7 +32,7 @@ const expectedNavigation = [
 ]
 
 function renderLayout(platformWorkspace?: PlatformWorkspaceConfig) {
-  render(
+  return render(
     <MemoryRouter initialEntries={[platformWorkspace ? `${platformWorkspace.baseHref}/clients` : '/app/clients']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <WorkspaceLayout platformWorkspace={platformWorkspace}><div>Module content</div></WorkspaceLayout>
     </MemoryRouter>,
@@ -43,6 +43,7 @@ describe('WorkspaceLayout', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     window.localStorage.clear()
+    window.sessionStorage.clear()
     signOut.mockResolvedValue(undefined)
     mockedUseAuth.mockReturnValue({
       user: {
@@ -91,15 +92,15 @@ describe('WorkspaceLayout', () => {
     expect(screen.getByRole('button', { name: /sign out/i })).toBeEnabled()
   })
 
-  it('restores and resets a navigation order saved for this owner and workspace', async () => {
+  it('restores and resets a navigation order saved for this owner and workspace', () => {
     const storageKey = `workspace-nav-order-v2:${workspaceId}:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa`
     window.localStorage.setItem(storageKey, JSON.stringify(['clients', 'podcast-finder', 'overview']))
     renderLayout()
 
     const navigation = screen.getByRole('navigation', { name: 'Workspace navigation' })
-    await waitFor(() => expect(within(navigation).getAllByRole('listitem').slice(0, 3).map((item) => (
+    expect(within(navigation).getAllByRole('listitem').slice(0, 3).map((item) => (
       item.querySelector('span')?.textContent
-    ))).toEqual(['Clients', 'Podcast Finder', 'Overview']))
+    ))).toEqual(['Clients', 'Podcast Finder', 'Overview'])
 
     fireEvent.click(within(navigation).getByRole('button', { name: 'Reorder sidebar pages' }))
     expect(within(navigation).getAllByRole('button', { name: /^Drag /u })).toHaveLength(expectedNavigation.length)
@@ -113,6 +114,21 @@ describe('WorkspaceLayout', () => {
 
     fireEvent.click(within(navigation).getByRole('button', { name: 'Done' }))
     expect(within(navigation).getByRole('button', { name: 'Reorder sidebar pages' })).toBeInTheDocument()
+  })
+
+  it('keeps the sidebar scroll position stable when the layout remounts during navigation', () => {
+    const storageKey = `workspace-nav-scroll-v1:${workspaceId}:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa`
+    const firstRender = renderLayout()
+    const firstNavigation = screen.getByRole('navigation', { name: 'Workspace navigation' })
+
+    firstNavigation.scrollTop = 184
+    fireEvent.scroll(firstNavigation)
+    expect(window.sessionStorage.getItem(storageKey)).toBe('184')
+
+    firstRender.unmount()
+    renderLayout()
+
+    expect(screen.getByRole('navigation', { name: 'Workspace navigation' }).scrollTop).toBe(184)
   })
 
   it('opens owner organize mode when requested from workspace settings', () => {
