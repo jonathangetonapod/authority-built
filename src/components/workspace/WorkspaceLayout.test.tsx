@@ -22,7 +22,7 @@ const expectedNavigation = [
   'Podcast Finder',
   'Prospect Studio',
   'Podcast Database',
-  'Client Podcast System',
+  'Client Command Center',
   'Clients',
   'Client Campaigns',
   'Master Inbox',
@@ -79,7 +79,7 @@ describe('WorkspaceLayout', () => {
     expect(within(navigation).getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/app/overview')
     expect(within(navigation).getByRole('link', { name: 'Podcast Finder' })).toHaveAttribute('href', '/app/podcast-finder')
     expect(within(navigation).getByRole('link', { name: 'Podcast Database' })).toHaveAttribute('href', '/app/podcast-database')
-    expect(within(navigation).getByRole('link', { name: 'Client Podcast System' })).toHaveAttribute('href', '/app/client-podcast-system')
+    expect(within(navigation).getByRole('link', { name: 'Client Command Center' })).toHaveAttribute('href', '/app/client-podcast-system')
     expect(within(navigation).getByRole('link', { name: 'Prospect Studio' })).toHaveAttribute('href', '/app/prospects')
     expect(within(navigation).getByRole('link', { name: 'Client Campaigns' })).toHaveAttribute('href', '/app/client-campaigns')
     expect(within(navigation).getByRole('link', { name: 'Master Inbox' })).toHaveAttribute('href', '/app/master-inbox')
@@ -208,7 +208,7 @@ describe('WorkspaceLayout', () => {
       'href',
       `/app/workspaces/${workspaceId}/podcast-database`,
     )
-    expect(within(navigation).getByRole('link', { name: 'Client Podcast System' })).toHaveAttribute(
+    expect(within(navigation).getByRole('link', { name: 'Client Command Center' })).toHaveAttribute(
       'href',
       `/app/workspaces/${workspaceId}/client-podcast-system`,
     )

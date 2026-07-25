@@ -19,6 +19,20 @@ const MAX_ROWS_PER_SOURCE = 10_000
 const LOOKUP_CHUNK_SIZE = 200
 const MANAGER_ROLES = new Set(['owner', 'admin', 'platform_admin'])
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const AI_SDR_PROFILE_FIELDS = [
+  'positioning',
+  'topics_and_angles',
+  'listener_takeaways',
+  'proof_points',
+  'ideal_opportunities',
+  'booking_details',
+] as const
+const AI_SDR_CORE_FIELDS = [
+  'positioning',
+  'topics_and_angles',
+  'listener_takeaways',
+  'booking_details',
+] as const
 const STAGES = [
   'awaiting_review',
   'approved',
@@ -40,6 +54,30 @@ interface ClientRow {
   name: string
   status: string
   photo_url: string | null
+  email: string | null
+  contact_person: string | null
+  website: string | null
+  bio: string | null
+  calendar_link: string | null
+  media_kit_url: string | null
+  dashboard_slug: string | null
+  portal_access_enabled: boolean
+  portal_last_login_at: string | null
+  ai_sdr_profile: Record<string, unknown> | null
+  ai_sdr_profile_updated_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+interface OnboardingRow {
+  id: string
+  client_id: string
+  status: 'invited' | 'in_progress' | 'submitted' | 'changes_requested' | 'approved' | 'expired' | 'revoked'
+  invited_at: string
+  submitted_at: string | null
+  approved_at: string | null
+  updated_at: string
+  archived_at: string | null
 }
 
 interface ShortlistRow {
@@ -174,7 +212,7 @@ async function loadAll<T>(
   for (let from = 0; from < MAX_ROWS_PER_SOURCE; from += PAGE_SIZE) {
     const result = await loader(from, from + PAGE_SIZE - 1)
     if (result.error) {
-      throw new HttpError(500, unavailableCode, 'The client podcast system could not be loaded')
+      throw new HttpError(500, unavailableCode, 'The Client Command Center could not be loaded')
     }
     const page = result.data || []
     rows.push(...page)
@@ -202,7 +240,7 @@ async function loadCatalog(
       .select('id,podscan_id,podcast_name,podcast_description,podcast_image_url,podcast_url,publisher_name,host_name,audience_size,podscan_email,last_posted_at')
       .in('podscan_id', podcastIdChunk)
     if (error) {
-      throw new HttpError(500, 'CLIENT_PODCAST_CATALOG_UNAVAILABLE', 'The client podcast system could not be loaded')
+      throw new HttpError(500, 'CLIENT_PODCAST_CATALOG_UNAVAILABLE', 'The Client Command Center could not be loaded')
     }
     for (const row of (data || []) as unknown as CatalogRow[]) rowsById.set(row.id, row)
   }
@@ -213,7 +251,7 @@ async function loadCatalog(
       .select('id,podscan_id,podcast_name,podcast_description,podcast_image_url,podcast_url,publisher_name,host_name,audience_size,podscan_email,last_posted_at')
       .in('id', podcastIdChunk)
     if (error) {
-      throw new HttpError(500, 'CLIENT_PODCAST_CATALOG_UNAVAILABLE', 'The client podcast system could not be loaded')
+      throw new HttpError(500, 'CLIENT_PODCAST_CATALOG_UNAVAILABLE', 'The Client Command Center could not be loaded')
     }
     for (const row of (data || []) as unknown as CatalogRow[]) rowsById.set(row.id, row)
   }
@@ -232,7 +270,7 @@ async function loadDirectContacts(
       .in('podcast_id', podcastIdChunk)
       .eq('verification_status', 'verified')
     if (error) {
-      throw new HttpError(500, 'CLIENT_PODCAST_CONTACTS_UNAVAILABLE', 'The client podcast system could not be loaded')
+      throw new HttpError(500, 'CLIENT_PODCAST_CONTACTS_UNAVAILABLE', 'The Client Command Center could not be loaded')
     }
     rows.push(...(data || []) as unknown as DirectContactRow[])
   }
@@ -254,6 +292,27 @@ function validEmail(value: string | null | undefined): string | null {
 
 function latestTimestamp(values: Array<string | null | undefined>): string | null {
   return values.filter((value): value is string => Boolean(value)).sort().at(-1) || null
+}
+
+function aiSdrReadiness(value: unknown) {
+  const source = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+  const completedFields = AI_SDR_PROFILE_FIELDS.filter((field) => (
+    typeof source[field] === 'string' && source[field].trim().length > 0
+  ))
+  const missingCoreFields = AI_SDR_CORE_FIELDS.filter((field) => !completedFields.includes(field))
+  return {
+    ready: missingCoreFields.length === 0,
+    completed_fields: completedFields.length,
+    total_fields: AI_SDR_PROFILE_FIELDS.length,
+  }
+}
+
+function profileText(value: unknown, field: string): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const text = (value as Record<string, unknown>)[field]
+  return typeof text === 'string' && text.trim() ? text.trim() : null
 }
 
 function pitchAngles(value: AnalysisRow['ai_pitch_angles'] | ShortlistRow['ai_pitch_angles']): Array<{ title: string; description: string }> {
@@ -352,7 +411,7 @@ serve(async (req) => {
     const body = await parseJsonObject(req, 4_096)
     requireOnlyKeys(body, ['action', 'workspace_id'])
     if (body.action !== 'list') {
-      throw new HttpError(400, 'INVALID_ACTION', 'Unknown client podcast system action')
+      throw new HttpError(400, 'INVALID_ACTION', 'Unknown Client Command Center action')
     }
 
     const workspaceId = requireUuid(body.workspace_id, 'workspace_id')
@@ -363,7 +422,7 @@ serve(async (req) => {
     const clients = await loadAll<ClientRow>('CLIENT_PODCAST_CLIENTS_UNAVAILABLE', (from, to) => (
       context.admin
         .from('clients')
-        .select('id,name,status,photo_url')
+        .select('id,name,status,photo_url,email,contact_person,website,bio,calendar_link,media_kit_url,dashboard_slug,portal_access_enabled,portal_last_login_at,ai_sdr_profile,ai_sdr_profile_updated_at,created_at,updated_at')
         .eq('workspace_id', workspaceId)
         .order('name', { ascending: true })
         .order('id', { ascending: true })
@@ -391,7 +450,7 @@ serve(async (req) => {
       })
     }
 
-    const [shortlist, feedback, legacyOutreach, targets, bookings, analyses] = await Promise.all([
+    const [shortlist, feedback, legacyOutreach, targets, bookings, analyses, onboarding] = await Promise.all([
       loadAll<ShortlistRow>('CLIENT_PODCAST_SHORTLIST_UNAVAILABLE', (from, to) => (
         context.admin
           .from('client_dashboard_podcasts')
@@ -444,6 +503,16 @@ serve(async (req) => {
           .order('updated_at', { ascending: false })
           .range(from, to) as unknown as PromiseLike<PageResult<AnalysisRow>>
       )),
+      loadAll<OnboardingRow>('CLIENT_PODCAST_ONBOARDING_UNAVAILABLE', (from, to) => (
+        context.admin
+          .from('workspace_onboarding_instances')
+          .select('id,client_id,status,invited_at,submitted_at,approved_at,updated_at,archived_at')
+          .eq('workspace_id', workspaceId)
+          .in('client_id', clientIds)
+          .order('updated_at', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, to) as unknown as PromiseLike<PageResult<OnboardingRow>>
+      )),
     ])
 
     const uniquePodcastIds = Array.from(new Set([
@@ -461,6 +530,12 @@ serve(async (req) => {
     const targetByShortlistId = new Map(targets.map((row) => [row.shortlist_podcast_id, row]))
     const analysisByKey = new Map(analyses.map((row) => [recordKey(row.client_id, row.podcast_id), row]))
     const directContactByPodcastId = new Map(directContacts.map((row) => [row.podcast_id, row]))
+    const onboardingByClientId = new Map<string, OnboardingRow>()
+    for (const row of onboarding) {
+      if (!row.archived_at && !onboardingByClientId.has(row.client_id)) {
+        onboardingByClientId.set(row.client_id, row)
+      }
+    }
     const bookingById = new Map<string, BookingRow>()
     const bookingByName = new Map<string, BookingRow>()
     bookings.forEach((booking) => {
@@ -699,13 +774,49 @@ serve(async (req) => {
       viewer_role: access.role,
       can_manage: canManage,
       generated_at: new Date().toISOString(),
-      clients: clients.map((client) => ({
-        id: client.id,
-        name: client.name,
-        status: client.status,
-        photo_url: client.photo_url,
-        podcast_count: items.filter((item) => item.client.id === client.id).length,
-      })),
+      clients: clients.map((client) => {
+        const clientItems = items.filter((item) => item.client.id === client.id)
+        const clientOnboarding = onboardingByClientId.get(client.id) || null
+        const readiness = aiSdrReadiness(client.ai_sdr_profile)
+        return {
+          id: client.id,
+          name: client.name,
+          status: client.status,
+          photo_url: client.photo_url,
+          email: client.email,
+          contact_person: client.contact_person,
+          website: client.website,
+          bio: client.bio,
+          profile: {
+            ...readiness,
+            positioning: profileText(client.ai_sdr_profile, 'positioning'),
+            updated_at: client.ai_sdr_profile_updated_at,
+            has_calendar: Boolean(client.calendar_link),
+            has_media_kit: Boolean(client.media_kit_url),
+          },
+          dashboard_configured: Boolean(client.dashboard_slug),
+          portal: {
+            enabled: Boolean(client.portal_access_enabled),
+            last_login_at: client.portal_last_login_at,
+          },
+          onboarding: access.role === 'member' || !clientOnboarding ? null : {
+            id: clientOnboarding.id,
+            status: clientOnboarding.status,
+            invited_at: clientOnboarding.invited_at,
+            submitted_at: clientOnboarding.submitted_at,
+            approved_at: clientOnboarding.approved_at,
+            updated_at: clientOnboarding.updated_at,
+          },
+          podcast_count: clientItems.length,
+          created_at: client.created_at,
+          updated_at: client.updated_at,
+          last_activity_at: latestTimestamp([
+            client.updated_at,
+            clientOnboarding?.updated_at,
+            ...clientItems.map((item) => item.last_activity_at),
+          ]),
+        }
+      }),
       summary: {
         total: items.length,
         active,

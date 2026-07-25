@@ -20,7 +20,36 @@ export interface ClientPodcastSystemClient {
   name: string
   status: string
   photo_url: string | null
+  email: string | null
+  contact_person: string | null
+  website: string | null
+  bio: string | null
+  profile: {
+    ready: boolean
+    completed_fields: number
+    total_fields: number
+    positioning: string | null
+    updated_at: string | null
+    has_calendar: boolean
+    has_media_kit: boolean
+  }
+  dashboard_configured: boolean
+  portal: {
+    enabled: boolean
+    last_login_at: string | null
+  }
+  onboarding: {
+    id: string
+    status: 'invited' | 'in_progress' | 'submitted' | 'changes_requested' | 'approved' | 'expired' | 'revoked'
+    invited_at: string
+    submitted_at: string | null
+    approved_at: string | null
+    updated_at: string
+  } | null
   podcast_count: number
+  created_at: string
+  updated_at: string
+  last_activity_at: string | null
 }
 
 export interface ClientPodcastSystemItem {
@@ -128,7 +157,7 @@ export async function getWorkspaceClientPodcastSystem(
     },
   })
   if (error) {
-    throw await toFunctionError(error, 'The Client Podcast System could not be loaded.')
+    throw await toFunctionError(error, 'The Client Command Center could not be loaded.')
   }
 
   const response = data as ClientPodcastSystemResponse | null
@@ -140,7 +169,7 @@ export async function getWorkspaceClientPodcastSystem(
     || !Array.isArray(response.items)
     || !response.summary
   ) {
-    throw new Error('The Client Podcast System response did not match the workspace address.')
+    throw new Error('The Client Command Center response did not match the workspace address.')
   }
   return response
 }

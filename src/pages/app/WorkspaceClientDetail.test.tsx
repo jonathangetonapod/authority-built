@@ -220,7 +220,7 @@ describe('WorkspaceClientDetail', () => {
       'href',
       `/app/client-campaigns/${clientId}`,
     )
-    expect(screen.getByRole('link', { name: 'Podcast Pipeline' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Command Center' })).toHaveAttribute(
       'href',
       `/app/client-podcast-system?client=${clientId}`,
     )
