@@ -2,7 +2,15 @@
 
 ## 1. Project Overview
 
-Podcast placement platform for a booking agency (Get On A Pod / Authority Built). Manages client bookings, prospect dashboards, outreach campaigns, AI-powered podcast matching, and a public marketing site. Three user surfaces: public marketing site, admin dashboard, and client portal.
+Podcast placement platform, mid-migration from a single-agency admin tool to an **invite-only multi-tenant SaaS** where sub-agencies ("workspaces") manage their own clients, podcast discovery, outreach campaigns, and client deliverables. Billing, HeyGen video, and Fathom sales-call features are retired for the invite-only MVP (their edge functions return HTTP 410).
+
+**User surfaces:**
+- `/app/*` — workspace tenant app (Supabase Auth; invite-only B2B users)
+- `/app/workspaces/:workspaceId/*` — platform admins viewing a tenant (thin `AdminWorkspace*` wrappers pass `platformWorkspaceId` into the same `/app` pages)
+- `/admin/*` — legacy single-agency admin pages (still live: podcast database, calendar, clients, guest resources)
+- `/portal/*` — end-client portal (custom bearer-token auth, NOT Supabase Auth)
+- `/prospect/:slug`, `/client/:slug`, `/onboarding/:token` — public capability-URL pages (the slug/token is the credential)
+- Public marketing site (`/`, `/blog`, etc.)
 
 ## 2. Tech Stack
 
@@ -10,52 +18,61 @@ Podcast placement platform for a booking agency (Get On A Pod / Authority Built)
 - **Language:** TypeScript 5.8 (loose — `noImplicitAny: false`, `strictNullChecks: false`)
 - **Styling:** Tailwind CSS 3.4 + `tailwindcss-animate` + `@tailwindcss/typography`
 - **Components:** shadcn/ui (Radix primitives in `src/components/ui/`)
-- **State:** Zustand (cart store), React Context (auth, client portal), TanStack React Query
+- **State:** React Context (AuthContext, ClientPortalContext), TanStack React Query (singleton client in `src/lib/queryClient.ts`)
 - **Forms:** React Hook Form + Zod validation
-- **Routing:** React Router DOM v6
+- **Routing:** React Router DOM v6 (all routes in `src/App.tsx`)
 - **Rich Text:** TipTap editor
 - **Charts:** Recharts
-- **Backend:** Supabase (auth, Postgres, edge functions, storage)
-- **AI:** Anthropic Claude API + OpenAI (called from edge functions)
-- **Payments:** Stripe (checkout sessions, webhooks)
-- **Monitoring:** Sentry (`@sentry/react`)
+- **Backend:** Supabase (auth, Postgres with RLS, edge functions, storage) — Deno **2.5.2** pinned for edge functions
+- **AI:** Anthropic Claude API + OpenAI embeddings (server-side only)
+- **Outreach:** Instantly.ai (per-workspace API keys, AES-GCM encrypted in DB) + legacy Email Bison
+- **Podcast data:** Podscan API (proxied through edge functions)
+- **Monitoring:** Sentry (`@sentry/react`, sanitized breadcrumbs, tracing off)
 - **Icons:** Lucide React
 
-**Do not introduce:** Next.js, Redux, Styled Components, Material UI, Firebase, Prisma, tRPC.
+**Do not introduce:** Next.js, Redux, Styled Components, Material UI, Firebase, Prisma, tRPC, Zustand (listed in package.json but unused — do not start using it).
 
 ## 3. Architecture
 
 ```
 src/
-  App.tsx              — All routes defined here (React Router)
+  App.tsx              — All routes (React Router); billing/checkout routes redirect home
   main.tsx             — Entry point (Sentry init, React render)
   index.css            — CSS variables (design tokens), Tailwind layers
-  pages/               — Route-level components
-    admin/             — Admin dashboard pages (ProtectedRoute)
+  pages/
+    app/               — Workspace tenant pages (ProtectedRoute) — the current-generation surface
+    admin/             — Legacy admin pages + AdminWorkspace* wrappers (PlatformAdminRoute)
     portal/            — Client portal pages (ClientProtectedRoute)
-    prospect/          — Public prospect dashboard
-    client/            — Public client approval view
-    *.tsx              — Public marketing pages (Index, Blog, Checkout, etc.)
+    prospect/          — Public prospect dashboard (slug-keyed)
+    client/            — Public client approval view (slug-keyed)
+    onboarding/        — Public token-keyed client onboarding
+    account/           — Login, accept-invite, forced password change
+    *.tsx              — Public marketing pages
   components/
     ui/                — shadcn/ui primitives (do not edit manually)
-    admin/             — Admin-specific components
-    portal/            — Client portal components
-    pricing/           — Pricing-specific components
-    blog/              — Blog components
-    docs/              — API docs components
-    *.tsx              — Shared marketing components (Hero, Navbar, Footer, etc.)
-  services/            — Supabase query functions (one file per domain)
-  lib/                 — Utilities: supabase client, config, sentry, api-docs, utils
-  hooks/               — Custom hooks (use-mobile, use-toast, useScrollAnimation)
-  contexts/            — React contexts (AuthContext, ClientPortalContext)
-  stores/              — Zustand stores (cartStore)
-  data/                — Static data (blogPosts)
+    workspace/         — Workspace app components (WorkspaceLayout is the app shell)
+    admin/             — Legacy admin components (DashboardLayout is the legacy shell)
+    portal/, onboarding/, blog/ — surface-specific components
+  services/            — One file per domain; async functions calling supabase tables or
+                         supabase.functions.invoke, errors normalized via lib/functionErrors.ts
+  lib/                 — supabase client, config, queryClient, workspaceRoutes, sentry, utils
+  contexts/            — AuthContext (workspace/admin), ClientPortalContext (portal)
+  hooks/               — Custom hooks
 supabase/
   functions/           — Deno edge functions (one folder per function)
-    _shared/           — Shared utilities (email-templates, podcastCache)
-  migrations/          — SQL migration files
-scripts/               — Utility scripts (sitemap gen, scraping, deployment)
+    _shared/           — workspaceAuth.ts, cors.ts, portalSecurity.ts, instantly.ts,
+                         podcastCache.ts, httpError.ts, etc. (several have Deno tests)
+  migrations/          — SQL migrations (schema changes MUST go here)
+docs/invite-only-edge-manifest.json — release manifest governing edge function deploys
+scripts/               — check/test/verify scripts wired into check:static
 ```
+
+**Auth model (three independent systems):**
+1. **Workspace/admin:** Supabase Auth → `account-context` edge function returns `{platform_admin, state, membership, workspace}`. The frontend never decides authorization itself. Account states: `active | pending | password_change_required | suspended | expired | ...` — `ProtectedRoute`/`PlatformAdminRoute` route each state.
+2. **Portal:** custom sessions from `login-with-password` (PBKDF2, hashed session tokens, sessionStorage). Separate from Supabase Auth.
+3. **Public slugs:** prospect/client/onboarding pages authenticate by unguessable slug/token only.
+
+**Tenancy:** RLS with paired `_isolation` policies, SECURITY DEFINER helpers (`current_workspace_id()`, `can_access_workspace()`), and composite FKs (e.g. `(workspace_id, client_id, id)`) that make cross-tenant references unrepresentable.
 
 ## 4. Coding Conventions
 
@@ -63,69 +80,74 @@ scripts/               — Utility scripts (sitemap gen, scraping, deployment)
 - **Naming:** PascalCase for components/types, camelCase for functions/variables
 - **Imports:** Use `@/` path alias (maps to `src/`). Prefer named imports.
 - **Interfaces:** Exported from service files alongside query functions. Use `interface` not `type` for object shapes.
-- **Error handling:** `try/catch` in services, `toast()` (sonner) for user-facing errors
+- **Error handling:** `try/catch` in services, `toast()` (sonner) for user-facing errors; normalize edge function errors with `toFunctionError` from `src/lib/functionErrors.ts`
 - **Async data:** TanStack Query hooks in pages, raw `supabase` calls in service files
-- **Edge functions:** Deno runtime, `serve()` wrapper, inline CORS headers, `SUPABASE_SERVICE_ROLE_KEY` for DB access
-- **Console logging:** Edge functions use `[Function Name]` prefix pattern (e.g., `[Generate Tagline] ...`)
+- **New services** should invoke edge functions (`supabase.functions.invoke`) rather than query tables directly — that is the current-generation pattern (see `workspaceCampaigns.ts`, `clientPodcastSystem.ts`)
 
-## 5. UI and Design System
+## 5. Edge Function Pattern (current generation)
 
-- **Component library:** shadcn/ui — primitives live in `src/components/ui/`. Do not manually edit these files; use `npx shadcn-ui@latest add <component>` to add new ones.
-- **Styling:** Tailwind utility classes. No custom CSS files beyond `index.css`.
-- **Design tokens:** CSS custom properties in `src/index.css` (`:root` and `.dark`). HSL color values consumed via `hsl(var(--primary))` pattern.
-- **Font:** Inter (400-800)
-- **Border radius:** `--radius: 0.5rem` base
-- **Container:** max-width `1200px`, centered, `1.5rem` padding
-- **Animations:** Defined in `tailwind.config.ts` — fade-up, fade-in, scale-in, shimmer, pulse-glow, etc.
+New edge functions MUST use the `_shared/workspaceAuth.ts` toolkit, not hand-rolled CORS/auth. Follow an existing workspace function (e.g. `supabase/functions/workspace-client-podcast-system/index.ts`) as the template:
+
+- `requireAuthenticatedUser(req)` → `requireWorkspaceFeatureAccess(...)` for tenant functions; `requirePlatformAdmin` for admin-only
+- `parseJsonObject` (size-capped), `requireOnlyKeys`, `requireUuid`, `requireString` for body validation
+- `jsonResponse` / `optionsResponse` / `errorResponse` from `_shared/workspaceAuth.ts`; CORS via `_shared/cors.ts` allowlist (never wildcard)
+- Coded errors via `HttpError(status, code, message)` from `_shared/httpError.ts`
+- Audit significant mutations with `writeAudit` → `workspace_audit_log`
+
+**Adding a function requires updating, in the same change:** `supabase/config.toml` (`verify_jwt = true` entry), `docs/invite-only-edge-manifest.json` (function + deploy lists and counts), `scripts/verify-invite-only-release.mjs` (expected counts), `scripts/check-edge-functions.sh` (entrypoint count), and usually a `scripts/test-<name>-edge-contract.mjs` + `package.json` test script wired into `check:static`. The release verifier fails CI if any of these disagree.
+
+The legacy inline-CORS/`[Function Name]` logging style exists in ~50 older functions; do not copy it for new work.
 
 ## 6. Content and Copy Guidance
 
 - Tone: Professional, confident, results-oriented. Not salesy or hype-driven.
 - Brand name: "Get On A Pod" (product) / "Authority Built" (company)
-- Pricing: $749/month (as of last update — verify in `PricingSection.tsx`)
 - Target audience: Entrepreneurs, founders, thought leaders seeking podcast guest appearances
 - Avoid: Overpromising, vague claims, exclamation marks in body copy
+- Billing/pricing is out of scope for the invite-only MVP — do not add pricing or checkout copy
 
 ## 7. Testing and Quality Bar
 
-- **No test framework currently configured** (no Jest, Vitest, or Playwright in deps)
-- **"Done" means:** TypeScript compiles (`tsc`), Vite builds without errors (`npm run build`), no runtime console errors on affected pages
-- **Lint:** ESLint 9 with `typescript-eslint` and React hooks/refresh plugins
-- Before shipping, manually verify affected pages render correctly
+- **Runner:** Vitest 3 + Testing Library (jsdom), config in `vitest.config.ts`, setup in `src/test/setup.ts`. ~45 test files colocated next to their subjects.
+- **No blanket `test` script.** Tests run as curated suites: `test:workspace-mvp` (the big one), `test:podcast-research`, `test:workspace-client-podcast-system`, plus Node edge-contract scripts (`scripts/test-*-edge-contract.mjs`) that statically assert on edge function source, and Deno tests for `_shared/` (run via `check:edge`). New test files must be added to the relevant suite in `package.json` or they will never run.
+- **Service test pattern:** `vi.mock('@/lib/supabase')`, assert both the returned mapping and the exact `functions.invoke` payload.
+- **`check:static`** is the full local/CI gate (typecheck, scoped eslint, all suites, contract scripts, build, secret scan). CI runs `.github/workflows/pr-static-validation.yml`.
+- **"Done" means:** `npm run typecheck:app` clean, relevant test suite passes, `npm run build` succeeds, affected pages render.
 
 ## 8. File and Component Placement Rules
 
-- **New page:** Create in `src/pages/` (or `src/pages/admin/`, `src/pages/portal/`), add route in `App.tsx` above the catch-all `*` route
-- **New service:** Create in `src/services/` (one file per domain, exports async functions using `supabase`)
-- **New hook:** Create in `src/hooks/`
-- **New edge function:** Create folder in `supabase/functions/<function-name>/index.ts` with CORS headers and `serve()` boilerplate
-- **New UI primitive:** Use `npx shadcn-ui@latest add`, never hand-write into `components/ui/`
-- **Prefer editing over creating.** Check if a service file or component already exists before making a new one.
+- **New workspace page:** `src/pages/app/`, route in `App.tsx` (both `/app/<module>` and `/app/workspaces/:workspaceId/<module>` with a thin `AdminWorkspace*` wrapper in `src/pages/admin/`), register the module in `src/lib/workspaceRoutes.ts`, add the nav item in `src/components/workspace/WorkspaceLayout.tsx`, and update their tests.
+- **New service:** `src/services/` (one file per domain), with a colocated `.test.ts` added to the right suite.
+- **New edge function:** see section 5 — the manifest/config/scripts must be updated together.
+- **New UI primitive:** `npx shadcn-ui@latest add`, never hand-write into `components/ui/`.
+- **Prefer editing over creating.** Check if a service file or component already exists first.
 
 ## 9. Safety Rules
 
-- **Auth:** Do not modify `AuthContext.tsx`, `ClientPortalContext.tsx`, or `ProtectedRoute.tsx` without explicit approval
-- **Database:** Never change schema without a Supabase migration file in `supabase/migrations/`
-- **API keys:** All secrets go in Supabase edge function env vars (server-side). Client-side env vars use `VITE_` prefix and must contain only public keys (anon key, Stripe publishable key, Sentry DSN).
-- **Edge functions:** Maintain backward compatibility — existing callers (webhooks, other services) depend on request/response shapes
-- **Admin access:** Controlled via `admin_users` DB table + fallback email in `src/lib/config.ts`
-- **Do not** delete or rename Supabase edge functions without checking all callers
+- **Auth:** Do not modify `AuthContext.tsx`, `ClientPortalContext.tsx`, `ProtectedRoute.tsx`, or `_shared/workspaceAuth.ts` without explicit approval
+- **Database:** Never change schema without a migration file in `supabase/migrations/`. Preserve the RLS paired-policy and composite-FK tenancy patterns.
+- **API keys:** All secrets live in Supabase edge function env vars. `VITE_` vars must contain only public keys (anon key, Sentry DSN).
+- **Edge functions:** Maintain backward compatibility — existing callers depend on request/response shapes. Do not delete/rename functions without checking callers AND the release manifest. Retired functions are 410 tombstones with an exact AST-verified shape — do not "clean them up."
+- **Admin access:** Platform admins come from the `admin_users` table via the `account-context` function; `src/lib/config.ts` fallback email is legacy compat.
 
 ## 10. Commands
 
 ```bash
-npm run dev          # Start Vite dev server
-npm run build        # Generate sitemap + production build
-npm run build:dev    # Development build (no sitemap)
-npm run preview      # Preview production build
-npm run lint         # ESLint
-npm run sitemap      # Generate sitemap only
+npm run dev                  # Vite dev server
+npm run build                # Sitemap + production build (static-validation mode)
+npm run lint                 # ESLint (also lint:mvp for the scoped gate)
+npm run typecheck:app        # tsc --noEmit for the app
 
-# Supabase
-supabase functions serve                        # Local edge function dev
-supabase functions deploy <function-name>       # Deploy single edge function
-supabase db push                                # Push migrations
-supabase db diff --use-migra                    # Generate migration from schema diff
+npm run test:workspace-mvp   # Main vitest suite (~45 files)
+npm run test:podcast-research
+npm run test:workspace-client-podcast-system
+npm run check:edge           # Deno 2.5.2 typecheck + _shared tests for all edge functions
+npm run check:invite-only-release   # Release manifest/config verifier
+npm run check:static         # Full gate (what CI runs)
+
+# Supabase (CLI available via npx)
+npx supabase functions deploy <function-name>
+npx supabase db push
 ```
 
 ## Environment Variables
@@ -138,47 +160,13 @@ supabase db diff --use-migra                    # Generate migration from schema
 
 No provider or service credential belongs in a `VITE_` variable. Billing and
 HeyGen/video generation are retired in the invite-only MVP; Podscan, AI, email,
-Google, and webhook secrets remain server-only.
+Google, Instantly, and webhook secrets remain server-only.
 
 **Edge function env vars (set in Supabase dashboard, not in `.env`):**
-- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — auto-injected by Supabase
-- `ANTHROPIC_API_KEY` — Claude API for AI features
-- `OPENAI_API_KEY` — OpenAI for embeddings/completions
-## Edge Function Pattern
-
-Standard boilerplate for every new edge function:
-
-```typescript
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN')!,
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
-  try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    )
-    const body = await req.json()
-    // ... implementation
-    return new Response(JSON.stringify({ success: true, data }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
-  } catch (error) {
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500,
-    })
-  }
-})
-```
-
-## API Documentation
-
-The app includes a built-in API docs page at `/docs` powered by `src/lib/api-docs.ts`. This file defines all edge function endpoints with params, auth requirements, and response examples. When adding or modifying an edge function, update the corresponding entry in `api-docs.ts`.
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — auto-injected
+- `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` — AI features / embeddings
+- `PODSCAN_API_KEY` — podcast data
+- `INSTANTLY_CREDENTIAL_ENCRYPTION_KEY` — encrypts per-workspace Instantly keys
+- `RESEND_API_KEY` — transactional email
+- `ALLOWED_ORIGINS` / `APP_URL` — CORS allowlist (https-only; localhost only when `ENVIRONMENT=development`)
+- Webhook shared secrets: `CLAY_WEBHOOK_SECRET`, `RESEND_WEBHOOK_SECRET`, `ONBOARDING_CAPABILITY_SECRET`
