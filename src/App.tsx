@@ -42,6 +42,7 @@ import WorkspaceOutreachSuite from "./pages/app/WorkspaceOutreachSuite";
 import WorkspacePodcastFinderHome from "./pages/app/WorkspacePodcastFinderHome";
 import WorkspacePodcastFinder from "./pages/app/WorkspacePodcastFinder";
 import WorkspacePodcastDatabase from "./pages/app/WorkspacePodcastDatabase";
+import WorkspaceClientPodcastSystem from "./pages/app/WorkspaceClientPodcastSystem";
 import WorkspaceProspectDashboards from "./pages/app/WorkspaceProspectDashboards";
 import AdminWorkspaceOverview from "./pages/admin/AdminWorkspaceOverview";
 import AdminWorkspaceCampaignDetail from "./pages/admin/AdminWorkspaceCampaignDetail";
@@ -54,6 +55,7 @@ import AdminWorkspaceStaff from "./pages/admin/AdminWorkspaceStaff";
 import AdminWorkspacePodcastFinderHome from "./pages/admin/AdminWorkspacePodcastFinderHome";
 import AdminWorkspacePodcastFinder from "./pages/admin/AdminWorkspacePodcastFinder";
 import AdminWorkspacePodcastDatabase from "./pages/admin/AdminWorkspacePodcastDatabase";
+import AdminWorkspaceClientPodcastSystem from "./pages/admin/AdminWorkspaceClientPodcastSystem";
 import AdminWorkspaceProspectDashboards from "./pages/admin/AdminWorkspaceProspectDashboards";
 import ChangeInitialPassword from "./pages/account/ChangeInitialPassword";
 import ClientOnboarding from "./pages/onboarding/ClientOnboarding";
@@ -172,6 +174,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <WorkspacePodcastDatabase />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/app/client-podcast-system"
+              element={
+                <ProtectedRoute>
+                  <WorkspaceClientPodcastSystem />
                 </ProtectedRoute>
               }
             />
@@ -333,6 +343,14 @@ const App = () => (
               element={
                 <PlatformAdminRoute>
                   <AdminWorkspaceOutreachSuite module="client-campaigns" />
+                </PlatformAdminRoute>
+              }
+            />
+            <Route
+              path="/app/workspaces/:workspaceId/client-podcast-system"
+              element={
+                <PlatformAdminRoute>
+                  <AdminWorkspaceClientPodcastSystem />
                 </PlatformAdminRoute>
               }
             />

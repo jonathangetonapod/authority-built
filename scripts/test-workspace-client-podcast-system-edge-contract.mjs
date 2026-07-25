@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+
+const edge = readFileSync('supabase/functions/workspace-client-podcast-system/index.ts', 'utf8')
+const config = readFileSync('supabase/config.toml', 'utf8')
+const service = readFileSync('src/services/clientPodcastSystem.ts', 'utf8')
+const page = readFileSync('src/pages/app/WorkspaceClientPodcastSystem.tsx', 'utf8')
+const layout = readFileSync('src/components/workspace/WorkspaceLayout.tsx', 'utf8')
+const routes = readFileSync('src/App.tsx', 'utf8')
+
+assert.match(edge, /requireAuthenticatedUser\(req\)/u)
+assert.match(edge, /requireWorkspaceFeatureAccess\(context, workspaceId\)/u)
+assert.match(edge, /requireOnlyKeys\(body, \['action', 'workspace_id'\]\)/u)
+assert.match(edge, /from\('clients'\)[\s\S]+?\.eq\('workspace_id', workspaceId\)/u)
+assert.match(edge, /from\('workspace_client_campaign_targets'\)[\s\S]+?\.eq\('workspace_id', workspaceId\)/u)
+assert.match(edge, /from\('client_dashboard_podcasts'\)[\s\S]+?\.in\('client_id', clientIds\)/u)
+assert.match(edge, /from\('bookings'\)[\s\S]+?\.in\('client_id', clientIds\)/u)
+assert.match(edge, /const matchedBookingIds = new Set<string>\(\)/u)
+assert.match(edge, /id: `booking:\$\{booking\.id\}`/u)
+assert.match(edge, /from\('client_podcast_analyses'\)[\s\S]+?\.in\('client_id', clientIds\)/u)
+assert.match(edge, /from\('podcast_direct_contacts'\)/u)
+assert.match(edge, /\.eq\('verification_status', 'verified'\)/u)
+assert.match(edge, /source: analysisSource/u)
+assert.match(edge, /email: canManage \? contactEmail : null/u)
+assert.match(edge, /has_conflict: hasConflict/u)
+assert.doesNotMatch(edge, /from\('campaign_replies'\)/u)
+
+assert.match(config, /\[functions\.workspace-client-podcast-system\]\s+verify_jwt = true/u)
+assert.match(service, /functions\.invoke\('workspace-client-podcast-system'/u)
+assert.match(service, /response\.workspace\.id\.toLowerCase\(\) !== canonicalWorkspaceId/u)
+assert.match(page, /Private to this workspace/u)
+assert.match(page, /Filter by contact availability/u)
+assert.match(page, /Only real recording and publication dates appear here/u)
+assert.match(layout, /id: 'client-podcast-system'[\s\S]+enabled: true/u)
+assert.match(routes, /path="\/app\/client-podcast-system"/u)
+assert.match(routes, /path="\/app\/workspaces\/:workspaceId\/client-podcast-system"/u)
+
+console.log('workspace Client Podcast System Edge contract passed')

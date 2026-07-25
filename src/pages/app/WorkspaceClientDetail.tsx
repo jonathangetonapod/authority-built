@@ -4,6 +4,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
   Activity,
   ArrowLeft,
+  ArrowRight,
   Bot,
   BookOpenCheck,
   CalendarDays,
@@ -393,6 +394,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const onboardingHref = `${baseHref}/onboarding?client=${encodeURIComponent(client.id)}${onboarding ? `&instance=${encodeURIComponent(onboarding.id)}` : ''}`
   const finderHref = `${baseHref}/podcast-finder?client=${encodeURIComponent(client.id)}`
   const databaseHref = `${baseHref}/podcast-database?client=${encodeURIComponent(client.id)}`
+  const podcastSystemHref = `${baseHref}/client-podcast-system?client=${encodeURIComponent(client.id)}`
   const campaignHref = `${baseHref}/client-campaigns/${encodeURIComponent(client.id)}`
   const masterInboxHref = `${baseHref}/master-inbox?client=${encodeURIComponent(client.id)}`
   const sdrProfile = normalizeClientSdrProfile(client.ai_sdr_profile)
@@ -655,6 +657,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
             </div>
             <div className="flex flex-wrap gap-2">
               <Button asChild variant="outline"><Link to={onboardingHref}><BookOpenCheck className="mr-2 h-4 w-4" />Onboarding</Link></Button>
+              <Button asChild variant="outline"><Link to={podcastSystemHref}><Activity className="mr-2 h-4 w-4" />Podcast Pipeline</Link></Button>
               <Button asChild variant="outline"><Link to={campaignHref}><Megaphone className="mr-2 h-4 w-4" />Client Campaign</Link></Button>
               <Button asChild><Link to={finderHref}><Search className="mr-2 h-4 w-4" />Podcast Finder</Link></Button>
             </div>
@@ -678,7 +681,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
               <div className="mb-3 flex items-end justify-between gap-3">
                 <div>
                   <h2 id="podcast-progress-heading" className="text-xl font-semibold">Campaign snapshot</h2>
-                  <p className="text-sm text-muted-foreground">Every active placement stage for this client.</p>
+                  <p className="text-sm text-muted-foreground">Confirmed booking, recording, and publication stages for this client.</p>
                 </div>
                 <Badge variant="outline">{bookings.length} total</Badge>
               </div>
@@ -1016,7 +1019,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
 
           <TabsContent value="podcasts" className="mt-0 space-y-6">
             <section aria-labelledby="podcast-activity-heading">
-              <div className="mb-3 flex items-end justify-between gap-3"><div><h2 id="podcast-activity-heading" className="text-xl font-semibold">Podcast activity</h2><p className="text-sm text-muted-foreground">The complete booking and publishing lifecycle.</p></div><Badge variant="outline">{bookings.length} total</Badge></div>
+              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 id="podcast-activity-heading" className="text-xl font-semibold">Podcast activity</h2><p className="text-sm text-muted-foreground">Confirmed booking and publishing milestones. Use Podcast Pipeline for the complete pre-booking workflow.</p></div><div className="flex items-center gap-2"><Badge variant="outline">{bookings.length} total</Badge><Button asChild variant="outline" size="sm"><Link to={podcastSystemHref}>Open full pipeline<ArrowRight className="ml-2 h-4 w-4" /></Link></Button></div></div>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <MetricCard icon={CalendarDays} label="Booked" value={progress.booked} iconClassName="bg-emerald-50 text-emerald-600" />
                 <MetricCard icon={Clock3} label="In progress" value={progress.inProgress} iconClassName="bg-amber-50 text-amber-600" />
@@ -1029,7 +1032,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
               <CardHeader className="flex flex-row items-start justify-between gap-4"><div><CardTitle>All placements</CardTitle><CardDescription>Booked, in progress, recorded, published, and cancelled appearances.</CardDescription></div><Button asChild variant="outline" size="sm"><Link to={finderHref}><Search className="mr-2 h-4 w-4" />Find more</Link></Button></CardHeader>
               <CardContent>
                 {bookings.length === 0 ? (
-                  <div className="flex min-h-44 flex-col items-center justify-center text-center"><CheckCircle2 className="mb-3 h-9 w-9 text-muted-foreground/50" /><p className="font-medium">No podcast activity yet</p><p className="text-sm text-muted-foreground">Find podcasts for this client, then track each opportunity here.</p><Button asChild variant="outline" className="mt-4"><Link to={finderHref}>Open Podcast Finder</Link></Button></div>
+                  <div className="flex min-h-44 flex-col items-center justify-center text-center"><CheckCircle2 className="mb-3 h-9 w-9 text-muted-foreground/50" /><p className="font-medium">No confirmed placements yet</p><p className="text-sm text-muted-foreground">Shortlist, approval, preparation, and outreach activity remain available in Podcast Pipeline.</p><div className="mt-4 flex flex-wrap justify-center gap-2"><Button asChild variant="outline"><Link to={podcastSystemHref}>Open Podcast Pipeline</Link></Button><Button asChild variant="outline"><Link to={finderHref}>Open Podcast Finder</Link></Button></div></div>
                 ) : (
                   <div className="overflow-x-auto">
                     <Table>

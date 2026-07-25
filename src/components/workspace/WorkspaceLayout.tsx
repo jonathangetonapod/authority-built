@@ -61,7 +61,7 @@ const workspaceNavItems: WorkspaceNavItem[] = [
   { id: 'podcast-finder', name: 'Podcast Finder', segment: 'podcast-finder', icon: Search, enabled: true },
   { id: 'prospects', name: 'Prospect Studio', segment: 'prospects', icon: Share2, enabled: true },
   { id: 'podcast-database', name: 'Podcast Database', segment: 'podcast-database', icon: Database, enabled: true },
-  { id: 'client-podcast-system', name: 'Client Podcast System', segment: 'client-podcast-system', icon: Calendar, enabled: false },
+  { id: 'client-podcast-system', name: 'Client Podcast System', segment: 'client-podcast-system', icon: Calendar, enabled: true },
   { id: 'clients', name: 'Clients', segment: 'clients', icon: Users, enabled: true },
   { id: 'outreach-platform', name: 'Client Campaigns', segment: 'client-campaigns', icon: Megaphone, enabled: true },
   { id: 'unibox', name: 'Master Inbox', segment: 'master-inbox', icon: Inbox, enabled: true },

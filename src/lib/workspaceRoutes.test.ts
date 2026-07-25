@@ -32,6 +32,11 @@ describe('workspace routes', () => {
     },
   )
 
+  it('preserves the Client Podcast System while switching workspaces', () => {
+    expect(workspaceModuleFromPath('/app/client-podcast-system')).toBe('client-podcast-system')
+    expect(workspaceModuleHref('/app', 'client-podcast-system')).toBe('/app/client-podcast-system')
+  })
+
   it('preserves Prospect Studio while switching workspaces', () => {
     expect(workspaceModuleFromPath('/app/prospects')).toBe('prospects')
     expect(workspaceModuleHref('/app', 'prospects')).toBe('/app/prospects')

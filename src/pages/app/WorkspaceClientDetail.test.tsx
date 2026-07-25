@@ -220,6 +220,10 @@ describe('WorkspaceClientDetail', () => {
       'href',
       `/app/client-campaigns/${clientId}`,
     )
+    expect(screen.getByRole('link', { name: 'Podcast Pipeline' })).toHaveAttribute(
+      'href',
+      `/app/client-podcast-system?client=${clientId}`,
+    )
     const progress = screen.getByRole('heading', { name: 'Campaign snapshot' }).closest('section')
     expect(progress).not.toBeNull()
     expect(within(progress as HTMLElement).getByText('Booked').nextElementSibling).toHaveTextContent('1')

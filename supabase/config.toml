@@ -112,6 +112,9 @@ verify_jwt = true
 [functions.workspace-client-shortlist]
 verify_jwt = true
 
+[functions.workspace-client-podcast-system]
+verify_jwt = true
+
 [functions.workspace-podcast-catalog]
 verify_jwt = true
 

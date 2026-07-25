@@ -5,6 +5,7 @@ export type WorkspaceModule =
   | 'onboarding'
   | 'podcast-finder'
   | 'podcast-database'
+  | 'client-podcast-system'
   | 'prospects'
   | 'clients'
   | 'client-campaigns'
@@ -18,6 +19,7 @@ const WORKSPACE_MODULES = new Set<WorkspaceModule>([
   'onboarding',
   'podcast-finder',
   'podcast-database',
+  'client-podcast-system',
   'prospects',
   'clients',
   'client-campaigns',
