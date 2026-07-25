@@ -408,7 +408,7 @@ serve(async (req) => {
       const recipientEmail = requireEmail(body.recipient_email)
       const expiresInDays = integerValue(body.expires_in_days, 'expires_in_days', 1, 90)
       const assignedIds = uuidArray(body.assigned_membership_ids ?? [], 'assigned_membership_ids')
-      booleanValue(body.send_email, 'send_email')
+      const sendEmail = booleanValue(body.send_email, 'send_email')
       const experience = experiencePayload(body.experience)
       let newClient: Record<string, unknown> | null = null
       if (!clientId) {
@@ -483,7 +483,17 @@ serve(async (req) => {
       }
       const instance = ensureWorkspaceResponse(data, workspaceId)
       const link = onboardingUrl(capability.token)
-      const delivery = { status: 'skipped' as const, providerMessageId: null, error: null }
+      const delivery = sendEmail
+        ? await sendOnboardingEmail({
+          kind: 'invitation',
+          workspaceName: typeof workspace.name === 'string' ? workspace.name : 'Your agency',
+          recipientName,
+          recipientEmail,
+          url: link,
+          expiresAt,
+          accentColor: experience.accentColor ?? undefined,
+        })
+        : { status: 'skipped' as const, providerMessageId: null, error: null }
       await recordDelivery(admin, instanceId, delivery)
       return jsonResponse(req, METHODS, 201, {
         instance,

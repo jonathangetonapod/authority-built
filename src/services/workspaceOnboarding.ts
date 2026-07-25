@@ -439,6 +439,7 @@ export interface StartOnboardingInput {
   recipient_email: string
   expires_in_days: number
   assigned_membership_ids: string[]
+  send_email?: boolean
   experience: {
     intro_title: string
     intro_body: string
@@ -453,7 +454,7 @@ export async function startWorkspaceOnboarding(
   input: StartOnboardingInput,
 ): Promise<OnboardingInvitationResult> {
   const canonicalWorkspaceId = uuid(workspaceId)
-  const { experience, ...invitation } = input
+  const { experience, send_email, ...invitation } = input
   const logoFile = experience.logo_file
   if (logoFile && (
     !['image/jpeg', 'image/png', 'image/webp'].includes(logoFile.type)
@@ -466,7 +467,7 @@ export async function startWorkspaceOnboarding(
     action: 'start',
     workspace_id: canonicalWorkspaceId,
     ...invitation,
-    send_email: false,
+    send_email: send_email === true,
     experience: {
       intro_title: experience.intro_title,
       intro_body: experience.intro_body,

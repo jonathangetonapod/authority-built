@@ -4,6 +4,7 @@ import {
   getWorkspaceClientDetail,
   getWorkspaceClientSdrContext,
   getWorkspaceResearchContext,
+  sendWorkspaceClientPortalInvite,
   setWorkspaceClientPassword,
   updateWorkspaceClientProfile,
   updateWorkspaceClientSdrProfile,
@@ -545,5 +546,41 @@ describe('setWorkspaceClientPassword', () => {
       clientId,
       'Secure-Portal-42!',
     )).rejects.toThrow('client portal password response was invalid')
+  })
+})
+
+describe('sendWorkspaceClientPortalInvite', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('invokes the invite action and returns the delivery status', async () => {
+    invoke.mockResolvedValueOnce({
+      data: { success: true, delivery: { status: 'sent' } },
+      error: null,
+    })
+
+    const status = await sendWorkspaceClientPortalInvite(
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+    )
+
+    expect(invoke).toHaveBeenCalledWith('manage-client-portal-password', {
+      body: {
+        action: 'invite',
+        workspace_id: '11111111-1111-4111-8111-111111111111',
+        client_id: '22222222-2222-4222-8222-222222222222',
+      },
+    })
+    expect(status).toBe('sent')
+  })
+
+  it('rejects responses without a recognized delivery status', async () => {
+    invoke.mockResolvedValueOnce({ data: { success: true, delivery: { status: 'later' } }, error: null })
+
+    await expect(sendWorkspaceClientPortalInvite(
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+    )).rejects.toThrow('portal invitation response was invalid')
   })
 })

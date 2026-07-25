@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
-import { hashPortalPassword } from '../_shared/portalSecurity.ts'
+import { hashPortalPassword, hashPortalSessionToken } from '../_shared/portalSecurity.ts'
 import {
   errorResponse,
   HttpError,
@@ -14,10 +14,14 @@ import {
   requireUuid,
   requireWorkspaceFeatureAccess,
   workspaceCredentialIsFresh,
+  writeAudit,
 } from '../_shared/workspaceAuth.ts'
+import { safeWorkspaceBranding } from '../_shared/portalBranding.ts'
+import { portalLoginUrl, portalResetUrl, sendPortalInviteEmail } from '../_shared/portalResetEmail.ts'
 
 const METHODS = ['POST'] as const
 const PASSWORD_MANAGER_ROLES = new Set(['owner', 'platform_admin'])
+const INVITE_TOKEN_TTL_DAYS = 7
 
 function requirePassword(value: unknown): string {
   if (
@@ -160,6 +164,91 @@ serve(async (req) => {
         })
         if (error) passwordMutationError(error, 'clear')
         return jsonResponse(req, METHODS, 200, { success: true, configured: false })
+      }
+
+      if (action === 'invite') {
+        requireOnlyKeys(body, ['action', 'workspace_id', 'client_id'])
+
+        const { data: client, error: clientError } = await admin
+          .from('clients')
+          .select('id, name, email, portal_access_enabled, dashboard_slug, workspace:workspaces(id, name, status, logo_path, logo_updated_at)')
+          .eq('id', clientId)
+          .eq('workspace_id', workspaceId)
+          .maybeSingle()
+        if (clientError) {
+          throw new HttpError(503, 'PASSWORD_BACKEND_UNAVAILABLE', 'The invitation could not be prepared')
+        }
+        if (!client) {
+          throw new HttpError(404, 'CLIENT_NOT_FOUND', 'Client not found in this workspace')
+        }
+        if (typeof client.email !== 'string' || !client.email.trim()) {
+          throw new HttpError(409, 'CLIENT_EMAIL_REQUIRED', 'Add a client email before sending a portal invitation')
+        }
+
+        // A disabled portal is enabled with a random placeholder credential
+        // through the audited owner-scoped RPC; the client immediately
+        // replaces it via the set-password link, so it is never revealed.
+        if (!client.portal_access_enabled) {
+          const placeholder = crypto.randomUUID() + crypto.randomUUID()
+          const placeholderHash = await hashPortalPassword(placeholder)
+          const { error: enableError } = await admin.rpc('manage_client_portal_password', {
+            p_client_id: clientId,
+            p_workspace_id: workspaceId,
+            p_password_hash: placeholderHash,
+            p_set_by: actorLabel(user),
+            p_actor_user_id: user.id,
+            p_token_issued_at: tokenIssuedAt,
+          })
+          if (enableError) passwordMutationError(enableError, 'set')
+        }
+
+        const token = crypto.randomUUID()
+        const tokenHash = await hashPortalSessionToken(token)
+        const expiresAt = new Date(Date.now() + INVITE_TOKEN_TTL_DAYS * 86_400_000).toISOString()
+        const { error: tokenError } = await admin
+          .from('client_portal_reset_tokens')
+          .upsert({
+            client_id: clientId,
+            token_hash: tokenHash,
+            expires_at: expiresAt,
+            requested_ip: null,
+          }, { onConflict: 'client_id' })
+        if (tokenError) {
+          throw new HttpError(503, 'PASSWORD_BACKEND_UNAVAILABLE', 'The invitation could not be prepared')
+        }
+
+        const branding = await safeWorkspaceBranding(admin, client.workspace ?? {})
+        const workspaceName = branding?.name
+          || (typeof (client.workspace as { name?: string } | null)?.name === 'string'
+            ? (client.workspace as { name: string }).name
+            : 'Your agency')
+        const delivery = await sendPortalInviteEmail({
+          workspaceName,
+          recipientName: typeof client.name === 'string' && client.name.trim() ? client.name : 'there',
+          recipientEmail: client.email.trim().toLowerCase(),
+          url: portalResetUrl(token),
+          loginUrl: portalLoginUrl(typeof client.dashboard_slug === 'string' ? client.dashboard_slug : null),
+        })
+
+        if (delivery.status === 'sent') {
+          const { error: stampError } = await admin
+            .from('clients')
+            .update({ portal_invitation_sent_at: new Date().toISOString() })
+            .eq('id', clientId)
+            .eq('workspace_id', workspaceId)
+          if (stampError) console.error('[Manage Client Portal Password] Invitation stamp failed')
+        }
+
+        await writeAudit(admin, {
+          workspaceId,
+          actorUserId: user.id,
+          action: 'client.portal_invite.sent',
+          entityType: 'client',
+          entityId: clientId,
+          metadata: { delivery_status: delivery.status },
+        })
+
+        return jsonResponse(req, METHODS, 200, { success: true, delivery: { status: delivery.status } })
       }
 
       throw new HttpError(400, 'INVALID_ACTION', 'Unknown portal password action')

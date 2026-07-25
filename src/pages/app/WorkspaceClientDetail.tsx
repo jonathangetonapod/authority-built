@@ -53,6 +53,7 @@ import {
   getWorkspaceClientDetail,
   generatePassword,
   rotateWorkspaceClientDashboardSlug,
+  sendWorkspaceClientPortalInvite,
   setWorkspaceClientPassword,
   updateWorkspaceClient,
   updateWorkspaceClientProfile,
@@ -288,6 +289,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const [portalPasswordBusy, setPortalPasswordBusy] = useState(false)
   const [slugRotateOpen, setSlugRotateOpen] = useState(false)
   const [slugRotateBusy, setSlugRotateBusy] = useState(false)
+  const [portalInviteBusy, setPortalInviteBusy] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [profileEditorOpen, setProfileEditorOpen] = useState(false)
   const [profileDraft, setProfileDraft] = useState('')
@@ -509,6 +511,24 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
       )
     } finally {
       setPortalPasswordBusy(false)
+    }
+  }
+
+  const sendPortalInvite = async () => {
+    if (portalInviteBusy) return
+    setPortalInviteBusy(true)
+    try {
+      const status = await sendWorkspaceClientPortalInvite(workspaceId, canonicalClientId)
+      await detailQuery.refetch()
+      if (status === 'sent') {
+        toast.success('Portal invitation emailed. The set-password link expires in 7 days.')
+      } else {
+        toast.error('Email delivery is not configured — set a password manually and share it instead.')
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The portal invitation could not be sent.')
+    } finally {
+      setPortalInviteBusy(false)
     }
   }
 
@@ -995,6 +1015,18 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                       </p>
                       <Button
                         type="button"
+                        className="w-full"
+                        disabled={!client.email || portalInviteBusy}
+                        onClick={() => void sendPortalInvite()}
+                      >
+                        <Mail className="mr-2 h-4 w-4" />
+                        {portalInviteBusy
+                          ? 'Sending invitation…'
+                          : client.portal_access_enabled ? 'Resend portal invitation' : 'Email portal invitation'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
                         className="w-full"
                         disabled={!client.email}
                         onClick={openPortalPasswordDialog}

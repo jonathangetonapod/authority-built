@@ -816,6 +816,28 @@ export async function setWorkspaceClientPassword(
   }
 }
 
+export async function sendWorkspaceClientPortalInvite(
+  workspaceId: string,
+  clientId: string,
+): Promise<'sent' | 'skipped' | 'failed'> {
+  const { data, error } = await supabase.functions.invoke('manage-client-portal-password', {
+    body: {
+      action: 'invite',
+      workspace_id: workspaceId,
+      client_id: clientId,
+    },
+  })
+
+  if (error) {
+    throw await toFunctionError(error, 'The portal invitation could not be sent.')
+  }
+  const status = data?.delivery?.status
+  if (data?.success !== true || !['sent', 'skipped', 'failed'].includes(status)) {
+    throw new Error('The portal invitation response was invalid.')
+  }
+  return status as 'sent' | 'skipped' | 'failed'
+}
+
 /**
  * Clear client portal password
  */

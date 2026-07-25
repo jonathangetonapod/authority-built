@@ -64,6 +64,7 @@ interface StartForm {
   recipient_email: string
   expires_in_days: string
   assigned_membership_ids: string[]
+  send_email: boolean
   experience_title: string
   experience_body: string
   experience_completion_message: string
@@ -82,6 +83,7 @@ const blankStartForm: StartForm = {
   recipient_email: '',
   expires_in_days: '14',
   assigned_membership_ids: [],
+  send_email: true,
   experience_title: '',
   experience_body: '',
   experience_completion_message: '',
@@ -455,6 +457,7 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
       recipient_email: startForm.recipient_email,
       expires_in_days: expiry,
       assigned_membership_ids: startForm.assigned_membership_ids,
+      send_email: startForm.send_email,
       experience: {
         intro_title: startForm.experience_title,
         intro_body: startForm.experience_body,
@@ -623,6 +626,7 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
 
               <section className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2"><Label htmlFor="expiry-days">Link expires in days</Label><Input id="expiry-days" type="number" min={1} max={90} value={startForm.expires_in_days} onChange={(event) => setStartForm((current) => ({ ...current, expires_in_days: event.target.value }))} /></div>
+                <label className="flex items-center gap-2 self-end pb-2 text-sm"><Checkbox checked={startForm.send_email} onCheckedChange={(checked) => setStartForm((current) => ({ ...current, send_email: checked === true }))} /><span>Email this invitation to the client</span></label>
                 {data?.assignable_members.length ? <div className="space-y-2 sm:col-span-2"><Label>Assign read-only team members</Label><div className="grid gap-2 rounded-xl border p-3 sm:grid-cols-2">{data.assignable_members.map((member) => <label key={member.id} className="flex items-center gap-2 text-sm"><Checkbox checked={startForm.assigned_membership_ids.includes(member.id)} onCheckedChange={(checked) => setStartForm((current) => ({ ...current, assigned_membership_ids: checked === true ? [...current.assigned_membership_ids, member.id] : current.assigned_membership_ids.filter((id) => id !== member.id) }))} /><span>{member.full_name || member.email}</span></label>)}</div></div> : null}
               </section>
             </div>
@@ -656,6 +660,16 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
       <Dialog open={Boolean(invitation)} onOpenChange={(open) => { if (!open) setInvitation(null) }}>
         <DialogContent className="max-w-xl">
           <DialogHeader><DialogTitle>Your client intake link is ready</DialogTitle><DialogDescription>Share it from your agency’s usual client communication channel.</DialogDescription></DialogHeader>
+          {invitation && invitation.delivery.status === 'sent' && (
+            <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900" role="status">
+              Invitation emailed to {invitation.instance.recipient_name}. You can still share the link directly below.
+            </p>
+          )}
+          {invitation && invitation.delivery.status === 'failed' && (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="alert">
+              The invitation email could not be delivered — share the link below manually.
+            </p>
+          )}
           {invitation && <div className="space-y-4"><div className="overflow-hidden rounded-2xl border bg-muted/20"><div className="h-1.5 bg-gradient-to-r from-primary via-violet-500 to-fuchsia-400" /><div className="p-5"><div className="flex items-start gap-3"><div className="rounded-xl bg-primary/10 p-2.5 text-primary"><Share2 className="h-5 w-5" /></div><div><p className="font-semibold">Ready for {invitation.instance.recipient_name}</p><p className="mt-1 text-sm leading-6 text-muted-foreground">When shared in Messages, the link can display your agency name and logo as a polished preview.</p></div></div></div></div><div className="space-y-2"><Label htmlFor="onboarding-link">Private onboarding link</Label><Input id="onboarding-link" readOnly value={invitation.onboarding_url} onFocus={(event) => event.currentTarget.select()} /><div className="grid gap-2 sm:grid-cols-2"><Button onClick={() => void shareLink(invitation.onboarding_url)}><Share2 className="mr-2 h-4 w-4" />Share link</Button><Button variant="outline" onClick={() => void copyLink(invitation.onboarding_url)}><Copy className="mr-2 h-4 w-4" />Copy link</Button></div></div><p className="text-xs text-muted-foreground">Anyone with this link can complete this client’s intake until it expires or is revoked. Send it only to the intended contact.</p></div>}
           <DialogFooter>{invitation && <Button variant="outline" asChild><a href={invitation.onboarding_url} target="_blank" rel="noreferrer"><ExternalLink className="mr-2 h-4 w-4" />Open client form</a></Button>}<Button onClick={() => setInvitation(null)}>Done</Button></DialogFooter>
         </DialogContent>

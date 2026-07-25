@@ -37,4 +37,19 @@ assert.match(appRoutes, /path="\/portal\/forgot"/u)
 assert.match(appRoutes, /path="\/portal\/reset"/u)
 assert.match(appRoutes, /path="\/reset-password"/u)
 
+// Portal invitation action (manage-client-portal-password): tenant-only,
+// owner-gated, hashed 7-day token, delivery status returned, never the token.
+const manageEdge = readFileSync('supabase/functions/manage-client-portal-password/index.ts', 'utf8')
+assert.match(manageEdge, /const INVITE_TOKEN_TTL_DAYS = 7/u)
+assert.match(manageEdge, /if \(action === 'invite'\)[\s\S]*?requireOnlyKeys\(body, \['action', 'workspace_id', 'client_id'\]\)/u)
+assert.match(manageEdge, /PASSWORD_MANAGER_ROLES\.has\(access\.role\)/u)
+assert.match(manageEdge, /const tokenHash = await hashPortalSessionToken\(token\)/u)
+assert.match(manageEdge, /client_portal_reset_tokens[\s\S]*?token_hash: tokenHash/u)
+assert.match(manageEdge, /delivery: \{ status: delivery\.status \}/u)
+assert.doesNotMatch(manageEdge, /jsonResponse\([^)]*token[^_]/u)
+// The invite action is unreachable from the legacy platform-admin branch.
+const legacyBranchStart = manageEdge.indexOf('Compatibility path for the legacy platform-only client screen')
+assert.ok(legacyBranchStart > 0, 'legacy branch marker missing')
+assert.doesNotMatch(manageEdge.slice(legacyBranchStart), /action === 'invite'/u)
+
 console.log('Portal password reset edge contract passed')
