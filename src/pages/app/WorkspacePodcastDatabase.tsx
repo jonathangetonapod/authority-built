@@ -9,13 +9,10 @@ import {
   Database,
   ExternalLink,
   Loader2,
-  Mail,
   Plus,
-  Radio,
   RefreshCw,
   Search,
   Sparkles,
-  Users,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
@@ -293,39 +290,6 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
               </Link>
             </Button>
           </div>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {catalogQuery.isLoading ? Array.from({ length: 4 }, (_, index) => (
-            <Skeleton key={index} className="h-28 rounded-xl" />
-          )) : (
-            <>
-              <Card>
-                <CardContent className="flex items-center gap-3 p-5">
-                  <div className="rounded-xl bg-sky-100 p-2.5 text-sky-700"><Database className="h-5 w-5" /></div>
-                  <div><p className="text-2xl font-bold">{catalog?.summary.total_podcasts.toLocaleString() || 0}</p><p className="text-xs text-muted-foreground">Shared podcasts</p></div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="flex items-center gap-3 p-5">
-                  <div className="rounded-xl bg-emerald-100 p-2.5 text-emerald-700"><Mail className="h-5 w-5" /></div>
-                  <div><p className="text-2xl font-bold">{catalog?.summary.podcasts_with_free_email.toLocaleString() || 0}</p><p className="text-xs text-muted-foreground">Usable free inboxes</p></div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="flex items-center gap-3 p-5">
-                  <div className="rounded-xl bg-violet-100 p-2.5 text-violet-700"><Radio className="h-5 w-5" /></div>
-                  <div><p className="text-2xl font-bold">{catalog?.summary.podcasts_used_in_shortlists.toLocaleString() || 0}</p><p className="text-xs text-muted-foreground">Used in shortlists</p></div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="flex items-center gap-3 p-5">
-                  <div className="rounded-xl bg-amber-100 p-2.5 text-amber-700"><Users className="h-5 w-5" /></div>
-                  <div><p className="text-2xl font-bold">{catalog?.summary.contributing_workspaces.toLocaleString() || 0}</p><p className="text-xs text-muted-foreground">Workspaces building it</p></div>
-                </CardContent>
-              </Card>
-            </>
-          )}
         </div>
 
         <Card>

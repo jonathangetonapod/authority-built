@@ -90,12 +90,13 @@ describe('WorkspacePodcastDatabase', () => {
     mockedAdd.mockResolvedValue({ added: 1, skipped: 0, podcast_ids: ['podcast-one'] })
   })
 
-  it('shows the shared catalog, usable free contact, and contribution story', async () => {
+  it('shows the searchable shared catalog without internal network metrics', async () => {
     renderPage()
 
     expect(await screen.findByRole('heading', { name: 'Podcast Database' })).toBeInTheDocument()
-    expect(screen.getByText('11,807')).toBeInTheDocument()
-    expect(screen.getByText('6,610')).toBeInTheDocument()
+    expect(screen.queryByText('Usable free inboxes')).not.toBeInTheDocument()
+    expect(screen.queryByText('Used in shortlists')).not.toBeInTheDocument()
+    expect(screen.queryByText('Workspaces building it')).not.toBeInTheDocument()
     expect(screen.getByText('The Founder Show')).toBeInTheDocument()
     expect(screen.getByText('show@example.com')).toBeInTheDocument()
     expect(screen.getByText('Free · Podscan')).toBeInTheDocument()
