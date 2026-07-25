@@ -58,7 +58,6 @@ interface ClientRollup {
   client: ClientPodcastSystemClient
   items: ClientPodcastSystemItem[]
   awaitingReview: number
-  approved: number
   preparation: number
   activeOutreach: number
   conversations: number
@@ -117,6 +116,11 @@ function formattedDate(value: string | null | undefined, includeTime = false): s
     ...(includeTime ? { hour: 'numeric', minute: '2-digit' } : {}),
     timeZone: 'UTC',
   }).format(date)
+}
+
+function localToday(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 }
 
 function compactNumber(value: number | null | undefined): string {
@@ -317,7 +321,6 @@ function buildClientRollup(
     client,
     items,
     awaitingReview: awaitingReview.length,
-    approved: items.filter((item) => item.decision.status === 'approved').length,
     preparation: items.filter((item) => !item.terminal && ['approved', 'contact_needed', 'research_needed', 'ready'].includes(item.stage)).length,
     activeOutreach: items.filter((item) => !item.terminal && item.stage === 'outreach').length,
     conversations: conversations.length,
@@ -488,7 +491,7 @@ function AllClientsView({
                       <div className="grid grid-cols-3 gap-2 sm:grid-cols-6 xl:w-[560px]">
                         <MiniMetric label="Podcasts" value={rollup.items.length} />
                         <MiniMetric label="To review" value={rollup.awaitingReview} />
-                        <MiniMetric label="Approved" value={rollup.approved} />
+                        <MiniMetric label="Approved" value={rollup.preparation} />
                         <MiniMetric label="Outreach" value={rollup.activeOutreach} />
                         <MiniMetric label="Replies" value={rollup.conversations} />
                         <MiniMetric label="Placements" value={rollup.placements} />
@@ -644,14 +647,15 @@ function SelectedClientView({
     })
   }, [contact, items, scope, search, stage])
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE))
-  const pagedItems = filteredItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const currentPage = Math.min(page, totalPages)
+  const pagedItems = filteredItems.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
   const placementItems = items.filter((item) => Boolean(item.booking))
   const upcomingMilestones = placementItems.flatMap((item) => {
     const events: Array<{ id: string; date: string; label: string; item: ClientPodcastSystemItem }> = []
     if (item.booking?.recording_date) events.push({ id: `${item.id}:recording`, date: item.booking.recording_date, label: 'Recording', item })
     if (item.booking?.publish_date) events.push({ id: `${item.id}:publication`, date: item.booking.publish_date, label: 'Publication', item })
     return events
-  }).filter((event) => event.date >= new Date().toISOString().slice(0, 10)).sort((left, right) => left.date.localeCompare(right.date))
+  }).filter((event) => event.date >= localToday()).sort((left, right) => left.date.localeCompare(right.date))
   const recentItems = [...items].sort((left, right) => (right.last_activity_at || '').localeCompare(left.last_activity_at || '')).slice(0, 6)
 
   return (
@@ -695,7 +699,7 @@ function SelectedClientView({
           <section aria-label={`${client.name} workflow summary`} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <PortfolioMetric icon={Mic2} label="Podcasts" value={items.length} detail="Complete client list" className="bg-sky-50 text-sky-700" />
             <PortfolioMetric icon={ListChecks} label="Awaiting review" value={rollup.awaitingReview} detail="Needs client decisions" className="bg-amber-50 text-amber-700" />
-            <PortfolioMetric icon={CheckCircle2} label="Approved" value={rollup.approved} detail="Positive client decisions" className="bg-emerald-50 text-emerald-700" />
+            <PortfolioMetric icon={CheckCircle2} label="Approved" value={rollup.preparation} detail="Approved and in preparation" className="bg-emerald-50 text-emerald-700" />
             <PortfolioMetric icon={Send} label="In outreach" value={rollup.activeOutreach} detail="Active follow-up" className="bg-indigo-50 text-indigo-700" />
             <PortfolioMetric icon={Inbox} label="Conversations" value={rollup.conversations} detail="Host replies and scheduling" className="bg-fuchsia-50 text-fuchsia-700" />
             <PortfolioMetric icon={Radio} label="Published" value={rollup.published} detail="Live client episodes" className="bg-violet-50 text-violet-700" />
@@ -793,7 +797,7 @@ function SelectedClientView({
             </CardContent>
           </Card>
           <PodcastTable items={pagedItems} onOpen={(item) => onOpenItem(item.id)} />
-          {totalPages > 1 && <div className="flex flex-col items-center justify-between gap-3 rounded-xl border p-3 sm:flex-row"><p className="text-sm text-muted-foreground">Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filteredItems.length)} of {filteredItems.length}</p><div className="flex gap-2"><Button type="button" variant="outline" size="sm" disabled={page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</Button><Button type="button" variant="outline" size="sm" disabled={page === totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>Next</Button></div></div>}
+          {totalPages > 1 && <div className="flex flex-col items-center justify-between gap-3 rounded-xl border p-3 sm:flex-row"><p className="text-sm text-muted-foreground">Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredItems.length)} of {filteredItems.length}</p><div className="flex gap-2"><Button type="button" variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setPage(Math.max(1, currentPage - 1))}>Previous</Button><Button type="button" variant="outline" size="sm" disabled={currentPage === totalPages} onClick={() => setPage(Math.min(totalPages, currentPage + 1))}>Next</Button></div></div>}
         </TabsContent>
 
         <TabsContent value="placements" className="mt-5">
@@ -857,7 +861,7 @@ const WorkspaceClientPodcastSystem = ({ platformWorkspaceId }: WorkspaceClientPo
   const baseHref = isPlatformWorkspace ? selectedWorkspaceBaseHref(selectedWorkspaceId) : MY_WORKSPACE_BASE_HREF
   const requestedClientId = (searchParams.get('client') || '').toLowerCase()
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
 
   const systemQuery = useQuery({
     queryKey: ['workspace-client-podcast-system', user?.id || 'unknown', workspaceId],

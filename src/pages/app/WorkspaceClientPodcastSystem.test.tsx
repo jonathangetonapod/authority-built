@@ -294,14 +294,12 @@ describe('WorkspaceClientPodcastSystem', () => {
       membership: { role: 'member', full_name: 'Workspace Member' },
       isPlatformAdmin: false,
     } as never)
+    // Emails stay populated so this exercises the component's own canManage gate,
+    // not just server-side redaction (covered by the edge contract script).
     mockedGetSystem.mockResolvedValue({
       ...response,
       viewer_role: 'member',
       can_manage: false,
-      items: response.items.map((item) => ({
-        ...item,
-        contact: { ...item.contact, email: null },
-      })),
     })
 
     renderPage()
