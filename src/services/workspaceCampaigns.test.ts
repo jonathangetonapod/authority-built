@@ -5,9 +5,12 @@ import {
   connectWorkspaceInstantly,
   getWorkspaceCampaignOverview,
   getWorkspaceMailboxes,
+  getWorkspaceResearchPromptOverrides,
   launchWorkspaceCampaignPitch,
   prepareWorkspaceCampaignPodcast,
+  resetWorkspaceResearchPrompt,
   saveWorkspaceCampaign,
+  setWorkspaceResearchPrompt,
   updateWorkspaceCampaignContact,
 } from '@/services/workspaceCampaigns'
 
@@ -210,6 +213,53 @@ describe('workspaceCampaigns service', () => {
         client_id: clientId,
         shortlist_podcast_ids: [shortlistPodcastId],
       },
+    })
+  })
+})
+
+describe('workspace research prompts', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  const workspaceId = '11111111-1111-4111-8111-111111111111'
+
+  it('loads prompt overrides through the campaigns function', async () => {
+    invoke.mockResolvedValueOnce({
+      data: { overrides: { podcast_research: { content: 'Custom research prompt', updated_at: '2026-07-26T00:00:00.000Z' } } },
+      error: null,
+    } as never)
+
+    const overrides = await getWorkspaceResearchPromptOverrides(workspaceId)
+
+    expect(invoke).toHaveBeenCalledWith('workspace-client-campaigns', {
+      body: { action: 'prompts-get', workspace_id: workspaceId },
+    })
+    expect(overrides.podcast_research?.content).toBe('Custom research prompt')
+  })
+
+  it('saves a prompt override with the exact payload', async () => {
+    invoke.mockResolvedValueOnce({ data: { success: true }, error: null } as never)
+
+    await setWorkspaceResearchPrompt(workspaceId, 'write_email', 'New pitch instructions')
+
+    expect(invoke).toHaveBeenCalledWith('workspace-client-campaigns', {
+      body: {
+        action: 'prompts-set',
+        workspace_id: workspaceId,
+        prompt_id: 'write_email',
+        content: 'New pitch instructions',
+      },
+    })
+  })
+
+  it('resets a prompt override', async () => {
+    invoke.mockResolvedValueOnce({ data: { success: true }, error: null } as never)
+
+    await resetWorkspaceResearchPrompt(workspaceId, 'find_topics')
+
+    expect(invoke).toHaveBeenCalledWith('workspace-client-campaigns', {
+      body: { action: 'prompts-reset', workspace_id: workspaceId, prompt_id: 'find_topics' },
     })
   })
 })

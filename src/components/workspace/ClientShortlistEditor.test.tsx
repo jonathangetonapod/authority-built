@@ -21,6 +21,9 @@ vi.mock('@/services/clientShortlist', () => ({
 vi.mock('@/services/workspaceCampaigns', () => ({
   getWorkspaceCampaign: vi.fn(),
   prepareWorkspaceCampaignPodcast: vi.fn(),
+  getWorkspaceResearchPromptOverrides: vi.fn().mockResolvedValue({}),
+  setWorkspaceResearchPrompt: vi.fn().mockResolvedValue(undefined),
+  resetWorkspaceResearchPrompt: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() } }))
 
@@ -417,19 +420,24 @@ describe('ClientShortlistEditor', () => {
     expect(screen.getByRole('button', { name: 'Close prompt editor' })).toHaveAttribute('aria-expanded', 'true')
     expect(promptSettings.getByText('Owner controls')).toBeInTheDocument()
     expect(promptSettings.getByRole('navigation', { name: 'Research prompt stages' })).toBeInTheDocument()
-    const podcastProfileStage = promptSettings.getByRole('button', { name: /Reading the podcast profile/ })
-    expect(podcastProfileStage).toHaveAttribute('aria-pressed', 'true')
-    const prompt = promptSettings.getByLabelText('Prompt for Reading the podcast profile')
-    expect((prompt as HTMLTextAreaElement).value).toContain('{{podcast_name}}')
+    const podcastResearchStage = promptSettings.getByRole('button', { name: /Podcast research/ })
+    expect(podcastResearchStage).toHaveAttribute('aria-pressed', 'true')
+    const prompt = promptSettings.getByLabelText('Prompt for Podcast research')
+    expect((prompt as HTMLTextAreaElement).value).toContain('{{client_name}}')
+    expect((prompt as HTMLTextAreaElement).value).toContain('HOST INFORMATION')
 
     fireEvent.change(prompt, { target: { value: 'Use {{podcast_name}} to create a concise workspace-specific show brief.' } })
     expect(promptSettings.getByRole('button', { name: 'Save prompt' })).toBeEnabled()
+    const { setWorkspaceResearchPrompt } = await import('@/services/workspaceCampaigns')
     fireEvent.click(promptSettings.getByRole('button', { name: 'Save prompt' }))
-    expect(podcastProfileStage).toHaveTextContent('Customized')
-    expect(promptSettings.getByText('1 customized')).toBeInTheDocument()
+    await waitFor(() => expect(vi.mocked(setWorkspaceResearchPrompt)).toHaveBeenCalledWith(
+      workspaceId,
+      'podcast_research',
+      'Use {{podcast_name}} to create a concise workspace-specific show brief.',
+    ))
 
-    fireEvent.click(promptSettings.getByRole('button', { name: /Confirming the host/ }))
-    expect((promptSettings.getByLabelText('Prompt for Confirming the host') as HTMLTextAreaElement).value).toContain('Identify every host')
+    fireEvent.click(promptSettings.getByRole('button', { name: /Host identification/ }))
+    expect((promptSettings.getByLabelText('Prompt for Host identification') as HTMLTextAreaElement).value).toContain('Identify ALL podcast hosts')
   })
 
   it('runs regeneration only from Research and Pitch through every saved prompt', async () => {

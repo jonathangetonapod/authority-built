@@ -36,6 +36,22 @@ import {
 const METHODS = ["POST"] as const;
 const CAMPAIGN_MANAGER_ROLES = new Set(["owner", "admin", "platform_admin"]);
 const MAX_PROVIDER_CAMPAIGN_PAGES = 10;
+const RESEARCH_PROMPT_IDS = [
+  "podcast_research",
+  "host_info",
+  "guest_info",
+  "host_name_extractor",
+  "find_topics",
+  "write_email",
+  "clean_email",
+];
+
+function requireResearchPromptId(value: unknown): string {
+  if (typeof value !== "string" || !RESEARCH_PROMPT_IDS.includes(value)) {
+    throw new HttpError(400, "INVALID_PROMPT", "Unknown research prompt");
+  }
+  return value;
+}
 const CAMPAIGN_COLUMNS = [
   "id",
   "workspace_id",
@@ -2238,6 +2254,79 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, {
         integration: connectionDto(disconnected, access),
       });
+    }
+
+    if (action === "prompts-get") {
+      requireOnlyKeys(body, ["action", "workspace_id"]);
+      requireCampaignManager(access);
+      const { data, error } = await context.admin
+        .from("workspace_research_prompts")
+        .select("prompt_id, content, updated_at")
+        .eq("workspace_id", workspaceId);
+      if (error) {
+        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "Workspace prompts are temporarily unavailable");
+      }
+      const overrides: Record<string, { content: string; updated_at: string | null }> = {};
+      for (const row of data ?? []) {
+        if (RESEARCH_PROMPT_IDS.includes(String(row.prompt_id)) && typeof row.content === "string") {
+          overrides[String(row.prompt_id)] = {
+            content: row.content,
+            updated_at: typeof row.updated_at === "string" ? row.updated_at : null,
+          };
+        }
+      }
+      return jsonResponse(req, METHODS, 200, { overrides });
+    }
+
+    if (action === "prompts-set") {
+      requireOnlyKeys(body, ["action", "workspace_id", "prompt_id", "content"]);
+      requireIntegrationOwner(access);
+      const promptId = requireResearchPromptId(body.prompt_id);
+      const content = requireString(body.content, "content", { max: 20_000 });
+      const { error } = await context.admin
+        .from("workspace_research_prompts")
+        .upsert({
+          workspace_id: workspaceId,
+          prompt_id: promptId,
+          content,
+          updated_by: context.user.id,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "workspace_id,prompt_id" });
+      if (error) {
+        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "The prompt could not be saved");
+      }
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: "workspace.research_prompts.updated",
+        entityType: "workspace",
+        entityId: workspaceId,
+        metadata: { prompt_id: promptId },
+      });
+      return jsonResponse(req, METHODS, 200, { success: true });
+    }
+
+    if (action === "prompts-reset") {
+      requireOnlyKeys(body, ["action", "workspace_id", "prompt_id"]);
+      requireIntegrationOwner(access);
+      const promptId = requireResearchPromptId(body.prompt_id);
+      const { error } = await context.admin
+        .from("workspace_research_prompts")
+        .delete()
+        .eq("workspace_id", workspaceId)
+        .eq("prompt_id", promptId);
+      if (error) {
+        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "The prompt could not be reset");
+      }
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: "workspace.research_prompts.reset",
+        entityType: "workspace",
+        entityId: workspaceId,
+        metadata: { prompt_id: promptId },
+      });
+      return jsonResponse(req, METHODS, 200, { success: true });
     }
 
     const clientId = requireUuid(body.client_id, "client_id");

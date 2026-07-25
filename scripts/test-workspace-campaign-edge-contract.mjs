@@ -102,4 +102,31 @@ assert.match(sequenceMigration, /follow_up_1_subject IS NULL OR char_length\(fol
 assert.match(sequenceMigration, /follow_up_2_body IS NULL OR char_length\(follow_up_2_body\) <= 20000/u)
 assert.match(config, /\[functions\.workspace-client-campaigns\]\s+verify_jwt = true/u)
 
+// Workspace research prompts: owner-gated writes, workspace-scoped before the
+// client_id requirement, and generated frontend defaults in sync with the
+// canonical docs/pitch-research-prompts.json.
+const promptsMigration = readFileSync('supabase/migrations/20260726000400_workspace_research_prompts.sql', 'utf8')
+assert.match(promptsMigration, /char_length\(content\) BETWEEN 1 AND 20000/u)
+assert.match(promptsMigration, /REVOKE ALL PRIVILEGES ON TABLE public\.workspace_research_prompts FROM PUBLIC, anon, authenticated/u)
+assert.match(edge, /if \(action === "prompts-set"\)[\s\S]*?requireIntegrationOwner\(access\)[\s\S]*?requireResearchPromptId\(body\.prompt_id\)[\s\S]*?requireString\(body\.content, "content", \{ max: 20_000 \}\)/u)
+assert.match(edge, /if \(action === "prompts-reset"\)[\s\S]*?requireIntegrationOwner\(access\)/u)
+assert.match(edge, /workspace\.research_prompts\.updated/u)
+assert.match(edge, /workspace\.research_prompts\.reset/u)
+const promptsGetIndex = edge.indexOf('action === "prompts-get"')
+const clientIdRequirement = edge.indexOf('const clientId = requireUuid(body.client_id, "client_id")')
+assert.ok(promptsGetIndex > 0 && clientIdRequirement > promptsGetIndex, 'prompt actions must not require client_id')
+
+const canonicalPrompts = JSON.parse(readFileSync('docs/pitch-research-prompts.json', 'utf8'))
+const generatedDefaults = readFileSync('src/lib/researchPromptDefaults.ts', 'utf8')
+for (const [promptId, prompt] of Object.entries(canonicalPrompts.prompts)) {
+  assert.ok(
+    generatedDefaults.includes(JSON.stringify(prompt.content)),
+    `researchPromptDefaults.ts is out of sync with docs JSON for ${promptId} — regenerate it`,
+  )
+  assert.ok(
+    generatedDefaults.includes(JSON.stringify(prompt.system)),
+    `researchPromptDefaults.ts system prompt out of sync for ${promptId}`,
+  )
+}
+
 process.stdout.write('Workspace Client Campaign Edge contract checks passed\n')

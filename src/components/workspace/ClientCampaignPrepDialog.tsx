@@ -50,6 +50,16 @@ import {
   getWorkspaceCampaign,
   prepareWorkspaceCampaignPodcast,
 } from '@/services/workspaceCampaigns'
+import {
+  getWorkspaceResearchPromptOverrides,
+  resetWorkspaceResearchPrompt,
+  setWorkspaceResearchPrompt,
+} from '@/services/workspaceCampaigns'
+import {
+  RESEARCH_PROMPT_DEFAULTS,
+  RESEARCH_PROMPT_DEFAULTS_BY_ID,
+  type ResearchPromptId,
+} from '@/lib/researchPromptDefaults'
 
 interface ClientCampaignPrepDialogProps {
   open: boolean
@@ -114,13 +124,8 @@ const emailUnlockSteps: EmailUnlockStep[] = [
   { id: 'verify_email', title: 'Verifying the email' },
 ]
 
-const defaultResearchPrompts: Record<ClientShortlistResearchStageId, string> = {
-  podcast_profile: 'Analyze {{podcast_name}} using the saved podcast profile. Summarize the show positioning, core themes, audience, and episode format. Explain the evidence behind every conclusion and clearly mark any missing information.',
-  host_profile: 'Identify every host of {{podcast_name}} and confirm the primary booking contact. Summarize each host’s professional background, expertise, and interview approach. Never guess a host identity or contact detail.',
-  recent_episodes: 'Review the recent episode titles, descriptions, and available transcripts for {{podcast_name}}. Identify recurring themes, timely references, typical questions, and useful details that prove the outreach is familiar with the show.',
-  guest_patterns: 'Determine how {{podcast_name}} uses guests. Verify whether recent episodes are guest interviews or solo episodes, identify the kinds of guests featured, and summarize the subjects and credentials the host tends to prioritize.',
-  guest_fit: 'Compare {{client_name}} and {{client_bio}} with the audience and recent content of {{podcast_name}}. Explain the strongest credible reasons this guest would be useful to listeners. Avoid generic claims and do not invent expertise.',
-  pitch_angles: 'Create three distinct, highly specific podcast guest angles for {{client_name}} on {{podcast_name}}. Each angle should match the client’s proven expertise, serve the show’s audience, reference the research, and support a complete opening pitch plus two follow-ups.',
+function promptVariables(content: string): string[] {
+  return Array.from(new Set(Array.from(content.matchAll(/\{\{\s*([a-z_]+)\s*\}\}/gu), (match) => match[1])))
 }
 
 function emptyDraft(): PodcastCampaignSequenceDraft {
@@ -181,9 +186,9 @@ export function ClientCampaignPrepDialog({
   const [showPodcastDetails, setShowPodcastDetails] = useState(false)
   const [showResearchSteps, setShowResearchSteps] = useState(false)
   const [showPromptSettings, setShowPromptSettings] = useState(false)
-  const [selectedPromptStageId, setSelectedPromptStageId] = useState<ClientShortlistResearchStageId>('podcast_profile')
-  const [researchPrompts, setResearchPrompts] = useState<Record<ClientShortlistResearchStageId, string>>({ ...defaultResearchPrompts })
-  const [promptDraft, setPromptDraft] = useState(defaultResearchPrompts.podcast_profile)
+  const [selectedPromptId, setSelectedPromptId] = useState<ResearchPromptId>('podcast_research')
+  const [promptDraft, setPromptDraft] = useState(RESEARCH_PROMPT_DEFAULTS_BY_ID.podcast_research.content)
+  const [promptTouched, setPromptTouched] = useState(false)
   const [selectedAngleIndex, setSelectedAngleIndex] = useState(0)
   const [activeSequenceEmail, setActiveSequenceEmail] = useState<SequenceEmailStep>('opening')
   const [hostName, setHostName] = useState('')
@@ -291,9 +296,53 @@ export function ClientCampaignPrepDialog({
       : activeResearchStep
         ? activeResearchStep.detail
         : 'Your research will begin as soon as the workspace is ready.'
-  const selectedPromptStage = researchProgressSteps.find((step) => step.id === selectedPromptStageId) || researchProgressSteps[0]
-  const promptDirty = promptDraft !== researchPrompts[selectedPromptStageId]
-  const customPromptCount = researchProgressSteps.filter((step) => researchPrompts[step.id] !== defaultResearchPrompts[step.id]).length
+  const promptOverridesQuery = useQuery({
+    queryKey: ['workspace-research-prompts', workspaceId],
+    queryFn: () => getWorkspaceResearchPromptOverrides(workspaceId),
+    enabled: open,
+    retry: false,
+    staleTime: 60_000,
+  })
+  const promptOverrides = promptOverridesQuery.data ?? {}
+  const effectivePromptContent = (promptId: ResearchPromptId): string =>
+    promptOverrides[promptId]?.content ?? RESEARCH_PROMPT_DEFAULTS_BY_ID[promptId].content
+  const selectedPromptDefault = RESEARCH_PROMPT_DEFAULTS_BY_ID[selectedPromptId]
+  const selectedPromptCustomized = Boolean(promptOverrides[selectedPromptId])
+  const promptDirty = promptDraft !== effectivePromptContent(selectedPromptId)
+  const customPromptCount = RESEARCH_PROMPT_DEFAULTS.filter((prompt) => promptOverrides[prompt.id]).length
+
+  const savePromptMutation = useMutation({
+    mutationFn: ({ promptId, content }: { promptId: ResearchPromptId; content: string }) =>
+      setWorkspaceResearchPrompt(workspaceId, promptId, content),
+    onSuccess: (_result, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['workspace-research-prompts', workspaceId] })
+      toast.success(`${RESEARCH_PROMPT_DEFAULTS_BY_ID[variables.promptId].label} prompt saved for this workspace.`)
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'The prompt could not be saved.')
+    },
+  })
+  const resetPromptMutation = useMutation({
+    mutationFn: (promptId: ResearchPromptId) => resetWorkspaceResearchPrompt(workspaceId, promptId),
+    onSuccess: (_result, promptId) => {
+      void queryClient.invalidateQueries({ queryKey: ['workspace-research-prompts', workspaceId] })
+      setPromptDraft(RESEARCH_PROMPT_DEFAULTS_BY_ID[promptId].content)
+      toast.success(`${RESEARCH_PROMPT_DEFAULTS_BY_ID[promptId].label} restored to the default prompt.`)
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'The prompt could not be reset.')
+    },
+  })
+  const promptBusy = savePromptMutation.isPending || resetPromptMutation.isPending
+
+  // Keep the draft in sync with saved overrides unless the owner is mid-edit.
+  useEffect(() => {
+    if (promptTouched) return
+    const effective = promptOverrides[selectedPromptId]?.content
+      ?? RESEARCH_PROMPT_DEFAULTS_BY_ID[selectedPromptId].content
+    setPromptDraft(effective)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promptOverridesQuery.data, selectedPromptId, promptTouched])
 
   useEffect(() => {
     if (!open) {
@@ -368,13 +417,14 @@ export function ClientCampaignPrepDialog({
     setContactEmail('')
     setPreviewEmailSearchPodcastId(podcast?.podcast_id || null)
   }
-  const selectPromptStage = (stageId: ClientShortlistResearchStageId) => {
+  const selectPromptStage = (promptId: ResearchPromptId) => {
     if (promptDirty) {
       toast.info('Save or discard the current prompt changes before switching stages.')
       return
     }
-    setSelectedPromptStageId(stageId)
-    setPromptDraft(researchPrompts[stageId])
+    setSelectedPromptId(promptId)
+    setPromptTouched(false)
+    setPromptDraft(effectivePromptContent(promptId))
   }
   const togglePromptSettings = () => {
     if (showPromptSettings && promptDirty) {
@@ -383,13 +433,24 @@ export function ClientCampaignPrepDialog({
     }
     setShowPromptSettings((current) => !current)
   }
-  const discardPromptChanges = () => setPromptDraft(researchPrompts[selectedPromptStageId])
+  const discardPromptChanges = () => {
+    setPromptTouched(false)
+    setPromptDraft(effectivePromptContent(selectedPromptId))
+  }
   const savePromptChanges = () => {
     const prompt = promptDraft.trim()
-    if (!prompt) return
-    setResearchPrompts((current) => ({ ...current, [selectedPromptStageId]: prompt }))
-    setPromptDraft(prompt)
-    toast.success(`${selectedPromptStage.title} prompt saved for this workspace.`)
+    if (!prompt || promptBusy) return
+    setPromptTouched(false)
+    savePromptMutation.mutate({ promptId: selectedPromptId, content: prompt })
+  }
+  const restorePromptDefault = () => {
+    if (promptBusy) return
+    setPromptTouched(false)
+    if (selectedPromptCustomized) {
+      resetPromptMutation.mutate(selectedPromptId)
+    } else {
+      setPromptDraft(selectedPromptDefault.content)
+    }
   }
   const beginResearchRegeneration = () => {
     if (!podcast) return
@@ -901,18 +962,18 @@ export function ClientCampaignPrepDialog({
 
                           <div className="grid lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
                             <nav aria-label="Research prompt stages" className="grid gap-1 border-b bg-muted/10 p-3 sm:grid-cols-2 lg:grid-cols-1 lg:border-b-0 lg:border-r">
-                              {researchProgressSteps.map((stage) => {
-                                const selected = stage.id === selectedPromptStageId
-                                const customized = researchPrompts[stage.id] !== defaultResearchPrompts[stage.id]
+                              {RESEARCH_PROMPT_DEFAULTS.map((prompt) => {
+                                const selected = prompt.id === selectedPromptId
+                                const customized = Boolean(promptOverrides[prompt.id])
                                 return (
                                   <button
-                                    key={stage.id}
+                                    key={prompt.id}
                                     type="button"
                                     aria-pressed={selected}
                                     className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${selected ? 'border-primary bg-primary/5' : 'border-transparent hover:border-border hover:bg-background'}`}
-                                    onClick={() => selectPromptStage(stage.id)}
+                                    onClick={() => selectPromptStage(prompt.id)}
                                   >
-                                    <span className="block text-xs font-semibold">{stage.title}</span>
+                                    <span className="block text-xs font-semibold">{prompt.label}</span>
                                     <span className={`mt-1 block text-[10px] font-medium ${customized ? 'text-primary' : 'text-muted-foreground'}`}>{customized ? 'Customized' : 'Workspace default'}</span>
                                   </button>
                                 )
@@ -921,24 +982,34 @@ export function ClientCampaignPrepDialog({
 
                             <div className="p-4 sm:p-5">
                               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                <div><p className="text-sm font-semibold">{selectedPromptStage.title}</p><p className="mt-1 text-xs text-muted-foreground">{selectedPromptStage.detail}</p></div>
-                                <Badge variant={researchPrompts[selectedPromptStageId] === defaultResearchPrompts[selectedPromptStageId] ? 'secondary' : 'outline'} className="w-fit">{researchPrompts[selectedPromptStageId] === defaultResearchPrompts[selectedPromptStageId] ? 'Default prompt' : 'Custom prompt'}</Badge>
+                                <div><p className="text-sm font-semibold">{selectedPromptDefault.label}</p><p className="mt-1 text-xs text-muted-foreground">{selectedPromptDefault.description}</p></div>
+                                <Badge variant={selectedPromptCustomized ? 'outline' : 'secondary'} className="w-fit">{selectedPromptCustomized ? 'Custom prompt' : 'Default prompt'}</Badge>
+                              </div>
+                              <div className="mt-3 rounded-lg border bg-muted/20 p-3">
+                                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">System instruction (fixed)</p>
+                                <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{selectedPromptDefault.system}</p>
                               </div>
                               <div className="mt-4 space-y-2">
                                 <Label htmlFor="campaign-research-stage-prompt">Prompt instructions</Label>
                                 <Textarea
                                   id="campaign-research-stage-prompt"
-                                  aria-label={`Prompt for ${selectedPromptStage.title}`}
+                                  aria-label={`Prompt for ${selectedPromptDefault.label}`}
                                   value={promptDraft}
-                                  onChange={(event) => setPromptDraft(event.target.value)}
+                                  onChange={(event) => { setPromptTouched(true); setPromptDraft(event.target.value) }}
+                                  disabled={promptBusy || promptOverridesQuery.isLoading}
                                   className="min-h-48 resize-y bg-background font-mono text-xs leading-5"
                                   maxLength={20_000}
                                 />
-                                <p className="text-[11px] leading-5 text-muted-foreground">Available variables include <code>{'{{podcast_name}}'}</code>, <code>{'{{podcast_description}}'}</code>, <code>{'{{client_name}}'}</code>, <code>{'{{client_bio}}'}</code>, and <code>{'{{episode_transcript}}'}</code>.</p>
+                                <p className="text-[11px] leading-5 text-muted-foreground">
+                                  Available variables:{' '}
+                                  {promptVariables(selectedPromptDefault.content).map((variable, index) => (
+                                    <Fragment key={variable}>{index > 0 && ', '}<code>{`{{${variable}}}`}</code></Fragment>
+                                  ))}
+                                </p>
                               </div>
                               <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                <Button type="button" variant="ghost" size="sm" onClick={() => setPromptDraft(defaultResearchPrompts[selectedPromptStageId])}><RefreshCw className="mr-2 h-3.5 w-3.5" />Restore default</Button>
-                                <div className="flex justify-end gap-2"><Button type="button" variant="outline" size="sm" disabled={!promptDirty} onClick={discardPromptChanges}>Discard changes</Button><Button type="button" size="sm" disabled={!promptDirty || !promptDraft.trim()} onClick={savePromptChanges}>Save prompt</Button></div>
+                                <Button type="button" variant="ghost" size="sm" disabled={promptBusy} onClick={restorePromptDefault}><RefreshCw className="mr-2 h-3.5 w-3.5" />Restore default</Button>
+                                <div className="flex justify-end gap-2"><Button type="button" variant="outline" size="sm" disabled={!promptDirty || promptBusy} onClick={discardPromptChanges}>Discard changes</Button><Button type="button" size="sm" disabled={!promptDirty || !promptDraft.trim() || promptBusy} onClick={savePromptChanges}>{savePromptMutation.isPending ? 'Saving…' : 'Save prompt'}</Button></div>
                               </div>
                             </div>
                           </div>

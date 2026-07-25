@@ -401,3 +401,46 @@ export async function setWorkspaceCampaignRunning(
   if (!response.campaign) throw new Error('Campaign status returned no campaign.')
   return response.campaign
 }
+
+export interface ResearchPromptOverride {
+  content: string
+  updated_at: string | null
+}
+
+export type ResearchPromptOverrides = Partial<Record<string, ResearchPromptOverride>>
+
+export async function getWorkspaceResearchPromptOverrides(
+  workspaceId: string,
+): Promise<ResearchPromptOverrides> {
+  const data = await invokeWorkspaceCampaigns<{ overrides?: ResearchPromptOverrides }>({
+    action: 'prompts-get',
+    workspace_id: workspaceId,
+  }, 'Workspace research prompts could not be loaded.')
+  return data.overrides ?? {}
+}
+
+export async function setWorkspaceResearchPrompt(
+  workspaceId: string,
+  promptId: string,
+  content: string,
+): Promise<void> {
+  const data = await invokeWorkspaceCampaigns<{ success?: boolean }>({
+    action: 'prompts-set',
+    workspace_id: workspaceId,
+    prompt_id: promptId,
+    content,
+  }, 'The prompt could not be saved.')
+  if (data?.success !== true) throw new Error('The prompt could not be saved.')
+}
+
+export async function resetWorkspaceResearchPrompt(
+  workspaceId: string,
+  promptId: string,
+): Promise<void> {
+  const data = await invokeWorkspaceCampaigns<{ success?: boolean }>({
+    action: 'prompts-reset',
+    workspace_id: workspaceId,
+    prompt_id: promptId,
+  }, 'The prompt could not be reset.')
+  if (data?.success !== true) throw new Error('The prompt could not be reset.')
+}
