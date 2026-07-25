@@ -1,65 +1,74 @@
+import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ClientPortalProvider } from "@/contexts/ClientPortalContext";
 import { PlatformAdminRoute, ProtectedRoute } from "@/components/ProtectedRoute";
 import { queryClient } from "@/lib/queryClient";
 import { ClientProtectedRoute } from "@/components/ClientProtectedRoute";
 import Index from "./pages/Index";
-import Resources from "./pages/Resources";
-import Blog from "./pages/Blog";
-import BlogPost from "./pages/BlogPost";
-import Course from "./pages/Course";
-import WhatToExpect from "./pages/WhatToExpect";
 import NotFound from "./pages/NotFound";
-import AdminLogin from "./pages/admin/Login";
-import PodcastDatabase from "./pages/admin/PodcastDatabase";
-import AuthCallback from "./pages/admin/Callback";
-import CalendarDashboard from "./pages/admin/CalendarDashboard";
-import UpcomingRecordings from "./pages/admin/UpcomingRecordings";
-import UpcomingGoingLive from "./pages/admin/UpcomingGoingLive";
-import ClientsManagement from "./pages/admin/ClientsManagement";
-import ClientDetail from "./pages/admin/ClientDetail";
-import GuestResourcesManagement from "./pages/admin/GuestResourcesManagement";
-import PortalLogin from "./pages/portal/Login";
-import PortalDashboard from "./pages/portal/DashboardMvp";
-import PortalResources from "./pages/portal/Resources";
-import ProspectView from "./pages/prospect/ProspectView";
-import ClientApprovalView from "./pages/client/ClientApprovalView";
-import AcceptInvite from "./pages/admin/AcceptInvite";
-import WorkspaceClients from "./pages/app/WorkspaceClients";
-import WorkspaceClientDetail from "./pages/app/WorkspaceClientDetail";
-import WorkspaceGuestResources from "./pages/app/WorkspaceGuestResources";
-import WorkspaceOnboarding from "./pages/app/WorkspaceOnboarding";
-import MyWorkspaceSettings from "./pages/app/MyWorkspaceSettings";
-import WorkspaceBilling from "./pages/app/WorkspaceBilling";
-import WorkspaceOverview from "./pages/app/WorkspaceOverview";
-import WorkspaceCampaignDetail from "./pages/app/WorkspaceCampaignDetail";
-import WorkspaceOutreachSuite from "./pages/app/WorkspaceOutreachSuite";
-import WorkspacePodcastFinderHome from "./pages/app/WorkspacePodcastFinderHome";
-import WorkspacePodcastFinder from "./pages/app/WorkspacePodcastFinder";
-import WorkspacePodcastDatabase from "./pages/app/WorkspacePodcastDatabase";
-import WorkspaceClientPodcastSystem from "./pages/app/WorkspaceClientPodcastSystem";
-import WorkspaceProspectDashboards from "./pages/app/WorkspaceProspectDashboards";
-import AdminWorkspaceOverview from "./pages/admin/AdminWorkspaceOverview";
-import AdminWorkspaceCampaignDetail from "./pages/admin/AdminWorkspaceCampaignDetail";
-import AdminWorkspaceOutreachSuite from "./pages/admin/AdminWorkspaceOutreachSuite";
-import AdminWorkspaceClients from "./pages/admin/AdminWorkspaceClients";
-import AdminWorkspaceClientDetail from "./pages/admin/AdminWorkspaceClientDetail";
-import AdminWorkspaceGuestResources from "./pages/admin/AdminWorkspaceGuestResources";
-import AdminWorkspaceOnboarding from "./pages/admin/AdminWorkspaceOnboarding";
-import AdminWorkspaceStaff from "./pages/admin/AdminWorkspaceStaff";
-import AdminWorkspacePodcastFinderHome from "./pages/admin/AdminWorkspacePodcastFinderHome";
-import AdminWorkspacePodcastFinder from "./pages/admin/AdminWorkspacePodcastFinder";
-import AdminWorkspacePodcastDatabase from "./pages/admin/AdminWorkspacePodcastDatabase";
-import AdminWorkspaceClientPodcastSystem from "./pages/admin/AdminWorkspaceClientPodcastSystem";
-import AdminWorkspaceProspectDashboards from "./pages/admin/AdminWorkspaceProspectDashboards";
-import ChangeInitialPassword from "./pages/account/ChangeInitialPassword";
-import ClientOnboarding from "./pages/onboarding/ClientOnboarding";
 import { selectedWorkspaceBaseHref, workspaceModuleHref, type WorkspaceModule } from "@/lib/workspaceRoutes";
+
+const Resources = lazy(() => import("./pages/Resources"));
+const Blog = lazy(() => import("./pages/Blog"));
+const BlogPost = lazy(() => import("./pages/BlogPost"));
+const Course = lazy(() => import("./pages/Course"));
+const WhatToExpect = lazy(() => import("./pages/WhatToExpect"));
+const AdminLogin = lazy(() => import("./pages/admin/Login"));
+const PodcastDatabase = lazy(() => import("./pages/admin/PodcastDatabase"));
+const AuthCallback = lazy(() => import("./pages/admin/Callback"));
+const CalendarDashboard = lazy(() => import("./pages/admin/CalendarDashboard"));
+const UpcomingRecordings = lazy(() => import("./pages/admin/UpcomingRecordings"));
+const UpcomingGoingLive = lazy(() => import("./pages/admin/UpcomingGoingLive"));
+const ClientsManagement = lazy(() => import("./pages/admin/ClientsManagement"));
+const ClientDetail = lazy(() => import("./pages/admin/ClientDetail"));
+const GuestResourcesManagement = lazy(() => import("./pages/admin/GuestResourcesManagement"));
+const PortalLogin = lazy(() => import("./pages/portal/Login"));
+const PortalDashboard = lazy(() => import("./pages/portal/DashboardMvp"));
+const PortalResources = lazy(() => import("./pages/portal/Resources"));
+const ProspectView = lazy(() => import("./pages/prospect/ProspectView"));
+const ClientApprovalView = lazy(() => import("./pages/client/ClientApprovalView"));
+const AcceptInvite = lazy(() => import("./pages/admin/AcceptInvite"));
+const WorkspaceClients = lazy(() => import("./pages/app/WorkspaceClients"));
+const WorkspaceClientDetail = lazy(() => import("./pages/app/WorkspaceClientDetail"));
+const WorkspaceGuestResources = lazy(() => import("./pages/app/WorkspaceGuestResources"));
+const WorkspaceOnboarding = lazy(() => import("./pages/app/WorkspaceOnboarding"));
+const MyWorkspaceSettings = lazy(() => import("./pages/app/MyWorkspaceSettings"));
+const WorkspaceBilling = lazy(() => import("./pages/app/WorkspaceBilling"));
+const WorkspaceOverview = lazy(() => import("./pages/app/WorkspaceOverview"));
+const WorkspaceCampaignDetail = lazy(() => import("./pages/app/WorkspaceCampaignDetail"));
+const WorkspaceOutreachSuite = lazy(() => import("./pages/app/WorkspaceOutreachSuite"));
+const WorkspacePodcastFinderHome = lazy(() => import("./pages/app/WorkspacePodcastFinderHome"));
+const WorkspacePodcastFinder = lazy(() => import("./pages/app/WorkspacePodcastFinder"));
+const WorkspacePodcastDatabase = lazy(() => import("./pages/app/WorkspacePodcastDatabase"));
+const WorkspaceClientPodcastSystem = lazy(() => import("./pages/app/WorkspaceClientPodcastSystem"));
+const WorkspaceProspectDashboards = lazy(() => import("./pages/app/WorkspaceProspectDashboards"));
+const AdminWorkspaceOverview = lazy(() => import("./pages/admin/AdminWorkspaceOverview"));
+const AdminWorkspaceCampaignDetail = lazy(() => import("./pages/admin/AdminWorkspaceCampaignDetail"));
+const AdminWorkspaceOutreachSuite = lazy(() => import("./pages/admin/AdminWorkspaceOutreachSuite"));
+const AdminWorkspaceClients = lazy(() => import("./pages/admin/AdminWorkspaceClients"));
+const AdminWorkspaceClientDetail = lazy(() => import("./pages/admin/AdminWorkspaceClientDetail"));
+const AdminWorkspaceGuestResources = lazy(() => import("./pages/admin/AdminWorkspaceGuestResources"));
+const AdminWorkspaceOnboarding = lazy(() => import("./pages/admin/AdminWorkspaceOnboarding"));
+const AdminWorkspaceStaff = lazy(() => import("./pages/admin/AdminWorkspaceStaff"));
+const AdminWorkspacePodcastFinderHome = lazy(() => import("./pages/admin/AdminWorkspacePodcastFinderHome"));
+const AdminWorkspacePodcastFinder = lazy(() => import("./pages/admin/AdminWorkspacePodcastFinder"));
+const AdminWorkspacePodcastDatabase = lazy(() => import("./pages/admin/AdminWorkspacePodcastDatabase"));
+const AdminWorkspaceClientPodcastSystem = lazy(() => import("./pages/admin/AdminWorkspaceClientPodcastSystem"));
+const AdminWorkspaceProspectDashboards = lazy(() => import("./pages/admin/AdminWorkspaceProspectDashboards"));
+const ChangeInitialPassword = lazy(() => import("./pages/account/ChangeInitialPassword"));
+const ClientOnboarding = lazy(() => import("./pages/onboarding/ClientOnboarding"));
+
+const RouteFallback = () => (
+  <div className="min-h-screen flex items-center justify-center">
+    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+  </div>
+);
 
 const KeyedProspectView = () => {
   const { slug } = useParams()
@@ -94,6 +103,7 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <Suspense fallback={<RouteFallback />}>
             <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/docs" element={<Navigate to="/" replace />} />
@@ -542,6 +552,7 @@ const App = () => (
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
+            </Suspense>
         </BrowserRouter>
       </TooltipProvider>
     </ClientPortalProvider>
