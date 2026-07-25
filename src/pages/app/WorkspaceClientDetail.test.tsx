@@ -255,7 +255,7 @@ describe('WorkspaceClientDetail', () => {
 
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Client portal' }), { button: 0 })
     expect(screen.getByRole('heading', { name: 'Client portal' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /open portal login/i })).toHaveAttribute('href', '/portal/login')
+    expect(screen.getByRole('link', { name: /open portal login/i })).toHaveAttribute('href', '/portal/login?b=taylor-client-123')
     expect(screen.getAllByText('taylor@example.com').length).toBeGreaterThan(0)
     expect(screen.getAllByRole('heading', { name: 'Upcoming recordings' }).length).toBeGreaterThan(0)
     expect(screen.getAllByRole('heading', { name: 'Upcoming episode releases' }).length).toBeGreaterThan(0)

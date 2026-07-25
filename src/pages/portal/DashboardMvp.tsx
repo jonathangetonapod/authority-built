@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { CalendarDays, CheckCircle2, Loader2, Mic2, Radio, RefreshCw } from 'lucide-react'
+import { ArrowRight, CalendarDays, CheckCircle2, Loader2, Mic2, Radio, RefreshCw } from 'lucide-react'
 
 import { PortalLayout } from '@/components/portal/PortalLayout'
 import { Badge } from '@/components/ui/badge'
@@ -59,6 +59,25 @@ export default function PortalDashboardMvp() {
             Review your podcast booking progress and published appearances.
           </p>
         </div>
+
+        {client?.dashboard_slug && (
+          <Card className="border-primary/20">
+            <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-semibold">Podcasts waiting for your review</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Approve or pass on the shows your team has shortlisted for you.
+                </p>
+              </div>
+              <Button asChild>
+                <a href={`/client/${encodeURIComponent(client.dashboard_slug)}`}>
+                  Review shortlist
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </a>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-3">
           <Card>

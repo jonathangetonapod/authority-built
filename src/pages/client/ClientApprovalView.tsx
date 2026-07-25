@@ -1528,6 +1528,11 @@ function ClientApprovalViewContent() {
               How it works
             </button>
             <button type="button" onClick={shareDashboard} className="min-h-10 hover:text-[#102033]">Share dashboard</button>
+            {slug && (
+              <a href={`/portal/login?b=${encodeURIComponent(slug)}`} className="min-h-10 leading-10 hover:text-[#102033]">
+                Client portal sign-in
+              </a>
+            )}
           </div>
         </div>
       </footer>

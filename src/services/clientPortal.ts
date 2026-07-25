@@ -10,9 +10,34 @@ export interface ClientPortalSession {
   client_id: string
 }
 
+export interface PortalBranding {
+  name: string
+  logo_url: string | null
+  primary_color: string
+  accent_color: string
+}
+
 export interface ClientPortalAuthResponse {
   session: ClientPortalSession
   client: Client
+  branding: PortalBranding | null
+}
+
+export interface ClientPortalValidation {
+  client: Client
+  branding: PortalBranding | null
+}
+
+function parsePortalBranding(value: unknown): PortalBranding | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  if (typeof record.name !== 'string' || !record.name.trim()) return null
+  return {
+    name: record.name.trim(),
+    logo_url: typeof record.logo_url === 'string' ? record.logo_url : null,
+    primary_color: typeof record.primary_color === 'string' ? record.primary_color : '#0D1B2A',
+    accent_color: typeof record.accent_color === 'string' ? record.accent_color : '#C7794F',
+  }
 }
 
 /**
@@ -38,14 +63,15 @@ export async function loginWithPassword(email: string, password: string): Promis
       expires_at: data.expires_at,
       client_id: data.client.id
     },
-    client: data.client
+    client: data.client,
+    branding: parsePortalBranding(data.branding)
   }
 }
 
 /**
  * Validate an existing session and return client data
  */
-export async function validateSession(sessionToken: string): Promise<Client> {
+export async function validateSession(sessionToken: string): Promise<ClientPortalValidation> {
   const { data, error } = await supabase.functions.invoke('validate-portal-session', {
     body: { sessionToken }
   })
@@ -59,7 +85,7 @@ export async function validateSession(sessionToken: string): Promise<Client> {
     throw new Error(data.error || 'Session expired or invalid')
   }
 
-  return data.client
+  return { client: data.client, branding: parsePortalBranding(data.branding) }
 }
 
 /**

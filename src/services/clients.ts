@@ -468,6 +468,25 @@ export async function updateWorkspaceClient(
   return data.client as WorkspaceClient
 }
 
+export async function rotateWorkspaceClientDashboardSlug(
+  workspaceId: string,
+  clientId: string,
+): Promise<string> {
+  const { data, error } = await supabase.functions.invoke('workspace-clients', {
+    body: {
+      action: 'dashboard-slug-rotate',
+      workspace_id: workspaceId,
+      client_id: clientId,
+    },
+  })
+
+  if (error) throw await toFunctionError(error, 'Failed to regenerate the dashboard link.')
+  if (typeof data?.dashboard_slug !== 'string' || !data.dashboard_slug) {
+    throw new Error('Failed to regenerate the dashboard link.')
+  }
+  return data.dashboard_slug
+}
+
 export async function updateWorkspaceClientProfile(
   workspaceId: string,
   clientId: string,

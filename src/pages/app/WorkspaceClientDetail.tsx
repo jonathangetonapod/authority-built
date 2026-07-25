@@ -52,6 +52,7 @@ import { MY_WORKSPACE_BASE_HREF, selectedWorkspaceBaseHref } from '@/lib/workspa
 import {
   getWorkspaceClientDetail,
   generatePassword,
+  rotateWorkspaceClientDashboardSlug,
   setWorkspaceClientPassword,
   updateWorkspaceClient,
   updateWorkspaceClientProfile,
@@ -59,6 +60,7 @@ import {
   type WorkspaceClientBooking,
   type WorkspaceClientOnboardingSummary,
 } from '@/services/clients'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import {
   CLIENT_SDR_PROFILE_FIELD_DEFINITIONS,
   CLIENT_SDR_PROFILE_MAX_FIELD_LENGTH,
@@ -284,6 +286,8 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const [portalPasswordSaved, setPortalPasswordSaved] = useState(false)
   const [portalPasswordError, setPortalPasswordError] = useState<string | null>(null)
   const [portalPasswordBusy, setPortalPasswordBusy] = useState(false)
+  const [slugRotateOpen, setSlugRotateOpen] = useState(false)
+  const [slugRotateBusy, setSlugRotateBusy] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [profileEditorOpen, setProfileEditorOpen] = useState(false)
   const [profileDraft, setProfileDraft] = useState('')
@@ -388,6 +392,9 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const dashboardAdminPreviewHref = dashboardHref
     ? `${dashboardHref}?preview=1`
     : null
+  const portalLoginHref = client.dashboard_slug
+    ? `/portal/login?b=${encodeURIComponent(client.dashboard_slug)}`
+    : '/portal/login'
   const prospectDashboardHref = client.prospect_dashboard_slug
     ? `/prospect/${encodeURIComponent(client.prospect_dashboard_slug)}`
     : null
@@ -502,6 +509,21 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
       )
     } finally {
       setPortalPasswordBusy(false)
+    }
+  }
+
+  const rotateDashboardLink = async () => {
+    if (slugRotateBusy) return
+    setSlugRotateBusy(true)
+    try {
+      await rotateWorkspaceClientDashboardSlug(workspaceId, canonicalClientId)
+      await detailQuery.refetch()
+      toast.success('New dashboard link generated. The old link no longer works.')
+      setSlugRotateOpen(false)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The dashboard link could not be regenerated.')
+    } finally {
+      setSlugRotateBusy(false)
     }
   }
 
@@ -900,6 +922,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                   <div className="flex flex-wrap gap-2">
                     {canManage && <Button asChild variant="outline"><a href="#client-podcast-list"><LayoutDashboard className="mr-2 h-4 w-4" />View &amp; edit podcasts</a></Button>}
                     {dashboardHref && <Button variant="outline" onClick={() => void copyPublicLink(dashboardHref, 'Dashboard link')}><Copy className="mr-2 h-4 w-4" />Copy link</Button>}
+                    {canManage && dashboardHref && <Button variant="outline" onClick={() => setSlugRotateOpen(true)}><RefreshCw className="mr-2 h-4 w-4" />New link</Button>}
                     {dashboardAdminPreviewHref && <Button asChild><Link to={dashboardAdminPreviewHref}><Eye className="mr-2 h-4 w-4" />Preview as client</Link></Button>}
                   </div>
                 </div>
@@ -945,8 +968,8 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={() => void copyPublicLink('/portal/login', 'Portal login link')}><Copy className="mr-2 h-4 w-4" />Copy login link</Button>
-                  <Button asChild><a href="/portal/login" target="_blank" rel="noreferrer"><ExternalLink className="mr-2 h-4 w-4" />Open portal login</a></Button>
+                  <Button variant="outline" onClick={() => void copyPublicLink(portalLoginHref, 'Portal login link')}><Copy className="mr-2 h-4 w-4" />Copy login link</Button>
+                  <Button asChild><a href={portalLoginHref} target="_blank" rel="noreferrer"><ExternalLink className="mr-2 h-4 w-4" />Open portal login</a></Button>
                 </div>
               </div>
             </Card>
@@ -1467,6 +1490,24 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={slugRotateOpen} onOpenChange={(open) => { if (!slugRotateBusy) setSlugRotateOpen(open) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Generate a new dashboard link?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The current approval dashboard link stops working immediately. Anyone the old link was
+              shared with will need the new one, including {client.name}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={slugRotateBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={slugRotateBusy} onClick={(event) => { event.preventDefault(); void rotateDashboardLink() }}>
+              {slugRotateBusy ? 'Generating…' : 'Generate new link'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </WorkspaceLayout>
   )
 }

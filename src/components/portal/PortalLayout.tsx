@@ -13,15 +13,18 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
+import { safeExternalUrl } from '@/lib/externalUrl'
 
 interface PortalLayoutProps {
   children: React.ReactNode
 }
 
 export function PortalLayout({ children }: PortalLayoutProps) {
-  const { client, logout, isImpersonating, exitImpersonation } = useClientPortal()
+  const { client, branding, logout, isImpersonating, exitImpersonation } = useClientPortal()
   const navigate = useNavigate()
   const location = useLocation()
+  const agencyName = branding?.name || 'Client Portal'
+  const agencyLogoUrl = branding?.logo_url ? safeExternalUrl(branding.logo_url) : null
 
   const handleLogout = async () => {
     await logout()
@@ -62,11 +65,21 @@ export function PortalLayout({ children }: PortalLayoutProps) {
         <div className="container mx-auto flex h-16 items-center justify-between px-4">
           {/* Logo/Brand */}
           <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-sm">GP</span>
-            </div>
+            {agencyLogoUrl ? (
+              <img
+                src={agencyLogoUrl}
+                alt={`${agencyName} logo`}
+                className="h-8 w-8 rounded-lg object-contain"
+              />
+            ) : (
+              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center">
+                <span className="text-primary-foreground font-bold text-sm">
+                  {agencyName.charAt(0).toUpperCase()}
+                </span>
+              </div>
+            )}
             <div className="hidden sm:block">
-              <h1 className="text-lg font-semibold">Get On A Pod</h1>
+              <h1 className="text-lg font-semibold">{agencyName}</h1>
               <p className="text-xs text-muted-foreground">Client Portal</p>
             </div>
           </div>
@@ -164,18 +177,9 @@ export function PortalLayout({ children }: PortalLayoutProps) {
       {/* Footer */}
       <footer className="border-t mt-auto">
         <div className="container mx-auto px-4 py-6">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-muted-foreground">
-            <p>© {new Date().getFullYear()} Get On A Pod. All rights reserved.</p>
-            <div className="flex gap-4">
-              <a href="mailto:support@getonapod.com" className="hover:text-foreground transition-colors">
-                Contact Support
-              </a>
-              <span>•</span>
-              <a href="https://getonapod.com" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
-                Main Website
-              </a>
-            </div>
-          </div>
+          <p className="text-center text-sm text-muted-foreground">
+            © {new Date().getFullYear()} {agencyName}. All rights reserved.
+          </p>
         </div>
       </footer>
     </div>

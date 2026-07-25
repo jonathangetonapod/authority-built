@@ -14,6 +14,7 @@ import {
   requireAuthenticatedUser,
   requireWorkspaceFeatureAccess,
   workspaceCredentialIsFresh,
+  writeAudit,
 } from '../_shared/workspaceAuth.ts'
 
 const METHODS = ['POST'] as const
@@ -208,8 +209,38 @@ serve(async (req) => {
     } else if (action === 'delete') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'client_id'])
       clientId = requireUuid(body.client_id, 'client_id')
+    } else if (action === 'dashboard-slug-rotate') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id'])
+      clientId = requireUuid(body.client_id, 'client_id')
     } else {
       throw new HttpError(400, 'INVALID_ACTION', 'Unknown workspace client action')
+    }
+
+    if (action === 'dashboard-slug-rotate') {
+      const access = await requireWorkspaceFeatureAccess(authContext, workspaceId)
+      if (!['owner', 'admin', 'platform_admin'].includes(access.role)) {
+        throw new HttpError(403, 'WORKSPACE_ACCESS_REQUIRED', 'Workspace manager access is required')
+      }
+      const { data, error } = await admin.rpc('rotate_client_dashboard_slug_v1', {
+        p_workspace_id: workspaceId,
+        p_client_id: clientId!,
+      })
+      if (error) {
+        throw new HttpError(500, 'DASHBOARD_SLUG_ROTATE_FAILED', 'The dashboard link could not be regenerated')
+      }
+      const rotated = data as { dashboard_slug?: string } | null
+      if (!rotated?.dashboard_slug) {
+        throw new HttpError(500, 'DASHBOARD_SLUG_ROTATE_FAILED', 'The dashboard link could not be regenerated')
+      }
+      await writeAudit(admin, {
+        workspaceId,
+        actorUserId: user.id,
+        action: 'client.dashboard_slug.rotated',
+        entityType: 'client',
+        entityId: clientId!,
+        metadata: {},
+      })
+      return jsonResponse(req, METHODS, 200, { dashboard_slug: rotated.dashboard_slug })
     }
 
     if (action === 'sdr-profile-update') {

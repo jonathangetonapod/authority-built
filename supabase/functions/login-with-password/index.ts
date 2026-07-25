@@ -5,6 +5,7 @@ import {
   hashPortalSessionToken,
   verifyPortalPassword,
 } from '../_shared/portalSecurity.ts'
+import { safeWorkspaceBranding } from '../_shared/portalBranding.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || 'https://getonapod.com',
@@ -150,12 +151,18 @@ serve(async (req) => {
     // Find client by email
     const { data: client, error: clientError } = await supabase
       .from('clients')
-      .select('id, name, email, portal_access_enabled, photo_url, workspace:workspaces(status)')
+      .select('id, name, email, portal_access_enabled, photo_url, dashboard_slug, workspace:workspaces(id, name, status, logo_path, logo_updated_at)')
       .eq('portal_email_normalized', email)
       .eq('portal_access_enabled', true)
       .maybeSingle()
 
-    const clientWorkspace = client?.workspace as { status?: string } | null
+    const clientWorkspace = client?.workspace as {
+      id?: string
+      name?: string
+      status?: string
+      logo_path?: string | null
+      logo_updated_at?: string | null
+    } | null
     if (clientError || !client || clientWorkspace?.status !== 'active') {
       await hashPortalPassword(password)
       // Log failed attempt (generic message to prevent email enumeration)
@@ -325,6 +332,10 @@ serve(async (req) => {
       )
     }
 
+    const branding = clientWorkspace
+      ? await safeWorkspaceBranding(supabase, clientWorkspace)
+      : null
+
     // Return session token and client data
     return new Response(
       JSON.stringify({
@@ -333,8 +344,10 @@ serve(async (req) => {
           id: client.id,
           name: client.name,
           email: client.email,
-          photo_url: client.photo_url
+          photo_url: client.photo_url,
+          dashboard_slug: client.dashboard_slug ?? null
         },
+        branding,
         expires_at: expiresAt.toISOString()
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

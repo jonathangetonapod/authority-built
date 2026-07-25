@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { Client } from '@/services/clients'
 import {
   type ClientPortalSession,
+  type PortalBranding,
   validateSession as apiValidateSession,
   loginWithPassword as apiLoginWithPassword,
   logout as apiLogout,
@@ -14,6 +15,7 @@ import { queryClient } from '@/lib/queryClient'
 interface ClientPortalContextType {
   client: Client | null
   session: ClientPortalSession | null
+  branding: PortalBranding | null
   loading: boolean
   isImpersonating: boolean
   loginWithPassword: (email: string, password: string) => Promise<void>
@@ -62,6 +64,7 @@ export const ClientPortalProvider = ({ children }: { children: React.ReactNode }
   const { isPlatformAdmin, loading: authLoading } = useAuth()
   const [client, setClient] = useState<Client | null>(null)
   const [session, setSession] = useState<ClientPortalSession | null>(null)
+  const [branding, setBranding] = useState<PortalBranding | null>(null)
   const [loading, setLoading] = useState(true)
   const [isImpersonating, setIsImpersonating] = useState(false)
   const requestGeneration = useRef(0)
@@ -126,16 +129,17 @@ export const ClientPortalProvider = ({ children }: { children: React.ReactNode }
 
       try {
         // Validate session with backend
-        const validatedClient = await apiValidateSession(storedSession.session_token)
+        const validation = await apiValidateSession(storedSession.session_token)
         if (requestId !== requestGeneration.current) return
         setSession(storedSession)
-        setClient(validatedClient)
+        setClient(validation.client)
+        setBranding(validation.branding)
 
         // Set user in Sentry
         setSentryUser({
-          id: validatedClient.id,
-          email: validatedClient.email || undefined,
-          name: validatedClient.name
+          id: validation.client.id,
+          email: validation.client.email || undefined,
+          name: validation.client.name
         })
       } catch (error) {
         console.error('[ClientPortal] Session validation failed:', error)
@@ -144,6 +148,7 @@ export const ClientPortalProvider = ({ children }: { children: React.ReactNode }
         setSentryUser(null)
         setClient(null)
         setSession(null)
+        setBranding(null)
       } finally {
         if (requestId === requestGeneration.current) setLoading(false)
       }
@@ -164,11 +169,12 @@ export const ClientPortalProvider = ({ children }: { children: React.ReactNode }
     setSentryUser(null)
     setSession(null)
     setClient(null)
+    setBranding(null)
     setIsImpersonating(false)
 
     setLoading(true)
     try {
-      const { session: newSession, client: newClient } = await apiLoginWithPassword(email, password)
+      const { session: newSession, client: newClient, branding: newBranding } = await apiLoginWithPassword(email, password)
       if (requestId !== requestGeneration.current) return
 
       // Keep the bearer tab-scoped; the store also clears legacy localStorage.
@@ -177,6 +183,7 @@ export const ClientPortalProvider = ({ children }: { children: React.ReactNode }
       // Update state
       setSession(newSession)
       setClient(newClient)
+      setBranding(newBranding)
 
       // Set user in Sentry
       setSentryUser({
@@ -209,6 +216,7 @@ export const ClientPortalProvider = ({ children }: { children: React.ReactNode }
     queryClient.clear()
     setSession(null)
     setClient(null)
+    setBranding(null)
     setIsImpersonating(false)
 
     // Clear user from Sentry
@@ -251,6 +259,7 @@ export const ClientPortalProvider = ({ children }: { children: React.ReactNode }
     setClient(safeClient)
     setIsImpersonating(true)
     setSession(null) // No real session when impersonating
+    setBranding(null) // Impersonation renders the neutral shell
     setSentryUser(null)
   }
 
@@ -264,6 +273,7 @@ export const ClientPortalProvider = ({ children }: { children: React.ReactNode }
     setClient(null)
     setIsImpersonating(false)
     setSession(null)
+    setBranding(null)
     setSentryUser(null)
   }
 
@@ -272,6 +282,7 @@ export const ClientPortalProvider = ({ children }: { children: React.ReactNode }
       value={{
         client,
         session,
+        branding,
         loading,
         isImpersonating,
         loginWithPassword,

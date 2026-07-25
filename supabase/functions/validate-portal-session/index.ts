@@ -11,6 +11,7 @@ import {
   requireOnlyKeys,
   requireUuid,
 } from '../_shared/workspaceAuth.ts'
+import { safeWorkspaceBranding } from '../_shared/portalBranding.ts'
 
 const METHODS = ['POST'] as const
 
@@ -30,7 +31,7 @@ serve(async (req) => {
 
     const { data: session, error: sessionError } = await admin
       .from('client_portal_sessions')
-      .select('id,client_id,clients(id,name,email,photo_url,portal_access_enabled,workspace:workspaces(status))')
+      .select('id,client_id,clients(id,name,email,photo_url,portal_access_enabled,dashboard_slug,workspace:workspaces(id,name,status,logo_path,logo_updated_at))')
       .eq('session_token', sessionTokenHash)
       .gt('expires_at', new Date().toISOString())
       .maybeSingle()
@@ -45,7 +46,14 @@ serve(async (req) => {
       email?: string | null
       photo_url?: string | null
       portal_access_enabled?: boolean
-      workspace?: { status?: string } | null
+      dashboard_slug?: string | null
+      workspace?: {
+        id?: string
+        name?: string
+        status?: string
+        logo_path?: string | null
+        logo_updated_at?: string | null
+      } | null
     } | null
 
     if (
@@ -67,6 +75,10 @@ serve(async (req) => {
       throw new HttpError(503, 'SESSION_UPDATE_FAILED', 'Session validation is temporarily unavailable')
     }
 
+    const branding = client.workspace
+      ? await safeWorkspaceBranding(admin, client.workspace)
+      : null
+
     return jsonResponse(req, METHODS, 200, {
       success: true,
       client: {
@@ -74,7 +86,9 @@ serve(async (req) => {
         name: client.name,
         email: client.email ?? null,
         photo_url: client.photo_url ?? null,
+        dashboard_slug: client.dashboard_slug ?? null,
       },
+      branding,
     })
   } catch (error) {
     return errorResponse(req, METHODS, error)
