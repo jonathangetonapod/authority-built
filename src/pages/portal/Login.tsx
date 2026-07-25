@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Loader2, Lock, Eye, EyeOff } from 'lucide-react'
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import PageSEO from '@/components/seo/PageSEO'
 import { supabase } from '@/lib/supabase'
 import { safeExternalUrl } from '@/lib/externalUrl'
@@ -30,6 +30,8 @@ export default function PortalLogin() {
   const location = useLocation()
   const [searchParams] = useSearchParams()
   const brandingSlug = searchParams.get('b') || ''
+  const passwordReset = (location.state as { passwordReset?: boolean } | null)?.passwordReset === true
+  const forgotHref = brandingSlug ? `/portal/forgot?b=${encodeURIComponent(brandingSlug)}` : '/portal/forgot'
 
   useEffect(() => {
     if (!brandingSlug || !SLUG_PATTERN.test(brandingSlug) || brandingSlug.length > 180) return
@@ -119,6 +121,11 @@ export default function PortalLogin() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {passwordReset && (
+            <p className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900" role="status">
+              Password updated. Sign in with your new password.
+            </p>
+          )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email Address</Label>
@@ -192,6 +199,9 @@ export default function PortalLogin() {
                 </>
               )}
             </Button>
+            <Link to={forgotHref} className="mx-auto block text-center text-sm text-primary hover:underline">
+              Forgot password?
+            </Link>
           </form>
 
           <div className="mt-6 text-center text-xs text-muted-foreground border-t pt-4">

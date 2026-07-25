@@ -89,6 +89,29 @@ export async function validateSession(sessionToken: string): Promise<ClientPorta
 }
 
 /**
+ * Request a self-serve password reset email. Always resolves on success
+ * responses regardless of whether the email matched an account.
+ */
+export async function requestPortalPasswordReset(email: string): Promise<void> {
+  const { data, error } = await supabase.functions.invoke('portal-password-reset', {
+    body: { action: 'request', email }
+  })
+  if (error) throw await toFunctionError(error, 'The reset request could not be sent.')
+  if (!data?.success) throw new Error('The reset request could not be sent.')
+}
+
+/**
+ * Redeem a reset token with a new password.
+ */
+export async function completePortalPasswordReset(token: string, password: string): Promise<void> {
+  const { data, error } = await supabase.functions.invoke('portal-password-reset', {
+    body: { action: 'complete', token, password }
+  })
+  if (error) throw await toFunctionError(error, 'This reset link is invalid or has expired.')
+  if (!data?.success) throw new Error('This reset link is invalid or has expired.')
+}
+
+/**
  * Logout and invalidate the session
  */
 export async function logout(sessionToken: string): Promise<void> {

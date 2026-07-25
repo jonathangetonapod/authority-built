@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { loginWithPassword, validateSession } from '@/services/clientPortal'
+import {
+  completePortalPasswordReset,
+  loginWithPassword,
+  requestPortalPasswordReset,
+  validateSession,
+} from '@/services/clientPortal'
 import { supabase } from '@/lib/supabase'
 
 vi.mock('@/lib/supabase', () => ({
@@ -82,5 +87,38 @@ describe('clientPortal branding', () => {
 
     const result = await validateSession('11111111-1111-4111-8111-111111111111')
     expect(result.branding).toBeNull()
+  })
+})
+
+describe('clientPortal password reset', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('sends reset requests with the expected payload', async () => {
+    mockedInvoke.mockResolvedValue({ data: { success: true }, error: null } as never)
+
+    await requestPortalPasswordReset('taylor@example.com')
+
+    expect(mockedInvoke).toHaveBeenCalledWith('portal-password-reset', {
+      body: { action: 'request', email: 'taylor@example.com' },
+    })
+  })
+
+  it('completes a reset with token and password', async () => {
+    mockedInvoke.mockResolvedValue({ data: { success: true }, error: null } as never)
+
+    await completePortalPasswordReset('11111111-1111-4111-8111-111111111111', 'new-password-9!')
+
+    expect(mockedInvoke).toHaveBeenCalledWith('portal-password-reset', {
+      body: { action: 'complete', token: '11111111-1111-4111-8111-111111111111', password: 'new-password-9!' },
+    })
+  })
+
+  it('throws a generic error when completion fails', async () => {
+    mockedInvoke.mockResolvedValue({ data: { success: false }, error: null } as never)
+
+    await expect(completePortalPasswordReset('token', 'new-password-9!'))
+      .rejects.toThrow('This reset link is invalid or has expired.')
   })
 })

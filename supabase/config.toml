@@ -142,6 +142,9 @@ verify_jwt = true
 [functions.public-client-dashboard]
 verify_jwt = false
 
+[functions.portal-password-reset]
+verify_jwt = false
+
 [functions.get-prospect-dashboard]
 verify_jwt = false
 

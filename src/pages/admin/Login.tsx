@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { Chrome, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
+import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -26,6 +27,7 @@ const Login = () => {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [resetRequested, setResetRequested] = useState(false)
   const locationState = location.state as {
     from?: { pathname?: string }
     passwordChanged?: boolean
@@ -82,6 +84,25 @@ const Login = () => {
         : 'Unable to sign in. Please try again.')
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      toast.error('Enter your email above, then choose Forgot password.')
+      return
+    }
+    setIsSubmitting(true)
+    try {
+      const appOrigin = import.meta.env.VITE_APP_URL || window.location.origin
+      await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: new URL('/reset-password', appOrigin).toString(),
+      })
+    } catch {
+      // Identical messaging either way prevents account enumeration.
+    } finally {
+      setIsSubmitting(false)
+      setResetRequested(true)
     }
   }
 
@@ -179,6 +200,20 @@ const Login = () => {
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isSubmitting ? 'Signing in...' : 'Sign in'}
             </Button>
+            {resetRequested ? (
+              <p className="text-center text-sm text-muted-foreground" role="status">
+                If that email has an account, a password reset link is on the way.
+              </p>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void handleForgotPassword()}
+                disabled={isSubmitting}
+                className="mx-auto block text-sm text-primary hover:underline"
+              >
+                Forgot password?
+              </button>
+            )}
           </form>
 
           {adminEntry && (

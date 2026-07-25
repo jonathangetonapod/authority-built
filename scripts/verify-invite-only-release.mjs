@@ -20,12 +20,12 @@ const CONFIG_PATH = path.join(REPOSITORY_ROOT, 'supabase', 'config.toml')
 const FUNCTIONS_ROOT = path.join(REPOSITORY_ROOT, 'supabase', 'functions')
 
 const EXPECTED_COUNTS = Object.freeze({
-  changedFunctions: 100,
-  deployedFunctions: 98,
+  changedFunctions: 101,
+  deployedFunctions: 99,
   excludedFunctions: 2,
   retiredFunctions: 17,
   unauthenticatedTombstones: 5,
-  edgeTypeScriptFiles: 120,
+  edgeTypeScriptFiles: 123,
 })
 
 const EXPECTED_PHASE_KEYS = Object.freeze([
@@ -84,6 +84,7 @@ const EXPECTED_PUBLIC_NON_JWT_FUNCTIONS = Object.freeze([
   'get-prospect-podcasts',
   'login-with-password',
   'logout-portal-session',
+  'portal-password-reset',
   'public-client-dashboard',
   'resend-webhook',
   'validate-portal-session',

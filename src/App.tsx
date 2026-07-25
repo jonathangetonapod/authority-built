@@ -62,6 +62,9 @@ const AdminWorkspacePodcastDatabase = lazy(() => import("./pages/admin/AdminWork
 const AdminWorkspaceClientPodcastSystem = lazy(() => import("./pages/admin/AdminWorkspaceClientPodcastSystem"));
 const AdminWorkspaceProspectDashboards = lazy(() => import("./pages/admin/AdminWorkspaceProspectDashboards"));
 const ChangeInitialPassword = lazy(() => import("./pages/account/ChangeInitialPassword"));
+const ResetPassword = lazy(() => import("./pages/account/ResetPassword"));
+const PortalForgotPassword = lazy(() => import("./pages/portal/ForgotPassword"));
+const PortalResetPassword = lazy(() => import("./pages/portal/ResetPassword"));
 const ClientOnboarding = lazy(() => import("./pages/onboarding/ClientOnboarding"));
 
 const RouteFallback = () => (
@@ -120,6 +123,7 @@ const App = () => (
             <Route path="/login" element={<AdminLogin />} />
             <Route path="/accept-invite" element={<AcceptInvite />} />
             <Route path="/change-password" element={<ChangeInitialPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/app" element={<Navigate to="/app/overview" replace />} />
             <Route path="/app/workspace-users" element={<Navigate to="/app/settings" replace />} />
             <Route path="/app/manage-workspaces" element={<Navigate to="/app/settings" replace />} />
@@ -407,6 +411,8 @@ const App = () => (
             {/* Client Portal routes */}
             <Route path="/portal" element={<Navigate to="/portal/login" replace />} />
             <Route path="/portal/login" element={<PortalLogin />} />
+            <Route path="/portal/forgot" element={<PortalForgotPassword />} />
+            <Route path="/portal/reset" element={<PortalResetPassword />} />
             {/* Public prospect dashboard */}
             <Route path="/prospect/:slug" element={<KeyedProspectView />} />
             {/* Public client approval dashboard */}
