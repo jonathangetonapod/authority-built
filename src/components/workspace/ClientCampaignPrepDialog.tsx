@@ -45,6 +45,7 @@ import {
   type ClientShortlistEmailUnlockStageId,
   type ClientShortlistPodcast,
   type ClientShortlistResearchStageId,
+  runClientShortlistEmailSearch,
   runClientShortlistResearch,
 } from '@/services/clientShortlist'
 import {
@@ -195,6 +196,28 @@ export function ClientCampaignPrepDialog({
     onError: (error) => {
       void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
       toast.error(error instanceof Error ? error.message : 'The research run could not be completed.')
+    },
+  })
+  const emailSearchMutation = useMutation({
+    mutationFn: (shortlistPodcastId: string) => runClientShortlistEmailSearch(workspaceId, clientId, shortlistPodcastId),
+    onMutate: () => {
+      window.setTimeout(() => {
+        void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
+      }, 2_500)
+    },
+    onSuccess: (unlock) => {
+      if (unlock.status === 'unlocked') {
+        toast.success('Direct host email unlocked and shared across the platform.')
+      } else {
+        toast.info(unlock.message || 'No verified direct email was found. You were not charged.')
+      }
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'The direct email search could not be completed.')
+    },
+    onSettled: () => {
+      setPreviewEmailSearchPodcastId(null)
+      void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
     },
   })
   const [showPodcastDetails, setShowPodcastDetails] = useState(false)
@@ -408,9 +431,11 @@ export function ClientCampaignPrepDialog({
     setDraft((current) => ({ ...current, [field]: value }))
   }
   const beginEmailSearchPreview = () => {
+    if (!podcast || emailSearchMutation.isPending) return
     setEmailRoute('waterfall')
     setContactEmail('')
-    setPreviewEmailSearchPodcastId(podcast?.podcast_id || null)
+    setPreviewEmailSearchPodcastId(podcast.podcast_id)
+    emailSearchMutation.mutate(podcast.id)
   }
   const selectPromptStage = (promptId: ResearchPromptId) => {
     if (promptDirty) {

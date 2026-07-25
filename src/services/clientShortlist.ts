@@ -223,3 +223,23 @@ export async function runClientShortlistResearch(
   }
   return data.research_progress as ClientShortlistResearchProgress
 }
+
+export async function runClientShortlistEmailSearch(
+  workspaceId: string,
+  clientId: string,
+  shortlistPodcastId: string,
+): Promise<ClientShortlistEmailUnlock> {
+  const { data, error } = await supabase.functions.invoke('workspace-client-shortlist', {
+    body: {
+      action: 'email-search-run',
+      workspace_id: workspaceId,
+      client_id: clientId,
+      shortlist_podcast_id: shortlistPodcastId,
+    },
+  })
+  if (error) throw await toFunctionError(error, 'The direct email search could not be started.')
+  if (!data?.email_unlock || typeof data.email_unlock !== 'object') {
+    throw new Error('The email search response was invalid.')
+  }
+  return data.email_unlock as ClientShortlistEmailUnlock
+}

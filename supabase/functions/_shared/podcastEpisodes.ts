@@ -21,6 +21,30 @@ function text(value: unknown, max: number): string {
   return typeof value === 'string' ? value.slice(0, max) : ''
 }
 
+// Host names from Podscan's aggregated episode analysis. Best-effort like
+// everything else in this module — failures return [].
+export async function fetchPodcastHosts(podscanId: string): Promise<string[]> {
+  const apiKey = podscanKey()
+  if (!apiKey || !/^[a-zA-Z0-9_-]+$/.test(podscanId)) return []
+  try {
+    const response = await fetch(`${PODSCAN_BASE}/podcasts/${encodeURIComponent(podscanId)}/analysis`, {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!response.ok) return []
+    const payload = await response.json().catch(() => null) as { hosts?: unknown[] } | null
+    if (!Array.isArray(payload?.hosts)) return []
+    return payload.hosts.flatMap((raw) => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return []
+      const name = (raw as Record<string, unknown>).name
+      return typeof name === 'string' && name.trim() ? [name.trim().slice(0, 200)] : []
+    }).slice(0, 5)
+  } catch (_error) {
+    console.warn('[Podcast Episodes] Host analysis fetch was unavailable')
+    return []
+  }
+}
+
 export async function fetchRecentEpisodes(podscanId: string): Promise<RecentEpisode[]> {
   const apiKey = podscanKey()
   if (!apiKey || !/^[a-zA-Z0-9_-]+$/.test(podscanId)) return []

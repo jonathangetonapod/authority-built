@@ -95,6 +95,21 @@ assert.match(shortlistEdge, /from\('workspace_research_prompts'\)[\s\S]*?RESEARC
 assert.match(shortlistEdge, /ai_clean_description: cleanDescription,[\s\S]*?ai_analyzed_at: completedAt,[\s\S]*?research_document:[\s\S]*?research_progress:[\s\S]*?status: 'completed'/u)
 assert.match(shortlistEdge, /await logOperationCost\(authContext\.admin, \{[\s\S]*?operationType: 'research_run'[\s\S]*?podscanCalls: 1/u)
 
+// Email waterfall: global-reuse short-circuits for free, Instantly gate before
+// any progress writes, and the 1-credit charge happens only when the RPC
+// reports the first global unlock.
+assert.match(shortlistEdge, /if \(action === 'email-search-run'\)[\s\S]*?requireOnlyKeys\(body, \['action', 'workspace_id', 'client_id', 'shortlist_podcast_id'\]\)/u)
+assert.match(shortlistEdge, /from\('podcast_direct_contacts'\)[\s\S]*?\.eq\('verification_status', 'verified'\)[\s\S]*?buildUnlockedPayload\(existingContact, 0\)/u)
+assert.match(shortlistEdge, /EMAIL_SEARCH_ALREADY_RUNNING/u)
+assert.match(shortlistEdge, /INSTANTLY_NOT_CONNECTED[\s\S]*?decryptInstantlyApiKey/u)
+assert.match(shortlistEdge, /record_global_podcast_direct_contact_v1[\s\S]*?p_provider: 'instantly-verification'/u)
+assert.match(shortlistEdge, /if \(record\.credit_charge_allowed\)[\s\S]*?operationType: 'email_unlock_verify'[\s\S]*?idempotencyKey: `email-unlock:\$\{shortlistRow\.podcast_id\}`/u)
+assert.match(shortlistEdge, /status: 'not_found'[\s\S]*?You were not charged/u)
+
+const waterfallMigration = readFileSync('supabase/migrations/20260726000600_email_waterfall.sql', 'utf8')
+assert.match(waterfallMigration, /ADD COLUMN IF NOT EXISTS email_unlock_progress JSONB/u)
+assert.match(waterfallMigration, /\('email_unlock_verify', 1, now\(\)\)/u)
+
 // Deno prompt defaults must stay in sync with the canonical docs JSON.
 const denoDefaults = readFileSync('supabase/functions/_shared/researchPromptDefaults.ts', 'utf8')
 const canonicalPrompts = JSON.parse(readFileSync('docs/pitch-research-prompts.json', 'utf8'))

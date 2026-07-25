@@ -20,7 +20,8 @@ import {
 import { generatePodcastSearchEmbedding } from '../_shared/podcastSearch.ts'
 import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
-import { fetchRecentEpisodes } from '../_shared/podcastEpisodes.ts'
+import { fetchPodcastHosts, fetchRecentEpisodes } from '../_shared/podcastEpisodes.ts'
+import { decryptInstantlyApiKey, instantlyRequest } from '../_shared/instantly.ts'
 import { RESEARCH_PROMPT_DEFAULTS } from '../_shared/researchPromptDefaults.ts'
 
 const METHODS = ['POST'] as const
@@ -44,6 +45,7 @@ const SHORTLIST_FIELDS = [
   'ai_pitch_angles',
   'ai_analyzed_at',
   'research_progress',
+  'email_unlock_progress',
   'visibility',
   'display_order',
   'is_featured',
@@ -319,6 +321,78 @@ const RESEARCH_STAGE_MAP: Record<string, string[]> = {
   find_topics: ['guest_fit', 'pitch_angles'],
 }
 const RESEARCH_STALE_LOCK_MS = 3 * 60 * 1000
+const EMAIL_SEARCH_STALE_LOCK_MS = 3 * 60 * 1000
+// Hosted-platform domains never receive host mailboxes — pattern guesses
+// against them are pure noise.
+const HOSTING_PLATFORM_DOMAINS = new Set([
+  'podbean.com', 'libsyn.com', 'buzzsprout.com', 'anchor.fm', 'spotify.com',
+  'apple.com', 'megaphone.fm', 'simplecast.com', 'transistor.fm', 'spreaker.com',
+  'soundcloud.com', 'audioboom.com', 'captivate.fm', 'podigee.io', 'acast.com',
+  'youtube.com', 'substack.com', 'squarespace.com', 'wordpress.com', 'wixsite.com',
+  'linktr.ee', 'patreon.com', 'podcasts.apple.com',
+])
+
+function podcastDomain(websiteUrl: string | null): string | null {
+  if (!websiteUrl) return null
+  try {
+    const host = new URL(websiteUrl).hostname.toLowerCase().replace(/^www\./u, '')
+    if (!host.includes('.')) return null
+    const rootDomain = host.split('.').slice(-2).join('.')
+    if (HOSTING_PLATFORM_DOMAINS.has(rootDomain) || HOSTING_PLATFORM_DOMAINS.has(host)) return null
+    return host
+  } catch (_error) {
+    return null
+  }
+}
+
+function buildEmailCandidates(hostName: string | null, domain: string | null): string[] {
+  if (!domain) return []
+  const candidates: string[] = []
+  const nameParts = (hostName ?? '')
+    .toLowerCase()
+    .replace(/[^a-z\s'-]/gu, '')
+    .replace(/['-]/gu, '')
+    .split(/\s+/u)
+    .filter((part) => part.length > 1)
+  if (nameParts.length > 0) {
+    const first = nameParts[0]
+    const last = nameParts.length > 1 ? nameParts[nameParts.length - 1] : null
+    candidates.push(`${first}@${domain}`)
+    if (last) {
+      candidates.push(`${first}.${last}@${domain}`)
+      candidates.push(`${first}${last}@${domain}`)
+      candidates.push(`${first[0]}${last}@${domain}`)
+    }
+  }
+  return [...new Set(candidates)].slice(0, 5)
+}
+
+interface EmailVerificationResult {
+  email: string
+  status: string
+}
+
+async function verifyEmailWithInstantly(apiKey: string, email: string): Promise<EmailVerificationResult> {
+  const started = await instantlyRequest<{ verification_status?: string; status?: string }>(
+    apiKey,
+    '/email-verification',
+    { method: 'POST', body: { email } },
+  )
+  let status = String(started.verification_status ?? started.status ?? 'pending').toLowerCase()
+  for (let attempt = 0; attempt < 3 && (status === 'pending' || status === 'in_progress' || status === 'processing'); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 3_000))
+    try {
+      const polled = await instantlyRequest<{ verification_status?: string; status?: string }>(
+        apiKey,
+        `/email-verification/${encodeURIComponent(email)}`,
+      )
+      status = String(polled.verification_status ?? polled.status ?? status).toLowerCase()
+    } catch (_error) {
+      break
+    }
+  }
+  return { email, status }
+}
 
 function fillPromptTemplate(template: string, variables: Record<string, string | null | undefined>): string {
   return template.replace(/\{\{\s*([a-z_]+)\s*\}\}/gu, (_match, key: string) => {
@@ -445,9 +519,10 @@ serve(async (req) => {
         ((directContactResult.data || []) as unknown as DirectContactRow[])
           .map((contact) => [contact.podcast_id, contact]),
       )
-      const podcasts = shortlistRows.map((podcast) => {
-        const feedback = feedbackByPodcast.get(podcast.podcast_id)
-        const catalog = catalogByPodcast.get(podcast.podcast_id)
+      const podcasts = shortlistRows.map((row) => {
+        const { email_unlock_progress: storedUnlockProgress, ...podcast } = row
+        const feedback = feedbackByPodcast.get(podcast.podcast_id as string)
+        const catalog = catalogByPodcast.get(podcast.podcast_id as string)
         const directContact = catalog ? directContactByPodcast.get(catalog.id) : null
         return {
           ...podcast,
@@ -478,7 +553,7 @@ serve(async (req) => {
               scope: 'global',
               credit_cost: 0,
             }
-            : null,
+            : storedUnlockProgress ?? null,
           feedback_status: feedback?.status || null,
           feedback_notes: feedback?.notes || null,
           feedback_updated_at: feedback?.updated_at || null,
@@ -1083,6 +1158,260 @@ serve(async (req) => {
         if (error instanceof HttpError) throw error
         console.error('[Shortlist Research] Pipeline failed')
         throw new HttpError(503, 'RESEARCH_FAILED', 'The research run could not be completed. Try again shortly')
+      }
+    }
+
+    if (action === 'email-search-run') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'shortlist_podcast_id'])
+      const shortlistPodcastId = requireUuid(body.shortlist_podcast_id, 'shortlist_podcast_id')
+
+      const { data: shortlistRow, error: shortlistError } = await authContext.admin
+        .from('client_dashboard_podcasts')
+        .select('id, podcast_id, podcast_name, podcast_url, email_unlock_progress, research_document')
+        .eq('id', shortlistPodcastId)
+        .eq('client_id', clientId)
+        .maybeSingle()
+      if (shortlistError) throw new HttpError(500, 'EMAIL_SEARCH_FAILED', 'The shortlist podcast could not be loaded')
+      if (!shortlistRow) throw new HttpError(404, 'PODCAST_NOT_FOUND', 'Shortlist podcast not found for this client')
+
+      const { data: catalogRow } = await authContext.admin
+        .from('podcasts')
+        .select('id, podscan_id, podcast_url, podscan_email')
+        .eq('podscan_id', shortlistRow.podcast_id)
+        .maybeSingle()
+
+      const buildUnlockedPayload = (contact: { email: string; host_name: string | null; first_paid_unlock_at?: string | null; last_verified_at?: string | null }, creditCost: number) => ({
+        status: 'unlocked',
+        current_stage: null,
+        completed_stages: ['identify_contact', 'find_email', 'verify_email'],
+        email: contact.email,
+        host_name: contact.host_name,
+        unlocked_at: contact.first_paid_unlock_at ?? new Date().toISOString(),
+        verified_at: contact.last_verified_at ?? new Date().toISOString(),
+        scope: 'global',
+        credit_cost: creditCost,
+      })
+
+      if (catalogRow) {
+        const { data: existingContact } = await authContext.admin
+          .from('podcast_direct_contacts')
+          .select('email, host_name, first_paid_unlock_at, last_verified_at')
+          .eq('podcast_id', catalogRow.id)
+          .eq('verification_status', 'verified')
+          .maybeSingle()
+        if (existingContact?.email) {
+          await authContext.admin
+            .from('client_dashboard_podcasts')
+            .update({ email_unlock_progress: null })
+            .eq('id', shortlistPodcastId)
+            .eq('client_id', clientId)
+          return jsonResponse(req, METHODS, 200, { email_unlock: buildUnlockedPayload(existingContact, 0) })
+        }
+      }
+
+      const existingUnlockProgress = shortlistRow.email_unlock_progress as
+        | { status?: string; updated_at?: string }
+        | null
+      if (
+        existingUnlockProgress
+        && ['queued', 'running'].includes(String(existingUnlockProgress.status))
+        && typeof existingUnlockProgress.updated_at === 'string'
+        && Date.now() - Date.parse(existingUnlockProgress.updated_at) < EMAIL_SEARCH_STALE_LOCK_MS
+      ) {
+        throw new HttpError(409, 'EMAIL_SEARCH_ALREADY_RUNNING', 'A direct email search is already running for this podcast')
+      }
+
+      const { data: integration } = await authContext.admin
+        .from('workspace_instantly_integrations')
+        .select('status, api_key_ciphertext, api_key_iv')
+        .eq('workspace_id', workspaceId)
+        .maybeSingle()
+      if (!integration || integration.status !== 'connected' || !integration.api_key_ciphertext || !integration.api_key_iv) {
+        throw new HttpError(409, 'INSTANTLY_NOT_CONNECTED', 'Connect Instantly in the Outreach suite before running the direct email search')
+      }
+      const instantlyKey = await decryptInstantlyApiKey({
+        ciphertext: integration.api_key_ciphertext,
+        iv: integration.api_key_iv,
+      })
+
+      const searchStartedAt = new Date().toISOString()
+      const writeUnlockProgress = async (progress: Record<string, unknown>) => {
+        await authContext.admin
+          .from('client_dashboard_podcasts')
+          .update({ email_unlock_progress: { ...progress, started_at: searchStartedAt, updated_at: new Date().toISOString() } })
+          .eq('id', shortlistPodcastId)
+          .eq('client_id', clientId)
+      }
+      await writeUnlockProgress({ status: 'running', current_stage: 'identify_contact', completed_stages: [] })
+
+      const usage = { input: 0, output: 0 }
+      let podscanCalls = 0
+      let usedByoKey = false
+      try {
+        let hostName: string | null = null
+        const { data: campaignTarget } = await authContext.admin
+          .from('workspace_client_campaign_targets')
+          .select('host_name')
+          .eq('workspace_id', workspaceId)
+          .eq('shortlist_podcast_id', shortlistPodcastId)
+          .maybeSingle()
+        if (typeof campaignTarget?.host_name === 'string' && campaignTarget.host_name.trim()) {
+          hostName = campaignTarget.host_name.trim()
+        }
+        if (!hostName) {
+          podscanCalls += 1
+          hostName = (await fetchPodcastHosts(shortlistRow.podcast_id))[0] ?? null
+        }
+        const researchDocument = shortlistRow.research_document as { host_info?: unknown; podcast_research?: unknown } | null
+        const contactData = [researchDocument?.host_info, researchDocument?.podcast_research]
+          .filter((section): section is string => typeof section === 'string' && section.length > 0)
+          .join('\n\n')
+        if (!hostName && contactData) {
+          const anthropicKey = await resolveAiKey(authContext.admin, workspaceId, 'anthropic')
+          if (anthropicKey) {
+            usedByoKey = anthropicKey.source === 'workspace'
+            const extracted = await runResearchPrompt(
+              anthropicKey.apiKey,
+              RESEARCH_PROMPT_DEFAULTS.host_name_extractor,
+              fillPromptTemplate(RESEARCH_PROMPT_DEFAULTS.host_name_extractor.content, { contact_data: contactData.slice(0, 8_000) }),
+              usage,
+            ).catch(() => '')
+            const candidateName = extracted.split('\n')[0]?.trim() ?? ''
+            if (/^[A-Za-z][A-Za-z .'-]{2,79}$/u.test(candidateName)) hostName = candidateName
+          }
+        }
+        await writeUnlockProgress({ status: 'running', current_stage: 'find_email', completed_stages: ['identify_contact'], host_name: hostName })
+
+        const domain = podcastDomain(catalogRow?.podcast_url ?? shortlistRow.podcast_url)
+        const candidates = buildEmailCandidates(hostName, domain)
+        await writeUnlockProgress({
+          status: 'running',
+          current_stage: 'verify_email',
+          completed_stages: ['identify_contact', 'find_email'],
+          host_name: hostName,
+        })
+
+        let verifiedEmail: string | null = null
+        for (const candidate of candidates) {
+          const result = await verifyEmailWithInstantly(instantlyKey, candidate).catch(() => null)
+          if (result?.status === 'verified') {
+            verifiedEmail = result.email
+            break
+          }
+        }
+
+        if (!verifiedEmail) {
+          const notFound = {
+            status: 'not_found',
+            current_stage: null,
+            completed_stages: ['identify_contact', 'find_email'],
+            host_name: hostName,
+            message: candidates.length === 0
+              ? 'No email candidates could be built for this podcast. Try the free Podscan inbox or enter an address manually.'
+              : 'No candidate address passed verification. You were not charged.',
+            started_at: searchStartedAt,
+            updated_at: new Date().toISOString(),
+          }
+          await writeUnlockProgress(notFound)
+          await logOperationCost(authContext.admin, {
+            workspaceId,
+            operationType: 'email_unlock_verify',
+            usage: { anthropicInputTokens: usage.input, anthropicOutputTokens: usage.output, podscanCalls },
+            usedByoKey,
+            clientId,
+            referenceKind: 'shortlist_podcast',
+            referenceId: shortlistPodcastId,
+          })
+          return jsonResponse(req, METHODS, 200, { email_unlock: notFound })
+        }
+
+        const { data: recorded, error: recordError } = await authContext.admin.rpc('record_global_podcast_direct_contact_v1', {
+          p_podscan_id: shortlistRow.podcast_id,
+          p_email: verifiedEmail,
+          p_host_name: hostName,
+          p_provider: 'instantly-verification',
+          p_workspace_id: workspaceId,
+          p_actor_user_id: authContext.user.id,
+        })
+        if (recordError) throw new Error('the verified contact could not be recorded globally')
+        const record = recorded as {
+          credit_charge_allowed?: boolean
+          email?: string
+          host_name?: string | null
+          verified_at?: string | null
+        }
+
+        let charged = 0
+        if (record.credit_charge_allowed) {
+          try {
+            charged = await chargeCredits(authContext.admin, {
+              workspaceId,
+              operationType: 'email_unlock_verify',
+              referenceKind: 'podcast_direct_contact',
+              referenceId: shortlistRow.podcast_id,
+              clientId,
+              actorUserId: authContext.user.id,
+              idempotencyKey: `email-unlock:${shortlistRow.podcast_id}`,
+            })
+          } catch (chargeError) {
+            // The contact is already recorded globally; never claw the unlock
+            // back from the workspace that produced it.
+            if (!(chargeError instanceof HttpError && chargeError.code === 'INSUFFICIENT_CREDITS')) throw chargeError
+            console.warn('[Client Shortlist] First global unlock succeeded without an available credit')
+          }
+        }
+
+        await authContext.admin
+          .from('client_dashboard_podcasts')
+          .update({ email_unlock_progress: null })
+          .eq('id', shortlistPodcastId)
+          .eq('client_id', clientId)
+        await authContext.admin
+          .from('workspace_client_campaign_targets')
+          .update({ host_name: record.host_name ?? hostName })
+          .eq('workspace_id', workspaceId)
+          .eq('shortlist_podcast_id', shortlistPodcastId)
+          .is('host_name', null)
+
+        await logOperationCost(authContext.admin, {
+          workspaceId,
+          operationType: 'email_unlock_verify',
+          usage: { anthropicInputTokens: usage.input, anthropicOutputTokens: usage.output, podscanCalls },
+          usedByoKey,
+          clientId,
+          referenceKind: 'podcast_direct_contact',
+          referenceId: shortlistRow.podcast_id,
+        })
+
+        return jsonResponse(req, METHODS, 200, {
+          email_unlock: buildUnlockedPayload(
+            {
+              email: record.email ?? verifiedEmail,
+              host_name: record.host_name ?? hostName,
+              last_verified_at: record.verified_at ?? null,
+            },
+            charged,
+          ),
+        })
+      } catch (error) {
+        await writeUnlockProgress({
+          status: 'failed',
+          current_stage: null,
+          completed_stages: [],
+          message: 'The direct email search was interrupted. You were not charged — try again in a moment.',
+        }).catch(() => undefined)
+        await logOperationCost(authContext.admin, {
+          workspaceId,
+          operationType: 'email_unlock_verify',
+          usage: { anthropicInputTokens: usage.input, anthropicOutputTokens: usage.output, podscanCalls },
+          usedByoKey,
+          clientId,
+          referenceKind: 'shortlist_podcast',
+          referenceId: shortlistPodcastId,
+        })
+        if (error instanceof HttpError) throw error
+        console.error('[Client Shortlist] Email waterfall failed')
+        throw new HttpError(503, 'EMAIL_SEARCH_FAILED', 'The direct email search could not be completed. Try again shortly')
       }
     }
 

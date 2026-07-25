@@ -6,6 +6,7 @@ import { ClientShortlistEditor } from '@/components/workspace/ClientShortlistEdi
 import {
   addClientShortlistPodcasts,
   getClientShortlist,
+  runClientShortlistEmailSearch,
   runClientShortlistResearch,
   searchClientPodcastCatalog,
   updateClientShortlistPodcast,
@@ -16,6 +17,7 @@ import { getWorkspaceCampaign, prepareWorkspaceCampaignPodcast } from '@/service
 vi.mock('@/services/clientShortlist', () => ({
   addClientShortlistPodcasts: vi.fn(),
   getClientShortlist: vi.fn(),
+  runClientShortlistEmailSearch: vi.fn(),
   runClientShortlistResearch: vi.fn(),
   searchClientPodcastCatalog: vi.fn(),
   updateClientShortlistPodcast: vi.fn(),
@@ -94,8 +96,9 @@ function renderEditor(viewerRole: 'owner' | 'admin' | 'member' | 'platform_admin
 describe('ClientShortlistEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // Research runs stay pending so tests can assert the in-flight UI.
+    // Research and email searches stay pending so tests can assert the in-flight UI.
     vi.mocked(runClientShortlistResearch).mockImplementation(() => new Promise(() => {}))
+    vi.mocked(runClientShortlistEmailSearch).mockImplementation(() => new Promise(() => {}))
     vi.mocked(getClientShortlist).mockResolvedValue({
       client: { id: clientId, name: 'Taylor Client' },
       podcasts: [
