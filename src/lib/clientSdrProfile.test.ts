@@ -9,15 +9,15 @@ import {
 describe('client AI SDR profile policy', () => {
   it('requires the four core fields while allowing recommended context later', () => {
     expect(clientSdrProfileReadiness({
-      positioning: 'Position the client as a practical operator.',
-      ideal_opportunities: 'Founder and operations podcasts.',
-      voice_and_tone: 'Warm and concise.',
-      reply_rules: 'Route pricing and uncertain scheduling to a human.',
+      positioning: 'Taylor is a practical operations leader for growth-stage founders.',
+      topics_and_angles: 'Sustainable scale, operator leverage, and durable systems.',
+      listener_takeaways: 'A framework for finding and fixing the bottleneck behind stalled growth.',
+      booking_details: 'Remote interviews preferred. Use the approved calendar link.',
     })).toEqual({
       ready: true,
       completed_fields: 4,
       total_fields: 6,
-      missing_fields: ['qualification_signals', 'proof_points'],
+      missing_fields: ['proof_points', 'ideal_opportunities'],
       missing_core_fields: [],
     })
   })
@@ -29,11 +29,11 @@ describe('client AI SDR profile policy', () => {
       unapproved_claims: 'Do not retain',
     })).toEqual({
       positioning: '',
-      ideal_opportunities: '',
-      qualification_signals: '',
+      topics_and_angles: '',
+      listener_takeaways: '',
       proof_points: '',
-      voice_and_tone: '',
-      reply_rules: '',
+      ideal_opportunities: '',
+      booking_details: '',
     })
     expect(isClientSdrProfile({ positioning: 42 })).toBe(false)
   })
@@ -49,11 +49,11 @@ describe('client AI SDR profile policy', () => {
     const maximumField = 'x'.repeat(4_000)
     const profile = {
       positioning: maximumField,
-      ideal_opportunities: maximumField,
-      qualification_signals: maximumField,
+      topics_and_angles: maximumField,
+      listener_takeaways: maximumField,
       proof_points: maximumField,
-      voice_and_tone: maximumField,
-      reply_rules: maximumField,
+      ideal_opportunities: maximumField,
+      booking_details: maximumField,
     }
 
     expect(isClientSdrProfile(profile)).toBe(true)

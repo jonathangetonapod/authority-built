@@ -1,6 +1,7 @@
 -- Add a compact, structured AI SDR profile to each workspace client. The
 -- profile is separate from the long-form guest bio: the bio powers podcast
--- discovery, while this context governs reply classification and drafting.
+-- discovery, while this context gives interested hosts approved positioning,
+-- topic, listener-value, proof, fit, and booking information.
 
 BEGIN;
 
@@ -27,7 +28,7 @@ ALTER TABLE public.clients
   CHECK (jsonb_typeof(ai_sdr_profile) = 'object');
 
 COMMENT ON COLUMN public.clients.ai_sdr_profile IS
-  'Structured, approved per-client context used by the Master Inbox AI SDR. Empty and partial drafts are allowed; reply actions must still enforce readiness and review policy.';
+  'Structured, approved per-client podcast guest and booking context used by the Master Inbox AI SDR. Empty and partial drafts are allowed; reply actions must still enforce readiness and review policy.';
 
 COMMENT ON COLUMN public.clients.ai_sdr_profile_updated_at IS
   'Optimistic-concurrency timestamp for AI SDR profile edits, independent of ordinary client metadata changes.';
@@ -62,24 +63,24 @@ BEGIN
     OR jsonb_typeof(p_profile) <> 'object'
     OR p_profile - ARRAY[
       'positioning',
-      'ideal_opportunities',
-      'qualification_signals',
+      'topics_and_angles',
+      'listener_takeaways',
       'proof_points',
-      'voice_and_tone',
-      'reply_rules'
+      'ideal_opportunities',
+      'booking_details'
     ]::TEXT[] <> '{}'::JSONB
     OR ((p_profile ? 'positioning') AND jsonb_typeof(p_profile -> 'positioning') <> 'string')
-    OR ((p_profile ? 'ideal_opportunities') AND jsonb_typeof(p_profile -> 'ideal_opportunities') <> 'string')
-    OR ((p_profile ? 'qualification_signals') AND jsonb_typeof(p_profile -> 'qualification_signals') <> 'string')
+    OR ((p_profile ? 'topics_and_angles') AND jsonb_typeof(p_profile -> 'topics_and_angles') <> 'string')
+    OR ((p_profile ? 'listener_takeaways') AND jsonb_typeof(p_profile -> 'listener_takeaways') <> 'string')
     OR ((p_profile ? 'proof_points') AND jsonb_typeof(p_profile -> 'proof_points') <> 'string')
-    OR ((p_profile ? 'voice_and_tone') AND jsonb_typeof(p_profile -> 'voice_and_tone') <> 'string')
-    OR ((p_profile ? 'reply_rules') AND jsonb_typeof(p_profile -> 'reply_rules') <> 'string')
+    OR ((p_profile ? 'ideal_opportunities') AND jsonb_typeof(p_profile -> 'ideal_opportunities') <> 'string')
+    OR ((p_profile ? 'booking_details') AND jsonb_typeof(p_profile -> 'booking_details') <> 'string')
     OR char_length(COALESCE(p_profile ->> 'positioning', '')) > 4000
-    OR char_length(COALESCE(p_profile ->> 'ideal_opportunities', '')) > 4000
-    OR char_length(COALESCE(p_profile ->> 'qualification_signals', '')) > 4000
+    OR char_length(COALESCE(p_profile ->> 'topics_and_angles', '')) > 4000
+    OR char_length(COALESCE(p_profile ->> 'listener_takeaways', '')) > 4000
     OR char_length(COALESCE(p_profile ->> 'proof_points', '')) > 4000
-    OR char_length(COALESCE(p_profile ->> 'voice_and_tone', '')) > 4000
-    OR char_length(COALESCE(p_profile ->> 'reply_rules', '')) > 4000
+    OR char_length(COALESCE(p_profile ->> 'ideal_opportunities', '')) > 4000
+    OR char_length(COALESCE(p_profile ->> 'booking_details', '')) > 4000
   THEN
     RAISE EXCEPTION 'workspace client AI SDR profile is invalid'
       USING ERRCODE = '22023';
@@ -119,33 +120,33 @@ BEGIN
 
   normalized_profile := jsonb_strip_nulls(jsonb_build_object(
     'positioning', NULLIF(btrim(COALESCE(p_profile ->> 'positioning', '')), ''),
-    'ideal_opportunities', NULLIF(btrim(COALESCE(p_profile ->> 'ideal_opportunities', '')), ''),
-    'qualification_signals', NULLIF(btrim(COALESCE(p_profile ->> 'qualification_signals', '')), ''),
+    'topics_and_angles', NULLIF(btrim(COALESCE(p_profile ->> 'topics_and_angles', '')), ''),
+    'listener_takeaways', NULLIF(btrim(COALESCE(p_profile ->> 'listener_takeaways', '')), ''),
     'proof_points', NULLIF(btrim(COALESCE(p_profile ->> 'proof_points', '')), ''),
-    'voice_and_tone', NULLIF(btrim(COALESCE(p_profile ->> 'voice_and_tone', '')), ''),
-    'reply_rules', NULLIF(btrim(COALESCE(p_profile ->> 'reply_rules', '')), '')
+    'ideal_opportunities', NULLIF(btrim(COALESCE(p_profile ->> 'ideal_opportunities', '')), ''),
+    'booking_details', NULLIF(btrim(COALESCE(p_profile ->> 'booking_details', '')), '')
   ));
 
   previous_completed_fields := num_nonnulls(
     NULLIF(btrim(COALESCE(current_profile ->> 'positioning', '')), ''),
-    NULLIF(btrim(COALESCE(current_profile ->> 'ideal_opportunities', '')), ''),
-    NULLIF(btrim(COALESCE(current_profile ->> 'qualification_signals', '')), ''),
+    NULLIF(btrim(COALESCE(current_profile ->> 'topics_and_angles', '')), ''),
+    NULLIF(btrim(COALESCE(current_profile ->> 'listener_takeaways', '')), ''),
     NULLIF(btrim(COALESCE(current_profile ->> 'proof_points', '')), ''),
-    NULLIF(btrim(COALESCE(current_profile ->> 'voice_and_tone', '')), ''),
-    NULLIF(btrim(COALESCE(current_profile ->> 'reply_rules', '')), '')
+    NULLIF(btrim(COALESCE(current_profile ->> 'ideal_opportunities', '')), ''),
+    NULLIF(btrim(COALESCE(current_profile ->> 'booking_details', '')), '')
   );
   completed_fields := num_nonnulls(
     normalized_profile ->> 'positioning',
-    normalized_profile ->> 'ideal_opportunities',
-    normalized_profile ->> 'qualification_signals',
+    normalized_profile ->> 'topics_and_angles',
+    normalized_profile ->> 'listener_takeaways',
     normalized_profile ->> 'proof_points',
-    normalized_profile ->> 'voice_and_tone',
-    normalized_profile ->> 'reply_rules'
+    normalized_profile ->> 'ideal_opportunities',
+    normalized_profile ->> 'booking_details'
   );
   ready := normalized_profile ? 'positioning'
-    AND normalized_profile ? 'ideal_opportunities'
-    AND normalized_profile ? 'voice_and_tone'
-    AND normalized_profile ? 'reply_rules';
+    AND normalized_profile ? 'topics_and_angles'
+    AND normalized_profile ? 'listener_takeaways'
+    AND normalized_profile ? 'booking_details';
 
   UPDATE public.clients AS client
   SET ai_sdr_profile = normalized_profile,

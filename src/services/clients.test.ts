@@ -20,18 +20,18 @@ vi.mock('@/lib/supabase', () => ({
 
 const emptySdrProfile = {
   positioning: '',
-  ideal_opportunities: '',
-  qualification_signals: '',
+  topics_and_angles: '',
+  listener_takeaways: '',
   proof_points: '',
-  voice_and_tone: '',
-  reply_rules: '',
+  ideal_opportunities: '',
+  booking_details: '',
 }
 const emptySdrReadiness = {
   ready: false,
   completed_fields: 0,
   total_fields: 6,
-  missing_fields: ['positioning', 'ideal_opportunities', 'qualification_signals', 'proof_points', 'voice_and_tone', 'reply_rules'],
-  missing_core_fields: ['positioning', 'ideal_opportunities', 'voice_and_tone', 'reply_rules'],
+  missing_fields: ['positioning', 'topics_and_angles', 'listener_takeaways', 'proof_points', 'ideal_opportunities', 'booking_details'],
+  missing_core_fields: ['positioning', 'topics_and_angles', 'listener_takeaways', 'booking_details'],
 }
 
 describe('getClients', () => {
@@ -407,18 +407,18 @@ describe('client AI SDR profile', () => {
   })
 
   const profile = {
-    positioning: 'Position the client as a practical operations expert.',
-    ideal_opportunities: 'Founder and B2B operations podcasts.',
-    qualification_signals: '',
+    positioning: 'The client is a practical operations expert for growth-stage founders.',
+    topics_and_angles: 'Durable systems, founder leverage, and sustainable scale.',
+    listener_takeaways: 'A framework for diagnosing the operational bottleneck behind stalled growth.',
     proof_points: '',
-    voice_and_tone: 'Warm, concise, and direct.',
-    reply_rules: 'Route pricing and uncertain scheduling to a human.',
+    ideal_opportunities: '',
+    booking_details: 'Remote interviews preferred. Route uncertain scheduling to a human.',
   }
   const readiness = {
     ready: true,
     completed_fields: 4,
     total_fields: 6,
-    missing_fields: ['qualification_signals', 'proof_points'],
+    missing_fields: ['proof_points', 'ideal_opportunities'],
     missing_core_fields: [],
   }
 
@@ -473,9 +473,9 @@ describe('client AI SDR profile', () => {
           workspace_id: workspaceId,
           ai_sdr_profile: {
             positioning: profile.positioning,
-            ideal_opportunities: profile.ideal_opportunities,
-            voice_and_tone: profile.voice_and_tone,
-            reply_rules: profile.reply_rules,
+            topics_and_angles: profile.topics_and_angles,
+            listener_takeaways: profile.listener_takeaways,
+            booking_details: profile.booking_details,
           },
           ai_sdr_profile_updated_at: '2026-07-25T00:00:00.000Z',
           ai_sdr_readiness: readiness,
@@ -502,9 +502,9 @@ describe('client AI SDR profile', () => {
         client_id: clientId,
         ai_sdr_profile: {
           positioning: profile.positioning,
-          ideal_opportunities: profile.ideal_opportunities,
-          voice_and_tone: profile.voice_and_tone,
-          reply_rules: profile.reply_rules,
+          topics_and_angles: profile.topics_and_angles,
+          listener_takeaways: profile.listener_takeaways,
+          booking_details: profile.booking_details,
         },
         expected_profile_updated_at: null,
       },

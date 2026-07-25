@@ -147,7 +147,7 @@ assert.match(clientProfileEditingMigration, /'workspace\.client\.profile_updated
 assert.match(clientProfileEditingMigration, /REVOKE ALL ON FUNCTION public\.update_workspace_client_profile_v1\([\s\S]*?FROM PUBLIC, anon, authenticated, service_role;[\s\S]*?GRANT EXECUTE[\s\S]*?TO service_role;/u)
 assert.match(clientAiSdrProfileMigration, /ADD COLUMN IF NOT EXISTS ai_sdr_profile JSONB NOT NULL DEFAULT '\{\}'::JSONB/u)
 assert.match(clientAiSdrProfileMigration, /CREATE OR REPLACE FUNCTION public\.update_workspace_client_ai_sdr_profile_v1\([\s\S]*?p_expected_profile_updated_at TIMESTAMPTZ[\s\S]*?SECURITY DEFINER[\s\S]*?SET search_path = ''/u)
-assert.match(clientAiSdrProfileMigration, /p_profile - ARRAY\[[\s\S]*?'positioning'[\s\S]*?'reply_rules'[\s\S]*?\]::TEXT\[\] <> '\{\}'::JSONB/u)
+assert.match(clientAiSdrProfileMigration, /p_profile - ARRAY\[[\s\S]*?'positioning'[\s\S]*?'booking_details'[\s\S]*?\]::TEXT\[\] <> '\{\}'::JSONB/u)
 assert.doesNotMatch(clientAiSdrProfileMigration, /char_length\(p_profile::TEXT\)/u, 'valid per-field maxima must not be rejected because of JSON key overhead')
 assert.match(clientAiSdrProfileMigration, /current_profile_updated_at IS DISTINCT FROM p_expected_profile_updated_at[\s\S]*?client\.ai_sdr_profile_updated_at IS NOT DISTINCT FROM p_expected_profile_updated_at/u)
 assert.match(clientAiSdrProfileMigration, /'workspace\.client\.ai_sdr_profile_updated'[\s\S]*?'completed_fields'[\s\S]*?'ready'[\s\S]*?'cleared'/u)

@@ -28,17 +28,17 @@ const CLIENT_FIELDS = [
 ] as const
 const AI_SDR_PROFILE_FIELDS = [
   'positioning',
-  'ideal_opportunities',
-  'qualification_signals',
+  'topics_and_angles',
+  'listener_takeaways',
   'proof_points',
-  'voice_and_tone',
-  'reply_rules',
+  'ideal_opportunities',
+  'booking_details',
 ] as const
 const AI_SDR_CORE_FIELDS = [
   'positioning',
-  'ideal_opportunities',
-  'voice_and_tone',
-  'reply_rules',
+  'topics_and_angles',
+  'listener_takeaways',
+  'booking_details',
 ] as const
 const AI_SDR_PROFILE_MAX_FIELD_LENGTH = 4_000
 

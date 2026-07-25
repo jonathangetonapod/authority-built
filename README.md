@@ -89,7 +89,7 @@ The same campaign surfaces are available in My Workspace and in a platform-owner
 
 ### Master Inbox
 
-Each client now owns a lightweight AI SDR Profile in its Clients command center. It is deliberately separate from the long-form approved guest profile used by Podcast Finder. The structured profile covers the client's offer, ideal opportunities, qualification signals, approved proof, voice, and reply/scheduling rules. Four core fields determine readiness; incomplete profiles can still be saved as drafts.
+Each client now owns a lightweight AI SDR Profile in its Clients command center. It is deliberately separate from the long-form approved guest profile used by Podcast Finder. The structured profile gives interested hosts the approved guest positioning, signature topics, listener takeaways, proof and media assets, ideal show context, and booking boundaries they need to evaluate and schedule the client. Four host-facing fields determine readiness; incomplete profiles can still be saved as drafts.
 
 Master Inbox can select a real workspace client and load that exact structured profile through the authenticated workspace boundary. The response is independently checked against the selected workspace/client, reports whether the client is active and ready for review drafts, and always returns `delivery_authorized: false`. Loading or viewing client context has no external side effect.
 

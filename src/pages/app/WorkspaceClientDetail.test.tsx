@@ -62,12 +62,12 @@ const detail: WorkspaceClientDetailData = {
     notes: 'High-priority launch in September.',
     bio: 'Taylor helps founders build durable operations.',
     ai_sdr_profile: {
-      positioning: 'Position Taylor as an operations leader and move interested hosts toward a guest-fit call.',
-      ideal_opportunities: 'Founder and operations podcasts for growth-stage teams.',
-      qualification_signals: 'Prioritize active interview shows with operator audiences.',
+      positioning: 'Taylor is an operations leader who helps growth-stage founders build durable companies.',
+      topics_and_angles: 'Sustainable scale, founder leverage, and the operator systems behind durable growth.',
+      listener_takeaways: 'A practical framework for diagnosing and fixing the bottleneck behind stalled growth.',
       proof_points: 'Approved operating case studies and media kit only.',
-      voice_and_tone: 'Warm, concise, practical, and direct.',
-      reply_rules: 'Route pricing and unclear scheduling to a human for review.',
+      ideal_opportunities: 'Founder and operations podcasts for growth-stage teams.',
+      booking_details: 'Remote interviews preferred. Route sponsorships and unclear scheduling to a human.',
     },
     ai_sdr_profile_updated_at: '2026-07-23T01:00:00.000Z',
     ai_sdr_readiness: {
@@ -194,11 +194,11 @@ describe('WorkspaceClientDetail', () => {
       ai_sdr_profile: {
         ...detail.client.ai_sdr_profile,
         positioning: detail.client.ai_sdr_profile.positioning || '',
-        ideal_opportunities: detail.client.ai_sdr_profile.ideal_opportunities || '',
-        qualification_signals: detail.client.ai_sdr_profile.qualification_signals || '',
+        topics_and_angles: detail.client.ai_sdr_profile.topics_and_angles || '',
+        listener_takeaways: 'Listeners leave with a repeatable operating-system audit.',
         proof_points: detail.client.ai_sdr_profile.proof_points || '',
-        voice_and_tone: 'Direct, concise, and warm.',
-        reply_rules: detail.client.ai_sdr_profile.reply_rules || '',
+        ideal_opportunities: detail.client.ai_sdr_profile.ideal_opportunities || '',
+        booking_details: detail.client.ai_sdr_profile.booking_details || '',
       },
       ai_sdr_profile_updated_at: '2026-07-24T00:00:00.000Z',
       ai_sdr_readiness: detail.client.ai_sdr_readiness,
@@ -277,21 +277,21 @@ describe('WorkspaceClientDetail', () => {
 
     expect(screen.getByRole('heading', { name: 'Taylor Client AI SDR Profile' })).toBeInTheDocument()
     expect(screen.getByText('Context ready')).toBeInTheDocument()
-    expect(screen.getByText('Warm, concise, practical, and direct.')).toBeInTheDocument()
+    expect(screen.getByText('A practical framework for diagnosing and fixing the bottleneck behind stalled growth.')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open Master Inbox' })).toHaveAttribute(
       'href',
       `/app/master-inbox?client=${clientId}`,
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit profile' }))
-    const voice = screen.getByLabelText('Voice & response style')
-    fireEvent.change(voice, { target: { value: 'Direct, concise, and warm.' } })
+    const takeaways = screen.getByLabelText('Listener value & takeaways')
+    fireEvent.change(takeaways, { target: { value: 'Listeners leave with a repeatable operating-system audit.' } })
     fireEvent.click(screen.getAllByRole('button', { name: 'Save profile' }).at(-1) as HTMLElement)
 
     await waitFor(() => expect(mockedUpdateSdrProfile).toHaveBeenCalledWith(
       workspaceId,
       clientId,
-      expect.objectContaining({ voice_and_tone: 'Direct, concise, and warm.' }),
+      expect.objectContaining({ listener_takeaways: 'Listeners leave with a repeatable operating-system audit.' }),
       '2026-07-23T01:00:00.000Z',
     ))
   })
@@ -310,7 +310,7 @@ describe('WorkspaceClientDetail', () => {
     await screen.findByRole('heading', { name: 'Taylor Client' })
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'AI SDR Profile' }), { button: 0 })
 
-    expect(screen.getByText('Warm, concise, practical, and direct.')).toBeInTheDocument()
+    expect(screen.getByText('Sustainable scale, founder leverage, and the operator systems behind durable growth.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit profile' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit context' })).not.toBeInTheDocument()
   })

@@ -286,19 +286,19 @@ describe('WorkspaceOutreachSuite', () => {
       approved_guest_profile: 'Dallas is a B2B sales and AI implementation leader.',
       calendar_link: null,
       ai_sdr_profile: {
-        positioning: 'Position Dallas as a practical AI implementation leader.',
-        ideal_opportunities: 'B2B SaaS, founder, and AI operations podcasts.',
-        qualification_signals: '',
+        positioning: 'Dallas is a practical AI implementation and B2B sales leader.',
+        topics_and_angles: 'Practical AI adoption, operator leverage, and revenue systems.',
+        listener_takeaways: 'A framework for choosing and implementing a useful first AI workflow.',
         proof_points: '',
-        voice_and_tone: 'Warm, concise, and direct.',
-        reply_rules: 'Route pricing and unclear scheduling to a human.',
+        ideal_opportunities: '',
+        booking_details: 'Use the approved calendar and route sponsorship questions to a human.',
       },
       ai_sdr_profile_updated_at: '2026-07-25T00:00:00.000Z',
       readiness: {
         ready: true,
         completed_fields: 4,
         total_fields: 6,
-        missing_fields: ['qualification_signals', 'proof_points'],
+        missing_fields: ['proof_points', 'ideal_opportunities'],
         missing_core_fields: [],
       },
       safe_to_draft: true,
@@ -309,7 +309,7 @@ describe('WorkspaceOutreachSuite', () => {
 
     expect(await screen.findByRole('heading', { name: 'Dallas Fontaine AI SDR context' })).toBeInTheDocument()
     expect(screen.getByText('Ready for review drafts')).toBeInTheDocument()
-    expect(screen.getByText('Position Dallas as a practical AI implementation leader.')).toBeInTheDocument()
+    expect(screen.getByText('Dallas is a practical AI implementation and B2B sales leader.')).toBeInTheDocument()
     expect(screen.getByText('Delivery authority is off.')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Edit AI SDR Profile' })).toHaveAttribute(
       'href',

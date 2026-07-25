@@ -780,7 +780,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                     </div>
                     <h2 className="text-2xl font-bold tracking-tight">{client.name} AI SDR Profile</h2>
                     <p className="mt-2 max-w-2xl leading-6 text-muted-foreground">
-                      The compact, approved context Master Inbox loads after a reply is resolved to this client. It guides qualification, response drafts, scheduling boundaries, and human handoffs.
+                      The host-ready context Master Inbox loads after a reply is resolved to this client. It explains why they are a compelling guest, what they can discuss, what listeners gain, and how to book them.
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
@@ -833,8 +833,8 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
             {sdrEditing ? (
               <Card>
                 <CardHeader>
-                  <CardTitle>Teach this client’s AI SDR</CardTitle>
-                  <CardDescription>Keep each field short and operational. Only include claims and rules the team has approved.</CardDescription>
+                  <CardTitle>Build the host-ready guest profile</CardTitle>
+                  <CardDescription>Give interested hosts the clearest approved case for booking this client. Only include claims, links, and logistics the team has approved.</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-5 lg:grid-cols-2">
                   {CLIENT_SDR_PROFILE_FIELD_DEFINITIONS.map((field) => (
@@ -874,8 +874,8 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
               <section aria-labelledby="ai-sdr-context-heading">
                 <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
                   <div>
-                    <h3 id="ai-sdr-context-heading" className="text-xl font-semibold">Approved response context</h3>
-                    <p className="text-sm text-muted-foreground">What the client-specific AI may use when preparing a reply.</p>
+                    <h3 id="ai-sdr-context-heading" className="text-xl font-semibold">Approved host context</h3>
+                    <p className="text-sm text-muted-foreground">What the client-specific AI may share when helping a host evaluate and book this guest.</p>
                   </div>
                   {canManage && <Button type="button" variant="outline" size="sm" onClick={beginEditingSdrProfile}><Pencil className="mr-2 h-4 w-4" />Edit context</Button>}
                 </div>
