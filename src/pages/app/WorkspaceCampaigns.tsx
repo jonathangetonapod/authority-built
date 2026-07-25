@@ -675,7 +675,7 @@ const WorkspaceCampaigns = ({
                     <CampaignStatusBadge status={instantlyStatusLabel(selectedProviderCampaign.status)} />
                   </div>
                   <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
-                    <div><p className="text-xs text-muted-foreground">Sending accounts</p><p className="mt-1 font-medium">{selectedProviderCampaign.sender_accounts.length}</p></div>
+                    <div><p className="text-xs text-muted-foreground">Sending accounts</p><p className="mt-1 font-medium">{selectedProviderCampaign.sender_accounts?.length ?? 0}</p></div>
                     <div><p className="text-xs text-muted-foreground">Daily limit</p><p className="mt-1 font-medium">{selectedProviderCampaign.daily_limit.toLocaleString()}</p></div>
                     <div><p className="text-xs text-muted-foreground">Timezone</p><p className="mt-1 truncate font-medium">{selectedProviderCampaign.timezone}</p></div>
                   </div>

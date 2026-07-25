@@ -101,7 +101,7 @@ function mailboxStatus(status: number): { label: string; className: string } | n
 }
 
 function mailboxLabel(account: WorkspaceMailboxAccount): string {
-  if (account.tags[0]?.label) return account.tags[0].label
+  if (account.tags?.[0]?.label) return account.tags[0].label
   const name = [account.first_name, account.last_name].filter(Boolean).join(' ').trim()
   return name || 'No account tag'
 }
@@ -145,7 +145,7 @@ const MailboxesContent = ({ data, loading, error, onRetry }: MailboxesContentPro
               : 'Not connected'}
       </Badge>
     </CardHeader>
-    {data?.analytics_errors.length ? (
+    {data?.analytics_errors?.length ? (
       <div role="status" className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-5 py-3 text-xs leading-5 text-amber-900">
         <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         Account details are current, but some sending or warmup analytics could not be refreshed.
@@ -214,7 +214,7 @@ const MailboxesContent = ({ data, loading, error, onRetry }: MailboxesContentPro
                     <p className="font-semibold text-foreground">{account.email}</p>
                     <div className="mt-1.5 flex flex-wrap items-center gap-2">
                       <span className="text-xs text-muted-foreground">{mailboxLabel(account)}</span>
-                      {account.tags.length > 1 && <span className="text-[10px] text-muted-foreground">+{account.tags.length - 1}</span>}
+                      {(account.tags?.length ?? 0) > 1 && <span className="text-[10px] text-muted-foreground">+{account.tags.length - 1}</span>}
                       {status && (
                         <Badge variant="outline" title={account.status_message || status.label} className={`px-2 py-0 text-[10px] font-semibold ${status.className}`}>
                           {status.label}
