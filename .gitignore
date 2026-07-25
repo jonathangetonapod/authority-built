@@ -28,6 +28,7 @@ credentials/
 credentials.json
 *service-account*.json
 supabase/.temp/
+.tmp-supabase-cli-*/
 .tools/
 __pycache__/
 *.py[cod]
