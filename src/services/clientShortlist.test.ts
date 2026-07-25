@@ -4,6 +4,7 @@ import {
   addClientShortlistPodcasts,
   getClientShortlist,
   reorderClientShortlistFeatured,
+  runClientShortlistResearch,
   searchClientPodcastCatalog,
   updateClientShortlistPodcast,
 } from '@/services/clientShortlist'
@@ -50,6 +51,29 @@ describe('clientShortlist service', () => {
       'update',
       'reorder-featured',
     ])
+  })
+
+  it('starts a research run scoped to one shortlist podcast and returns progress', async () => {
+    const progress = {
+      status: 'completed',
+      current_stage: null,
+      completed_stages: ['podcast_profile', 'recent_episodes', 'host_profile', 'guest_patterns', 'guest_fit', 'pitch_angles'],
+      started_at: '2026-07-25T00:00:00.000Z',
+      updated_at: '2026-07-25T00:02:00.000Z',
+    }
+    invoke.mockResolvedValueOnce({ data: { research_progress: progress }, error: null } as never)
+
+    const result = await runClientShortlistResearch(workspaceId, clientId, '33333333-3333-4333-8333-333333333333')
+
+    expect(invoke).toHaveBeenCalledWith('workspace-client-shortlist', {
+      body: {
+        action: 'research-run',
+        workspace_id: workspaceId,
+        client_id: clientId,
+        shortlist_podcast_id: '33333333-3333-4333-8333-333333333333',
+      },
+    })
+    expect(result).toEqual(progress)
   })
 
   it('chunks large weekly additions and combines dedupe totals', async () => {

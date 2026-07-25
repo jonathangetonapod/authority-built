@@ -6,6 +6,7 @@ import { ClientShortlistEditor } from '@/components/workspace/ClientShortlistEdi
 import {
   addClientShortlistPodcasts,
   getClientShortlist,
+  runClientShortlistResearch,
   searchClientPodcastCatalog,
   updateClientShortlistPodcast,
   type ClientShortlistPodcast,
@@ -15,6 +16,7 @@ import { getWorkspaceCampaign, prepareWorkspaceCampaignPodcast } from '@/service
 vi.mock('@/services/clientShortlist', () => ({
   addClientShortlistPodcasts: vi.fn(),
   getClientShortlist: vi.fn(),
+  runClientShortlistResearch: vi.fn(),
   searchClientPodcastCatalog: vi.fn(),
   updateClientShortlistPodcast: vi.fn(),
 }))
@@ -52,7 +54,7 @@ function podcast(overrides: Partial<ClientShortlistPodcast> = {}): ClientShortli
     ai_clean_description: null,
     ai_fit_reasons: null,
     ai_pitch_angles: null,
-    ai_analyzed_at: null,
+    ai_analyzed_at: '2026-07-21T00:00:00.000Z',
     visibility: 'visible',
     display_order: 0,
     is_featured: true,
@@ -92,6 +94,8 @@ function renderEditor(viewerRole: 'owner' | 'admin' | 'member' | 'platform_admin
 describe('ClientShortlistEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Research runs stay pending so tests can assert the in-flight UI.
+    vi.mocked(runClientShortlistResearch).mockImplementation(() => new Promise(() => {}))
     vi.mocked(getClientShortlist).mockResolvedValue({
       client: { id: clientId, name: 'Taylor Client' },
       podcasts: [
@@ -453,7 +457,14 @@ describe('ClientShortlistEditor', () => {
 
     expect(screen.getByRole('heading', { name: 'Research and Pitch' })).toBeInTheDocument()
     expect(screen.getByText('Reading the podcast profile · 0 of 6 prompts complete')).toBeInTheDocument()
-    expect(screen.getByText(/Running the saved workspace prompt for stage 1/i)).toBeInTheDocument()
+    expect(screen.getByText(/Running your saved workspace prompts against live podcast data/i)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(vi.mocked(runClientShortlistResearch)).toHaveBeenCalledWith(
+        workspaceId,
+        clientId,
+        '33333333-3333-4333-8333-333333333333',
+      )
+    })
     const researchProgress = within(screen.getByRole('list', { name: 'Podcast research progress' }))
     expect(researchProgress.getByText('In progress')).toBeInTheDocument()
     expect(researchProgress.getAllByText('Waiting')).toHaveLength(5)

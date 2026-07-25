@@ -84,6 +84,27 @@ assert.match(shortlistEdge, /const access = await requireWorkspaceFeatureAccess\
 assert.match(shortlistEdge, /\.from\('clients'\)[\s\S]*?\.eq\('id', clientId\)[\s\S]*?\.eq\('workspace_id', workspaceId\)/u)
 assert.match(shortlistEdge, /if \(action === 'list'\)[\s\S]*?if \(action === 'catalog-search'\)[\s\S]*?if \(action === 'add'\)[\s\S]*?if \(action === 'update'\)[\s\S]*?if \(action === 'reorder-featured'\)/u)
 assert.match(shortlistEdge, /archived_at = visibility === 'archived'[\s\S]*?archived_by = visibility === 'archived'/u)
+
+// Research pipeline executor: charge before provider calls, stale-lock 409,
+// progress written before the prompt chain, results persisted with metering.
+assert.match(shortlistEdge, /if \(action === 'research-run'\)[\s\S]*?requireOnlyKeys\(body, \['action', 'workspace_id', 'client_id', 'shortlist_podcast_id'\]\)/u)
+assert.match(shortlistEdge, /RESEARCH_ALREADY_RUNNING/u)
+assert.match(shortlistEdge, /RESEARCH_STALE_LOCK_MS = 3 \* 60 \* 1000/u)
+assert.match(shortlistEdge, /const anthropicKey = await resolveAiKey\(authContext\.admin, workspaceId, 'anthropic'\)[\s\S]*?await chargeCredits\(authContext\.admin, \{[\s\S]*?operationType: 'research_run'[\s\S]*?byoKeyUsed,[\s\S]*?\}\)[\s\S]*?writeProgress\(\{ status: 'running', current_stage: 'podcast_profile', completed_stages: \[\] \}\)[\s\S]*?fetchRecentEpisodes\(/u)
+assert.match(shortlistEdge, /from\('workspace_research_prompts'\)[\s\S]*?RESEARCH_PROMPT_DEFAULTS\[promptId\]\.content/u)
+assert.match(shortlistEdge, /ai_clean_description: cleanDescription,[\s\S]*?ai_analyzed_at: completedAt,[\s\S]*?research_document:[\s\S]*?research_progress:[\s\S]*?status: 'completed'/u)
+assert.match(shortlistEdge, /await logOperationCost\(authContext\.admin, \{[\s\S]*?operationType: 'research_run'[\s\S]*?podscanCalls: 1/u)
+
+// Deno prompt defaults must stay in sync with the canonical docs JSON.
+const denoDefaults = readFileSync('supabase/functions/_shared/researchPromptDefaults.ts', 'utf8')
+const canonicalPrompts = JSON.parse(readFileSync('docs/pitch-research-prompts.json', 'utf8'))
+for (const [promptId, prompt] of Object.entries(canonicalPrompts.prompts)) {
+  assert.ok(denoDefaults.includes(`id: '${promptId}'`), `Deno defaults missing prompt ${promptId}`)
+  assert.ok(
+    denoDefaults.includes(JSON.stringify(prompt.content)),
+    `Deno defaults content out of sync for prompt ${promptId}`,
+  )
+}
 assert.doesNotMatch(shortlistEdge, /\.from\('client_dashboard_podcasts'\)\.delete\(/u)
 assert.match(shortlistEdge, /podscan_email/u)
 assert.match(shortlistEdge, /rpc\('reorder_client_shortlist_featured_v1'/u)

@@ -203,3 +203,23 @@ export async function reorderClientShortlistFeatured(
     podcast_ids: podcastIds,
   })
 }
+
+export async function runClientShortlistResearch(
+  workspaceId: string,
+  clientId: string,
+  shortlistPodcastId: string,
+): Promise<ClientShortlistResearchProgress> {
+  const { data, error } = await supabase.functions.invoke('workspace-client-shortlist', {
+    body: {
+      action: 'research-run',
+      workspace_id: workspaceId,
+      client_id: clientId,
+      shortlist_podcast_id: shortlistPodcastId,
+    },
+  })
+  if (error) throw await toFunctionError(error, 'The research run could not be started.')
+  if (!data?.research_progress || typeof data.research_progress !== 'object') {
+    throw new Error('The research response was invalid.')
+  }
+  return data.research_progress as ClientShortlistResearchProgress
+}

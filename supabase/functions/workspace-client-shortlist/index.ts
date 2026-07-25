@@ -18,8 +18,10 @@ import {
   type WorkspaceFeatureAccess,
 } from '../_shared/workspaceAuth.ts'
 import { generatePodcastSearchEmbedding } from '../_shared/podcastSearch.ts'
-import { logOperationCost } from '../_shared/billing.ts'
+import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
+import { fetchRecentEpisodes } from '../_shared/podcastEpisodes.ts'
+import { RESEARCH_PROMPT_DEFAULTS } from '../_shared/researchPromptDefaults.ts'
 
 const METHODS = ['POST'] as const
 const MANAGER_ROLES = new Set(['owner', 'admin', 'platform_admin'])
@@ -41,6 +43,7 @@ const SHORTLIST_FIELDS = [
   'ai_fit_reasons',
   'ai_pitch_angles',
   'ai_analyzed_at',
+  'research_progress',
   'visibility',
   'display_order',
   'is_featured',
@@ -306,6 +309,55 @@ function podcastIdList(value: unknown, max = 6): string[] {
     throw new HttpError(400, 'INVALID_FIELD', 'podcast_ids contains duplicates')
   }
   return result
+}
+
+// Research executor: which UI stages each canonical prompt completes.
+const RESEARCH_STAGE_MAP: Record<string, string[]> = {
+  podcast_research: ['podcast_profile', 'recent_episodes'],
+  host_info: ['host_profile'],
+  guest_info: ['guest_patterns'],
+  find_topics: ['guest_fit', 'pitch_angles'],
+}
+const RESEARCH_STALE_LOCK_MS = 3 * 60 * 1000
+
+function fillPromptTemplate(template: string, variables: Record<string, string | null | undefined>): string {
+  return template.replace(/\{\{\s*([a-z_]+)\s*\}\}/gu, (_match, key: string) => {
+    const value = variables[key]
+    return typeof value === 'string' && value.trim() ? value : 'Not available'
+  })
+}
+
+async function runResearchPrompt(
+  apiKey: string,
+  prompt: { model: string; maxTokens: number; system: string },
+  content: string,
+  usage: { input: number; output: number },
+): Promise<string> {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: prompt.model,
+      max_tokens: prompt.maxTokens,
+      system: prompt.system,
+      messages: [{ role: 'user', content }],
+    }),
+    signal: AbortSignal.timeout(28_000),
+  })
+  if (!response.ok) throw new Error(`research prompt failed with ${response.status}`)
+  const payload = await response.json() as {
+    content?: Array<{ type?: string; text?: string }>
+    usage?: { input_tokens?: number; output_tokens?: number }
+  }
+  usage.input += Number(payload.usage?.input_tokens) || 0
+  usage.output += Number(payload.usage?.output_tokens) || 0
+  const text = payload.content?.find((block) => block.type === 'text' && typeof block.text === 'string')?.text
+  if (typeof text !== 'string' || !text.trim()) throw new Error('research prompt returned no text')
+  return text.trim()
 }
 
 serve(async (req) => {
@@ -782,6 +834,256 @@ serve(async (req) => {
         metadata: { podcast_ids: podcastIds },
       })
       return jsonResponse(req, METHODS, 200, { reordered: Number(data || 0), podcast_ids: podcastIds })
+    }
+
+    if (action === 'research-run') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'shortlist_podcast_id'])
+      const shortlistPodcastId = requireUuid(body.shortlist_podcast_id, 'shortlist_podcast_id')
+
+      const { data: shortlistRow, error: shortlistError } = await authContext.admin
+        .from('client_dashboard_podcasts')
+        .select('id, podcast_id, podcast_name, podcast_description, podcast_url, publisher_name, last_posted_at, research_progress')
+        .eq('id', shortlistPodcastId)
+        .eq('client_id', clientId)
+        .maybeSingle()
+      if (shortlistError) throw new HttpError(500, 'RESEARCH_FAILED', 'The shortlist podcast could not be loaded')
+      if (!shortlistRow) throw new HttpError(404, 'PODCAST_NOT_FOUND', 'Shortlist podcast not found for this client')
+
+      const existingProgress = shortlistRow.research_progress as
+        | { status?: string; updated_at?: string }
+        | null
+      if (
+        existingProgress
+        && ['queued', 'running'].includes(String(existingProgress.status))
+        && typeof existingProgress.updated_at === 'string'
+        && Date.now() - Date.parse(existingProgress.updated_at) < RESEARCH_STALE_LOCK_MS
+      ) {
+        throw new HttpError(409, 'RESEARCH_ALREADY_RUNNING', 'Research is already running for this podcast')
+      }
+
+      const { data: clientProfile } = await authContext.admin
+        .from('clients')
+        .select('name, bio, linkedin_url, website')
+        .eq('id', clientId)
+        .eq('workspace_id', workspaceId)
+        .maybeSingle()
+
+      const { data: catalogRow } = await authContext.admin
+        .from('podcasts')
+        .select('podcast_name, podcast_description, podcast_url, publisher_name, last_posted_at')
+        .eq('podscan_id', shortlistRow.podcast_id)
+        .maybeSingle()
+
+      const anthropicKey = await resolveAiKey(authContext.admin, workspaceId, 'anthropic')
+      if (!anthropicKey) {
+        throw new HttpError(500, 'RESEARCH_NOT_CONFIGURED', 'Podcast research is not configured')
+      }
+      const byoKeyUsed = anthropicKey.source === 'workspace'
+      await chargeCredits(authContext.admin, {
+        workspaceId,
+        operationType: 'research_run',
+        referenceKind: 'shortlist_podcast',
+        referenceId: shortlistPodcastId,
+        clientId,
+        actorUserId: authContext.user.id,
+        byoKeyUsed,
+      })
+
+      const startedAt = new Date().toISOString()
+      const writeProgress = async (progress: Record<string, unknown>) => {
+        await authContext.admin
+          .from('client_dashboard_podcasts')
+          .update({ research_progress: { ...progress, started_at: startedAt, updated_at: new Date().toISOString() } })
+          .eq('id', shortlistPodcastId)
+          .eq('client_id', clientId)
+      }
+      await writeProgress({ status: 'running', current_stage: 'podcast_profile', completed_stages: [] })
+
+      const usage = { input: 0, output: 0 }
+      const completedStages: string[] = []
+      try {
+        const { data: overrideRows } = await authContext.admin
+          .from('workspace_research_prompts')
+          .select('prompt_id, content')
+          .eq('workspace_id', workspaceId)
+        const overrides = new Map(
+          (overrideRows ?? []).map((row) => [String(row.prompt_id), String(row.content)]),
+        )
+        const promptContent = (promptId: string): string =>
+          overrides.get(promptId) ?? RESEARCH_PROMPT_DEFAULTS[promptId].content
+
+        const episodes = await fetchRecentEpisodes(shortlistRow.podcast_id)
+        const firstEpisode = episodes[0] ?? null
+        const baseVariables: Record<string, string | null> = {
+          client_name: clientProfile?.name ?? null,
+          client_bio: clientProfile?.bio ?? null,
+          client_linkedin_url: clientProfile?.linkedin_url ?? null,
+          client_website: clientProfile?.website ?? null,
+          podcast_name: catalogRow?.podcast_name ?? shortlistRow.podcast_name,
+          podcast_url: catalogRow?.podcast_url ?? shortlistRow.podcast_url,
+          podcast_description: catalogRow?.podcast_description ?? shortlistRow.podcast_description,
+          last_posted_at: catalogRow?.last_posted_at ?? shortlistRow.last_posted_at,
+          episode_title: firstEpisode?.title ?? null,
+          episode_description: firstEpisode?.description ?? null,
+          episode_transcript: firstEpisode?.transcript ?? null,
+        }
+
+        const advance = async (promptId: string, nextStage: string | null) => {
+          completedStages.push(...RESEARCH_STAGE_MAP[promptId])
+          await writeProgress({ status: 'running', current_stage: nextStage, completed_stages: [...completedStages] })
+        }
+
+        const researchReport = await runResearchPrompt(
+          anthropicKey.apiKey,
+          RESEARCH_PROMPT_DEFAULTS.podcast_research,
+          fillPromptTemplate(promptContent('podcast_research'), baseVariables),
+          usage,
+        )
+        await advance('podcast_research', 'host_profile')
+
+        const hostReport = await runResearchPrompt(
+          anthropicKey.apiKey,
+          RESEARCH_PROMPT_DEFAULTS.host_info,
+          fillPromptTemplate(promptContent('host_info'), { ...baseVariables, research_report: researchReport }),
+          usage,
+        )
+        await advance('host_info', 'guest_patterns')
+
+        let guestReport: string | null = null
+        if (firstEpisode?.transcript) {
+          guestReport = await runResearchPrompt(
+            anthropicKey.apiKey,
+            RESEARCH_PROMPT_DEFAULTS.guest_info,
+            fillPromptTemplate(promptContent('guest_info'), { ...baseVariables, research_report: researchReport }),
+            usage,
+          ).catch(() => null)
+        }
+        await advance('guest_info', 'guest_fit')
+
+        const topicProposal = await runResearchPrompt(
+          anthropicKey.apiKey,
+          RESEARCH_PROMPT_DEFAULTS.find_topics,
+          fillPromptTemplate(promptContent('find_topics'), { ...baseVariables, research_report: researchReport }),
+          usage,
+        )
+        await advance('find_topics', null)
+
+        // Structure the narrative outputs into the shortlist's existing
+        // ai_* columns so every downstream surface renders them unchanged.
+        const structured = await runResearchPrompt(
+          anthropicKey.apiKey,
+          { model: 'claude-haiku-4-5-20251001', maxTokens: 1_500, system: 'You convert podcast research into strict JSON. Return ONLY a JSON object, no markdown.' },
+          `From the research and topic proposal below, return ONLY this JSON shape: {"clean_description": string (2 sentences about the show), "fit_reasons": string[] (3 specific reasons this guest fits), "pitch_angles": [{"title": string, "description": string}] (exactly 3 angles), "host_name": string or null}.\n\nRESEARCH:\n${researchReport.slice(0, 12_000)}\n\nHOST REPORT:\n${hostReport.slice(0, 4_000)}\n\nTOPIC PROPOSAL:\n${topicProposal.slice(0, 8_000)}`,
+          usage,
+        )
+        let parsed: {
+          clean_description?: unknown
+          fit_reasons?: unknown
+          pitch_angles?: unknown
+          host_name?: unknown
+        } = {}
+        try {
+          parsed = JSON.parse(structured.replace(/^```(?:json)?\s*/u, '').replace(/\s*```$/u, ''))
+        } catch (_error) {
+          console.warn('[Shortlist Research] Structured output was not valid JSON; storing narrative only')
+        }
+        const cleanDescription = typeof parsed.clean_description === 'string' ? parsed.clean_description.slice(0, 2_000) : null
+        const fitReasons = Array.isArray(parsed.fit_reasons)
+          ? parsed.fit_reasons.filter((reason): reason is string => typeof reason === 'string').slice(0, 5)
+          : []
+        const pitchAngles = Array.isArray(parsed.pitch_angles)
+          ? parsed.pitch_angles.flatMap((angle) => {
+            if (!angle || typeof angle !== 'object' || Array.isArray(angle)) return []
+            const record = angle as Record<string, unknown>
+            return typeof record.title === 'string' && typeof record.description === 'string'
+              ? [{ title: record.title.slice(0, 160), description: record.description.slice(0, 800) }]
+              : []
+          }).slice(0, 3)
+          : []
+        const hostName = typeof parsed.host_name === 'string' && parsed.host_name.trim()
+          ? parsed.host_name.trim().slice(0, 200)
+          : null
+
+        const completedAt = new Date().toISOString()
+        const { error: persistError } = await authContext.admin
+          .from('client_dashboard_podcasts')
+          .update({
+            ai_clean_description: cleanDescription,
+            ai_fit_reasons: fitReasons.length > 0 ? fitReasons : null,
+            ai_pitch_angles: pitchAngles.length > 0 ? pitchAngles : null,
+            ai_analyzed_at: completedAt,
+            research_document: {
+              podcast_research: researchReport.slice(0, 20_000),
+              host_info: hostReport.slice(0, 20_000),
+              guest_info: guestReport ? guestReport.slice(0, 20_000) : null,
+              find_topics: topicProposal.slice(0, 20_000),
+              episodes_used: episodes.map((episode) => ({ title: episode.title, had_transcript: Boolean(episode.transcript) })),
+              generated_at: completedAt,
+            },
+            research_progress: {
+              status: 'completed',
+              current_stage: null,
+              completed_stages: completedStages,
+              started_at: startedAt,
+              updated_at: completedAt,
+            },
+          })
+          .eq('id', shortlistPodcastId)
+          .eq('client_id', clientId)
+        if (persistError) throw new Error('research results could not be persisted')
+
+        if (hostName) {
+          await authContext.admin
+            .from('workspace_client_campaign_targets')
+            .update({ host_name: hostName })
+            .eq('workspace_id', workspaceId)
+            .eq('shortlist_podcast_id', shortlistPodcastId)
+            .is('host_name', null)
+        }
+
+        await logOperationCost(authContext.admin, {
+          workspaceId,
+          operationType: 'research_run',
+          usage: {
+            anthropicInputTokens: usage.input,
+            anthropicOutputTokens: usage.output,
+            podscanCalls: 1,
+          },
+          usedByoKey: byoKeyUsed,
+          clientId,
+          referenceKind: 'shortlist_podcast',
+          referenceId: shortlistPodcastId,
+        })
+
+        return jsonResponse(req, METHODS, 200, {
+          research_progress: {
+            status: 'completed',
+            current_stage: null,
+            completed_stages: completedStages,
+            started_at: startedAt,
+            updated_at: completedAt,
+          },
+        })
+      } catch (error) {
+        await writeProgress({
+          status: 'failed',
+          current_stage: null,
+          completed_stages: completedStages,
+          message: 'Research was interrupted. Try again in a moment.',
+        }).catch(() => undefined)
+        await logOperationCost(authContext.admin, {
+          workspaceId,
+          operationType: 'research_run',
+          usage: { anthropicInputTokens: usage.input, anthropicOutputTokens: usage.output, podscanCalls: 1 },
+          usedByoKey: byoKeyUsed,
+          clientId,
+          referenceKind: 'shortlist_podcast',
+          referenceId: shortlistPodcastId,
+        })
+        if (error instanceof HttpError) throw error
+        console.error('[Shortlist Research] Pipeline failed')
+        throw new HttpError(503, 'RESEARCH_FAILED', 'The research run could not be completed. Try again shortly')
+      }
     }
 
     throw new HttpError(400, 'INVALID_ACTION', 'Unknown client shortlist action')

@@ -41,10 +41,11 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { buildPodcastCampaignSequenceDraft, buildThreadReplySubject, type PodcastCampaignSequenceDraft } from '@/lib/campaignSequence'
 import { safeExternalUrl } from '@/lib/externalUrl'
-import type {
-  ClientShortlistEmailUnlockStageId,
-  ClientShortlistPodcast,
-  ClientShortlistResearchStageId,
+import {
+  type ClientShortlistEmailUnlockStageId,
+  type ClientShortlistPodcast,
+  type ClientShortlistResearchStageId,
+  runClientShortlistResearch,
 } from '@/services/clientShortlist'
 import {
   getWorkspaceCampaign,
@@ -90,11 +91,6 @@ interface ResearchProgressStep {
 interface EmailUnlockStep {
   id: ClientShortlistEmailUnlockStageId
   title: string
-}
-
-interface ResearchRegenerationPreview {
-  podcastId: string
-  stageIndex: number
 }
 
 const pitchSteps: Array<{ id: PitchStep; step: string; title: string; detail: string }> = [
@@ -182,7 +178,25 @@ export function ClientCampaignPrepDialog({
   const [activeStep, setActiveStep] = useState<PitchStep>('email')
   const [emailRoute, setEmailRoute] = useState<EmailRoute>('podcast')
   const [previewEmailSearchPodcastId, setPreviewEmailSearchPodcastId] = useState<string | null>(null)
-  const [researchRegenerationPreview, setResearchRegenerationPreview] = useState<ResearchRegenerationPreview | null>(null)
+  const shortlistQueryKey = ['client-shortlist', workspaceId, clientId] as const
+  const runResearchMutation = useMutation({
+    mutationFn: (shortlistPodcastId: string) => runClientShortlistResearch(workspaceId, clientId, shortlistPodcastId),
+    onMutate: () => {
+      // The shortlist poll only activates once it sees a running status, so
+      // refresh shortly after the backend writes its first progress row.
+      window.setTimeout(() => {
+        void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
+      }, 2_500)
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
+      toast.success('Research completed with your saved workspace prompts.')
+    },
+    onError: (error) => {
+      void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
+      toast.error(error instanceof Error ? error.message : 'The research run could not be completed.')
+    },
+  })
   const [showPodcastDetails, setShowPodcastDetails] = useState(false)
   const [showResearchSteps, setShowResearchSteps] = useState(false)
   const [showPromptSettings, setShowPromptSettings] = useState(false)
@@ -245,36 +259,33 @@ export function ClientCampaignPrepDialog({
   const selectedPitchAngle = pitchAngles[selectedAngleIndex] || null
   const sequenceOptionCount = Math.max(Math.min(pitchAngles.length, 3), 1)
   const researchProgress = podcast?.research_progress || null
-  const researchRegenerationStageIndex = researchRegenerationPreview
-    && researchRegenerationPreview.podcastId === podcast?.podcast_id
-    ? researchRegenerationPreview.stageIndex
-    : null
-  const researchRegenerating = researchRegenerationStageIndex !== null
+  const hasLegacyAnalysis = Boolean(podcast?.ai_analyzed_at)
+  const researchRegenerating = runResearchMutation.isPending && runResearchMutation.variables === podcast?.id
   const visibleResearchSteps = useMemo(() => {
-    if (researchRegenerationStageIndex !== null) {
+    const liveStatus = researchProgress?.status
+    if (researchRegenerating && liveStatus !== 'running' && liveStatus !== 'queued') {
+      // The run has started but the poll hasn't surfaced backend progress yet.
       return researchProgressSteps.map((step, index): ResearchProgressStep & { status: ResearchProgressStatus } => ({
         ...step,
-        status: index < researchRegenerationStageIndex
-          ? 'complete'
-          : index === researchRegenerationStageIndex
-            ? 'active'
-            : 'queued',
+        status: index === 0 ? 'active' : 'queued',
       }))
     }
     const completedStages = new Set(researchProgress?.completed_stages || [])
     return researchProgressSteps.map((step): ResearchProgressStep & { status: ResearchProgressStatus } => {
-      if (!researchProgress || researchProgress.status === 'completed') return { ...step, status: 'complete' }
+      if (!researchProgress) return { ...step, status: hasLegacyAnalysis ? 'complete' : 'queued' }
+      if (researchProgress.status === 'completed') return { ...step, status: 'complete' }
       if (completedStages.has(step.id)) return { ...step, status: 'complete' }
       if (researchProgress.current_stage === step.id) {
         return { ...step, status: researchProgress.status === 'failed' ? 'failed' : 'active' }
       }
       return { ...step, status: 'queued' }
     })
-  }, [researchProgress, researchRegenerationStageIndex])
+  }, [researchProgress, researchRegenerating, hasLegacyAnalysis])
   const completedResearchStepCount = visibleResearchSteps.filter((step) => step.status === 'complete').length
   const activeResearchStep = visibleResearchSteps.find((step) => step.status === 'active') || null
   const failedResearchStep = visibleResearchSteps.find((step) => step.status === 'failed') || null
-  const researchComplete = !researchRegenerating && (!researchProgress || researchProgress.status === 'completed')
+  const researchComplete = !researchRegenerating
+    && (researchProgress ? researchProgress.status === 'completed' : hasLegacyAnalysis)
   const researchFailed = !researchRegenerating && researchProgress?.status === 'failed'
   const researchWorking = researchRegenerating || researchProgress?.status === 'queued' || researchProgress?.status === 'running'
   const researchStepsExpanded = !researchComplete || showResearchSteps
@@ -288,7 +299,7 @@ export function ClientCampaignPrepDialog({
         ? `${activeResearchStep.title} · ${completedResearchStepCount} of ${researchProgressSteps.length} steps complete`
         : `Research queued · ${completedResearchStepCount} of ${researchProgressSteps.length} steps complete`
   const researchStatusDetail = researchRegenerating && activeResearchStep
-    ? `Running the saved workspace prompt for stage ${(researchRegenerationStageIndex || 0) + 1}. ${activeResearchStep.detail}.`
+    ? `Running your saved workspace prompts against live podcast data. ${activeResearchStep.detail}.`
     : researchComplete
     ? 'The research is saved to this podcast and will still be here when you return.'
     : researchFailed
@@ -393,22 +404,6 @@ export function ClientCampaignPrepDialog({
     setSavedDraft(nextDraft)
   }, [campaignQuery.isLoading, clientBio, clientName, emailAlreadyUnlocked, emailSearchRunning, open, podcast, publicPodcastEmail, storedEmailUnlock?.host_name, target, unlockedEmail])
 
-  useEffect(() => {
-    if (!researchRegenerationPreview) return
-    const timeoutId = window.setTimeout(() => {
-      if (researchRegenerationPreview.stageIndex >= researchProgressSteps.length - 1) {
-        setResearchRegenerationPreview(null)
-        toast.success('Research regenerated through all 6 saved workspace prompts.')
-        return
-      }
-      setResearchRegenerationPreview({
-        ...researchRegenerationPreview,
-        stageIndex: researchRegenerationPreview.stageIndex + 1,
-      })
-    }, 900)
-    return () => window.clearTimeout(timeoutId)
-  }, [researchRegenerationPreview])
-
   const updateDraft = (field: keyof PodcastCampaignSequenceDraft, value: string) => {
     setDraft((current) => ({ ...current, [field]: value }))
   }
@@ -460,11 +455,15 @@ export function ClientCampaignPrepDialog({
       setShowPromptSettings(true)
       return
     }
+    if (researchWorking) {
+      toast.info('Research is already running for this podcast.')
+      return
+    }
     setShowPromptSettings(false)
     setShowResearchSteps(true)
     setActiveStep('research')
-    setResearchRegenerationPreview({ podcastId: podcast.podcast_id, stageIndex: 0 })
-    toast.info('Regenerating all 6 stages with their saved workspace prompts.')
+    runResearchMutation.mutate(podcast.id)
+    toast.info('Research started — running your saved workspace prompts against live podcast data.')
   }
   const choosePitchAngle = (angleIndex: number) => {
     setSelectedAngleIndex(angleIndex)
