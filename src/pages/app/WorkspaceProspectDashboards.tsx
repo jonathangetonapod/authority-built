@@ -694,13 +694,52 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
   const totalViews = prospects.reduce((total, prospect) => total + (prospect.view_count || 0), 0)
   const building = buildMutation.isPending || ['matching', 'analyzing'].includes(selected?.lifecycle_status || '')
   const mutating = building || publicationMutation.isPending || podcastMutation.isPending || archiveMutation.isPending
-  const stage = selected?.published_at
-    ? 3
-    : selected && selected.readiness.visible_count > 0
-      ? 2
-      : building
-        ? 1
-        : 0
+  const nextActionKind = !selected?.readiness.profile_ready
+    ? 'profile'
+    : selected.readiness.visible_count < 5
+      ? 'build'
+      : selected.readiness.analyzed_count < 5
+        ? 'analyze'
+        : !selected.readiness.cta_ready
+          ? 'cta'
+          : selected.published_at
+            ? 'share'
+            : 'publish'
+  const nextAction = {
+    profile: {
+      title: 'Complete the guest profile',
+      description: 'Add a focused positioning statement before researching podcast matches.',
+    },
+    build: {
+      title: 'Build the first shortlist',
+      description: 'Create at least five relevant opportunities from the approved profile.',
+    },
+    analyze: {
+      title: 'Complete the match analysis',
+      description: 'Refresh the shortlist so at least five opportunities have clear fit reasons.',
+    },
+    cta: {
+      title: 'Set the response path',
+      description: 'Choose exactly what this prospect should do after reviewing the dashboard.',
+    },
+    share: {
+      title: 'Share the private dashboard',
+      description: `Send ${selected?.prospect_name || 'the prospect'} the private link, then monitor views and feedback here.`,
+    },
+    publish: {
+      title: 'Publish the dashboard',
+      description: 'The profile and shortlist are ready. Make the private link available when the selection feels right.',
+    },
+  }[nextActionKind]
+  const studioSteps = selected
+    ? [
+        { label: 'Profile', complete: selected.readiness.profile_ready },
+        { label: 'Build', complete: selected.readiness.visible_count >= 5 },
+        { label: 'Review', complete: selected.readiness.publishable },
+        { label: 'Live', complete: Boolean(selected.published_at) },
+      ]
+    : []
+  const currentStudioStep = studioSteps.findIndex((step) => !step.complete)
 
   if (!workspaceId || !validWorkspaceId) {
     return (
@@ -743,7 +782,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
             </Card>
 
             <div className="grid gap-4 xl:h-[calc(100dvh-290px)] xl:min-h-[620px] xl:grid-cols-[320px_minmax(0,1fr)] xl:overflow-hidden">
-              <Card className="flex min-h-0 flex-col overflow-hidden">
+              <Card className="flex max-h-[420px] min-h-0 flex-col overflow-hidden xl:max-h-none">
                 <CardHeader className="p-4 pb-3">
                   <CardTitle className="text-base">Prospects</CardTitle>
                   <CardDescription>Choose a prospect to build or review.</CardDescription>
@@ -778,80 +817,90 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
               ) : (
                 <div className="min-h-0 space-y-4 xl:overflow-y-auto xl:overscroll-contain xl:pr-2">
                   <Card className="overflow-hidden">
-                    <div className="border-b bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-4 text-white sm:p-5">
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="flex min-w-0 gap-4">
-                          <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/10">
+                    <div className="border-b bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 px-4 py-4 text-white sm:px-5">
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/10 sm:h-14 sm:w-14">
                             {selected.prospect_image_url
                               ? <img src={selected.prospect_image_url} alt={selected.prospect_name} className="h-full w-full object-cover" />
                               : <UserRound className="h-7 w-7 text-white/70" />}
                           </div>
                           <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <h2 className="truncate text-xl font-bold sm:text-2xl">{selected.prospect_name}</h2>
                               <Badge variant="outline" className={cn('border-white/20 bg-white/10 text-white', selected.published_at && 'border-emerald-400/40 bg-emerald-400/15 text-emerald-100')}>{lifecycleLabel(selected.lifecycle_status)}</Badge>
-                              {selected.prospect_company && <span className="text-sm text-white/60">{selected.prospect_company}</span>}
                             </div>
-                            <h2 className="mt-1.5 truncate text-2xl font-bold">{selected.prospect_name}</h2>
-                            <p className="mt-1 text-sm text-white/65">{selected.prospect_title || 'Prospect dashboard'} · Updated {formatDate(selected.updated_at)}</p>
+                            <p className="mt-1 truncate text-sm text-white/75">{[selected.prospect_title, selected.prospect_company].filter(Boolean).join(' · ') || 'Prospect dashboard'}</p>
+                            <p className="mt-0.5 text-xs text-white/50">Updated {formatDate(selected.updated_at)}</p>
                           </div>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          {canManage && <Button variant="secondary" onClick={openEdit}><Pencil className="mr-2 h-4 w-4" />Edit profile</Button>}
-                          {selected.published_at && <Button variant="secondary" onClick={() => openExternalUrl(publicProspectUrl(selected.slug))}><Eye className="mr-2 h-4 w-4" />Open live</Button>}
-                          {selected.published_at && <Button variant="secondary" onClick={() => void copyLiveLink()}><Copy className="mr-2 h-4 w-4" />Copy link</Button>}
-                        </div>
-                      </div>
-
-                      <div className="mt-4 grid grid-cols-4 gap-2">
-                        {['Profile', 'Build', 'Review', 'Live'].map((label, index) => (
-                          <div key={label}>
-                            <div className={cn('h-1.5 rounded-full', index <= stage ? 'bg-blue-400' : 'bg-white/15')} />
-                            <p className={cn('mt-1.5 text-[11px]', index <= stage ? 'text-white' : 'text-white/45')}>{index + 1}. {label}</p>
-                          </div>
-                        ))}
+                        {canManage && <Button variant="secondary" className="w-full shrink-0 sm:w-auto" onClick={openEdit}><Pencil className="mr-2 h-4 w-4" />Edit profile</Button>}
                       </div>
                     </div>
-                    <CardContent className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_260px]">
-                      <div>
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                          <div>
-                            <h3 className="font-semibold">Next best action</h3>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              {!selected.readiness.profile_ready
-                                ? 'Strengthen the guest profile before matching.'
-                                : selected.readiness.visible_count < 5
-                                  ? 'Build a focused shortlist from the approved profile.'
-                                  : !selected.readiness.publishable
-                                    ? 'Review the matches and complete the readiness checks.'
-                                    : selected.published_at
-                                      ? 'Share the private link and watch for feedback.'
-                                      : 'Everything is ready. Publish when the shortlist feels right.'}
-                            </p>
-                          </div>
-                          {canManage && (
-                            <div className="flex shrink-0 flex-wrap gap-2">
-                              {selected.readiness.profile_ready && <Button asChild variant="outline"><Link to={finderHref}><Search className="mr-2 h-4 w-4" />Find more podcasts</Link></Button>}
-                              <Button variant="outline" disabled={mutating || !selected.readiness.profile_ready} onClick={() => buildMutation.mutate()}>
-                                {building ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                                {selected.readiness.visible_count > 0 ? 'Rebuild matches' : 'Build shortlist'}
-                              </Button>
-                              {selected.published_at
-                                ? <Button variant="outline" disabled={mutating} onClick={() => publicationMutation.mutate(false)}><EyeOff className="mr-2 h-4 w-4" />Unpublish</Button>
-                                : <Button disabled={mutating || !selected.readiness.publishable} onClick={() => publicationMutation.mutate(true)}><Send className="mr-2 h-4 w-4" />Publish dashboard</Button>}
-                            </div>
-                          )}
-                        </div>
-                        {selected.build_error && <Alert variant="destructive" className="mt-4"><AlertTitle>Build needs attention</AlertTitle><AlertDescription>{selected.build_error}</AlertDescription></Alert>}
+                    <CardContent className="p-0">
+                      <div className="border-b px-4 py-3 sm:px-5">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Publishing progress</p>
+                        <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                          {studioSteps.map((step, index) => {
+                            const current = !step.complete && index === currentStudioStep
+                            return (
+                              <li key={step.label} aria-current={current ? 'step' : undefined} className={cn('flex items-center gap-2 rounded-lg border px-2.5 py-2', step.complete ? 'border-emerald-200 bg-emerald-50/70' : current ? 'border-primary/30 bg-primary/5' : 'border-transparent bg-muted/35')}>
+                                <div className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold', step.complete ? 'bg-emerald-600 text-white' : current ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground')}>
+                                  {step.complete ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-medium">{step.label}</p>
+                                  <p className="text-[11px] text-muted-foreground">{step.complete ? 'Complete' : current ? 'Current step' : 'Up next'}</p>
+                                </div>
+                              </li>
+                            )
+                          })}
+                        </ol>
                       </div>
 
-                      <div className="rounded-xl border bg-muted/30 p-3">
-                        <div className="flex items-center justify-between"><p className="font-medium">Publish readiness</p><span className="text-sm font-semibold">{readinessPercent(selected.readiness)}%</span></div>
-                        <Progress value={readinessPercent(selected.readiness)} className="my-2.5 h-1.5" />
-                        <div className="space-y-1.5">
-                          <ReadinessItem complete={selected.readiness.profile_ready}>Focused profile (80+ characters)</ReadinessItem>
-                          <ReadinessItem complete={selected.readiness.visible_count >= 5}>{selected.readiness.visible_count}/5 visible matches</ReadinessItem>
-                          <ReadinessItem complete={selected.readiness.analyzed_count >= 5}>{selected.readiness.analyzed_count}/5 explained matches</ReadinessItem>
-                          <ReadinessItem complete={selected.readiness.cta_ready}>Next step configured</ReadinessItem>
+                      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+                        <div className="rounded-xl border bg-muted/20 p-4">
+                          <div className="flex items-start gap-3">
+                            <div className="rounded-lg bg-primary/10 p-2 text-primary"><Target className="h-4 w-4" /></div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recommended next step</p>
+                              <h3 className="mt-1 font-semibold">{nextAction.title}</h3>
+                              <p className="mt-1 text-sm text-muted-foreground">{nextAction.description}</p>
+                            </div>
+                          </div>
+
+                          {canManage && (
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              {(nextActionKind === 'profile' || nextActionKind === 'cta') && <Button onClick={openEdit}><Pencil className="mr-2 h-4 w-4" />{nextActionKind === 'cta' ? 'Edit next step' : 'Edit profile'}</Button>}
+                              {(nextActionKind === 'build' || nextActionKind === 'analyze') && <Button disabled={mutating} onClick={() => buildMutation.mutate()}>{building ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{nextActionKind === 'build' ? 'Build shortlist' : 'Analyze matches'}</Button>}
+                              {nextActionKind === 'publish' && <Button disabled={mutating} onClick={() => publicationMutation.mutate(true)}><Send className="mr-2 h-4 w-4" />Publish dashboard</Button>}
+                              {nextActionKind === 'share' && <Button onClick={() => void copyLiveLink()}><Copy className="mr-2 h-4 w-4" />Copy private link</Button>}
+                              {nextActionKind === 'share' && <Button variant="outline" onClick={() => openExternalUrl(publicProspectUrl(selected.slug))}><Eye className="mr-2 h-4 w-4" />Open live</Button>}
+                            </div>
+                          )}
+
+                          {canManage && selected.readiness.profile_ready && (
+                            <div className="mt-4 border-t pt-3">
+                              <p className="mb-2 text-xs font-medium text-muted-foreground">Shortlist tools</p>
+                              <div className="flex flex-wrap gap-2">
+                                <Button asChild variant="ghost" size="sm"><Link to={finderHref}><Search className="mr-2 h-4 w-4" />Find podcasts</Link></Button>
+                                {selected.readiness.visible_count > 0 && !['build', 'analyze'].includes(nextActionKind) && <Button variant="ghost" size="sm" disabled={mutating} onClick={() => buildMutation.mutate()}>{building ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}Rebuild shortlist</Button>}
+                                {selected.published_at && <Button variant="ghost" size="sm" disabled={mutating} onClick={() => publicationMutation.mutate(false)}><EyeOff className="mr-2 h-4 w-4" />Unpublish</Button>}
+                              </div>
+                            </div>
+                          )}
+                          {selected.build_error && <Alert variant="destructive" className="mt-4"><AlertTitle>Build needs attention</AlertTitle><AlertDescription>{selected.build_error}</AlertDescription></Alert>}
+                        </div>
+
+                        <div className="rounded-xl border bg-muted/30 p-3">
+                          <div className="flex items-center justify-between"><p className="font-medium">Publish readiness</p><span className="text-sm font-semibold">{readinessPercent(selected.readiness)}%</span></div>
+                          <Progress value={readinessPercent(selected.readiness)} className="my-2.5 h-1.5" />
+                          <div className="space-y-1.5">
+                            <ReadinessItem complete={selected.readiness.profile_ready}>Focused profile (80+ characters)</ReadinessItem>
+                            <ReadinessItem complete={selected.readiness.visible_count >= 5}>{selected.readiness.visible_count}/5 visible matches</ReadinessItem>
+                            <ReadinessItem complete={selected.readiness.analyzed_count >= 5}>{selected.readiness.analyzed_count}/5 explained matches</ReadinessItem>
+                            <ReadinessItem complete={selected.readiness.cta_ready}>Next step configured</ReadinessItem>
+                          </div>
                         </div>
                       </div>
                     </CardContent>
