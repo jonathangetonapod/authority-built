@@ -166,6 +166,22 @@ interface RankedCandidate {
   pitch_angles: Array<{ title: string; description: string }>
 }
 
+interface ProspectShortlistPodcastInput {
+  podcast_id: string
+  podcast_name: string
+  podcast_description: string | null
+  podcast_image_url: string | null
+  podcast_url: string | null
+  publisher_name: string | null
+  itunes_rating: number | null
+  episode_count: number | null
+  audience_size: number | null
+  last_posted_at: string | null
+  podcast_categories: Array<{ category_id: string; category_name: string }> | null
+  relevance_score: number | null
+  relevance_reason: string | null
+}
+
 function requireManager(access: WorkspaceFeatureAccess): void {
   if (!MANAGER_ROLES.has(access.role)) {
     throw new HttpError(403, 'WORKSPACE_MANAGER_REQUIRED', 'Workspace manager access is required')
@@ -182,6 +198,104 @@ function optionalHttpUrl(value: unknown, field: string): string | null {
   } catch {
     throw new HttpError(400, 'INVALID_FIELD', `${field} must be an HTTP or HTTPS URL`)
   }
+}
+
+function optionalNumber(
+  value: unknown,
+  field: string,
+  options: { min: number; max: number; integer?: boolean },
+): number | null {
+  if (value === null || value === undefined || value === '') return null
+  if (
+    typeof value !== 'number'
+    || !Number.isFinite(value)
+    || value < options.min
+    || value > options.max
+    || (options.integer && !Number.isInteger(value))
+  ) {
+    throw new HttpError(400, 'INVALID_FIELD', `${field} is invalid`)
+  }
+  return value
+}
+
+function optionalTimestamp(value: unknown, field: string): string | null {
+  const timestamp = optionalString(value, field, 80)
+  if (!timestamp) return null
+  const parsed = new Date(timestamp)
+  if (Number.isNaN(parsed.getTime())) {
+    throw new HttpError(400, 'INVALID_FIELD', `${field} must be a valid timestamp`)
+  }
+  return parsed.toISOString()
+}
+
+function podcastCategories(value: unknown): Array<{ category_id: string; category_name: string }> | null {
+  if (value === null || value === undefined) return null
+  if (!Array.isArray(value) || value.length > 30) {
+    throw new HttpError(400, 'INVALID_FIELD', 'podcast_categories is invalid')
+  }
+  return value.map((category, index) => {
+    if (!category || typeof category !== 'object' || Array.isArray(category)) {
+      throw new HttpError(400, 'INVALID_FIELD', `podcast_categories[${index}] is invalid`)
+    }
+    const record = category as Record<string, unknown>
+    requireOnlyKeys(record, ['category_id', 'category_name'])
+    return {
+      category_id: requireString(record.category_id, `podcast_categories[${index}].category_id`, { max: 200 }),
+      category_name: requireString(record.category_name, `podcast_categories[${index}].category_name`, { max: 200 }),
+    }
+  })
+}
+
+function prospectShortlistPodcast(value: unknown, index: number): ProspectShortlistPodcastInput {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new HttpError(400, 'INVALID_FIELD', `podcasts[${index}] must be an object`)
+  }
+  const podcast = value as Record<string, unknown>
+  requireOnlyKeys(podcast, [
+    'podcast_id',
+    'podcast_name',
+    'podcast_description',
+    'podcast_image_url',
+    'podcast_url',
+    'publisher_name',
+    'itunes_rating',
+    'episode_count',
+    'audience_size',
+    'last_posted_at',
+    'podcast_categories',
+    'relevance_score',
+    'relevance_reason',
+  ])
+  const id = requireString(podcast.podcast_id, `podcasts[${index}].podcast_id`, { max: 300 })
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+    throw new HttpError(400, 'INVALID_FIELD', `podcasts[${index}].podcast_id is invalid`)
+  }
+  return {
+    podcast_id: id,
+    podcast_name: requireString(podcast.podcast_name, `podcasts[${index}].podcast_name`, { max: 500 }),
+    podcast_description: optionalString(podcast.podcast_description, `podcasts[${index}].podcast_description`, 50_000),
+    podcast_image_url: optionalHttpUrl(podcast.podcast_image_url, `podcasts[${index}].podcast_image_url`),
+    podcast_url: optionalHttpUrl(podcast.podcast_url, `podcasts[${index}].podcast_url`),
+    publisher_name: optionalString(podcast.publisher_name, `podcasts[${index}].publisher_name`, 500),
+    itunes_rating: optionalNumber(podcast.itunes_rating, `podcasts[${index}].itunes_rating`, { min: 0, max: 5 }),
+    episode_count: optionalNumber(podcast.episode_count, `podcasts[${index}].episode_count`, { min: 0, max: 10_000_000, integer: true }),
+    audience_size: optionalNumber(podcast.audience_size, `podcasts[${index}].audience_size`, { min: 0, max: 2_000_000_000, integer: true }),
+    last_posted_at: optionalTimestamp(podcast.last_posted_at, `podcasts[${index}].last_posted_at`),
+    podcast_categories: podcastCategories(podcast.podcast_categories),
+    relevance_score: optionalNumber(podcast.relevance_score, `podcasts[${index}].relevance_score`, { min: 0, max: 10 }),
+    relevance_reason: optionalString(podcast.relevance_reason, `podcasts[${index}].relevance_reason`, 2_000),
+  }
+}
+
+function prospectShortlistPodcasts(value: unknown): ProspectShortlistPodcastInput[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 50) {
+    throw new HttpError(400, 'INVALID_FIELD', 'podcasts must contain between 1 and 50 items')
+  }
+  const parsed = value.map(prospectShortlistPodcast)
+  if (new Set(parsed.map((podcast) => podcast.podcast_id)).size !== parsed.length) {
+    throw new HttpError(400, 'INVALID_FIELD', 'podcasts contains duplicate IDs')
+  }
+  return parsed
 }
 
 function optionalEmail(value: unknown): string | null {
@@ -846,7 +960,7 @@ serve(async (req) => {
 
   try {
     if (req.method !== 'POST') throw new HttpError(405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed')
-    const body = await parseJsonObject(req, 100_000)
+    const body = await parseJsonObject(req, 1_000_000)
     const action = typeof body.action === 'string' ? body.action : ''
     const context = await requireAuthenticatedUser(req)
     if (!workspaceCredentialIsFresh(context)) {
@@ -998,6 +1112,110 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, {
         publication: data,
         ...await detailPayload(context.admin, workspaceId, dashboardId),
+      })
+    }
+
+    if (action === 'podcast-add') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'dashboard_id', 'podcasts'])
+      const podcasts = prospectShortlistPodcasts(body.podcasts)
+      const podcastIds = podcasts.map((podcast) => podcast.podcast_id)
+      const { data: existingPodcasts, error: existingPodcastsError } = await context.admin
+        .from('prospect_dashboard_podcasts')
+        .select('podcast_id')
+        .eq('prospect_dashboard_id', dashboardId)
+        .in('podcast_id', podcastIds)
+      if (existingPodcastsError) {
+        throw new HttpError(500, 'SHORTLIST_ADD_FAILED', 'The prospect shortlist could not be checked')
+      }
+      const existingIds = new Set((existingPodcasts || []).map((podcast) => String(podcast.podcast_id)))
+      const newPodcasts = podcasts.filter((podcast) => !existingIds.has(podcast.podcast_id))
+      let addedPodcastIds: string[] = []
+
+      if (newPodcasts.length > 0) {
+        const now = new Date().toISOString()
+        const moveDashboardToReview = async () => {
+          const { error: dashboardUpdateError } = await context.admin
+            .from('prospect_dashboards')
+            .update({
+              lifecycle_status: 'review',
+              build_error: null,
+              published_at: null,
+              content_ready: false,
+              updated_at: now,
+            })
+            .eq('id', dashboardId)
+            .eq('workspace_id', workspaceId)
+          if (dashboardUpdateError) {
+            throw new HttpError(500, 'SHORTLIST_ADD_FAILED', 'The prospect review state could not be updated')
+          }
+        }
+
+        // Close the public surface before writing new rows so a failed state update
+        // can never expose unreviewed Finder additions on an already-live dashboard.
+        if (existing.published_at) await moveDashboardToReview()
+
+        const { data: lastPosition, error: positionError } = await context.admin
+          .from('prospect_dashboard_podcasts')
+          .select('display_order')
+          .eq('prospect_dashboard_id', dashboardId)
+          .order('display_order', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (positionError) {
+          throw new HttpError(500, 'SHORTLIST_ADD_FAILED', 'The prospect shortlist could not be positioned')
+        }
+        const startingOrder = lastPosition ? Number(lastPosition.display_order) + 1 : 0
+        const { data: addedPodcasts, error: addError } = await context.admin
+          .from('prospect_dashboard_podcasts')
+          .upsert(newPodcasts.map((podcast, index) => ({
+            prospect_dashboard_id: dashboardId,
+            podcast_id: podcast.podcast_id,
+            podcast_name: podcast.podcast_name,
+            podcast_description: podcast.podcast_description,
+            podcast_image_url: podcast.podcast_image_url,
+            podcast_url: podcast.podcast_url,
+            publisher_name: podcast.publisher_name,
+            itunes_rating: podcast.itunes_rating,
+            episode_count: podcast.episode_count,
+            audience_size: podcast.audience_size,
+            last_posted_at: podcast.last_posted_at,
+            podcast_categories: podcast.podcast_categories,
+            visibility: 'visible',
+            display_order: startingOrder + index,
+            is_featured: false,
+            featured_order: null,
+            relevance_score: podcast.relevance_score,
+            relevance_reason: podcast.relevance_reason,
+            match_source: 'manual',
+            archived_at: null,
+            archived_by: null,
+            updated_at: now,
+          })), { onConflict: 'prospect_dashboard_id,podcast_id', ignoreDuplicates: true })
+          .select('podcast_id')
+        if (addError) {
+          throw new HttpError(500, 'SHORTLIST_ADD_FAILED', 'Podcasts could not be added to the prospect shortlist')
+        }
+        addedPodcastIds = (addedPodcasts || []).map((podcast) => String(podcast.podcast_id))
+
+        if (addedPodcastIds.length > 0 && !existing.published_at) await moveDashboardToReview()
+      }
+
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: 'workspace.prospect.shortlist.added',
+        entityType: 'prospect_dashboard',
+        entityId: dashboardId,
+        metadata: {
+          podcast_ids: addedPodcastIds,
+          unpublished_for_review: Boolean(existing.published_at && addedPodcastIds.length > 0),
+        },
+      })
+      return jsonResponse(req, METHODS, 200, {
+        added: addedPodcastIds.length,
+        skipped: podcasts.length - addedPodcastIds.length,
+        podcast_ids: addedPodcastIds,
+        unpublished_for_review: Boolean(existing.published_at && addedPodcastIds.length > 0),
       })
     }
 

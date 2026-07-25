@@ -8,6 +8,7 @@ import { addClientShortlistPodcasts } from '@/services/clientShortlist'
 import { getClients, getWorkspaceClients, getWorkspaceResearchContext } from '@/services/clients'
 import { generatePodcastQueries } from '@/services/queryGeneration'
 import { searchPodcastsWithMeta } from '@/services/podscan'
+import { addWorkspaceProspectPodcasts, getWorkspaceProspect } from '@/services/prospectDashboards'
 
 vi.mock('@/components/admin/DashboardLayout', () => ({
   DashboardLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -40,6 +41,10 @@ vi.mock('@/services/clients', () => ({
 vi.mock('@/services/queryGeneration', () => ({ generatePodcastQueries: vi.fn() }))
 vi.mock('@/services/compatibilityScoring', () => ({ scoreCompatibilityBatch: vi.fn() }))
 vi.mock('@/services/clientShortlist', () => ({ addClientShortlistPodcasts: vi.fn() }))
+vi.mock('@/services/prospectDashboards', () => ({
+  addWorkspaceProspectPodcasts: vi.fn(),
+  getWorkspaceProspect: vi.fn(),
+}))
 vi.mock('@/services/podscan', () => ({
   getChartCategories: vi.fn(),
   getChartCountries: vi.fn(),
@@ -55,6 +60,8 @@ const mockedWorkspaceClients = vi.mocked(getWorkspaceClients)
 const mockedResearchContext = vi.mocked(getWorkspaceResearchContext)
 const mockedGenerateQueries = vi.mocked(generatePodcastQueries)
 const mockedSearchPodcasts = vi.mocked(searchPodcastsWithMeta)
+const mockedAddToProspect = vi.mocked(addWorkspaceProspectPodcasts)
+const mockedProspect = vi.mocked(getWorkspaceProspect)
 
 const myWorkspace = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -145,6 +152,33 @@ describe('PodcastFinder', () => {
       existing_podcast_ids: [],
     })
     mockedAddToShortlist.mockResolvedValue({ added: 1, skipped: 0, podcast_ids: ['pod-new'] })
+    mockedAddToProspect.mockResolvedValue({ added: 1, skipped: 0, podcast_ids: ['pod-new'], unpublished_for_review: true })
+    mockedProspect.mockResolvedValue({
+      workspace: {
+        id: myWorkspace.id,
+        name: myWorkspace.name,
+        status: myWorkspace.status,
+        is_default: myWorkspace.is_default,
+        logo_path: null,
+        logo_updated_at: null,
+        client_brand_name: null,
+        client_brand_primary_color: null,
+        client_brand_accent_color: null,
+      },
+      viewer_role: 'owner',
+      can_manage: true,
+      dashboard: {
+        id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        workspace_id: myWorkspace.id,
+        prospect_name: 'Dallas Fontaine',
+        prospect_email: 'dallas@example.com',
+        prospect_website: 'https://example.com',
+        prospect_image_url: null,
+        prospect_bio: 'Dallas Fontaine helps SaaS founders build durable revenue systems with practical AI and sales operations.',
+        updated_at: '2026-07-25T00:00:00.000Z',
+      },
+      podcasts: [{ podcast_id: 'pod-existing', visibility: 'visible' }],
+    } as never)
   })
 
   it('defaults to the platform owner workspace and keeps the surface client-only', async () => {
@@ -155,7 +189,7 @@ describe('PodcastFinder', () => {
       workspaceId: myWorkspace.id,
       status: 'active',
     }))
-    expect(screen.getByText(/prospects stay in prospect dashboards/i)).toBeInTheDocument()
+    expect(screen.getByText(/lead magnets stay in prospect studio/i)).toBeInTheDocument()
     expect(screen.queryByText(/new prospect/i)).not.toBeInTheDocument()
   })
 
@@ -317,6 +351,60 @@ describe('PodcastFinder', () => {
       })],
     ))
     expect(screen.queryByText(/google sheet/i)).not.toBeInTheDocument()
+  })
+
+  it('keeps a Studio prospect locked while researching and adds results back to that lead magnet', async () => {
+    const prospectId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+    mockedGenerateQueries.mockResolvedValue(['saas founder stories'])
+    mockedSearchPodcasts.mockResolvedValue({
+      data: {
+        podcasts: [{
+          podcast_id: 'pod-new',
+          podcast_name: 'SaaS Founder Show',
+          podcast_url: 'https://example.com/saas-founder-show',
+          podcast_description: 'Practical conversations with SaaS founders.',
+          publisher_name: 'Founder Media',
+          last_posted_at: '2026-07-21T00:00:00.000Z',
+        }],
+        pagination: { last_page: '1' },
+      },
+    })
+
+    renderPage({ workspaceScoped: true, initialProspectId: prospectId })
+
+    expect(await screen.findByText('Adding to Dallas Fontaine')).toBeInTheDocument()
+    expect(screen.getByText(/1 currently shortlisted/i)).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Client' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Back to Studio' })).toHaveAttribute(
+      'href',
+      `/app/prospects?prospect=${prospectId}&view=all`,
+    )
+    expect(mockedProspect).toHaveBeenCalledWith(myWorkspace.id, prospectId)
+
+    const runButton = screen.getByRole('button', { name: 'Run balanced discovery' })
+    await waitFor(() => expect(runButton).toBeEnabled())
+    fireEvent.click(runButton)
+    await screen.findByText('SaaS Founder Show')
+    expect(mockedGenerateQueries).toHaveBeenCalledWith({
+      workspaceId: myWorkspace.id,
+      prospectDashboardId: prospectId,
+    })
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select SaaS Founder Show' }))
+    expect(screen.getByText('Podcast selected for Dallas Fontaine')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Add 1 to shortlist' }))
+    expect(await screen.findByText(/return to Review/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Add to shortlist' }))
+
+    await waitFor(() => expect(mockedAddToProspect).toHaveBeenCalledWith(
+      myWorkspace.id,
+      prospectId,
+      [expect.objectContaining({
+        podcast_id: 'pod-new',
+        podcast_name: 'SaaS Founder Show',
+      })],
+    ))
+    expect(mockedAddToShortlist).not.toHaveBeenCalled()
   })
 
   it('binds a workspace user to the legacy fixed-client surface without selectors', async () => {

@@ -5,6 +5,8 @@ const studio = readFileSync('supabase/functions/workspace-prospect-dashboards/in
 const publicDashboard = readFileSync('supabase/functions/get-prospect-dashboard/index.ts', 'utf8')
 const publicPodcasts = readFileSync('supabase/functions/get-prospect-podcasts/index.ts', 'utf8')
 const publicFeedback = readFileSync('supabase/functions/save-prospect-feedback/index.ts', 'utf8')
+const queryGeneration = readFileSync('supabase/functions/generate-podcast-queries/index.ts', 'utf8')
+const compatibilityScoring = readFileSync('supabase/functions/score-podcast-compatibility/index.ts', 'utf8')
 const migration = readFileSync(
   'supabase/migrations/20260725000100_workspace_prospect_studio_foundation.sql',
   'utf8',
@@ -26,7 +28,19 @@ assert.match(studio, /\.from\('prospect_dashboard_podcasts'\)[\s\S]*?\.upsert\(s
 assert.match(studio, /\.in\('match_source', \['legacy', 'sheet', 'semantic', 'ai_ranked'\]\)/u)
 assert.match(studio, /rpc\('set_workspace_prospect_publication_v1'/u)
 assert.match(studio, /if \(existing\.published_at\)[\s\S]*?update\.published_at = null[\s\S]*?update\.content_ready = false/u, 'profile edits must unpublish stale positioning')
+assert.match(studio, /if \(action === 'podcast-add'\)[\s\S]*?prospectShortlistPodcasts\(body\.podcasts\)/u)
+assert.match(studio, /action: 'workspace\.prospect\.shortlist\.added'/u)
+assert.match(studio, /lifecycle_status: 'review'[\s\S]*?published_at: null[\s\S]*?content_ready: false/u, 'Finder additions must return a live prospect to review')
 assert.match(config, /\[functions\.workspace-prospect-dashboards\]\s+verify_jwt = true/u)
+
+for (const edge of [queryGeneration, compatibilityScoring]) {
+  assert.match(edge, /body\.prospectDashboardId/u)
+  assert.match(edge, /\.from\('prospect_dashboards'\)[\s\S]*?\.eq\('workspace_id', workspaceId\)/u)
+  assert.match(edge, /await requireWorkspaceFeatureAccess\(context, workspaceId\)/u)
+}
+assert.match(queryGeneration, /function fallbackQueries/u)
+assert.match(queryGeneration, /source: 'deterministic'/u)
+assert.match(compatibilityScoring, /function deterministicScore/u)
 
 assert.match(migration, /ADD COLUMN IF NOT EXISTS workspace_id UUID/u)
 assert.match(migration, /ADD COLUMN IF NOT EXISTS lifecycle_status TEXT NOT NULL DEFAULT 'draft'/u)

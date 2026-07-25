@@ -5,10 +5,12 @@ const AdminWorkspacePodcastFinderHome = () => {
   const { workspaceId = '' } = useParams()
   const [searchParams] = useSearchParams()
   const initialClientId = searchParams.get('client') || undefined
+  const initialProspectId = searchParams.get('prospect') || undefined
   return (
     <PodcastFinder
-      key={`${workspaceId || 'missing'}:${initialClientId || 'workspace-default'}`}
+      key={`${workspaceId || 'missing'}:${initialProspectId ? `prospect:${initialProspectId}` : initialClientId || 'workspace-default'}`}
       initialClientId={initialClientId}
+      initialProspectId={initialProspectId}
       platformWorkspaceId={workspaceId}
       workspaceScoped
     />

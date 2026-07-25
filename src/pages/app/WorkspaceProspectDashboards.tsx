@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive,
@@ -482,13 +483,20 @@ function ShortlistRow({
 const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectDashboardsProps) => {
   const { user, workspace } = useAuth()
   const queryClient = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedProspectId = (searchParams.get('prospect') || '').toLowerCase()
+  const requestedShortlistView = searchParams.get('view') === 'all'
+    ? 'all'
+    : searchParams.get('view') === 'removed'
+      ? 'removed'
+      : 'featured'
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [profileDialogOpen, setProfileDialogOpen] = useState(false)
   const [editingProfile, setEditingProfile] = useState(false)
   const [profileForm, setProfileForm] = useState<ProspectProfileForm>(emptyProfileForm)
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
-  const [shortlistView, setShortlistView] = useState<'featured' | 'all' | 'removed'>('featured')
+  const [shortlistView, setShortlistView] = useState<'featured' | 'all' | 'removed'>(requestedShortlistView)
   const isPlatformWorkspace = platformWorkspaceId !== undefined
   const selectedWorkspaceId = (platformWorkspaceId || '').toLowerCase()
   const workspaceId = isPlatformWorkspace ? selectedWorkspaceId : workspace?.id || ''
@@ -513,10 +521,17 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
       setSelectedId(null)
       return
     }
+    if (requestedProspectId && orderedProspects.some((prospect) => prospect.id === requestedProspectId)) {
+      if (selectedId !== requestedProspectId) setSelectedId(requestedProspectId)
+      return
+    }
     if (!selectedId || !orderedProspects.some((prospect) => prospect.id === selectedId)) {
       setSelectedId(orderedProspects[0].id)
     }
-  }, [orderedProspects, selectedId])
+  }, [orderedProspects, requestedProspectId, selectedId])
+  useEffect(() => {
+    if (requestedProspectId) setShortlistView(requestedShortlistView)
+  }, [requestedProspectId, requestedShortlistView])
 
   const detailQueryKey = ['workspace-prospect', user?.id || 'unknown', workspaceId, selectedId] as const
   const detailQuery = useQuery({
@@ -636,6 +651,12 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
         baseHref: selectedWorkspaceBaseHref(selectedWorkspaceId),
       }
     : undefined
+  const workspaceBaseHref = isPlatformWorkspace
+    ? selectedWorkspaceBaseHref(selectedWorkspaceId)
+    : '/app'
+  const finderHref = selected
+    ? `${workspaceBaseHref}/podcast-finder?prospect=${encodeURIComponent(selected.id)}`
+    : `${workspaceBaseHref}/podcast-finder`
 
   const openCreate = () => {
     setEditingProfile(false)
@@ -742,7 +763,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                     <div className="py-12 text-center text-sm text-muted-foreground">No prospects match “{search}”.</div>
                   ) : (
                     <div className="space-y-2">
-                      {filteredProspects.map((prospect) => <ProspectListCard key={prospect.id} prospect={prospect} selected={prospect.id === selectedId} onSelect={() => { setSelectedId(prospect.id); setShortlistView('featured') }} />)}
+                      {filteredProspects.map((prospect) => <ProspectListCard key={prospect.id} prospect={prospect} selected={prospect.id === selectedId} onSelect={() => { setSelectedId(prospect.id); setShortlistView('featured'); setSearchParams({ prospect: prospect.id, view: 'featured' }, { replace: true }) }} />)}
                     </div>
                   )}
                 </CardContent>
@@ -809,6 +830,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                           </div>
                           {canManage && (
                             <div className="flex shrink-0 flex-wrap gap-2">
+                              {selected.readiness.profile_ready && <Button asChild variant="outline"><Link to={finderHref}><Search className="mr-2 h-4 w-4" />Find more podcasts</Link></Button>}
                               <Button variant="outline" disabled={mutating || !selected.readiness.profile_ready} onClick={() => buildMutation.mutate()}>
                                 {building ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
                                 {selected.readiness.visible_count > 0 ? 'Rebuild matches' : 'Build shortlist'}

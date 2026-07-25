@@ -4,10 +4,12 @@ import PodcastFinder from '@/pages/admin/PodcastFinder'
 const WorkspacePodcastFinderHome = () => {
   const [searchParams] = useSearchParams()
   const initialClientId = searchParams.get('client') || undefined
+  const initialProspectId = searchParams.get('prospect') || undefined
   return (
     <PodcastFinder
-      key={initialClientId || 'workspace-default'}
+      key={initialProspectId ? `prospect:${initialProspectId}` : initialClientId || 'workspace-default'}
       initialClientId={initialClientId}
+      initialProspectId={initialProspectId}
       workspaceScoped
     />
   )

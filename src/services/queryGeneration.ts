@@ -5,6 +5,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 export interface GenerateQueriesInput {
   workspaceId?: string
   clientId?: string
+  prospectDashboardId?: string
   clientName?: string
   clientBio?: string
   clientEmail?: string
@@ -24,8 +25,8 @@ export interface GenerateQueriesResponse {
 export async function generatePodcastQueries(
   input: GenerateQueriesInput
 ): Promise<string[]> {
-  const { workspaceId, clientId, clientName, clientBio, clientEmail, prospectName, prospectBio } = input
-  const scopedRequest = Boolean(workspaceId && clientId)
+  const { workspaceId, clientId, prospectDashboardId, clientName, clientBio, clientEmail, prospectName, prospectBio } = input
+  const scopedRequest = Boolean(workspaceId && (clientId || prospectDashboardId))
 
   // Support both client and prospect mode
   const targetBio = prospectBio || clientBio
@@ -48,7 +49,7 @@ export async function generatePodcastQueries(
         'Authorization': `Bearer ${session.access_token}`,
       },
       body: JSON.stringify(scopedRequest
-        ? { workspaceId, clientId }
+        ? { workspaceId, ...(prospectDashboardId ? { prospectDashboardId } : { clientId }) }
         : { clientName, clientBio, clientEmail, prospectName, prospectBio }),
     })
 
@@ -77,8 +78,8 @@ export async function regenerateQuery(
   input: GenerateQueriesInput,
   oldQuery: string
 ): Promise<string> {
-  const { workspaceId, clientId, clientName, clientBio, clientEmail, prospectName, prospectBio } = input
-  const scopedRequest = Boolean(workspaceId && clientId)
+  const { workspaceId, clientId, prospectDashboardId, clientName, clientBio, clientEmail, prospectName, prospectBio } = input
+  const scopedRequest = Boolean(workspaceId && (clientId || prospectDashboardId))
 
   // Support both client and prospect mode
   const targetBio = prospectBio || clientBio
@@ -101,7 +102,7 @@ export async function regenerateQuery(
         'Authorization': `Bearer ${session.access_token}`,
       },
       body: JSON.stringify(scopedRequest
-        ? { workspaceId, clientId, oldQuery }
+        ? { workspaceId, ...(prospectDashboardId ? { prospectDashboardId } : { clientId }), oldQuery }
         : { clientName, clientBio, clientEmail, prospectName, prospectBio, oldQuery }),
     })
 

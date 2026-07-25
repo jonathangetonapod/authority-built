@@ -23,6 +23,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Star,
+  Target,
   Trash2,
   TrendingUp,
   Users,
@@ -79,6 +80,11 @@ import {
 import { scoreCompatibilityBatch } from '@/services/compatibilityScoring'
 import { addClientShortlistPodcasts, type ClientShortlistPodcastInput } from '@/services/clientShortlist'
 import {
+  addWorkspaceProspectPodcasts,
+  getWorkspaceProspect,
+  type ProspectShortlistPodcastInput,
+} from '@/services/prospectDashboards'
+import {
   getChartCategories,
   getChartCountries,
   getPodcastById,
@@ -122,6 +128,10 @@ interface StoredScope {
   workspaceId?: string
   clientId?: string
   strategy?: DiscoveryStrategy
+}
+
+interface FinderResearchContext extends WorkspaceResearchContext {
+  current_shortlist_count?: number
 }
 
 function readStoredScope(): StoredScope {
@@ -186,9 +196,31 @@ function toShortlistPodcast(result: ResearchResult): ClientShortlistPodcastInput
   }
 }
 
+function toProspectShortlistPodcast(result: ResearchResult): ProspectShortlistPodcastInput {
+  const podcast = result.podcast
+  return {
+    podcast_id: podcast.podcast_id,
+    podcast_name: podcast.podcast_name,
+    podcast_description: podcast.podcast_description,
+    podcast_image_url: podcast.podcast_image_url,
+    podcast_url: podcast.podcast_url,
+    publisher_name: podcast.publisher_name,
+    episode_count: podcast.episode_count,
+    itunes_rating: podcast.reach?.itunes?.itunes_rating_average
+      ? Number.parseFloat(podcast.reach.itunes.itunes_rating_average)
+      : undefined,
+    audience_size: podcast.reach?.audience_size,
+    last_posted_at: podcast.last_posted_at,
+    podcast_categories: podcast.podcast_categories,
+    relevance_score: result.relevanceScore,
+    relevance_reason: result.relevanceReasoning,
+  }
+}
+
 interface PodcastFinderProps {
   fixedClientId?: string
   initialClientId?: string
+  initialProspectId?: string
   platformWorkspaceId?: string
   workspaceScoped?: boolean
 }
@@ -196,6 +228,7 @@ interface PodcastFinderProps {
 export default function PodcastFinder({
   fixedClientId,
   initialClientId,
+  initialProspectId,
   platformWorkspaceId,
   workspaceScoped = false,
 }: PodcastFinderProps = {}) {
@@ -203,18 +236,22 @@ export default function PodcastFinder({
   const queryClient = useQueryClient()
   const storedScope = useMemo(readStoredScope, [])
   const isClientBound = fixedClientId !== undefined
-  const isWorkspaceScoped = isClientBound || workspaceScoped || platformWorkspaceId !== undefined
-  const isClientSelectable = isWorkspaceScoped && !isClientBound
+  const isProspectBound = initialProspectId !== undefined
+  const isTargetBound = isClientBound || isProspectBound
+  const isWorkspaceScoped = isTargetBound || workspaceScoped || platformWorkspaceId !== undefined
+  const isClientSelectable = isWorkspaceScoped && !isTargetBound
   const fixedWorkspaceId = (platformWorkspaceId || workspace?.id || '').toLowerCase()
   const canonicalFixedClientId = (fixedClientId || '').toLowerCase()
+  const canonicalProspectId = (initialProspectId || '').toLowerCase()
+  const fixedTargetId = isProspectBound ? canonicalProspectId : canonicalFixedClientId
   const requestedClientId = (initialClientId || '').toLowerCase()
   const storedScopedClientId = storedScope.workspaceId?.toLowerCase() === fixedWorkspaceId
     ? storedScope.clientId || ''
     : ''
   const [workspaceId, setWorkspaceId] = useState(isWorkspaceScoped ? fixedWorkspaceId : storedScope.workspaceId || '')
   const [clientId, setClientId] = useState(
-    isClientBound
-      ? canonicalFixedClientId
+    isTargetBound
+      ? fixedTargetId
       : isClientSelectable
         ? requestedClientId || storedScopedClientId
         : storedScope.clientId || '',
@@ -289,12 +326,42 @@ export default function PodcastFinder({
     user?.id || 'unknown',
     'workspace',
     workspaceId,
-    'client',
+    isProspectBound ? 'prospect' : 'client',
     clientId,
   ] as const
   const researchContextQuery = useQuery({
     queryKey: researchContextQueryKey,
-    queryFn: () => getWorkspaceResearchContext(workspaceId, clientId),
+    queryFn: async (): Promise<FinderResearchContext> => {
+      if (!isProspectBound) return getWorkspaceResearchContext(workspaceId, clientId)
+      const detail = await getWorkspaceProspect(workspaceId, clientId)
+      if (!detail.workspace || detail.dashboard.workspace_id !== workspaceId) {
+        throw new Error('The podcast research context did not match the workspace prospect address.')
+      }
+      return {
+        workspace: {
+          id: detail.workspace.id,
+          name: detail.workspace.name,
+          slug: null,
+          status: detail.workspace.status,
+          is_default: detail.workspace.is_default,
+          logo_path: detail.workspace.logo_path,
+          logo_updated_at: detail.workspace.logo_updated_at,
+        },
+        client: {
+          id: detail.dashboard.id,
+          workspace_id: detail.dashboard.workspace_id,
+          name: detail.dashboard.prospect_name,
+          email: detail.dashboard.prospect_email,
+          website: detail.dashboard.prospect_website,
+          status: 'active',
+          bio: detail.dashboard.prospect_bio,
+          photo_url: detail.dashboard.prospect_image_url,
+          updated_at: detail.dashboard.updated_at,
+        },
+        existing_podcast_ids: detail.podcasts.map((podcast) => podcast.podcast_id),
+        current_shortlist_count: detail.podcasts.filter((podcast) => podcast.visibility === 'visible').length,
+      }
+    },
     enabled: isWorkspaceScoped && Boolean(workspaceId && clientId),
     staleTime: 30_000,
     retry: false,
@@ -315,6 +382,8 @@ export default function PodcastFinder({
       ? researchContextQuery.data.client
       : undefined
     : clients.find((client) => client.id === clientId)
+  const targetLabel = isProspectBound ? 'prospect' : 'client'
+  const targetLabelTitle = isProspectBound ? 'Prospect' : 'Client'
   const scopeLocked = Boolean(runScope || results.length > 0 || isDiscovering)
 
   useEffect(() => {
@@ -336,12 +405,12 @@ export default function PodcastFinder({
     if (!isWorkspaceScoped) return
     if (
       workspaceId === fixedWorkspaceId
-      && (!isClientBound || clientId === canonicalFixedClientId)
+      && (!isTargetBound || clientId === fixedTargetId)
     ) return
     resetResearch()
     setWorkspaceId(fixedWorkspaceId)
-    if (isClientBound) setClientId(canonicalFixedClientId)
-  }, [canonicalFixedClientId, clientId, fixedWorkspaceId, isClientBound, isWorkspaceScoped, workspaceId])
+    if (isTargetBound) setClientId(fixedTargetId)
+  }, [clientId, fixedTargetId, fixedWorkspaceId, isTargetBound, isWorkspaceScoped, workspaceId])
 
   useEffect(() => {
     if (!isClientSelectable || scopedClientsQuery.isLoading) return
@@ -352,13 +421,13 @@ export default function PodcastFinder({
   }, [clientId, isClientSelectable, scopedClientOptions, scopedClientsQuery.isLoading])
 
   useEffect(() => {
-    if (isClientBound) return
+    if (isTargetBound) return
     try {
       window.sessionStorage.setItem(SCOPE_STORAGE_KEY, JSON.stringify({ workspaceId, clientId, strategy }))
     } catch {
       // The selected scope remains usable in memory when browser storage is unavailable.
     }
-  }, [workspaceId, clientId, isClientBound, strategy])
+  }, [workspaceId, clientId, isTargetBound, strategy])
 
   useEffect(() => {
     setResultPage(1)
@@ -401,6 +470,7 @@ export default function PodcastFinder({
     ...(researchContextQuery.data?.existing_podcast_ids || []),
     ...addedPodcastIds,
   ].map((podcastId) => podcastId.toLowerCase())), [addedPodcastIds, researchContextQuery.data?.existing_podcast_ids])
+  const currentShortlistCount = researchContextQuery.data?.current_shortlist_count ?? existingPodcastIds.size
 
   const rows = useMemo(() => results.map((result) => {
     const outreach = calculateOutreachPriority(result.podcast)
@@ -502,7 +572,7 @@ export default function PodcastFinder({
 
   const handleGenerateQueries = async (): Promise<string[]> => {
     if (!selectedWorkspace || !selectedClient?.bio) {
-      toast.error('Add an approved client bio before generating a search strategy.')
+      toast.error(`Add an approved ${targetLabel} profile before generating a search strategy.`)
       return []
     }
 
@@ -510,14 +580,13 @@ export default function PodcastFinder({
     try {
       const generated = await generatePodcastQueries({
         workspaceId: selectedWorkspace.id,
-        clientId: selectedClient.id,
-        clientName: selectedClient.name,
-        clientBio: selectedClient.bio,
-        clientEmail: selectedClient.email || undefined,
+        ...(isProspectBound
+          ? { prospectDashboardId: selectedClient.id }
+          : { clientId: selectedClient.id }),
       })
       const normalized = generated.map(normalizePodscanQuery).filter(Boolean)
       setQueries(normalized)
-      toast.success('Client search strategy is ready.')
+      toast.success(`${targetLabelTitle} search strategy is ready.`)
       return normalized
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Search strategy could not be generated.')
@@ -563,11 +632,11 @@ export default function PodcastFinder({
 
   const handleRunDiscovery = async () => {
     if (!selectedWorkspace || !selectedClient) {
-      toast.error('Select a workspace and client first.')
+      toast.error(`Select a workspace and ${targetLabel} first.`)
       return
     }
     if (!selectedClient.bio) {
-      toast.error('This client needs an approved bio before discovery can run.')
+      toast.error(`This ${targetLabel} needs an approved profile before discovery can run.`)
       return
     }
 
@@ -597,7 +666,7 @@ export default function PodcastFinder({
     setExcludedIds(new Set())
     setRunScope(nextRun)
     setIsDiscovering(true)
-    setProgress({ completed: 0, total: totalRequests, message: 'Starting client discovery…' })
+    setProgress({ completed: 0, total: totalRequests, message: `Starting ${targetLabel} discovery…` })
 
     let collected: ResearchResult[] = []
     let completed = 0
@@ -681,11 +750,11 @@ export default function PodcastFinder({
 
   const handleScoreResults = async () => {
     if (!selectedWorkspace || !selectedClient?.bio || !runScope) {
-      toast.error('A client-bound discovery run is required before scoring.')
+      toast.error(`A ${targetLabel}-bound discovery run is required before scoring.`)
       return
     }
     if (runScope.workspaceId !== workspaceId || runScope.clientId !== clientId) {
-      toast.error('This run belongs to a different workspace or client. Start a new run.')
+      toast.error(`This run belongs to a different workspace or ${targetLabel}. Start a new run.`)
       return
     }
 
@@ -726,8 +795,10 @@ export default function PodcastFinder({
           total,
           message: `Scored ${completed} of ${total} podcasts`,
         }),
-        false,
-        { workspaceId: selectedWorkspace.id, clientId: selectedClient.id },
+        isProspectBound,
+        isProspectBound
+          ? { workspaceId: selectedWorkspace.id, prospectDashboardId: selectedClient.id }
+          : { workspaceId: selectedWorkspace.id, clientId: selectedClient.id },
       )
 
       const byId = new Map(scores.map((score) => [score.podcast_id, score]))
@@ -751,7 +822,7 @@ export default function PodcastFinder({
   const handleAddChartResults = async () => {
     if (!selectedWorkspace || !selectedClient || !chartCategory) return
     if (runScope && (runScope.workspaceId !== workspaceId || runScope.clientId !== clientId)) {
-      toast.error('Chart discoveries cannot be mixed across clients.')
+      toast.error(`Chart discoveries cannot be mixed across ${targetLabel}s.`)
       return
     }
 
@@ -779,7 +850,7 @@ export default function PodcastFinder({
             apiCalls: 1,
             errors: 0,
           })
-      toast.success(`Added ${podcasts.length} chart podcasts to this client run.`)
+      toast.success(`Added ${podcasts.length} chart podcasts to this ${targetLabel} run.`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Chart podcasts could not be added.')
     } finally {
@@ -859,29 +930,40 @@ export default function PodcastFinder({
 
     setIsAdding(true)
     try {
-      const response = await addClientShortlistPodcasts(
-        selectedWorkspace.id,
-        selectedClient.id,
-        selectedResults.map(toShortlistPodcast),
-      )
+      const response = isProspectBound
+        ? await addWorkspaceProspectPodcasts(
+            selectedWorkspace.id,
+            selectedClient.id,
+            selectedResults.map(toProspectShortlistPodcast),
+          )
+        : await addClientShortlistPodcasts(
+            selectedWorkspace.id,
+            selectedClient.id,
+            selectedResults.map(toShortlistPodcast),
+          )
       const handledPodcastIds = selectedResults.map((result) => result.podcast.podcast_id)
       setAddedPodcastIds((current) => new Set([...current, ...handledPodcastIds]))
       if (isWorkspaceScoped) {
-        queryClient.setQueryData<WorkspaceResearchContext>(researchContextQueryKey, (current) => current
+        queryClient.setQueryData<FinderResearchContext>(researchContextQueryKey, (current) => current
           ? {
               ...current,
               existing_podcast_ids: Array.from(new Set([
                 ...current.existing_podcast_ids,
                 ...handledPodcastIds,
               ])),
+              ...(isProspectBound
+                ? { current_shortlist_count: (current.current_shortlist_count || 0) + response.added }
+                : {}),
             }
           : current)
       }
       const duplicatesSkipped = response.skipped || 0
       if (response.added === 0) {
-        toast.info(`Nothing new to add for ${selectedClient.name}. These podcasts are already on the client shortlist.`)
+        toast.info(`Nothing new to add for ${selectedClient.name}. These podcasts are already on the ${targetLabel} shortlist.`)
+      } else if ('unpublished_for_review' in response && response.unpublished_for_review) {
+        toast.success(`Added ${response.added} podcast${response.added === 1 ? '' : 's'}. The live dashboard moved to Review so you can approve the changes.`)
       } else if (duplicatesSkipped > 0) {
-        toast.success(`Added ${response.added} new podcasts and skipped ${duplicatesSkipped} already on the client shortlist.`)
+        toast.success(`Added ${response.added} new podcasts and skipped ${duplicatesSkipped} already on the ${targetLabel} shortlist.`)
       } else {
         toast.success(`Added ${response.added} new podcasts to ${selectedClient.name}’s shortlist.`)
       }
@@ -906,6 +988,7 @@ export default function PodcastFinder({
     : MY_WORKSPACE_BASE_HREF
   const clientsHref = `${clientBaseHref}/clients`
   const onboardingHref = `${clientBaseHref}/onboarding`
+  const prospectStudioHref = `${clientBaseHref}/prospects?prospect=${encodeURIComponent(canonicalProspectId)}&view=all`
   const platformWorkspaceConfig: PlatformWorkspaceConfig | undefined = platformWorkspaceId
     ? {
         workspaceName: selectedWorkspace?.name || 'Client workspace',
@@ -918,14 +1001,14 @@ export default function PodcastFinder({
       }
     : undefined
 
-  if (isClientBound && researchContextQuery.isLoading && Boolean(fixedWorkspaceId && canonicalFixedClientId)) {
+  if (isTargetBound && researchContextQuery.isLoading && Boolean(fixedWorkspaceId && fixedTargetId)) {
     return (
       <WorkspaceLayout platformWorkspace={platformWorkspaceConfig}>
         <Card>
           <CardContent className="flex min-h-56 items-center justify-center">
             <div className="text-center">
               <Loader2 className="mx-auto h-7 w-7 animate-spin text-primary" />
-              <p className="mt-3 text-sm text-muted-foreground">Loading client podcast research…</p>
+              <p className="mt-3 text-sm text-muted-foreground">Loading {targetLabel} podcast research…</p>
             </div>
           </CardContent>
         </Card>
@@ -933,9 +1016,9 @@ export default function PodcastFinder({
     )
   }
 
-  if (isClientBound && (
+  if (isTargetBound && (
     !fixedWorkspaceId
-    || !canonicalFixedClientId
+    || !fixedTargetId
     || researchContextQuery.error
     || !selectedWorkspace
     || !selectedClient
@@ -948,10 +1031,10 @@ export default function PodcastFinder({
             <CardDescription>
               {researchContextQuery.error instanceof Error
                 ? researchContextQuery.error.message
-                : 'This active client does not belong to the selected workspace.'}
+                : `This active ${targetLabel} does not belong to the selected workspace.`}
             </CardDescription>
           </CardHeader>
-          <CardContent><Button asChild variant="outline"><Link to={clientsHref}>Back to clients</Link></Button></CardContent>
+          <CardContent><Button asChild variant="outline"><Link to={isProspectBound ? prospectStudioHref : clientsHref}>Back to {isProspectBound ? 'Prospect Studio' : 'clients'}</Link></Button></CardContent>
         </Card>
       </WorkspaceLayout>
     )
@@ -964,7 +1047,9 @@ export default function PodcastFinder({
           <div>
             <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Podcast Finder</h1>
             <p className="mt-1 text-sm text-muted-foreground sm:text-base">
-              Discover new podcasts for any client. Existing opportunities are filtered automatically.
+              {isProspectBound
+                ? `Research and score new shows for ${selectedClient?.name || 'this prospect'}, then add the strongest matches to their lead magnet.`
+                : 'Discover new podcasts for any client. Existing opportunities are filtered automatically.'}
             </p>
           </div>
           <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end">
@@ -1007,6 +1092,20 @@ export default function PodcastFinder({
           </div>
         </div>
 
+        {isProspectBound && selectedClient && (
+          <div className="flex flex-col gap-3 rounded-xl border border-violet-200 bg-gradient-to-r from-violet-50 to-blue-50 p-4 dark:border-violet-900 dark:from-violet-950/30 dark:to-blue-950/30 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white"><Target className="h-5 w-5" /></div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">Prospect research</p>
+                <p className="truncate font-semibold">Adding to {selectedClient.name}</p>
+                <p className="text-sm text-muted-foreground">{currentShortlistCount} currently shortlisted · {existingPodcastIds.size} already reviewed · new selections return to Studio</p>
+              </div>
+            </div>
+            <Button asChild variant="outline" className="shrink-0 bg-background/80"><Link to={prospectStudioHref}><ChevronLeft className="mr-2 h-4 w-4" />Back to Studio</Link></Button>
+          </div>
+        )}
+
         {isClientSelectable && scopedClientsQuery.error && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
             Clients could not be loaded. <button className="underline" onClick={() => void scopedClientsQuery.refetch()}>Try again</button>
@@ -1030,7 +1129,7 @@ export default function PodcastFinder({
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
             {researchContextQuery.error instanceof Error
               ? researchContextQuery.error.message
-              : 'The selected client profile and podcast history could not be loaded.'}{' '}
+              : `The selected ${targetLabel} profile and podcast history could not be loaded.`}{' '}
             <button className="underline" onClick={() => void researchContextQuery.refetch()}>Try again</button>
           </div>
         )}
@@ -1038,11 +1137,11 @@ export default function PodcastFinder({
         {isWorkspaceScoped && selectedClient && !selectedClient.bio && (
           <div className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="font-semibold">Client profile required</p>
-              <p className="text-sm text-muted-foreground">Add an approved client bio before running discovery.</p>
+              <p className="font-semibold">{targetLabelTitle} profile required</p>
+              <p className="text-sm text-muted-foreground">Add an approved {targetLabel} profile before running discovery.</p>
             </div>
             <Button asChild variant="outline" size="sm" className="shrink-0">
-              <Link to={isClientBound ? onboardingHref : clientsHref}>{isClientBound ? 'Open onboarding' : 'Open clients'}</Link>
+              <Link to={isProspectBound ? prospectStudioHref : isClientBound ? onboardingHref : clientsHref}>{isProspectBound ? 'Back to Studio' : isClientBound ? 'Open onboarding' : 'Open clients'}</Link>
             </Button>
           </div>
         )}
@@ -1052,7 +1151,7 @@ export default function PodcastFinder({
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <CardTitle className="text-lg">1. Choose the client workspace</CardTitle>
-                <CardDescription>Workspace first, then an active client. Prospects stay in Prospect Dashboards.</CardDescription>
+                <CardDescription>Workspace first, then an active client. Lead magnets stay in Prospect Studio.</CardDescription>
               </div>
               {scopeLocked && (
                 <Button variant="outline" size="sm" onClick={() => setScopeResetOpen(true)}>
@@ -1158,7 +1257,7 @@ export default function PodcastFinder({
                       <span className="font-semibold">{option.label}</span>
                       {selected && <CheckCircle2 className="h-4 w-4 text-primary" />}
                     </div>
-                    <p className="mt-1 text-sm text-muted-foreground">{option.description}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{option.description.replace(/\bclient\b/gu, targetLabel)}</p>
                     <p className="mt-3 text-xs font-medium text-foreground">
                       Up to {option.estimatedMaximum.toLocaleString()} raw matches from five AI strategies
                     </p>
@@ -1320,7 +1419,7 @@ export default function PodcastFinder({
                   {[
                     { label: 'Raw found', value: runScope?.rawResults || results.length, tone: 'text-foreground' },
                     { label: 'Unique run', value: results.length, tone: 'text-foreground' },
-                    { label: 'New for client', value: newResultCount, tone: 'text-emerald-600' },
+                    { label: `New for ${targetLabel}`, value: newResultCount, tone: 'text-emerald-600' },
                     { label: 'Already used', value: existingResultCount, tone: 'text-slate-500' },
                     { label: 'Tier A', value: newTierCounts.a, tone: 'text-emerald-600' },
                     { label: 'Tier B', value: newTierCounts.b, tone: 'text-blue-600' },
@@ -1336,7 +1435,7 @@ export default function PodcastFinder({
                 </div>
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                   <span>
-                    {qualifiedCount.toLocaleString()} new outreach-ready · {existingResultCount.toLocaleString()} from client history hidden ·{' '}
+                    {qualifiedCount.toLocaleString()} new outreach-ready · {existingResultCount.toLocaleString()} from {targetLabel} history hidden ·{' '}
                     {Math.max(0, (runScope?.rawResults || results.length) - results.length).toLocaleString()} within-run duplicates removed
                   </span>
                   {runScope?.completedAt && <span>Run completed {formatDate(runScope.completedAt)} · {runScope.apiCalls} Podscan calls</span>}
@@ -1349,7 +1448,7 @@ export default function PodcastFinder({
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <CardTitle className="text-lg">{isWorkspaceScoped ? '2.' : '3.'} Review and route the list</CardTitle>
-                    <CardDescription>New podcasts appear first. Client history stays available for reference and cannot be added twice.</CardDescription>
+                    <CardDescription>New podcasts appear first. {targetLabelTitle} history stays available for reference and cannot be added twice.</CardDescription>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button variant="outline" onClick={() => void handleScoreResults()} disabled={isScoring || isDiscovering}>
@@ -1522,7 +1621,7 @@ export default function PodcastFinder({
                           <TableCell colSpan={8} className="h-36 text-center text-muted-foreground">
                             {hideExisting && newResultCount === 0 && existingResultCount > 0 ? (
                               <div className="flex flex-col items-center gap-3">
-                                <span>Every podcast in this run already exists in the client’s history.</span>
+                                <span>Every podcast in this run already exists in the {targetLabel}’s history.</span>
                                 <Button variant="outline" size="sm" onClick={() => setHideExisting(false)}>Review existing podcasts</Button>
                               </div>
                             ) : 'No podcasts match this view.'}
@@ -1553,7 +1652,7 @@ export default function PodcastFinder({
               <div className="mb-4 rounded-full bg-primary/10 p-4"><Layers3 className="h-7 w-7 text-primary" /></div>
               <h2 className="text-lg font-semibold">Ready for {selectedClient.name}’s weekly discovery</h2>
               <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-                Each run gathers broad matches, removes duplicates within the search, and hides podcasts already added, reviewed, contacted, or booked for this client.
+                Each run gathers broad matches, removes duplicates within the search, and hides podcasts already saved for this {targetLabel}.
               </p>
             </CardContent>
           </Card>
@@ -1565,7 +1664,7 @@ export default function PodcastFinder({
           <div className="mx-auto flex max-w-5xl flex-col gap-3 rounded-xl border bg-background/95 p-3 shadow-2xl backdrop-blur sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">{selectedIds.size}</div>
-              <div><p className="text-sm font-semibold">podcasts selected</p><p className="text-xs text-muted-foreground">{selectedContactableCount} include a direct email</p></div>
+              <div><p className="text-sm font-semibold">{selectedIds.size === 1 ? 'Podcast' : 'Podcasts'} selected for {selectedClient?.name}</p><p className="text-xs text-muted-foreground">{selectedContactableCount} include a direct email</p></div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="outline" size="sm" onClick={() => handleBulkTier('a')}>Tier A</Button>
@@ -1592,7 +1691,7 @@ export default function PodcastFinder({
 
               <div className="flex flex-wrap gap-2">
                 <Badge variant="outline" className={tierClasses(selectedDetail.tier)}>{tierLabel(selectedDetail.tier)}</Badge>
-                {selectedDetail.existing && <Badge variant="secondary">Already used for this client</Badge>}
+                {selectedDetail.existing && <Badge variant="secondary">Already used for this {targetLabel}</Badge>}
                 {selectedDetail.sources.map((source) => <Badge key={source} variant="secondary">{source}</Badge>)}
               </div>
 
@@ -1655,11 +1754,11 @@ export default function PodcastFinder({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {isClientBound ? 'Start a new search?' : isClientSelectable ? 'Change client?' : 'Start research for another client?'}
+              {isTargetBound ? 'Start a new search?' : isClientSelectable ? 'Change client?' : 'Start research for another client?'}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {isClientBound
-                ? `This clears the current tab’s queries, results, scores, tiers, and selection for ${selectedClient?.name}. The workspace and client stay fixed.`
+              {isTargetBound
+                ? `This clears the current tab’s queries, results, scores, tiers, and selection for ${selectedClient?.name}. The workspace and ${targetLabel} stay fixed.`
                 : isClientSelectable
                   ? 'This clears the current queries, results, scores, tiers, and selection. The client selector will become editable again.'
                   : 'This clears the current tab’s queries, results, scores, tiers, and selection. The workspace and client will become editable again.'}
@@ -1668,7 +1767,7 @@ export default function PodcastFinder({
           <AlertDialogFooter>
             <AlertDialogCancel>Keep this run</AlertDialogCancel>
             <AlertDialogAction onClick={() => { resetResearch(); setScopeResetOpen(false) }}>
-              {isClientBound ? 'Clear and restart' : 'Clear and switch'}
+              {isTargetBound ? 'Clear and restart' : 'Clear and switch'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1680,9 +1779,10 @@ export default function PodcastFinder({
             <AlertDialogTitle>Add {selectedResults.length} podcasts to the shortlist?</AlertDialogTitle>
             <AlertDialogDescription>
               This list is locked to {selectedClient?.name} in {selectedWorkspace?.name}. {selectedContactableCount} selected podcasts include a direct email.
+              {isProspectBound ? ' If the dashboard is live, it will return to Review before these changes become public.' : ''}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="rounded-lg border bg-muted/25 p-3 text-sm"><p className="font-medium">Destination</p><p className="text-muted-foreground">{selectedClient?.name}’s private approval shortlist</p></div>
+          <div className="rounded-lg border bg-muted/25 p-3 text-sm"><p className="font-medium">Destination</p><p className="text-muted-foreground">{selectedClient?.name}’s {isProspectBound ? 'Prospect Studio shortlist' : 'private approval shortlist'}</p></div>
           <AlertDialogFooter><AlertDialogCancel disabled={isAdding}>Cancel</AlertDialogCancel><AlertDialogAction onClick={(event) => { event.preventDefault(); void handleAddToShortlist() }} disabled={isAdding}>{isAdding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ListPlus className="mr-2 h-4 w-4" />} Add to shortlist</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

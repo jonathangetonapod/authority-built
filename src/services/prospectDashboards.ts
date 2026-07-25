@@ -95,6 +95,29 @@ export interface ProspectShortlistPodcast {
   updated_at: string
 }
 
+export interface ProspectShortlistPodcastInput {
+  podcast_id: string
+  podcast_name: string
+  podcast_description?: string | null
+  podcast_image_url?: string | null
+  podcast_url?: string | null
+  publisher_name?: string | null
+  itunes_rating?: number | null
+  episode_count?: number | null
+  audience_size?: number | null
+  last_posted_at?: string | null
+  podcast_categories?: Array<{ category_id: string; category_name: string }> | null
+  relevance_score?: number | null
+  relevance_reason?: string | null
+}
+
+export interface ProspectShortlistAddResult {
+  added: number
+  skipped: number
+  podcast_ids: string[]
+  unpublished_for_review: boolean
+}
+
 export interface ProspectWorkspaceSummary {
   id: string
   name: string
@@ -260,6 +283,32 @@ export function updateWorkspaceProspectPodcast(
     podcast_id: podcastId,
     changes,
   }, 'Failed to update the shortlist.')
+}
+
+export async function addWorkspaceProspectPodcasts(
+  workspaceId: string,
+  dashboardId: string,
+  podcasts: ProspectShortlistPodcastInput[],
+): Promise<ProspectShortlistAddResult> {
+  const combined: ProspectShortlistAddResult = {
+    added: 0,
+    skipped: 0,
+    podcast_ids: [],
+    unpublished_for_review: false,
+  }
+  for (let offset = 0; offset < podcasts.length; offset += 50) {
+    const result = await invokeProspectStudio<ProspectShortlistAddResult>({
+      action: 'podcast-add',
+      workspace_id: workspaceId.toLowerCase(),
+      dashboard_id: dashboardId.toLowerCase(),
+      podcasts: podcasts.slice(offset, offset + 50),
+    }, 'Failed to add podcasts to the prospect shortlist.')
+    combined.added += result.added
+    combined.skipped += result.skipped
+    combined.podcast_ids.push(...result.podcast_ids)
+    combined.unpublished_for_review ||= result.unpublished_for_review
+  }
+  return combined
 }
 
 export async function archiveWorkspaceProspect(

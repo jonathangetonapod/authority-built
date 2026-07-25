@@ -23,6 +23,35 @@ interface PodcastForScoring {
   episode_count?: number | null
 }
 
+const SCORE_STOP_WORDS = new Set([
+  'about', 'after', 'also', 'been', 'being', 'business', 'company', 'could', 'from', 'have', 'helps',
+  'into', 'more', 'most', 'over', 'podcast', 'their', 'them', 'they', 'this', 'through', 'using', 'what',
+  'when', 'where', 'which', 'while', 'with', 'work', 'years', 'your',
+])
+
+function meaningfulTokens(value: string): Set<string> {
+  return new Set((value.toLowerCase().match(/[a-z][a-z0-9-]{2,}/gu) || [])
+    .filter((token) => !SCORE_STOP_WORDS.has(token)))
+}
+
+function deterministicScore(targetBio: string, podcast: PodcastForScoring) {
+  const targetTokens = meaningfulTokens(targetBio)
+  const podcastText = [
+    podcast.podcast_name,
+    podcast.publisher_name,
+    podcast.podcast_description,
+    podcast.podcast_categories?.map((category) => category.category_name).join(' '),
+  ].filter(Boolean).join(' ')
+  const shared = Array.from(meaningfulTokens(podcastText)).filter((token) => targetTokens.has(token)).slice(0, 4)
+  const score = shared.length === 0 ? 5 : Math.min(9, 5.5 + shared.length)
+  return {
+    score,
+    reasoning: shared.length > 0
+      ? `The show overlaps with the profile’s ${shared.join(', ')} themes. Review the audience and recent episodes to confirm the strongest angle.`
+      : 'The show has broad guest potential, but the available description has limited direct topic overlap. Review it before adding it to the shortlist.',
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -35,32 +64,61 @@ serve(async (req) => {
       podcasts: PodcastForScoring[]
       workspaceId?: string
       clientId?: string
+      prospectDashboardId?: string
     }
     let { clientBio, prospectBio } = body
     const { podcasts } = body
-    const scopedRequest = body.workspaceId !== undefined || body.clientId !== undefined
+    const scopedRequest = body.workspaceId !== undefined
+      || body.clientId !== undefined
+      || body.prospectDashboardId !== undefined
 
     if (scopedRequest) {
       const workspaceId = requireUuid(body.workspaceId, 'workspaceId')
-      const clientId = requireUuid(body.clientId, 'clientId')
       const context = await requireAuthenticatedUser(req)
       await requireWorkspaceFeatureAccess(context, workspaceId)
-      const { data: scopedClient, error: scopedClientError } = await context.admin
-        .from('clients')
-        .select('id,workspace_id,bio,status')
-        .eq('id', clientId)
-        .eq('workspace_id', workspaceId)
-        .eq('status', 'active')
-        .maybeSingle()
+      const hasClient = body.clientId !== undefined
+      const hasProspect = body.prospectDashboardId !== undefined
+      if (Number(hasClient) + Number(hasProspect) !== 1) {
+        throw new HttpError(400, 'INVALID_RESEARCH_TARGET', 'Choose exactly one client or prospect research target')
+      }
 
-      if (scopedClientError) {
-        throw new HttpError(500, 'CLIENT_CONTEXT_UNAVAILABLE', 'The client profile could not be loaded')
+      if (hasProspect) {
+        const prospectDashboardId = requireUuid(body.prospectDashboardId, 'prospectDashboardId')
+        const { data: scopedProspect, error: scopedProspectError } = await context.admin
+          .from('prospect_dashboards')
+          .select('id,workspace_id,prospect_bio,lifecycle_status,is_active')
+          .eq('id', prospectDashboardId)
+          .eq('workspace_id', workspaceId)
+          .neq('lifecycle_status', 'archived')
+          .eq('is_active', true)
+          .maybeSingle()
+        if (scopedProspectError) {
+          throw new HttpError(500, 'PROSPECT_CONTEXT_UNAVAILABLE', 'The prospect profile could not be loaded')
+        }
+        if (!scopedProspect || scopedProspect.workspace_id !== workspaceId) {
+          throw new HttpError(404, 'PROSPECT_NOT_FOUND', 'Active workspace prospect not found')
+        }
+        prospectBio = scopedProspect.prospect_bio
+        clientBio = undefined
+      } else {
+        const clientId = requireUuid(body.clientId, 'clientId')
+        const { data: scopedClient, error: scopedClientError } = await context.admin
+          .from('clients')
+          .select('id,workspace_id,bio,status')
+          .eq('id', clientId)
+          .eq('workspace_id', workspaceId)
+          .eq('status', 'active')
+          .maybeSingle()
+
+        if (scopedClientError) {
+          throw new HttpError(500, 'CLIENT_CONTEXT_UNAVAILABLE', 'The client profile could not be loaded')
+        }
+        if (!scopedClient || scopedClient.workspace_id !== workspaceId) {
+          throw new HttpError(404, 'CLIENT_NOT_FOUND', 'Active workspace client not found')
+        }
+        clientBio = scopedClient.bio
+        prospectBio = undefined
       }
-      if (!scopedClient || scopedClient.workspace_id !== workspaceId) {
-        throw new HttpError(404, 'CLIENT_NOT_FOUND', 'Active workspace client not found')
-      }
-      clientBio = scopedClient.bio
-      prospectBio = undefined
     } else {
       await requirePlatformAdminOrService(req)
     }
@@ -169,7 +227,7 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, ju
 
           const content = message.content[0]
           if (content.type !== 'text') {
-            return { podcast_id: podcast.podcast_id, score: null, reasoning: undefined }
+            return { podcast_id: podcast.podcast_id, ...deterministicScore(targetBio, podcast) }
           }
 
           // Strip markdown code blocks if present
@@ -202,12 +260,12 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, ju
               }
             }
             errorCount++
-            return { podcast_id: podcast.podcast_id, score: null, reasoning: undefined }
+            return { podcast_id: podcast.podcast_id, ...deterministicScore(targetBio, podcast) }
           }
         } catch (error) {
           console.error(`❌ [ERROR] Scoring ${podcast.podcast_name.substring(0, 50)}:`, error)
           errorCount++
-          return { podcast_id: podcast.podcast_id, score: null, reasoning: undefined }
+          return { podcast_id: podcast.podcast_id, ...deterministicScore(targetBio, podcast) }
         }
       })
     )

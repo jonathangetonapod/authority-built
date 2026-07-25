@@ -13,6 +13,43 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+const FALLBACK_STOP_WORDS = new Set([
+  'about', 'after', 'also', 'been', 'being', 'build', 'building', 'company', 'could', 'experience',
+  'from', 'have', 'helps', 'into', 'more', 'most', 'over', 'their', 'them', 'they', 'this', 'through',
+  'using', 'what', 'when', 'where', 'which', 'while', 'with', 'work', 'years', 'your', 'podcast', 'guest',
+])
+
+function fallbackQueries(targetName: string | undefined, targetBio: string): string[] {
+  const excluded = new Set((targetName || '').toLowerCase().match(/[a-z0-9]+/gu) || [])
+  const frequencies = new Map<string, number>()
+  for (const token of targetBio.toLowerCase().match(/[a-z][a-z0-9-]{2,}/gu) || []) {
+    if (FALLBACK_STOP_WORDS.has(token) || excluded.has(token)) continue
+    frequencies.set(token, (frequencies.get(token) || 0) + 1)
+  }
+  const defaults = ['business', 'leadership', 'growth', 'innovation', 'entrepreneurship']
+  const topics = Array.from(frequencies.entries())
+    .sort((left, right) => right[1] - left[1] || right[0].length - left[0].length || left[0].localeCompare(right[0]))
+    .map(([token]) => token)
+  for (const fallback of defaults) if (!topics.includes(fallback)) topics.push(fallback)
+  const [first, second, third, fourth, fifth] = topics.slice(0, 5)
+  return [
+    `"${first} ${second}"`,
+    `"${first}" OR "${third}" OR "${fourth}"`,
+    `"${first} * podcast" OR "${second} * stories"`,
+    `"${third} leaders" OR "${fourth} growth"`,
+    `"${second} * business" OR "${fifth} innovation"`,
+  ]
+}
+
+function fallbackReplacementQuery(
+  targetName: string | undefined,
+  targetBio: string,
+  oldQuery: string,
+): string {
+  const queries = fallbackQueries(targetName, targetBio)
+  return queries.find((candidate) => candidate !== oldQuery) || queries[0]
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -22,35 +59,63 @@ serve(async (req) => {
     const body = await req.json()
     let { clientName, clientBio, clientEmail, prospectName, prospectBio } = body
     const { oldQuery } = body
-    const scopedRequest = body.workspaceId !== undefined || body.clientId !== undefined
+    const scopedRequest = body.workspaceId !== undefined
+      || body.clientId !== undefined
+      || body.prospectDashboardId !== undefined
 
     if (scopedRequest) {
       const workspaceId = requireUuid(body.workspaceId, 'workspaceId')
-      const clientId = requireUuid(body.clientId, 'clientId')
       const context = await requireAuthenticatedUser(req)
       await requireWorkspaceFeatureAccess(context, workspaceId)
-      const { data: scopedClient, error: scopedClientError } = await context.admin
-        .from('clients')
-        .select('id,workspace_id,name,email,bio,status')
-        .eq('id', clientId)
-        .eq('workspace_id', workspaceId)
-        .eq('status', 'active')
-        .maybeSingle()
-
-      if (scopedClientError) {
-        throw new HttpError(500, 'CLIENT_CONTEXT_UNAVAILABLE', 'The client profile could not be loaded')
-      }
-      if (!scopedClient || scopedClient.workspace_id !== workspaceId) {
-        throw new HttpError(404, 'CLIENT_NOT_FOUND', 'Active workspace client not found')
+      const hasClient = body.clientId !== undefined
+      const hasProspect = body.prospectDashboardId !== undefined
+      if (Number(hasClient) + Number(hasProspect) !== 1) {
+        throw new HttpError(400, 'INVALID_RESEARCH_TARGET', 'Choose exactly one client or prospect research target')
       }
 
-      // The server-owned client profile is authoritative for workspace users.
-      // Request input can never substitute another client or prospect profile.
-      clientName = scopedClient.name
-      clientBio = scopedClient.bio
-      clientEmail = scopedClient.email
-      prospectName = undefined
-      prospectBio = undefined
+      if (hasProspect) {
+        const prospectDashboardId = requireUuid(body.prospectDashboardId, 'prospectDashboardId')
+        const { data: scopedProspect, error: scopedProspectError } = await context.admin
+          .from('prospect_dashboards')
+          .select('id,workspace_id,prospect_name,prospect_bio,lifecycle_status,is_active')
+          .eq('id', prospectDashboardId)
+          .eq('workspace_id', workspaceId)
+          .neq('lifecycle_status', 'archived')
+          .eq('is_active', true)
+          .maybeSingle()
+        if (scopedProspectError) {
+          throw new HttpError(500, 'PROSPECT_CONTEXT_UNAVAILABLE', 'The prospect profile could not be loaded')
+        }
+        if (!scopedProspect || scopedProspect.workspace_id !== workspaceId) {
+          throw new HttpError(404, 'PROSPECT_NOT_FOUND', 'Active workspace prospect not found')
+        }
+        prospectName = scopedProspect.prospect_name
+        prospectBio = scopedProspect.prospect_bio
+        clientName = undefined
+        clientBio = undefined
+        clientEmail = undefined
+      } else {
+        const clientId = requireUuid(body.clientId, 'clientId')
+        const { data: scopedClient, error: scopedClientError } = await context.admin
+          .from('clients')
+          .select('id,workspace_id,name,email,bio,status')
+          .eq('id', clientId)
+          .eq('workspace_id', workspaceId)
+          .eq('status', 'active')
+          .maybeSingle()
+
+        if (scopedClientError) {
+          throw new HttpError(500, 'CLIENT_CONTEXT_UNAVAILABLE', 'The client profile could not be loaded')
+        }
+        if (!scopedClient || scopedClient.workspace_id !== workspaceId) {
+          throw new HttpError(404, 'CLIENT_NOT_FOUND', 'Active workspace client not found')
+        }
+        clientName = scopedClient.name
+        clientBio = scopedClient.bio
+        clientEmail = scopedClient.email
+        prospectName = undefined
+        prospectBio = undefined
+      }
     } else {
       await requirePlatformAdminOrService(req)
     }
@@ -144,12 +209,26 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
         max_tokens: 100,
         temperature: 0.9,
         messages: [{ role: 'user', content: prompt }],
+      }).catch((error) => {
+        console.warn('Query regeneration provider was unavailable; using deterministic strategy', error)
+        return null
       })
+
+      if (!message) {
+        const query = fallbackReplacementQuery(targetName, targetBio, oldQuery)
+        return new Response(
+          JSON.stringify({ query, source: 'deterministic' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
 
       const content = message.content[0]
       if (content.type !== 'text') {
-        console.error('❌ [ERROR] Unexpected response type from Claude')
-        throw new Error('Unexpected response type from Claude')
+        const query = fallbackReplacementQuery(targetName, targetBio, oldQuery)
+        return new Response(
+          JSON.stringify({ query, source: 'deterministic' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
       }
 
       // Strip markdown code blocks if present
@@ -161,14 +240,25 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
       console.log('📝 [AI RESPONSE] Raw:', content.text.substring(0, 200))
       console.log('🧹 [CLEANED] Parsed JSON:', jsonText.substring(0, 200))
 
-      let parsed
+      let parsed: { query?: unknown }
       try {
         parsed = JSON.parse(jsonText)
       } catch (parseError) {
         console.error('❌ [JSON PARSE ERROR]', parseError)
         console.error('   Failed text:', jsonText)
-        const parseErrorMessage = parseError instanceof Error ? parseError.message : String(parseError)
-        throw new Error(`Failed to parse JSON: ${parseErrorMessage}`)
+        const query = fallbackReplacementQuery(targetName, targetBio, oldQuery)
+        return new Response(
+          JSON.stringify({ query, source: 'deterministic' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
+
+      if (typeof parsed.query !== 'string' || !parsed.query.trim() || parsed.query === oldQuery) {
+        const query = fallbackReplacementQuery(targetName, targetBio, oldQuery)
+        return new Response(
+          JSON.stringify({ query, source: 'deterministic' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
       }
 
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
@@ -247,11 +337,24 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
       max_tokens: 500,
       temperature: 0.8,
       messages: [{ role: 'user', content: prompt }],
+    }).catch((error) => {
+      console.warn('Query generation provider was unavailable; using deterministic strategy', error)
+      return null
     })
+
+    if (!message) {
+      return new Response(
+        JSON.stringify({ queries: fallbackQueries(targetName, targetBio), source: 'deterministic' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
 
     const content = message.content[0]
     if (content.type !== 'text') {
-      throw new Error('Unexpected response type from Claude')
+      return new Response(
+        JSON.stringify({ queries: fallbackQueries(targetName, targetBio), source: 'deterministic' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
     }
 
     // Strip markdown code blocks if present
@@ -328,12 +431,8 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
       console.error('Manual extraction failed')
       console.error('Original text:', jsonText)
       return new Response(
-        JSON.stringify({
-          error: `Failed to parse JSON: ${parseErrorMessage}`,
-          raw_response: content.text,
-          cleaned_text: jsonText
-        }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ queries: fallbackQueries(targetName, targetBio), source: 'deterministic' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
   } catch (error) {

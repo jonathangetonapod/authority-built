@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { supabase } from '@/lib/supabase'
 import {
+  addWorkspaceProspectPodcasts,
   buildWorkspaceProspect,
   createWorkspaceProspect,
   getWorkspaceProspect,
@@ -91,6 +92,40 @@ describe('prospectDashboards service', () => {
         dashboard_id: dashboardId,
         podcast_id: 'podcast-one',
         changes: { visibility: 'archived' },
+      },
+    })
+  })
+
+  it('adds Finder results to the selected prospect in bounded batches', async () => {
+    invoke.mockResolvedValueOnce({
+      data: { added: 1, skipped: 0, podcast_ids: ['podcast-one'], unpublished_for_review: true },
+      error: null,
+    } as never)
+
+    const result = await addWorkspaceProspectPodcasts(workspaceId, dashboardId, [{
+      podcast_id: 'podcast-one',
+      podcast_name: 'Founder Stories',
+      relevance_score: 8.7,
+      relevance_reason: 'Strong founder and SaaS audience overlap.',
+    }])
+
+    expect(result).toEqual({
+      added: 1,
+      skipped: 0,
+      podcast_ids: ['podcast-one'],
+      unpublished_for_review: true,
+    })
+    expect(invoke).toHaveBeenCalledWith('workspace-prospect-dashboards', {
+      body: {
+        action: 'podcast-add',
+        workspace_id: workspaceId,
+        dashboard_id: dashboardId,
+        podcasts: [{
+          podcast_id: 'podcast-one',
+          podcast_name: 'Founder Stories',
+          relevance_score: 8.7,
+          relevance_reason: 'Strong founder and SaaS audience overlap.',
+        }],
       },
     })
   })
