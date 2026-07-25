@@ -63,7 +63,7 @@ const aiRoutingSteps = [
   },
   {
     title: 'Client AI SDR loaded',
-    detail: 'Use that client’s voice, profile, assets, rules, and calendar.',
+    detail: 'Use that client’s approved positioning, topics, proof, listener value, and booking details.',
     icon: Bot,
   },
   {

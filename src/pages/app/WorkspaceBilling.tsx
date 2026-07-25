@@ -92,8 +92,9 @@ const WorkspaceBilling = () => {
 
             <Card className="border-border/70 shadow-sm">
               <CardHeader><CardTitle className="text-lg">How Waterfall credits work</CardTitle><CardDescription>Simple successful-result billing across every plan.</CardDescription></CardHeader>
-              <CardContent className="grid gap-4 sm:grid-cols-3">
-                <div className="rounded-xl border bg-muted/20 p-4"><p className="text-sm font-semibold">1 credit on success</p><p className="mt-1 text-xs leading-5 text-muted-foreground">A credit is used only when a verified direct email is returned.</p></div>
+              <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-4"><p className="text-sm font-semibold">Global cache first</p><p className="mt-1 text-xs leading-5 text-muted-foreground">If any workspace already unlocked the podcast, you reuse the verified contact for 0 credits.</p></div>
+                <div className="rounded-xl border bg-muted/20 p-4"><p className="text-sm font-semibold">1 credit on first global success</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Only the platform's first successful verified direct-email lookup is eligible for a credit charge.</p></div>
                 <div className="rounded-xl border bg-muted/20 p-4"><p className="text-sm font-semibold">Failed searches are free</p><p className="mt-1 text-xs leading-5 text-muted-foreground">No verified email means no Waterfall credit is charged.</p></div>
                 <div className="rounded-xl border bg-muted/20 p-4"><p className="text-sm font-semibold">Top-ups stay available</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Purchased credits remain while your paid subscription is active.</p></div>
               </CardContent>

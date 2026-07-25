@@ -20,8 +20,8 @@ const CONFIG_PATH = path.join(REPOSITORY_ROOT, 'supabase', 'config.toml')
 const FUNCTIONS_ROOT = path.join(REPOSITORY_ROOT, 'supabase', 'functions')
 
 const EXPECTED_COUNTS = Object.freeze({
-  changedFunctions: 97,
-  deployedFunctions: 95,
+  changedFunctions: 98,
+  deployedFunctions: 96,
   excludedFunctions: 2,
   retiredFunctions: 17,
   unauthenticatedTombstones: 5,

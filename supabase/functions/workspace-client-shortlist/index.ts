@@ -48,6 +48,7 @@ const SHORTLIST_FIELDS = [
   'updated_at',
 ].join(',')
 const CATALOG_FIELDS = [
+  'id',
   'podscan_id',
   'podcast_name',
   'podcast_description',
@@ -92,6 +93,7 @@ interface ShortlistPodcastRow extends Record<string, unknown> {
 }
 
 interface CatalogPodcastRow extends Record<string, unknown> {
+  id: string
   podscan_id: string
   podcast_name: string | null
   podcast_description: string | null
@@ -108,6 +110,16 @@ interface CatalogPodcastRow extends Record<string, unknown> {
   podscan_email: string | null
   rss_url: string | null
   demographics?: unknown
+}
+
+interface DirectContactRow extends Record<string, unknown> {
+  podcast_id: string
+  email: string
+  host_name: string | null
+  verification_status: 'verified' | 'stale' | 'invalid'
+  first_paid_unlock_at: string
+  last_verified_at: string
+  updated_at: string
 }
 
 function requireManager(access: WorkspaceFeatureAccess): void {
@@ -316,30 +328,67 @@ serve(async (req) => {
       const catalogResult = shortlistPodcastIds.length > 0
         ? await authContext.admin
           .from('podcasts')
-          .select('podscan_id,podscan_email,rss_url,language,region,podcast_url,publisher_name')
+          .select(`${CATALOG_FIELDS},demographics`)
           .in('podscan_id', shortlistPodcastIds)
         : { data: [], error: null }
       if (catalogResult.error) {
         throw new HttpError(500, 'SHORTLIST_LOOKUP_FAILED', 'Podcast contact details could not be loaded')
       }
+      const catalogRows = (catalogResult.data || []) as unknown as CatalogPodcastRow[]
+      const directContactResult = catalogRows.length > 0
+        ? await authContext.admin
+          .from('podcast_direct_contacts')
+          .select('podcast_id,email,host_name,verification_status,first_paid_unlock_at,last_verified_at,updated_at')
+          .in('podcast_id', catalogRows.map((podcast) => podcast.id))
+          .eq('verification_status', 'verified')
+        : { data: [], error: null }
+      if (directContactResult.error) {
+        throw new HttpError(500, 'SHORTLIST_LOOKUP_FAILED', 'Verified podcast contacts could not be loaded')
+      }
       const feedbackByPodcast = new Map(
         (feedbackResult.data || []).map((feedback) => [feedback.podcast_id, feedback]),
       )
       const catalogByPodcast = new Map(
-        ((catalogResult.data || []) as unknown as CatalogPodcastRow[])
-          .map((podcast) => [podcast.podscan_id, podcast]),
+        catalogRows.map((podcast) => [podcast.podscan_id, podcast]),
+      )
+      const directContactByPodcast = new Map(
+        ((directContactResult.data || []) as unknown as DirectContactRow[])
+          .map((contact) => [contact.podcast_id, contact]),
       )
       const podcasts = shortlistRows.map((podcast) => {
         const feedback = feedbackByPodcast.get(podcast.podcast_id)
         const catalog = catalogByPodcast.get(podcast.podcast_id)
+        const directContact = catalog ? directContactByPodcast.get(catalog.id) : null
         return {
           ...podcast,
-          podcast_url: podcast.podcast_url || catalog?.podcast_url || null,
-          publisher_name: podcast.publisher_name || catalog?.publisher_name || null,
+          podcast_name: catalog?.podcast_name || podcast.podcast_name,
+          podcast_description: catalog?.podcast_description ?? podcast.podcast_description ?? null,
+          podcast_image_url: catalog?.podcast_image_url ?? podcast.podcast_image_url ?? null,
+          podcast_url: catalog?.podcast_url ?? podcast.podcast_url ?? null,
+          publisher_name: catalog?.publisher_name ?? podcast.publisher_name ?? null,
+          itunes_rating: catalog?.itunes_rating ?? podcast.itunes_rating ?? null,
+          episode_count: catalog?.episode_count ?? podcast.episode_count ?? null,
+          audience_size: catalog?.audience_size ?? podcast.audience_size ?? null,
+          last_posted_at: catalog?.last_posted_at ?? podcast.last_posted_at ?? null,
+          podcast_categories: catalog?.podcast_categories ?? podcast.podcast_categories ?? null,
           podcast_email: catalog?.podscan_email || null,
           rss_feed: catalog?.rss_url || null,
           language: catalog?.language || null,
           region: catalog?.region || null,
+          email_unlock: directContact
+            ? {
+              status: 'unlocked',
+              current_stage: null,
+              completed_stages: ['identify_contact', 'find_email', 'verify_email'],
+              email: directContact.email,
+              host_name: directContact.host_name,
+              unlocked_at: directContact.first_paid_unlock_at,
+              updated_at: directContact.updated_at,
+              verified_at: directContact.last_verified_at,
+              scope: 'global',
+              credit_cost: 0,
+            }
+            : null,
           feedback_status: feedback?.status || null,
           feedback_notes: feedback?.notes || null,
           feedback_updated_at: feedback?.updated_at || null,
@@ -428,8 +477,13 @@ serve(async (req) => {
       let addedPodcastIds: string[] = []
 
       if (newPodcasts.length > 0) {
-        const centralResult = await authContext.admin.from('podcasts').upsert(
-          newPodcasts.map((podcast) => ({
+        const centralResult = await authContext.admin.rpc('merge_global_podcast_catalog_batch_v1', {
+          p_workspace_id: workspaceId,
+          p_actor_user_id: authContext.user.id,
+          p_source: 'workspace_shortlist',
+          p_client_id: clientId,
+          p_prospect_dashboard_id: null,
+          p_podcasts: newPodcasts.map((podcast) => ({
             podscan_id: podcast.podcast_id,
             podcast_name: podcast.podcast_name,
             podcast_description: podcast.podcast_description,
@@ -445,11 +499,8 @@ serve(async (req) => {
             region: podcast.region,
             podscan_email: podcast.podcast_email,
             rss_url: podcast.rss_feed,
-            podscan_last_fetched_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
           })),
-          { onConflict: 'podscan_id', ignoreDuplicates: true },
-        )
+        })
         if (centralResult.error) {
           throw new HttpError(500, 'SHORTLIST_ADD_FAILED', 'Podcast details could not be saved')
         }

@@ -1343,6 +1343,30 @@ serve(async (req) => {
         // can never expose unreviewed Finder additions on an already-live dashboard.
         if (existing.published_at) await moveDashboardToReview()
 
+        const catalogMerge = await context.admin.rpc('merge_global_podcast_catalog_batch_v1', {
+          p_workspace_id: workspaceId,
+          p_actor_user_id: context.user.id,
+          p_source: 'workspace_prospect',
+          p_client_id: null,
+          p_prospect_dashboard_id: dashboardId,
+          p_podcasts: newPodcasts.map((podcast) => ({
+            podscan_id: podcast.podcast_id,
+            podcast_name: podcast.podcast_name,
+            podcast_description: podcast.podcast_description,
+            podcast_image_url: podcast.podcast_image_url,
+            podcast_url: podcast.podcast_url,
+            publisher_name: podcast.publisher_name,
+            itunes_rating: podcast.itunes_rating,
+            episode_count: podcast.episode_count,
+            audience_size: podcast.audience_size,
+            last_posted_at: podcast.last_posted_at,
+            podcast_categories: podcast.podcast_categories,
+          })),
+        })
+        if (catalogMerge.error) {
+          throw new HttpError(500, 'SHORTLIST_ADD_FAILED', 'Podcast details could not be merged into the shared catalog')
+        }
+
         const { data: lastPosition, error: positionError } = await context.admin
           .from('prospect_dashboard_podcasts')
           .select('display_order')

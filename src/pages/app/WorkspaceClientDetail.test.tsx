@@ -270,7 +270,7 @@ describe('WorkspaceClientDetail', () => {
     expect(mockedDetail).toHaveBeenCalledWith(workspaceId, clientId)
   })
 
-  it('creates and edits a client-scoped AI SDR profile for Master Inbox', async () => {
+  it('edits each client-scoped AI SDR section in a focused modal for Master Inbox', async () => {
     renderPage()
     await screen.findByRole('heading', { name: 'Taylor Client' })
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'AI SDR Profile' }), { button: 0 })
@@ -283,10 +283,13 @@ describe('WorkspaceClientDetail', () => {
       `/app/master-inbox?client=${clientId}`,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit profile' }))
-    const takeaways = screen.getByLabelText('Listener value & takeaways')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Listener value & takeaways' }))
+    const editor = screen.getByRole('dialog', { name: 'Edit Listener value & takeaways' })
+    expect(within(editor).getByText('Section 3 of 6')).toBeInTheDocument()
+    expect(within(editor).getAllByRole('textbox')).toHaveLength(1)
+    const takeaways = within(editor).getByLabelText('Listener value & takeaways')
     fireEvent.change(takeaways, { target: { value: 'Listeners leave with a repeatable operating-system audit.' } })
-    fireEvent.click(screen.getAllByRole('button', { name: 'Save profile' }).at(-1) as HTMLElement)
+    fireEvent.click(within(editor).getByRole('button', { name: 'Save section' }))
 
     await waitFor(() => expect(mockedUpdateSdrProfile).toHaveBeenCalledWith(
       workspaceId,
@@ -312,7 +315,7 @@ describe('WorkspaceClientDetail', () => {
 
     expect(screen.getByText('Sustainable scale, founder leverage, and the operator systems behind durable growth.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit profile' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Edit context' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit Guest positioning' })).not.toBeInTheDocument()
   })
 
   it('keeps long approved profiles compact until the full profile is opened', async () => {

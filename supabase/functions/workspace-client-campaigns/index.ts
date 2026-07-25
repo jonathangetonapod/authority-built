@@ -882,7 +882,7 @@ async function addCampaignTargets(
       .in("podcast_id", podcastIds),
     context.admin
       .from("podcasts")
-      .select("podscan_id,podscan_email,podcast_url,publisher_name")
+      .select("id,podscan_id,podscan_email,podcast_url,publisher_name")
       .in("podscan_id", podcastIds),
   ]);
   if (feedbackResult.error || catalogResult.error) {
@@ -911,9 +911,30 @@ async function addCampaignTargets(
   const catalogByPodcast = new Map(
     (catalogResult.data || []).map((row) => [String(row.podscan_id), row]),
   );
+  const catalogIds = (catalogResult.data || []).map((row) => String(row.id));
+  const directContactResult = catalogIds.length > 0
+    ? await context.admin
+      .from("podcast_direct_contacts")
+      .select("podcast_id,email,host_name")
+      .in("podcast_id", catalogIds)
+      .eq("verification_status", "verified")
+    : { data: [], error: null };
+  if (directContactResult.error) {
+    throw new HttpError(
+      500,
+      "CAMPAIGN_TARGET_LOOKUP_FAILED",
+      "Verified podcast contacts could not be loaded",
+    );
+  }
+  const directContactByPodcast = new Map(
+    (directContactResult.data || []).map((row) => [String(row.podcast_id), row]),
+  );
   const waveStartedOn = currentWaveStart();
   const inserts = shortlistData.map((podcast) => {
     const catalog = catalogByPodcast.get(String(podcast.podcast_id));
+    const directContact = catalog
+      ? directContactByPodcast.get(String(catalog.id))
+      : null;
     return {
       workspace_id: campaign.workspace_id,
       campaign_id: campaign.id,
@@ -923,13 +944,17 @@ async function addCampaignTargets(
       podcast_name: podcast.podcast_name || "Untitled podcast",
       podcast_url: cleanHttpUrl(podcast.podcast_url) ||
         cleanHttpUrl(catalog?.podcast_url),
-      host_name: typeof podcast.publisher_name === "string" &&
+      host_name: typeof directContact?.host_name === "string" &&
+          directContact.host_name.trim()
+        ? directContact.host_name.trim().slice(0, 500)
+        : typeof podcast.publisher_name === "string" &&
           podcast.publisher_name.trim()
         ? podcast.publisher_name.trim().slice(0, 500)
         : typeof catalog?.publisher_name === "string"
         ? catalog.publisher_name.trim().slice(0, 500) || null
         : null,
-      contact_email: cleanContactEmail(catalog?.podscan_email),
+      contact_email: cleanContactEmail(directContact?.email) ||
+        cleanContactEmail(catalog?.podscan_email),
       selection_source:
         feedbackByPodcast.get(String(podcast.podcast_id)) === "approved"
           ? "client_positive"
@@ -939,6 +964,23 @@ async function addCampaignTargets(
       updated_by: context.user.id,
     };
   });
+  const verifiedDirectByShortlistId = new Map(
+    shortlistData.flatMap((podcast) => {
+      const catalog = catalogByPodcast.get(String(podcast.podcast_id));
+      const directContact = catalog
+        ? directContactByPodcast.get(String(catalog.id))
+        : null;
+      const directEmail = cleanContactEmail(directContact?.email);
+      if (!directEmail) return [];
+      return [[String(podcast.id), {
+        email: directEmail,
+        hostName: typeof directContact?.host_name === "string" &&
+            directContact.host_name.trim()
+          ? directContact.host_name.trim().slice(0, 500)
+          : null,
+      }] as const];
+    }),
+  );
   const { error: insertError } = await context.admin
     .from("workspace_client_campaign_targets")
     .upsert(inserts, {
@@ -967,14 +1009,26 @@ async function addCampaignTargets(
   const refreshes = targets.flatMap((target) => {
     const incoming = incomingByShortlistId.get(target.shortlist_podcast_id);
     if (!incoming || target.instantly_lead_id) return [];
+    const verifiedDirect = verifiedDirectByShortlistId.get(
+      target.shortlist_podcast_id,
+    );
     const update: Record<string, unknown> = { updated_by: context.user.id };
-    if (!target.contact_email && incoming.contact_email) {
+    if (
+      verifiedDirect?.email &&
+      target.contact_email?.toLowerCase() !== verifiedDirect.email.toLowerCase()
+    ) {
+      update.contact_email = verifiedDirect.email;
+    } else if (!target.contact_email && incoming.contact_email) {
       update.contact_email = incoming.contact_email;
     }
     if (!target.podcast_url && incoming.podcast_url) {
       update.podcast_url = incoming.podcast_url;
     }
-    if (!target.host_name && incoming.host_name) {
+    if (
+      verifiedDirect?.hostName && target.host_name !== verifiedDirect.hostName
+    ) {
+      update.host_name = verifiedDirect.hostName;
+    } else if (!target.host_name && incoming.host_name) {
       update.host_name = incoming.host_name;
     }
     if (

@@ -10,6 +10,7 @@ import {
   Coins,
   ExternalLink,
   FileSearch,
+  Globe,
   Loader2,
   Lightbulb,
   Mail,
@@ -612,14 +613,18 @@ export function ClientCampaignPrepDialog({
                     <div className="border-b bg-gradient-to-br from-primary/10 via-primary/5 to-background p-5 sm:p-6">
                       <div className="flex gap-3">
                         <div className="rounded-xl bg-primary/10 p-2.5 text-primary"><Mail className="h-5 w-5" /></div>
-                        <div><Badge variant="secondary">Step 1</Badge><h3 className="mt-2 text-xl font-semibold">Find the email</h3><p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">A valid email is required before research. Use the free public inbox, try a deeper search, or enter an address you already have.</p></div>
+                        <div><Badge variant="secondary">Step 1</Badge><h3 className="mt-2 text-xl font-semibold">Find the email</h3><p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">A valid email is required before research. Use the free Podscan inbox, try a deeper direct-host search, or enter an address you already have.</p></div>
                       </div>
                     </div>
 
                     <div className="space-y-6 p-5 sm:p-6">
                       <div>
+                        <div className="mb-5 flex gap-3 rounded-xl border border-sky-200 bg-sky-50/70 p-4 text-sky-950">
+                          <Globe className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
+                          <div><p className="text-sm font-semibold">One shared contact network</p><p className="mt-1 text-xs leading-5 text-sky-900/80">Free Podscan inboxes and verified direct contacts are shared across Get On A Pod. If any workspace has already unlocked this podcast, every workspace reuses it for 0 credits.</p></div>
+                        </div>
                         <p className="text-sm font-semibold">Choose an email path</p>
-                        <p className="mt-1 text-xs leading-5 text-muted-foreground">Choose the route you want. Host identification and Waterfall verification happen automatically behind the scenes.</p>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">Choose the route you want. Podscan supplies the free show inbox; the robust route identifies and verifies a direct host contact.</p>
                         <div className="mt-4 grid gap-4 md:grid-cols-2">
                           <button
                             type="button"
@@ -634,12 +639,12 @@ export function ClientCampaignPrepDialog({
                           >
                             <div className="flex items-start justify-between gap-3">
                               <div className="rounded-xl bg-slate-100 p-2.5 text-slate-700"><Mail className="h-5 w-5" /></div>
-                              <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">0 credits · Basic</Badge>
+                              <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">Free · Podscan</Badge>
                             </div>
-                            <h4 className="mt-4 font-semibold">Use the podcast email</h4>
-                            <p className="mt-2 text-sm leading-6 text-muted-foreground">Use the public address already stored with this podcast. It is fast and free, but may route to a general show inbox.</p>
+                            <h4 className="mt-4 font-semibold">Use the free podcast inbox</h4>
+                            <p className="mt-2 text-sm leading-6 text-muted-foreground">Use the address supplied with the podcast by Podscan. It is always free and shared globally, but may route to a general show inbox.</p>
                             <div className="mt-4 rounded-xl border bg-background px-3 py-2.5">
-                              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Address on file</p>
+                              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Free Podscan inbox</p>
                               <p className="mt-1 truncate text-sm font-medium">{publicPodcastEmail || 'No public email found'}</p>
                             </div>
                             <div className="mt-auto flex items-center gap-2 pt-4 text-xs font-medium text-muted-foreground">
@@ -661,29 +666,29 @@ export function ClientCampaignPrepDialog({
                             <div className="flex items-start justify-between gap-3">
                               <div className="rounded-xl bg-violet-100 p-2.5 text-violet-700">{emailAlreadyUnlocked ? <CheckCircle2 className="h-5 w-5" /> : emailSearchRunning ? <Loader2 className="h-5 w-5 animate-spin" /> : emailSearchHasNoResult ? <AlertCircle className="h-5 w-5" /> : <Search className="h-5 w-5" />}</div>
                               <div className="flex flex-col items-end gap-1.5">
-                                <Badge className="border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">{emailAlreadyUnlocked ? 'Already unlocked' : emailSearchRunning ? 'Search in progress' : emailSearchHasNoResult ? 'No result yet' : 'Recommended'}</Badge>
+                                <Badge className="border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">{emailAlreadyUnlocked ? 'Globally unlocked' : emailSearchRunning ? 'Global search in progress' : emailSearchHasNoResult ? 'No result yet' : 'Recommended'}</Badge>
                                 <span className="text-[11px] font-semibold text-violet-800">{emailAlreadyUnlocked ? '0 additional credits' : emailSearchRunning ? 'Safe to close' : emailSearchHasNoResult ? 'You were not charged' : '1 credit on success'}</span>
                               </div>
                             </div>
                             <h4 className="mt-4 font-semibold">{emailAlreadyUnlocked ? 'Use the direct host email' : emailSearchRunning ? 'Finding the direct host email' : emailSearchHasNoResult ? 'No direct email found yet' : "Find the host's direct email"}</h4>
                             <p className="mt-2 text-sm leading-6 text-muted-foreground">{emailAlreadyUnlocked
-                              ? 'This workspace has already unlocked a verified direct contact for this podcast. It can be reused for every client and campaign.'
+                              ? 'A verified direct contact for this podcast has already been unlocked on Get On A Pod. Every workspace can reuse it for every client and campaign.'
                               : emailSearchRunning
-                                ? 'The search belongs to your workspace and keeps running if you close this modal or return later.'
+                                ? 'One platform-wide search is running for this podcast. It keeps going if you close this modal, and another workspace cannot start or pay for a duplicate lookup.'
                                 : emailSearchHasNoResult
                                   ? storedEmailUnlock?.message || 'The last search did not return a verified direct email. Use the public inbox, enter your own address, or try again.'
                                   : 'Run a waterfall search to identify the host and verify a work or personal address—the stronger route for reply potential.'}</p>
                             {emailAlreadyUnlocked ? (
                               <div className="mt-4 rounded-xl border border-violet-200 bg-background/80 px-3 py-2.5">
                                 <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-800">Direct email ready</p>
-                                <p className="mt-1 text-xs leading-5 text-muted-foreground">{storedEmailUnlock?.unlocked_at ? `Unlocked ${formatPodcastDate(storedEmailUnlock.unlocked_at)}.` : 'Saved to this workspace.'} Future host and contact refreshes are included.</p>
+                                <p className="mt-1 text-xs leading-5 text-muted-foreground">{storedEmailUnlock?.unlocked_at ? `First unlocked ${formatPodcastDate(storedEmailUnlock.unlocked_at)}.` : 'Saved to the global contact network.'} Future host and contact refreshes are included for every workspace.</p>
                               </div>
                             ) : emailSearchRunning ? (
                               <div className="mt-4 space-y-2">
                                 {visibleEmailUnlockSteps.map((step) => <div key={step.id} className="flex items-center gap-2 text-[11px] font-medium text-violet-900">{step.status === 'complete' ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : step.status === 'active' ? <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-700" /> : <span className="h-3.5 w-3.5 rounded-full border border-violet-300" />}<span>{step.title}</span><span className="ml-auto text-violet-700/70">{step.status === 'complete' ? 'Done' : step.status === 'active' ? 'In progress' : 'Waiting'}</span></div>)}
                               </div>
                             ) : emailSearchHasNoResult ? (
-                              <p className="mt-4 rounded-xl border border-violet-200 bg-background/80 px-3 py-2.5 text-xs leading-5 text-violet-900">No credit was used. A future retry is still charged only if this podcast is successfully unlocked for the first time.</p>
+                              <p className="mt-4 rounded-xl border border-violet-200 bg-background/80 px-3 py-2.5 text-xs leading-5 text-violet-900">No credit was used. A future retry is charged only if it becomes the first successful direct-contact unlock across the entire platform.</p>
                             ) : (
                               <div className="mt-4 flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-violet-900">
                                 <span className="rounded-full bg-violet-100 px-2.5 py-1">Identify host</span>
@@ -738,7 +743,7 @@ export function ClientCampaignPrepDialog({
                       {emailRoute === 'waterfall' && (
                         emailAlreadyUnlocked ? (
                           <div aria-label="Waterfall enrichment plan" className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
-                            <div className="flex gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" /><div><p className="text-sm font-semibold text-emerald-950">Direct email unlocked · 0 additional credits</p><p className="mt-1 max-w-3xl text-xs leading-5 text-emerald-900/75">This contact is permanently available to the workspace, including when the podcast is used for another client. Future host and contact refreshes are included at no additional charge.</p></div></div>
+                            <div className="flex gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" /><div><p className="text-sm font-semibold text-emerald-950">Globally unlocked direct email · 0 credits</p><p className="mt-1 max-w-3xl text-xs leading-5 text-emerald-900/75">Another successful lookup already paid for this contact. It is permanently available to every workspace, client, and campaign, with future verification refreshes included.</p></div></div>
                           </div>
                         ) : emailSearchRunning ? (
                           <div aria-label="Waterfall enrichment plan" className="rounded-xl border border-violet-200 bg-violet-50/50 p-4">
@@ -746,18 +751,18 @@ export function ClientCampaignPrepDialog({
                           </div>
                         ) : emailSearchHasNoResult ? (
                           <div aria-label="Waterfall enrichment plan" className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
-                            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex gap-3"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" /><div><p className="text-sm font-semibold text-amber-950">No verified direct email · No charge</p><p className="mt-1 max-w-2xl text-xs leading-5 text-amber-900/75">Try again, use the free podcast inbox, or enter an address manually. This podcast is charged only after its first successful workspace unlock.</p></div></div><Button type="button" variant="outline" size="sm" className="shrink-0 border-amber-200 bg-background text-amber-950" onClick={beginEmailSearchPreview}>Try search again</Button></div>
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex gap-3"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" /><div><p className="text-sm font-semibold text-amber-950">No verified direct email · No charge</p><p className="mt-1 max-w-2xl text-xs leading-5 text-amber-900/75">Try again, use the free Podscan inbox, or enter an address manually. A credit is eligible only for the first successful global unlock.</p></div></div><Button type="button" variant="outline" size="sm" className="shrink-0 border-amber-200 bg-background text-amber-950" onClick={beginEmailSearchPreview}>Try search again</Button></div>
                           </div>
                         ) : (
                           <div aria-label="Waterfall enrichment plan" className="rounded-xl border border-violet-200 bg-violet-50/50 p-4">
                             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                               <div className="flex gap-3">
                                 <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-violet-700" />
-                                <div><p className="text-sm font-semibold text-violet-950">Waterfall selected · 1 credit on success</p><p className="mt-1 max-w-2xl text-xs leading-5 text-violet-900/75">We will identify the host, confirm the right person, and then verify the best available email. No verified direct email means no credit is charged.</p></div>
+                                <div><p className="text-sm font-semibold text-violet-950">Robust lookup · 1 credit on first global success</p><p className="mt-1 max-w-2xl text-xs leading-5 text-violet-900/75">We check the global contact network first. Only a true global miss starts host identification and verification; no verified direct email means no credit is charged.</p></div>
                               </div>
                               <div className="flex shrink-0 flex-wrap gap-2"><Button asChild variant="outline" size="sm" className="border-violet-200 bg-background text-violet-900 hover:bg-violet-100"><Link to="/app/settings/billing" target="_blank" rel="noreferrer"><Coins className="mr-2 h-3.5 w-3.5" />Buy credits in Billing<ExternalLink className="ml-2 h-3.5 w-3.5" /></Link></Button><Button type="button" size="sm" onClick={beginEmailSearchPreview}><Search className="mr-2 h-3.5 w-3.5" />Start direct email search</Button></div>
                             </div>
-                            <p className="mt-3 border-t border-violet-200/70 pt-3 text-[11px] font-medium leading-5 text-violet-800">Once successfully unlocked, this podcast never costs the workspace another email credit. Billing opens in a new tab so this pitch stays here.</p>
+                            <p className="mt-3 border-t border-violet-200/70 pt-3 text-[11px] font-medium leading-5 text-violet-800">Once successfully unlocked anywhere on Get On A Pod, this podcast never costs any workspace another direct-email credit. Billing opens in a new tab so this pitch stays here.</p>
                           </div>
                         )
                       )}
@@ -1070,8 +1075,8 @@ export function ClientCampaignPrepDialog({
                   ? 'Email ready. Research is unlocked.'
                   : emailSearchRunning
                     ? publicPodcastEmail
-                      ? 'The direct email search is still running. You can close this window or choose the free public inbox while it continues.'
-                      : 'The direct email search is still running. You can safely close this window and return later.'
+                      ? 'The global direct-email search is still running. You can close this window or choose the free Podscan inbox while it continues.'
+                      : 'The global direct-email search is still running. You can safely close this window and return later.'
                     : 'A valid email is required before you can continue to Research.')}
                 {activeStep === 'research' && (researchWorking
                   ? researchRegenerating

@@ -3,8 +3,8 @@
   "base_commit": "b46a737631ee840f2f49270bdfbbe392833e814a",
   "generated_on": "2026-07-24",
   "scope": "Every changed or new Supabase Edge Function relative to base_commit",
-  "expected_unique_function_count": 97,
-  "expected_deploy_count": 95,
+  "expected_unique_function_count": 98,
+  "expected_deploy_count": 96,
   "retired_http_410_functions": [
     "analyze-sales-call",
     "batch-update-orders",
@@ -131,7 +131,8 @@
       "workspace-client-shortlist",
       "workspace-clients",
       "workspace-guest-resources",
-      "workspace-onboarding"
+      "workspace-onboarding",
+      "workspace-prospect-dashboards"
     ]
   },
   "excluded_from_tenant_environment": [

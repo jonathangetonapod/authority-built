@@ -289,7 +289,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const [profileExpectedUpdatedAt, setProfileExpectedUpdatedAt] = useState('')
   const [profileBusy, setProfileBusy] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
-  const [sdrEditing, setSdrEditing] = useState(false)
+  const [sdrEditorFieldId, setSdrEditorFieldId] = useState<keyof ClientSdrProfile | null>(null)
   const [sdrDraft, setSdrDraft] = useState<ClientSdrProfile>(() => normalizeClientSdrProfile({}))
   const [sdrExpectedUpdatedAt, setSdrExpectedUpdatedAt] = useState<string | null>(null)
   const [sdrBusy, setSdrBusy] = useState(false)
@@ -398,6 +398,14 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const sdrReadiness = clientSdrProfileReadiness(sdrProfile)
   const sdrDraftReadiness = clientSdrProfileReadiness(sdrDraft)
   const sdrDraftChanged = !clientSdrProfilesEqual(sdrDraft, sdrProfile)
+  const activeSdrField = sdrEditorFieldId
+    ? CLIENT_SDR_PROFILE_FIELD_DEFINITIONS.find((field) => field.id === sdrEditorFieldId) || null
+    : null
+  const nextSdrField = CLIENT_SDR_PROFILE_FIELD_DEFINITIONS.find(
+    (field) => field.core && !sdrProfile[field.id],
+  ) || CLIENT_SDR_PROFILE_FIELD_DEFINITIONS.find(
+    (field) => !sdrProfile[field.id],
+  ) || CLIENT_SDR_PROFILE_FIELD_DEFINITIONS[0]
   const missingSdrCoreLabels = CLIENT_SDR_PROFILE_FIELD_DEFINITIONS
     .filter((field) => sdrReadiness.missing_core_fields.includes(field.id))
     .map((field) => field.shortLabel)
@@ -543,20 +551,20 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
     }
   }
 
-  const beginEditingSdrProfile = () => {
+  const openSdrFieldEditor = (fieldId: keyof ClientSdrProfile) => {
     if (!canManage) return
     setSdrDraft(normalizeClientSdrProfile(client.ai_sdr_profile))
     setSdrExpectedUpdatedAt(client.ai_sdr_profile_updated_at)
     setSdrError(null)
-    setSdrEditing(true)
+    setSdrEditorFieldId(fieldId)
   }
 
-  const cancelEditingSdrProfile = () => {
+  const closeSdrFieldEditor = () => {
     if (sdrBusy) return
     setSdrDraft(normalizeClientSdrProfile(client.ai_sdr_profile))
     setSdrExpectedUpdatedAt(client.ai_sdr_profile_updated_at)
     setSdrError(null)
-    setSdrEditing(false)
+    setSdrEditorFieldId(null)
   }
 
   const saveSdrProfile = async () => {
@@ -573,7 +581,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
       await detailQuery.refetch()
       setSdrDraft(updated.ai_sdr_profile)
       setSdrExpectedUpdatedAt(updated.ai_sdr_profile_updated_at)
-      setSdrEditing(false)
+      setSdrEditorFieldId(null)
       toast.success(updated.ai_sdr_readiness.ready
         ? 'AI SDR profile saved and ready for Master Inbox drafts.'
         : 'AI SDR profile draft saved.')
@@ -785,15 +793,11 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <Button asChild variant="outline"><Link to={masterInboxHref}><Mail className="mr-2 h-4 w-4" />Open Master Inbox</Link></Button>
-                    {canManage && !sdrEditing && <Button type="button" onClick={beginEditingSdrProfile}><Pencil className="mr-2 h-4 w-4" />{sdrReadiness.completed_fields > 0 ? 'Edit profile' : 'Create profile'}</Button>}
-                    {canManage && sdrEditing && (
-                      <>
-                        <Button type="button" variant="outline" disabled={sdrBusy} onClick={cancelEditingSdrProfile}>Cancel</Button>
-                        <Button type="button" disabled={sdrBusy || !sdrDraftChanged} onClick={() => void saveSdrProfile()}>
-                          {sdrBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                          Save profile
-                        </Button>
-                      </>
+                    {canManage && (
+                      <Button type="button" onClick={() => openSdrFieldEditor(nextSdrField.id)}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        {sdrReadiness.ready ? 'Edit profile' : sdrReadiness.completed_fields > 0 ? 'Continue profile' : 'Start profile'}
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -802,23 +806,20 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                   <div className="rounded-xl border bg-background/80 p-4">
                     <div className="flex items-center justify-between gap-3 text-sm">
                       <span className="font-medium">Profile coverage</span>
-                      <span className="tabular-nums text-muted-foreground">{(sdrEditing ? sdrDraftReadiness.completed_fields : sdrReadiness.completed_fields)} / {sdrReadiness.total_fields}</span>
+                      <span className="tabular-nums text-muted-foreground">{sdrReadiness.completed_fields} / {sdrReadiness.total_fields}</span>
                     </div>
                     <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted" aria-hidden="true">
                       <div
                         className="h-full rounded-full bg-primary transition-[width]"
-                        style={{ width: `${Math.round(((sdrEditing ? sdrDraftReadiness.completed_fields : sdrReadiness.completed_fields) / sdrReadiness.total_fields) * 100)}%` }}
+                        style={{ width: `${Math.round((sdrReadiness.completed_fields / sdrReadiness.total_fields) * 100)}%` }}
                       />
                     </div>
-                    {!sdrEditing && !sdrReadiness.ready && (
+                    {!sdrReadiness.ready && (
                       <p className="mt-3 text-xs leading-5 text-amber-800">
                         Add the core {missingSdrCoreLabels.join(', ')} context before inbox drafting is considered ready.
                       </p>
                     )}
-                    {sdrEditing && !sdrDraftReadiness.ready && (
-                      <p className="mt-3 text-xs leading-5 text-amber-800">You can save an incomplete draft. Core fields are marked Required below.</p>
-                    )}
-                    {(sdrEditing ? sdrDraftReadiness.ready : sdrReadiness.ready) && (
+                    {sdrReadiness.ready && (
                       <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-emerald-800"><CheckCircle2 className="h-3.5 w-3.5" />Core context is ready for review drafts.</p>
                     )}
                   </div>
@@ -830,75 +831,51 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
               </div>
             </Card>
 
-            {sdrEditing ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Build the host-ready guest profile</CardTitle>
-                  <CardDescription>Give interested hosts the clearest approved case for booking this client. Only include claims, links, and logistics the team has approved.</CardDescription>
-                </CardHeader>
-                <CardContent className="grid gap-5 lg:grid-cols-2">
-                  {CLIENT_SDR_PROFILE_FIELD_DEFINITIONS.map((field) => (
-                    <div key={field.id} className="space-y-2 rounded-xl border bg-muted/10 p-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <Label htmlFor={`client-sdr-${field.id}`}>{field.label}</Label>
-                        <Badge variant={field.core ? 'default' : 'secondary'} className="text-[10px]">{field.core ? 'Required' : 'Recommended'}</Badge>
-                      </div>
-                      <p className="min-h-10 text-xs leading-5 text-muted-foreground">{field.description}</p>
-                      <Textarea
-                        id={`client-sdr-${field.id}`}
-                        value={sdrDraft[field.id]}
-                        maxLength={CLIENT_SDR_PROFILE_MAX_FIELD_LENGTH}
-                        rows={5}
-                        disabled={sdrBusy}
-                        className="resize-y bg-background leading-6"
-                        placeholder={field.placeholder}
-                        onChange={(event) => {
-                          setSdrDraft((current) => ({ ...current, [field.id]: event.target.value }))
-                          setSdrError(null)
-                        }}
-                      />
-                      <p className="text-right text-[11px] tabular-nums text-muted-foreground">{sdrDraft[field.id].length.toLocaleString()} / {CLIENT_SDR_PROFILE_MAX_FIELD_LENGTH.toLocaleString()}</p>
-                    </div>
-                  ))}
-                  {sdrError && <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive lg:col-span-2" role="alert">{sdrError}</p>}
-                  <div className="flex flex-wrap justify-end gap-2 border-t pt-4 lg:col-span-2">
-                    <Button type="button" variant="outline" disabled={sdrBusy} onClick={cancelEditingSdrProfile}>Cancel</Button>
-                    <Button type="button" disabled={sdrBusy || !sdrDraftChanged} onClick={() => void saveSdrProfile()}>
-                      {sdrBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Save {sdrDraftReadiness.ready ? 'profile' : 'draft'}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <section aria-labelledby="ai-sdr-context-heading">
-                <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-                  <div>
-                    <h3 id="ai-sdr-context-heading" className="text-xl font-semibold">Approved host context</h3>
-                    <p className="text-sm text-muted-foreground">What the client-specific AI may share when helping a host evaluate and book this guest.</p>
-                  </div>
-                  {canManage && <Button type="button" variant="outline" size="sm" onClick={beginEditingSdrProfile}><Pencil className="mr-2 h-4 w-4" />Edit context</Button>}
+            <section aria-labelledby="ai-sdr-context-heading">
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h3 id="ai-sdr-context-heading" className="text-xl font-semibold">Approved host context</h3>
+                  <p className="text-sm text-muted-foreground">Open one section at a time to give the client-specific AI approved information for helping a host evaluate and book this guest.</p>
                 </div>
-                <div className="grid gap-3 lg:grid-cols-2">
-                  {CLIENT_SDR_PROFILE_FIELD_DEFINITIONS.map((field) => (
-                    <Card key={field.id} className={!sdrProfile[field.id] ? 'border-dashed' : ''}>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-2">
+                {CLIENT_SDR_PROFILE_FIELD_DEFINITIONS.map((field) => {
+                  const value = sdrProfile[field.id]
+                  return (
+                    <Card key={field.id} className={!value ? 'border-dashed' : ''}>
                       <CardHeader className="pb-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <CardTitle className="text-base">{field.label}</CardTitle>
-                          <Badge variant="secondary" className="text-[10px]">{field.core ? 'Core' : 'Extra'}</Badge>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <CardTitle className="text-base">{field.label}</CardTitle>
+                              <Badge variant="secondary" className="text-[10px]">{field.core ? 'Core' : 'Extra'}</Badge>
+                            </div>
+                            <CardDescription className="mt-2">{field.description}</CardDescription>
+                          </div>
+                          {canManage && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="shrink-0"
+                              aria-label={`${value ? 'Edit' : 'Add'} ${field.label}`}
+                              onClick={() => openSdrFieldEditor(field.id)}
+                            >
+                              <Pencil className="mr-1.5 h-3.5 w-3.5" />{value ? 'Edit' : 'Add'}
+                            </Button>
+                          )}
                         </div>
-                        <CardDescription>{field.description}</CardDescription>
                       </CardHeader>
                       <CardContent>
-                        {sdrProfile[field.id]
-                          ? <p className="line-clamp-6 whitespace-pre-wrap text-sm leading-6 text-foreground/85">{sdrProfile[field.id]}</p>
+                        {value
+                          ? <p className="line-clamp-6 whitespace-pre-wrap text-sm leading-6 text-foreground/85">{value}</p>
                           : <p className="text-sm italic text-muted-foreground">Not set yet.</p>}
                       </CardContent>
                     </Card>
-                  ))}
-                </div>
-              </section>
-            )}
+                  )
+                })}
+              </div>
+            </section>
           </TabsContent>
 
           <TabsContent value="approval" className="mt-0 space-y-6">
@@ -1172,6 +1149,80 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog
+        open={Boolean(activeSdrField)}
+        onOpenChange={(open) => {
+          if (open) return
+          closeSdrFieldEditor()
+        }}
+      >
+        <DialogContent
+          className="grid max-h-[94vh] w-[calc(100%-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-3xl"
+          onEscapeKeyDown={(event) => {
+            if (sdrBusy) event.preventDefault()
+          }}
+          onPointerDownOutside={(event) => {
+            if (sdrBusy) event.preventDefault()
+          }}
+        >
+          {activeSdrField && (
+            <>
+              <DialogHeader className="border-b py-5 pl-6 pr-12 text-left">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <Badge variant={activeSdrField.core ? 'default' : 'secondary'} className="text-[10px]">
+                    {activeSdrField.core ? 'Required for readiness' : 'Recommended'}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    Section {CLIENT_SDR_PROFILE_FIELD_DEFINITIONS.findIndex((field) => field.id === activeSdrField.id) + 1} of {CLIENT_SDR_PROFILE_FIELD_DEFINITIONS.length}
+                  </span>
+                </div>
+                <DialogTitle>{sdrProfile[activeSdrField.id] ? 'Edit' : 'Add'} {activeSdrField.label}</DialogTitle>
+                <DialogDescription>{activeSdrField.description}</DialogDescription>
+              </DialogHeader>
+              <div className="min-h-0 space-y-4 overflow-y-auto px-6 py-5">
+                <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
+                  <p className="font-medium">Write for a podcast host</p>
+                  <p className="mt-1 leading-6 text-sky-900">Be specific, easy to scan, and factual. Include only positioning, claims, links, or logistics the client has approved.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={`client-sdr-${activeSdrField.id}`}>{activeSdrField.label}</Label>
+                  <Textarea
+                    id={`client-sdr-${activeSdrField.id}`}
+                    value={sdrDraft[activeSdrField.id]}
+                    maxLength={CLIENT_SDR_PROFILE_MAX_FIELD_LENGTH}
+                    disabled={sdrBusy}
+                    className="min-h-[280px] resize-y leading-7"
+                    placeholder={activeSdrField.placeholder}
+                    autoFocus
+                    onChange={(event) => {
+                      setSdrDraft((current) => ({ ...current, [activeSdrField.id]: event.target.value }))
+                      setSdrError(null)
+                    }}
+                  />
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span>{wordCount(sdrDraft[activeSdrField.id]).toLocaleString()} {wordCount(sdrDraft[activeSdrField.id]) === 1 ? 'word' : 'words'}</span>
+                    <span className="tabular-nums">{sdrDraft[activeSdrField.id].length.toLocaleString()} / {CLIENT_SDR_PROFILE_MAX_FIELD_LENGTH.toLocaleString()} characters</span>
+                  </div>
+                </div>
+                <div className={`rounded-xl border px-4 py-3 text-xs leading-5 ${sdrDraftReadiness.ready ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+                  {sdrDraftReadiness.ready
+                    ? 'Saving this section keeps all four core sections ready for Master Inbox review drafts.'
+                    : `This profile can still be saved as a draft. ${sdrDraftReadiness.missing_core_fields.length} core section${sdrDraftReadiness.missing_core_fields.length === 1 ? '' : 's'} will remain before drafting is ready.`}
+                </div>
+                {sdrError && <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive" role="alert">{sdrError}</p>}
+              </div>
+              <DialogFooter className="border-t px-6 py-4">
+                <Button type="button" variant="outline" disabled={sdrBusy} onClick={closeSdrFieldEditor}>Cancel</Button>
+                <Button type="button" disabled={sdrBusy || !sdrDraftChanged} onClick={() => void saveSdrProfile()}>
+                  {sdrBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Save section
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
         <DialogContent className="grid max-h-[92vh] w-[calc(100%-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-4xl">

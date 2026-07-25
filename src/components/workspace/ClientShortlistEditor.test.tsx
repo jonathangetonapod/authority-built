@@ -226,7 +226,9 @@ describe('ClientShortlistEditor', () => {
     expect(screen.getByRole('heading', { name: 'Find the email' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Use free podcast email' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText('hello@founderstories.fm')).toBeInTheDocument()
-    expect(screen.getByText('0 credits · Basic')).toBeInTheDocument()
+    expect(screen.getByText('Free · Podscan')).toBeInTheDocument()
+    expect(screen.getByText('One shared contact network')).toBeInTheDocument()
+    expect(screen.getByText(/every workspace reuses it for 0 credits/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Try waterfall enrichment' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'Enter email manually' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByText('1 credit on success')).toBeInTheDocument()
@@ -440,7 +442,7 @@ describe('ClientShortlistEditor', () => {
     expect(screen.queryByRole('region', { name: 'Workspace research prompts' })).not.toBeInTheDocument()
   })
 
-  it('reuses a workspace-unlocked direct email after the modal is closed and reopened', async () => {
+  it('reuses a globally unlocked direct email after the modal is closed and reopened', async () => {
     vi.mocked(getClientShortlist).mockResolvedValueOnce({
       client: { id: clientId, name: 'Taylor Client' },
       podcasts: [podcast({
@@ -457,18 +459,18 @@ describe('ClientShortlistEditor', () => {
     renderEditor()
     fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
 
-    expect(await screen.findByText('Direct email unlocked · 0 additional credits')).toBeInTheDocument()
+    expect(await screen.findByText('Globally unlocked direct email · 0 credits')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Try waterfall enrichment' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getAllByText('Already unlocked').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Globally unlocked').length).toBeGreaterThan(0)
     expect(screen.getAllByText('0 additional credits').length).toBeGreaterThan(0)
-    expect(screen.getByText(/Future host and contact refreshes are included at no additional charge/i)).toBeInTheDocument()
+    expect(screen.getByText(/permanently available to every workspace/i)).toBeInTheDocument()
     expect(screen.queryByText('direct@founderstories.fm')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Start direct email search' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Continue to research' })).toBeEnabled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
-    expect(await screen.findByText('Direct email unlocked · 0 additional credits')).toBeInTheDocument()
+    expect(await screen.findByText('Globally unlocked direct email · 0 credits')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Continue to research' })).toBeEnabled()
   })
 
@@ -511,7 +513,7 @@ describe('ClientShortlistEditor', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Use free podcast email' }))
     expect(screen.getByRole('button', { name: 'Continue to research' })).toBeEnabled()
-    expect(screen.getByText(/keeps running if you close this modal/i)).toBeInTheDocument()
+    expect(screen.getByText(/keeps going if you close this modal/i)).toBeInTheDocument()
   })
 
   it('shows a no-charge retry state when a direct email was not found', async () => {

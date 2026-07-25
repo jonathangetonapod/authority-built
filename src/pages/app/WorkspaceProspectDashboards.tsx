@@ -38,7 +38,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
@@ -260,15 +259,15 @@ function ProspectProfileDialog({
   const linkedCta = form.ctaType === 'book_call' || form.ctaType === 'learn_more'
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] max-w-3xl overflow-hidden p-0">
+      <DialogContent className="grid max-h-[92vh] w-[calc(100%-1rem)] max-w-3xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-0">
         <DialogHeader className="px-6 pt-6">
           <DialogTitle>{editing ? 'Edit prospect profile' : 'Create a prospect dashboard'}</DialogTitle>
           <DialogDescription>
             Give Scout enough context to find a focused, credible set of podcast opportunities. You can save an incomplete draft.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={(event) => { event.preventDefault(); onSubmit() }}>
-          <ScrollArea className="max-h-[calc(92vh-180px)] px-6">
+        <form className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden" onSubmit={(event) => { event.preventDefault(); onSubmit() }}>
+          <div className="min-h-0 overflow-y-auto overscroll-contain px-6">
             <div className="space-y-6 pb-6">
               <section className="space-y-4">
                 <div>
@@ -433,7 +432,7 @@ function ProspectProfileDialog({
                 </div>
               </section>
             </div>
-          </ScrollArea>
+          </div>
           <DialogFooter className="border-t bg-muted/30 px-6 py-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button type="submit" disabled={saving || !form.name.trim()}>

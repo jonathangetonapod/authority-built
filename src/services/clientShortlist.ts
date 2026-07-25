@@ -27,6 +27,9 @@ export interface ClientShortlistEmailUnlock {
   started_at?: string | null
   updated_at?: string | null
   unlocked_at?: string | null
+  verified_at?: string | null
+  scope?: 'global' | null
+  credit_cost?: number | null
 }
 
 export interface ClientShortlistCategory {

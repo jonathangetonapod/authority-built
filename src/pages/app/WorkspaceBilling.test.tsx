@@ -47,6 +47,8 @@ describe('WorkspaceBilling', () => {
     expect(screen.getByText('One-time purchase; your plan will not change')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Continue to secure checkout · $399' })).toBeInTheDocument()
     expect(screen.getByText(/No charge for unsuccessful searches/i)).toBeInTheDocument()
+    expect(screen.getByText('Global cache first')).toBeInTheDocument()
+    expect(screen.getByText(/reuse the verified contact for 0 credits/i)).toBeInTheDocument()
   })
 
   it('returns members without Settings access to clients', () => {
