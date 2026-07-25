@@ -7,6 +7,8 @@ import {
   requireUuid,
   requireWorkspaceFeatureAccess,
 } from '../_shared/workspaceAuth.ts'
+import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
+import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || 'https://getonapod.com',
@@ -67,10 +69,23 @@ serve(async (req) => {
       prospectDashboardId?: string
     }
     let { clientBio, prospectBio } = body
-    const { podcasts } = body
     const scopedRequest = body.workspaceId !== undefined
       || body.clientId !== undefined
       || body.prospectDashboardId !== undefined
+    // Workspace callers are capped: one request scores at most 20 podcasts.
+    const podcasts = scopedRequest && Array.isArray(body.podcasts)
+      ? body.podcasts.slice(0, 20)
+      : body.podcasts
+
+    let anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY') || ''
+    let metering: {
+      admin: Awaited<ReturnType<typeof requireAuthenticatedUser>>['admin']
+      workspaceId: string
+      clientId: string | null
+      referenceKind: string
+      referenceId: string
+      byoKeyUsed: boolean
+    } | null = null
 
     if (scopedRequest) {
       const workspaceId = requireUuid(body.workspaceId, 'workspaceId')
@@ -81,6 +96,27 @@ serve(async (req) => {
       if (Number(hasClient) + Number(hasProspect) !== 1) {
         throw new HttpError(400, 'INVALID_RESEARCH_TARGET', 'Choose exactly one client or prospect research target')
       }
+
+      const resolvedKey = await resolveAiKey(context.admin, workspaceId, 'anthropic')
+      const byoKeyUsed = resolvedKey?.source === 'workspace'
+      if (resolvedKey) anthropicApiKey = resolvedKey.apiKey
+      metering = {
+        admin: context.admin,
+        workspaceId,
+        clientId: hasClient ? String(body.clientId) : null,
+        referenceKind: hasProspect ? 'prospect_dashboard' : 'client',
+        referenceId: String(hasProspect ? body.prospectDashboardId : body.clientId),
+        byoKeyUsed,
+      }
+      await chargeCredits(context.admin, {
+        workspaceId,
+        operationType: 'compatibility_scoring',
+        referenceKind: metering.referenceKind,
+        referenceId: metering.referenceId,
+        clientId: metering.clientId,
+        actorUserId: context.user.id,
+        byoKeyUsed,
+      })
 
       if (hasProspect) {
         const prospectDashboardId = requireUuid(body.prospectDashboardId, 'prospectDashboardId')
@@ -172,15 +208,15 @@ serve(async (req) => {
       )
     }
 
-    const anthropic = new Anthropic({
-      apiKey: Deno.env.get('ANTHROPIC_API_KEY') || '',
-    })
+    const anthropic = new Anthropic({ apiKey: anthropicApiKey })
 
     console.log('🤖 [AI] Using Claude Haiku 4.5 for fast batch scoring...')
     console.log(`   Processing ${podcasts.length} podcasts in parallel`)
 
     let successCount = 0
     let errorCount = 0
+    let anthropicInputTokens = 0
+    let anthropicOutputTokens = 0
 
     // Score each podcast
     const scores = await Promise.all(
@@ -224,6 +260,8 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, ju
             temperature: 0,
             messages: [{ role: 'user', content: prompt }],
           })
+          anthropicInputTokens += message.usage?.input_tokens ?? 0
+          anthropicOutputTokens += message.usage?.output_tokens ?? 0
 
           const content = message.content[0]
           if (content.type !== 'text') {
@@ -290,6 +328,18 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, ju
     console.log('🚀 [NEXT STEP] Frontend will filter and rank by score')
     console.log(`   Recommended: Filter for scores >= 7 (${highScores.length} podcasts)`)
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+
+    if (metering) {
+      await logOperationCost(metering.admin, {
+        workspaceId: metering.workspaceId,
+        operationType: 'compatibility_scoring',
+        usage: { anthropicInputTokens, anthropicOutputTokens },
+        usedByoKey: metering.byoKeyUsed,
+        clientId: metering.clientId,
+        referenceKind: metering.referenceKind,
+        referenceId: metering.referenceId,
+      })
+    }
 
     return new Response(
       JSON.stringify({ scores }),

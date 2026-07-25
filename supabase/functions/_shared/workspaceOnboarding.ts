@@ -547,8 +547,9 @@ export function whiteLabelOnboardingSender(configuredSender: string | undefined,
 export async function generatePitchProfile(
   definition: OnboardingDefinition,
   answers: Record<string, unknown>,
-): Promise<PitchProfile> {
-  const apiKey = Deno.env.get('ANTHROPIC_API_KEY')?.trim()
+  apiKeyOverride?: string,
+): Promise<{ profile: PitchProfile; usage: { inputTokens: number; outputTokens: number } }> {
+  const apiKey = apiKeyOverride ?? Deno.env.get('ANTHROPIC_API_KEY')?.trim()
   if (!apiKey) throw new Error('AI service is not configured')
   const answerRows = definition.sections.flatMap((section) => section.questions.map((question) => ({
     section: section.title,
@@ -572,9 +573,18 @@ export async function generatePitchProfile(
     signal: AbortSignal.timeout(30_000),
   })
   if (!response.ok) throw new Error('AI service did not return a profile')
-  const data = await response.json() as { content?: Array<{ type?: unknown; text?: unknown }> }
+  const data = await response.json() as {
+    content?: Array<{ type?: unknown; text?: unknown }>
+    usage?: { input_tokens?: number; output_tokens?: number }
+  }
   const raw = data.content?.find((item) => item.type === 'text' && typeof item.text === 'string')?.text
   if (typeof raw !== 'string') throw new Error('AI profile response was invalid')
   const json = raw.trim().replace(/^```(?:json)?\s*/iu, '').replace(/\s*```$/u, '')
-  return validatePitchProfile(JSON.parse(json) as unknown)
+  return {
+    profile: validatePitchProfile(JSON.parse(json) as unknown),
+    usage: {
+      inputTokens: Number(data.usage?.input_tokens) || 0,
+      outputTokens: Number(data.usage?.output_tokens) || 0,
+    },
+  }
 }

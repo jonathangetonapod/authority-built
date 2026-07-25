@@ -7,6 +7,8 @@ import {
   requireUuid,
   requireWorkspaceFeatureAccess,
 } from '../_shared/workspaceAuth.ts'
+import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
+import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || 'https://getonapod.com',
@@ -63,6 +65,16 @@ serve(async (req) => {
       || body.clientId !== undefined
       || body.prospectDashboardId !== undefined
 
+    let anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY') || ''
+    let metering: {
+      admin: Awaited<ReturnType<typeof requireAuthenticatedUser>>['admin']
+      workspaceId: string
+      clientId: string | null
+      referenceKind: string
+      referenceId: string
+      byoKeyUsed: boolean
+    } | null = null
+
     if (scopedRequest) {
       const workspaceId = requireUuid(body.workspaceId, 'workspaceId')
       const context = await requireAuthenticatedUser(req)
@@ -72,6 +84,27 @@ serve(async (req) => {
       if (Number(hasClient) + Number(hasProspect) !== 1) {
         throw new HttpError(400, 'INVALID_RESEARCH_TARGET', 'Choose exactly one client or prospect research target')
       }
+
+      const resolvedKey = await resolveAiKey(context.admin, workspaceId, 'anthropic')
+      const byoKeyUsed = resolvedKey?.source === 'workspace'
+      if (resolvedKey) anthropicApiKey = resolvedKey.apiKey
+      metering = {
+        admin: context.admin,
+        workspaceId,
+        clientId: hasClient ? String(body.clientId) : null,
+        referenceKind: hasProspect ? 'prospect_dashboard' : 'client',
+        referenceId: String(hasProspect ? body.prospectDashboardId : body.clientId),
+        byoKeyUsed,
+      }
+      await chargeCredits(context.admin, {
+        workspaceId,
+        operationType: 'query_generation',
+        referenceKind: metering.referenceKind,
+        referenceId: metering.referenceId,
+        clientId: metering.clientId,
+        actorUserId: context.user.id,
+        byoKeyUsed,
+      })
 
       if (hasProspect) {
         const prospectDashboardId = requireUuid(body.prospectDashboardId, 'prospectDashboardId')
@@ -170,9 +203,23 @@ serve(async (req) => {
       )
     }
 
-    const anthropic = new Anthropic({
-      apiKey: Deno.env.get('ANTHROPIC_API_KEY') || '',
-    })
+    const anthropic = new Anthropic({ apiKey: anthropicApiKey })
+
+    const meterUsage = async (message: { usage?: { input_tokens?: number; output_tokens?: number } } | null) => {
+      if (!metering || !message) return
+      await logOperationCost(metering.admin, {
+        workspaceId: metering.workspaceId,
+        operationType: 'query_generation',
+        usage: {
+          anthropicInputTokens: message.usage?.input_tokens ?? 0,
+          anthropicOutputTokens: message.usage?.output_tokens ?? 0,
+        },
+        usedByoKey: metering.byoKeyUsed,
+        clientId: metering.clientId,
+        referenceKind: metering.referenceKind,
+        referenceId: metering.referenceId,
+      })
+    }
 
     // If oldQuery is provided, regenerate a single query
     if (oldQuery) {
@@ -213,6 +260,7 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
         console.warn('Query regeneration provider was unavailable; using deterministic strategy', error)
         return null
       })
+      await meterUsage(message)
 
       if (!message) {
         const query = fallbackReplacementQuery(targetName, targetBio, oldQuery)
@@ -341,6 +389,7 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
       console.warn('Query generation provider was unavailable; using deterministic strategy', error)
       return null
     })
+    await meterUsage(message)
 
     if (!message) {
       return new Response(

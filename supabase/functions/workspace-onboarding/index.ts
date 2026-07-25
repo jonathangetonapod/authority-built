@@ -14,6 +14,8 @@ import {
   requireUuid,
   workspaceCredentialIsFresh,
 } from '../_shared/workspaceAuth.ts'
+import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
+import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 import {
   createOnboardingCapability,
   generatePitchProfile,
@@ -519,8 +521,25 @@ serve(async (req) => {
       }
       const definition = validateOnboardingDefinition(detail.definition)
       const answers = responseRecord(detail.answers, 'answers')
+      const anthropicKey = await resolveAiKey(admin, workspaceId, 'anthropic')
+      await chargeCredits(admin, {
+        workspaceId,
+        operationType: 'pitch_profile',
+        referenceKind: 'onboarding_instance',
+        referenceId: instanceId,
+        actorUserId: user.id,
+        byoKeyUsed: anthropicKey?.source === 'workspace',
+      })
       try {
-        const profile = await generatePitchProfile(definition, answers)
+        const { profile, usage } = await generatePitchProfile(definition, answers, anthropicKey?.apiKey)
+        await logOperationCost(admin, {
+          workspaceId,
+          operationType: 'pitch_profile',
+          usage: { anthropicInputTokens: usage.inputTokens, anthropicOutputTokens: usage.outputTokens },
+          usedByoKey: anthropicKey?.source === 'workspace',
+          referenceKind: 'onboarding_instance',
+          referenceId: instanceId,
+        })
         const stored = await admin.rpc('set_workspace_onboarding_ai_profile_v1', {
           p_instance_id: instanceId,
           p_revision: detail.current_revision,

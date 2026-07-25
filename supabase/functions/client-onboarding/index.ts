@@ -11,6 +11,8 @@ import {
   requireString,
   requireUuid,
 } from '../_shared/workspaceAuth.ts'
+import { logOperationCost } from '../_shared/billing.ts'
+import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 import {
   generatePitchProfile,
   type OnboardingAssetReference,
@@ -352,7 +354,27 @@ serve(async (req) => {
       const revision = integerValue(submitted.current_revision, 'current_revision', 1, 10_000)
       let aiStatus: 'generated' | 'failed' = 'failed'
       try {
-        const profile = await generatePitchProfile(definition, answers)
+        // The client's submission is never blocked by workspace billing:
+        // profile generation on submit is log-only, honoring BYO keys.
+        const { data: instanceRow } = await admin
+          .from('workspace_onboarding_instances')
+          .select('workspace_id, client_id')
+          .eq('id', capability.instanceId)
+          .maybeSingle()
+        const submitWorkspaceId = typeof instanceRow?.workspace_id === 'string' ? instanceRow.workspace_id : null
+        const anthropicKey = await resolveAiKey(admin, submitWorkspaceId, 'anthropic')
+        const { profile, usage } = await generatePitchProfile(definition, answers, anthropicKey?.apiKey)
+        if (submitWorkspaceId) {
+          await logOperationCost(admin, {
+            workspaceId: submitWorkspaceId,
+            operationType: 'pitch_profile',
+            usage: { anthropicInputTokens: usage.inputTokens, anthropicOutputTokens: usage.outputTokens },
+            usedByoKey: anthropicKey?.source === 'workspace',
+            clientId: typeof instanceRow?.client_id === 'string' ? instanceRow.client_id : null,
+            referenceKind: 'onboarding_instance',
+            referenceId: capability.instanceId,
+          })
+        }
         const stored = await admin.rpc('set_workspace_onboarding_ai_profile_v1', {
           p_instance_id: capability.instanceId,
           p_revision: revision,

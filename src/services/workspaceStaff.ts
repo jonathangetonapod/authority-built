@@ -763,3 +763,64 @@ export async function mutateWorkspaceStaff(
   }
   return member
 }
+
+export interface WorkspaceAiKeyStatus {
+  configured: boolean
+  last_four: string | null
+  updated_at: string | null
+}
+
+export interface WorkspaceAiKeysView {
+  anthropic: WorkspaceAiKeyStatus
+  openai: WorkspaceAiKeyStatus
+}
+
+function parseAiKeyStatus(value: unknown): WorkspaceAiKeyStatus {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { configured: false, last_four: null, updated_at: null }
+  }
+  const record = value as Record<string, unknown>
+  return {
+    configured: record.configured === true,
+    last_four: typeof record.last_four === 'string' ? record.last_four : null,
+    updated_at: typeof record.updated_at === 'string' ? record.updated_at : null,
+  }
+}
+
+export async function getWorkspaceAiKeys(workspaceId: string): Promise<WorkspaceAiKeysView> {
+  const canonicalWorkspaceId = canonicalUuid(workspaceId, 'Workspace ID')
+  const data = await invoke(
+    { action: 'ai-keys-status', workspace_id: canonicalWorkspaceId },
+    'AI key status could not be loaded.',
+  ) as { success?: boolean; providers?: Record<string, unknown> }
+  if (data?.success !== true) throw new Error('AI key status could not be loaded.')
+  return {
+    anthropic: parseAiKeyStatus(data.providers?.anthropic),
+    openai: parseAiKeyStatus(data.providers?.openai),
+  }
+}
+
+export async function setWorkspaceAiKey(
+  workspaceId: string,
+  provider: 'anthropic' | 'openai',
+  apiKey: string,
+): Promise<void> {
+  const canonicalWorkspaceId = canonicalUuid(workspaceId, 'Workspace ID')
+  const data = await invoke(
+    { action: 'ai-keys-set', workspace_id: canonicalWorkspaceId, provider, api_key: apiKey },
+    'The API key could not be saved.',
+  ) as { success?: boolean }
+  if (data?.success !== true) throw new Error('The API key could not be saved.')
+}
+
+export async function clearWorkspaceAiKey(
+  workspaceId: string,
+  provider: 'anthropic' | 'openai',
+): Promise<void> {
+  const canonicalWorkspaceId = canonicalUuid(workspaceId, 'Workspace ID')
+  const data = await invoke(
+    { action: 'ai-keys-clear', workspace_id: canonicalWorkspaceId, provider },
+    'The API key could not be removed.',
+  ) as { success?: boolean }
+  if (data?.success !== true) throw new Error('The API key could not be removed.')
+}

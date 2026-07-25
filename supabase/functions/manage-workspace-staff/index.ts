@@ -13,9 +13,18 @@ import {
   requireOnlyKeys,
   requireString,
   requireUuid,
+  requireWorkspaceFeatureAccess,
   workspaceCredentialIsFresh,
+  writeAudit,
 } from "../_shared/workspaceAuth.ts";
 import { generateTemporaryPassword } from "../_shared/workspaceCredentials.ts";
+import {
+  clearWorkspaceAiKey,
+  probeAiKey,
+  requireProvider,
+  storeWorkspaceAiKey,
+  workspaceAiKeyStatus,
+} from "../_shared/workspaceAiKeys.ts";
 
 const METHODS = ["POST"] as const;
 const STAFF_ROLES = ["owner", "admin", "member"] as const;
@@ -2747,6 +2756,55 @@ serve(async (req) => {
         invalidRpcResponse();
       }
       return jsonResponse(req, METHODS, 200, result);
+    }
+
+    if (action === "ai-keys-status" || action === "ai-keys-set" || action === "ai-keys-clear") {
+      const access = await requireWorkspaceFeatureAccess(authContext, workspaceId);
+      if (!["owner", "platform_admin"].includes(access.role)) {
+        throw new HttpError(403, "WORKSPACE_OWNER_REQUIRED", "Workspace owner access is required");
+      }
+
+      if (action === "ai-keys-status") {
+        requireOnlyKeys(body, ["action", "workspace_id"]);
+        const status = await workspaceAiKeyStatus(admin, workspaceId);
+        return jsonResponse(req, METHODS, 200, { success: true, providers: status });
+      }
+
+      if (action === "ai-keys-set") {
+        requireOnlyKeys(body, ["action", "workspace_id", "provider", "api_key"]);
+        const provider = requireProvider(body.provider);
+        const apiKey = requireString(body.api_key, "api_key", { max: 512 });
+        if (apiKey.trim().length < 20) {
+          throw new HttpError(400, "INVALID_API_KEY", "The API key looks incomplete");
+        }
+        const valid = await probeAiKey(provider, apiKey.trim());
+        if (!valid) {
+          throw new HttpError(422, "API_KEY_REJECTED", "The provider rejected this API key");
+        }
+        await storeWorkspaceAiKey(admin, workspaceId, provider, apiKey.trim(), user.id);
+        await writeAudit(admin, {
+          workspaceId,
+          actorUserId: user.id,
+          action: "workspace.ai_key.set",
+          entityType: "workspace",
+          entityId: workspaceId,
+          metadata: { provider },
+        });
+        return jsonResponse(req, METHODS, 200, { success: true });
+      }
+
+      requireOnlyKeys(body, ["action", "workspace_id", "provider"]);
+      const provider = requireProvider(body.provider);
+      await clearWorkspaceAiKey(admin, workspaceId, provider);
+      await writeAudit(admin, {
+        workspaceId,
+        actorUserId: user.id,
+        action: "workspace.ai_key.cleared",
+        entityType: "workspace",
+        entityId: workspaceId,
+        metadata: { provider },
+      });
+      return jsonResponse(req, METHODS, 200, { success: true });
     }
 
     if (action === "update_workspace_name") {

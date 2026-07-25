@@ -13,6 +13,7 @@ import {
   requireUuid,
   requireWorkspaceFeatureAccess,
 } from '../_shared/workspaceAuth.ts'
+import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
 
 const METHODS = ['POST'] as const
 const API_BASE = 'https://podscan.fm/api/v1'
@@ -180,9 +181,18 @@ serve(async (req) => {
     const workspaceId = body.workspace_id === undefined
       ? null
       : requireUuid(body.workspace_id, 'workspace_id')
+    let metering: { admin: Awaited<ReturnType<typeof requireAuthenticatedUser>>['admin']; workspaceId: string } | null = null
     if (workspaceId) {
       const context = await requireAuthenticatedUser(req)
       await requireWorkspaceFeatureAccess(context, workspaceId)
+      metering = { admin: context.admin, workspaceId }
+      await chargeCredits(context.admin, {
+        workspaceId,
+        operationType: 'podscan_lookup',
+        referenceKind: 'podscan_action',
+        referenceId: action,
+        actorUserId: context.user.id,
+      })
     } else {
       await requirePlatformAdmin(req)
     }
@@ -226,6 +236,16 @@ serve(async (req) => {
       )
     } else {
       throw new HttpError(400, 'INVALID_ACTION', 'Unknown Podscan action')
+    }
+
+    if (metering) {
+      await logOperationCost(metering.admin, {
+        workspaceId: metering.workspaceId,
+        operationType: 'podscan_lookup',
+        usage: { podscanCalls: 1 },
+        referenceKind: 'podscan_action',
+        referenceId: action,
+      })
     }
 
     return jsonResponse(req, METHODS, 200, {

@@ -1,10 +1,19 @@
 const EMBEDDING_MODEL = 'text-embedding-3-small'
 const EMBEDDING_DIMENSIONS = 1_536
 
-export async function generatePodcastSearchEmbedding(search: string | null): Promise<number[] | null> {
+export interface PodcastSearchEmbedding {
+  embedding: number[]
+  tokens: number
+  usedByoKey: boolean
+}
+
+export async function generatePodcastSearchEmbedding(
+  search: string | null,
+  apiKeyOverride?: { apiKey: string; source: 'workspace' | 'platform' } | null,
+): Promise<PodcastSearchEmbedding | null> {
   if (!search || search.length < 3) return null
   if (Deno.env.get('PODCAST_SEMANTIC_SEARCH_ENABLED')?.trim().toLowerCase() !== 'true') return null
-  const apiKey = Deno.env.get('OPENAI_API_KEY')?.trim()
+  const apiKey = apiKeyOverride?.apiKey ?? Deno.env.get('OPENAI_API_KEY')?.trim()
   if (!apiKey) return null
 
   try {
@@ -43,7 +52,12 @@ export async function generatePodcastSearchEmbedding(search: string | null): Pro
     }
     const payload = await response.json()
     const embedding = payload?.data?.[0]?.embedding
-    return Array.isArray(embedding) && embedding.length === EMBEDDING_DIMENSIONS ? embedding : null
+    if (!Array.isArray(embedding) || embedding.length !== EMBEDDING_DIMENSIONS) return null
+    return {
+      embedding,
+      tokens: Number(payload?.usage?.total_tokens) || 0,
+      usedByoKey: apiKeyOverride?.source === 'workspace',
+    }
   } catch (error) {
     console.warn(
       '[PodcastSearch] Embedding provider was unavailable',

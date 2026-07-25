@@ -13,6 +13,8 @@ import {
   requireWorkspaceFeatureAccess,
 } from '../_shared/workspaceAuth.ts'
 import { generatePodcastSearchEmbedding } from '../_shared/podcastSearch.ts'
+import { logOperationCost } from '../_shared/billing.ts'
+import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 
 const METHODS = ['POST'] as const
 const CONTACT_FILTERS = new Set(['all', 'any', 'free', 'direct', 'none'])
@@ -82,7 +84,18 @@ serve(async (req) => {
 
     const context = await requireAuthenticatedUser(req)
     const access = await requireWorkspaceFeatureAccess(context, workspaceId)
-    const queryEmbedding = await generatePodcastSearchEmbedding(search)
+    const openaiKey = await resolveAiKey(context.admin, workspaceId, 'openai')
+    const searchEmbedding = await generatePodcastSearchEmbedding(search, openaiKey)
+    if (searchEmbedding) {
+      await logOperationCost(context.admin, {
+        workspaceId,
+        operationType: 'semantic_search',
+        usage: { openaiTokens: searchEmbedding.tokens },
+        usedByoKey: searchEmbedding.usedByoKey,
+        referenceKind: 'catalog_list',
+      })
+    }
+    const queryEmbedding = searchEmbedding?.embedding ?? null
     const { data, error } = await context.admin.rpc('workspace_podcast_catalog_page_v2', {
       p_search: search,
       p_category: category,

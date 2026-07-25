@@ -18,6 +18,8 @@ import {
   type WorkspaceFeatureAccess,
 } from '../_shared/workspaceAuth.ts'
 import { generatePodcastSearchEmbedding } from '../_shared/podcastSearch.ts'
+import { logOperationCost } from '../_shared/billing.ts'
+import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 
 const METHODS = ['POST'] as const
 const MANAGER_ROLES = new Set(['owner', 'admin', 'platform_admin'])
@@ -437,7 +439,18 @@ serve(async (req) => {
     if (action === 'catalog-search') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'query'])
       const query = requireString(body.query, 'query', { min: 2, max: 120 })
-      const queryEmbedding = await generatePodcastSearchEmbedding(query)
+      const openaiKey = await resolveAiKey(authContext.admin, workspaceId, 'openai')
+      const searchEmbedding = await generatePodcastSearchEmbedding(query, openaiKey)
+      if (searchEmbedding) {
+        await logOperationCost(authContext.admin, {
+          workspaceId,
+          operationType: 'semantic_search',
+          usage: { openaiTokens: searchEmbedding.tokens },
+          usedByoKey: searchEmbedding.usedByoKey,
+          referenceKind: 'shortlist_catalog_search',
+        })
+      }
+      const queryEmbedding = searchEmbedding?.embedding ?? null
       const catalogResult = await authContext.admin.rpc('workspace_podcast_catalog_page_v2', {
         p_search: query,
         p_category: null,

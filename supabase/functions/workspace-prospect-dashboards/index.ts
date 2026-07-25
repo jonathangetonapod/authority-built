@@ -18,6 +18,8 @@ import {
   type AuthContext,
   type WorkspaceFeatureAccess,
 } from '../_shared/workspaceAuth.ts'
+import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
+import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 
 const METHODS = ['POST'] as const
 const PROSPECT_IMAGE_BUCKET = 'prospect-images'
@@ -540,8 +542,11 @@ function rankLexicalCandidates(
     .slice(0, limit)
 }
 
-async function generateEmbedding(input: string): Promise<number[]> {
-  const apiKey = Deno.env.get('OPENAI_API_KEY')?.trim()
+async function generateEmbedding(
+  input: string,
+  apiKeyOverride?: string,
+): Promise<{ embedding: number[]; tokens: number }> {
+  const apiKey = apiKeyOverride ?? Deno.env.get('OPENAI_API_KEY')?.trim()
   if (!apiKey) throw new HttpError(500, 'BUILD_NOT_CONFIGURED', 'Prospect matching is not configured')
   const response = await fetch('https://api.openai.com/v1/embeddings', {
     method: 'POST',
@@ -562,7 +567,8 @@ async function generateEmbedding(input: string): Promise<number[]> {
   if (!Array.isArray(embedding) || embedding.length !== 1_536) {
     throw new Error('embedding response was invalid')
   }
-  return embedding
+  const tokens = Number(payload?.usage?.total_tokens) || 0
+  return { embedding, tokens }
 }
 
 function parseRankedCandidates(value: unknown, candidateCount: number): RankedCandidate[] {
@@ -601,8 +607,9 @@ function parseRankedCandidates(value: unknown, candidateCount: number): RankedCa
 async function rankCandidates(
   prospectText: string,
   candidates: PodcastCandidate[],
-): Promise<RankedCandidate[]> {
-  const apiKey = Deno.env.get('ANTHROPIC_API_KEY')?.trim()
+  apiKeyOverride?: string,
+): Promise<{ ranked: RankedCandidate[]; inputTokens: number; outputTokens: number }> {
+  const apiKey = apiKeyOverride ?? Deno.env.get('ANTHROPIC_API_KEY')?.trim()
   if (!apiKey) throw new HttpError(500, 'BUILD_NOT_CONFIGURED', 'Prospect analysis is not configured')
   const candidateText = candidates.map((candidate, index) => ({
     index,
@@ -658,7 +665,11 @@ Return ONLY a JSON array:
   const json = text.trim().replace(/^```(?:json)?\s*/u, '').replace(/\s*```$/u, '')
   const ranked = parseRankedCandidates(JSON.parse(json), candidates.length)
   if (ranked.length < 5) throw new Error('ranking response did not contain enough qualified matches')
-  return ranked
+  return {
+    ranked,
+    inputTokens: Number(payload?.usage?.input_tokens) || 0,
+    outputTokens: Number(payload?.usage?.output_tokens) || 0,
+  }
 }
 
 function fallbackRankCandidates(
@@ -774,6 +785,19 @@ async function buildProspect(
     throw new HttpError(409, 'PROFILE_NOT_READY', 'Add a focused prospect profile of at least 80 characters before building')
   }
 
+  const anthropicKey = await resolveAiKey(context.admin, workspaceId, 'anthropic')
+  const openaiKey = await resolveAiKey(context.admin, workspaceId, 'openai')
+  const byoKeyUsed = anthropicKey?.source === 'workspace'
+  await chargeCredits(context.admin, {
+    workspaceId,
+    operationType: 'dashboard_build',
+    referenceKind: 'prospect_dashboard',
+    referenceId: dashboardId,
+    actorUserId: context.user.id,
+    byoKeyUsed,
+  })
+  const buildUsage = { anthropicInputTokens: 0, anthropicOutputTokens: 0, openaiTokens: 0 }
+
   const buildStartedAt = new Date().toISOString()
   const { error: startError } = await context.admin
     .from('prospect_dashboards')
@@ -814,7 +838,8 @@ async function buildProspect(
       console.log(`Workspace prospect build is using ${candidates.length} curated legacy candidates`)
     } else {
       try {
-        const embedding = await generateEmbedding(prospectText)
+        const { embedding, tokens: embeddingTokens } = await generateEmbedding(prospectText, openaiKey?.apiKey)
+        buildUsage.openaiTokens += embeddingTokens
         const { data: semanticMatches, error: matchError } = await context.admin.rpc('search_similar_podcasts', {
           query_embedding: embedding,
           match_threshold: 0.18,
@@ -868,13 +893,24 @@ async function buildProspect(
     let rankingSource: 'ai_ranked' | 'semantic' = 'ai_ranked'
     let ranked: RankedCandidate[]
     try {
-      ranked = await rankCandidates(prospectText, candidates)
+      const ranking = await rankCandidates(prospectText, candidates, anthropicKey?.apiKey)
+      ranked = ranking.ranked
+      buildUsage.anthropicInputTokens += ranking.inputTokens
+      buildUsage.anthropicOutputTokens += ranking.outputTokens
     } catch {
       console.warn('Workspace prospect AI ranking was unavailable; using deterministic ranking')
       rankingSource = 'semantic'
       ranked = fallbackRankCandidates(prospect, candidates)
     }
     if (ranked.length < 5) throw new Error('ranking response did not contain enough qualified matches')
+    await logOperationCost(context.admin, {
+      workspaceId,
+      operationType: 'dashboard_build',
+      usage: buildUsage,
+      usedByoKey: byoKeyUsed,
+      referenceKind: 'prospect_dashboard',
+      referenceId: dashboardId,
+    })
     const now = new Date().toISOString()
     const selected = ranked.map((rank, displayOrder) => {
       const podcast = candidates[rank.index]

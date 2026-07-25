@@ -31,6 +31,7 @@ import {
   WorkspaceLayout,
 } from '@/components/workspace/WorkspaceLayout'
 import { WorkspaceCreditGrantPreview } from '@/components/workspace/WorkspaceCreditGrantPreview'
+import { WorkspaceAiKeysCard } from '@/components/workspace/WorkspaceAiKeysCard'
 import { useAuth } from '@/contexts/AuthContext'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
@@ -205,6 +206,8 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
   const canOrganizeSidebar = !isPlatformWorkspace
     && membership?.role === 'owner'
     && validWorkspaceId
+  const canManageAiKeys = validWorkspaceId
+    && (isPlatformWorkspace || membership?.role === 'owner')
   const queryKey = [
     isPlatformWorkspace ? 'platform' : 'tenant',
     user?.id || 'unknown',
@@ -468,6 +471,9 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
       ? [{ href: '#sidebar-navigation', label: 'Sidebar', description: 'Your page order', icon: PanelLeft }]
       : []),
     { href: '#client-branding', label: 'Client branding', description: 'Logo, name, and colors', icon: Palette },
+    ...(canManageAiKeys
+      ? [{ href: '#ai-keys', label: 'AI keys', description: 'Bring your own provider keys', icon: KeyRound }]
+      : []),
     { href: '#workspace-access', label: 'Team & access', description: 'Users, roles, and passwords', icon: Users },
     ...(isPlatformWorkspace
       ? [{ href: '#workspace-credits', label: 'Credits', description: 'Manual Waterfall grants', icon: Coins }]
@@ -868,6 +874,16 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                       </CardContent>
                     </Card>
                   </section>
+
+                  {canManageAiKeys && (
+                    <section id="ai-keys" className="min-w-0 scroll-mt-28 space-y-4" aria-labelledby="ai-keys-title">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Integrations</p>
+                        <h2 id="ai-keys-title" className="mt-1 text-2xl font-semibold tracking-tight">AI API keys</h2>
+                      </div>
+                      <WorkspaceAiKeysCard workspaceId={workspaceId} queryScope={queryKey} />
+                    </section>
+                  )}
 
                   <section id="workspace-access" className="min-w-0 scroll-mt-28 space-y-4" aria-labelledby="workspace-access-title">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
