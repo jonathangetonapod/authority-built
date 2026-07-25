@@ -182,6 +182,7 @@ interface TargetRow {
   launched_at: string | null;
   last_activity_at: string | null;
   last_error: string | null;
+  prior_outreach_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -319,7 +320,39 @@ async function readTargets(
       "Campaign podcasts could not be loaded",
     );
   }
-  return (data || []) as unknown as TargetRow[];
+  const targets = (data || []) as unknown as TargetRow[];
+  if (targets.length === 0) return targets;
+
+  const clientIds = Array.from(new Set(targets.map((target) => target.client_id)));
+  const podcastIds = Array.from(new Set(targets.map((target) => target.podcast_id)));
+  const { data: priorOutreach, error: priorOutreachError } = await admin
+    .from("podcast_outreach_actions")
+    .select("client_id,podcast_id,webhook_sent_at,created_at")
+    .in("client_id", clientIds)
+    .in("podcast_id", podcastIds)
+    .eq("action", "sent")
+    .gte("webhook_response_status", 200)
+    .lt("webhook_response_status", 300)
+    .limit(2_000);
+  if (priorOutreachError) {
+    throw new HttpError(
+      500,
+      "CAMPAIGN_OUTREACH_HISTORY_LOOKUP_FAILED",
+      "Previous podcast outreach history could not be loaded",
+    );
+  }
+  const priorOutreachByTarget = new Map(
+    (priorOutreach || []).map((outreach) => [
+      `${outreach.client_id}:${outreach.podcast_id}`,
+      outreach.webhook_sent_at || outreach.created_at,
+    ]),
+  );
+  return targets.map((target) => ({
+    ...target,
+    prior_outreach_at: priorOutreachByTarget.get(
+      `${target.client_id}:${target.podcast_id}`,
+    ) || null,
+  }));
 }
 
 function accountsFromSnapshot(value: unknown): InstantlyAccountSummary[] {
@@ -428,6 +461,7 @@ function targetDto(target: TargetRow) {
     launched_at: target.launched_at,
     last_activity_at: target.last_activity_at,
     last_error: target.last_error,
+    prior_outreach_at: target.prior_outreach_at || null,
     created_at: target.created_at,
     updated_at: target.updated_at,
   };
@@ -1484,6 +1518,13 @@ async function launchTarget(
       409,
       "CAMPAIGN_TARGET_ALREADY_LAUNCHED",
       "Outreach has already started for this podcast",
+    );
+  }
+  if (target.prior_outreach_at) {
+    throw new HttpError(
+      409,
+      "CAMPAIGN_PREVIOUS_OUTREACH_EXISTS",
+      "This podcast was already contacted for this client in the earlier outreach workflow",
     );
   }
 

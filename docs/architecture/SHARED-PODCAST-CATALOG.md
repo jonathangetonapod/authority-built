@@ -33,10 +33,20 @@ Merely viewing or searching Podscan does not create a contribution. A show becom
 1. validates the authenticated user;
 2. verifies active access to the requested workspace;
 3. validates a narrow list/filter/page request;
-4. calls the service-only `workspace_podcast_catalog_page_v1` read model;
-5. returns public metadata, safe contact availability, aggregate usage, and no tenant identities.
+4. creates a query embedding when semantic search is available;
+5. calls the service-only `workspace_podcast_catalog_page_v2` read model;
+6. combines exact keyword ranking with vector similarity and applies email, publishing-recency, audience, category, activity, and sort filters;
+7. returns public metadata, safe contact availability, aggregate usage, and no tenant identities.
 
 The read model returns a Podscan email only when it is a valid single email address. Raw malformed/multi-value contact strings remain internal until a normalization pipeline can review them safely.
+
+The client approval editor uses the same catalog read model for quick-add search and links into the full database with its client ID in the URL. The URL is only a selection hint: the server still verifies that the client belongs to the active workspace before any shortlist write.
+
+The vector leg is bounded to the nearest 300 indexed candidates before hybrid reranking, so semantic search does not become a full-catalog vector scan as the shared database grows. Exact title, host, publisher, description, category, language, and region matches receive deterministic boosts above semantic similarity. Missing embeddings or an unavailable embedding provider fall back to keyword search.
+
+Semantic query generation is operationally gated by `PODCAST_SEMANTIC_SEARCH_ENABLED=true`. Keep the gate off when the embedding account has no available quota so search fails over immediately instead of making every owner wait for a rejected provider request.
+
+Legacy client workflow decisions and outreach are integrated according to [Legacy client podcast integration](./LEGACY-CLIENT-PODCAST-INTEGRATION.md).
 
 ## Production baseline (July 25, 2026)
 
@@ -58,7 +68,8 @@ These are release-audit snapshots, not hard-coded product metrics. The workspace
 3. **Contact normalization:** parse and verify recoverable multi-value Podscan contacts instead of exposing raw strings.
 4. **Contribution history:** backfill provenance for legacy shortlist usage so the contribution ledger reflects pre-launch workspaces.
 5. **Direct-contact enrichment:** connect a real provider waterfall, idempotent job state, verification, and a transactional credit ledger. The global contact store and first-success reuse rule exist; the provider/billing workflow does not yet.
-6. **Multiple contacts:** evolve the one-current-contact model to retain host, producer, booking, and historical verification records.
-7. **Search quality:** add indexed full-text/semantic ranking and saved owner filters after the catalog usage baseline is established.
+6. **Transcript coverage:** Podscan exposes episode transcripts, but the catalog does not yet store a verified podcast-level coverage signal and the current provider credential does not authorize the required read. Persist episode-level coverage before exposing a transcript filter; never infer availability from descriptions or demographics.
+7. **Multiple contacts:** evolve the one-current-contact model to retain host, producer, booking, and historical verification records.
+8. **Search evaluation:** restore embedding-provider quota, enable the semantic-search gate, backfill the remaining embeddings, record anonymized zero-result/search-selection metrics, and tune hybrid weights from real booking-research behavior.
 
 Do not expose the legacy platform-admin Podcast Database page to tenants. It contains operational imports, direct table reads, Google Sheets workflows, and platform-only controls that do not form a workspace security boundary.

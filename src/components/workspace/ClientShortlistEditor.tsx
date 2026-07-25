@@ -4,12 +4,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive,
   CheckCircle2,
+  Database,
   Eye,
   ExternalLink,
   FileText,
   Library,
   ListPlus,
   Loader2,
+  MailCheck,
   MoreHorizontal,
   PenLine,
   Radio,
@@ -67,6 +69,7 @@ interface ClientShortlistEditorProps {
   clientName: string
   clientBio?: string | null
   viewerRole?: 'owner' | 'admin' | 'member' | 'platform_admin'
+  databaseHref: string
   finderHref: string
   campaignHref: string
   onChanged?: () => void
@@ -94,6 +97,13 @@ function compactNumber(value: number | null | undefined): string {
 
 function resultLabel(count: number): string {
   return `${count.toLocaleString()} podcast${count === 1 ? '' : 's'}`
+}
+
+function formattedDate(value: string | null | undefined): string {
+  if (!value) return 'an earlier campaign'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'an earlier campaign'
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function feedbackBadge(podcast: ClientShortlistPodcast) {
@@ -142,6 +152,7 @@ export function ClientShortlistEditor({
   clientName,
   clientBio,
   viewerRole,
+  databaseHref,
   finderHref,
   campaignHref,
   onChanged,
@@ -359,7 +370,10 @@ export function ClientShortlistEditor({
               <CardTitle id="client-podcast-list-heading" className="flex items-center gap-2 text-xl"><Library className="h-5 w-5 text-primary" />Client podcast list</CardTitle>
               <CardDescription className="mt-2 max-w-2xl">Control exactly what {clientName} sees without leaving the Approval Dashboard. Archived shows stay in campaign history and weekly dedupe.</CardDescription>
             </div>
-            <Button onClick={() => setAddOpen(true)}><ListPlus className="mr-2 h-4 w-4" />Add podcasts</Button>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="outline"><Link to={databaseHref}><Database className="mr-2 h-4 w-4" />Browse database</Link></Button>
+              <Button onClick={() => setAddOpen(true)}><ListPlus className="mr-2 h-4 w-4" />Quick add</Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-4 sm:p-6">
@@ -415,7 +429,7 @@ export function ClientShortlistEditor({
                 <div key={podcast.podcast_id} className="flex flex-col gap-3 p-3 sm:p-4 lg:flex-row lg:items-center">
                   <button type="button" className="flex min-w-0 flex-1 items-start gap-3 text-left" onClick={() => openPodcastDetails(podcast)} aria-label={`View details for ${podcast.podcast_name}`}>
                     <PodcastArtwork podcast={podcast} />
-                    <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate font-medium">{podcast.podcast_name}</p>{podcast.is_featured && <Badge aria-label={`${podcast.podcast_name} is featured`} className="border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-50"><Star className="mr-1 h-3 w-3 fill-current" />Featured</Badge>}</div><p className="truncate text-sm text-muted-foreground">{podcast.publisher_name || 'Publisher unavailable'}</p>{podcast.feedback_notes && <p className="mt-1 line-clamp-1 text-xs italic text-muted-foreground">Client note: “{podcast.feedback_notes}”</p>}</div>
+                    <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate font-medium">{podcast.podcast_name}</p>{podcast.is_featured && <Badge aria-label={`${podcast.podcast_name} is featured`} className="border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-50"><Star className="mr-1 h-3 w-3 fill-current" />Featured</Badge>}{podcast.prior_outreach_at && <Badge aria-label={`${podcast.podcast_name} was previously contacted`} variant="outline" className="border-sky-200 bg-sky-50 text-sky-800"><MailCheck className="mr-1 h-3 w-3" />Previously contacted</Badge>}</div><p className="truncate text-sm text-muted-foreground">{podcast.publisher_name || 'Publisher unavailable'}</p>{podcast.feedback_notes && <p className="mt-1 line-clamp-1 text-xs italic text-muted-foreground">Client note: “{podcast.feedback_notes}”</p>}</div>
                   </button>
                   <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4 lg:w-[500px] lg:items-center">
                     <div><p className="text-xs text-muted-foreground">Audience</p><p className="font-medium">{compactNumber(podcast.audience_size)}</p></div>
@@ -424,7 +438,19 @@ export function ClientShortlistEditor({
                     <div>{visibilityBadge(podcast.visibility)}</div>
                   </div>
                   <div className="flex items-center justify-end gap-2 lg:shrink-0">
-                    {podcast.visibility === 'visible' && podcast.feedback_status === 'approved' && (
+                    {podcast.visibility === 'visible' && podcast.feedback_status === 'approved' && podcast.prior_outreach_at && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled
+                        aria-label={`${podcast.podcast_name} was previously contacted`}
+                      >
+                        <MailCheck className="mr-2 h-4 w-4 text-sky-700" />
+                        Contacted
+                      </Button>
+                    )}
+                    {podcast.visibility === 'visible' && podcast.feedback_status === 'approved' && !podcast.prior_outreach_at && (
                       <Button
                         type="button"
                         variant="outline"
@@ -475,7 +501,7 @@ export function ClientShortlistEditor({
                   <div className="min-w-0"><SheetTitle>{detailPodcast.podcast_name}</SheetTitle><SheetDescription>{detailPodcast.publisher_name || 'Publisher unavailable'}</SheetDescription></div>
                 </div>
               </SheetHeader>
-              <div className="flex flex-wrap gap-2">{feedbackBadge(detailPodcast)}{visibilityBadge(detailPodcast.visibility)}{detailPodcast.is_featured && <Badge className="border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-50"><Star className="mr-1 h-3 w-3 fill-current" />Featured</Badge>}</div>
+              <div className="flex flex-wrap gap-2">{feedbackBadge(detailPodcast)}{visibilityBadge(detailPodcast.visibility)}{detailPodcast.is_featured && <Badge className="border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-50"><Star className="mr-1 h-3 w-3 fill-current" />Featured</Badge>}{detailPodcast.prior_outreach_at && <Badge variant="outline" className="border-sky-200 bg-sky-50 text-sky-800"><MailCheck className="mr-1 h-3 w-3" />Previously contacted</Badge>}</div>
               <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Audience</p><p className="mt-1 font-semibold">{compactNumber(detailPodcast.audience_size)}</p></div>
                 <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Rating</p><p className="mt-1 font-semibold">{detailPodcast.itunes_rating ? Number(detailPodcast.itunes_rating).toFixed(1) : '—'}</p></div>
@@ -483,6 +509,7 @@ export function ClientShortlistEditor({
               </div>
               <section><h4 className="text-sm font-semibold">About this podcast</h4><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{detailPodcast.ai_clean_description || detailPodcast.podcast_description || 'No podcast description is available yet.'}</p></section>
               <section className="rounded-xl border bg-muted/20 p-4"><h4 className="text-sm font-semibold">Client feedback</h4><p className="mt-2 text-sm leading-6 text-muted-foreground">{detailPodcast.feedback_notes || (detailPodcast.feedback_status ? 'The client left a decision without a note.' : 'The client has not reviewed this podcast yet.')}</p></section>
+              {detailPodcast.prior_outreach_at && <section className="rounded-xl border border-sky-200 bg-sky-50/70 p-4"><h4 className="flex items-center gap-2 text-sm font-semibold text-sky-950"><MailCheck className="h-4 w-4" />Outreach history</h4><p className="mt-2 text-sm leading-6 text-sky-900/80">This podcast was already handed off for outreach for this client on {formattedDate(detailPodcast.prior_outreach_at)}. It is protected from being added to a second campaign accidentally.</p></section>}
               <section className="space-y-2"><label htmlFor="podcast-operator-notes" className="text-sm font-semibold">Internal notes</label><Textarea id="podcast-operator-notes" value={operatorNotes} onChange={(event) => setOperatorNotes(event.target.value)} rows={5} maxLength={2_000} placeholder="Add workspace-only context, follow-up ideas, or research notes…" /><p className="text-xs text-muted-foreground">Only workspace managers can see these notes.</p></section>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Button className="flex-1" disabled={isSavingNotes || operatorNotes.trim() === (detailPodcast.operator_notes || '')} onClick={() => void saveOperatorNotes()}>{isSavingNotes && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save internal notes</Button>
@@ -520,6 +547,7 @@ export function ClientShortlistEditor({
             )}
             <div className="sticky bottom-0 space-y-3 border-t bg-background pt-4">
               <Button className="w-full" disabled={selectedCatalog.length === 0 || isAdding} onClick={() => void addSelectedCatalog()}>{isAdding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ListPlus className="mr-2 h-4 w-4" />}Add {selectedCatalog.length || ''} selected</Button>
+              <Button asChild variant="outline" className="w-full"><Link to={databaseHref}>Browse with filters<Database className="ml-2 h-3.5 w-3.5" /></Link></Button>
               <Button asChild variant="outline" className="w-full"><Link to={finderHref}>Run fresh weekly discovery<ExternalLink className="ml-2 h-3.5 w-3.5" /></Link></Button>
             </div>
           </div>

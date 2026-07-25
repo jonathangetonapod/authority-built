@@ -85,6 +85,7 @@ export interface ClientShortlistPodcast extends ClientShortlistPodcastInput {
   feedback_status: ClientShortlistFeedbackStatus
   feedback_notes: string | null
   feedback_updated_at: string | null
+  prior_outreach_at?: string | null
   created_at: string
   updated_at: string
 }

@@ -392,6 +392,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
     : null
   const onboardingHref = `${baseHref}/onboarding?client=${encodeURIComponent(client.id)}${onboarding ? `&instance=${encodeURIComponent(onboarding.id)}` : ''}`
   const finderHref = `${baseHref}/podcast-finder?client=${encodeURIComponent(client.id)}`
+  const databaseHref = `${baseHref}/podcast-database?client=${encodeURIComponent(client.id)}`
   const campaignHref = `${baseHref}/client-campaigns/${encodeURIComponent(client.id)}`
   const masterInboxHref = `${baseHref}/master-inbox?client=${encodeURIComponent(client.id)}`
   const sdrProfile = normalizeClientSdrProfile(client.ai_sdr_profile)
@@ -922,6 +923,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                 clientName={client.name}
                 clientBio={client.bio}
                 viewerRole={detail.viewer_role}
+                databaseHref={databaseHref}
                 finderHref={finderHref}
                 campaignHref={campaignHref}
                 onChanged={() => void detailQuery.refetch()}

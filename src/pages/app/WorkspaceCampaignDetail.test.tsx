@@ -54,10 +54,10 @@ const podcasts = [
 
 const sentTargets = [
   {
-    id: 'target-one', shortlist_podcast_id: 'shortlist-one', podcast_id: 'podcast-one', podcast_name: 'Founder Show', podcast_url: 'https://founder.example.com', host_name: 'Jamie Host', contact_email: 'host@founder.example', selection_source: 'client_positive', wave_started_on: '2026-07-22', research_notes: 'A researched founder audience.', pitch_subject: 'A tailored guest idea', pitch_body: 'A reviewed opening pitch.', follow_up_1_subject: 'Re: A tailored guest idea', follow_up_1_body: 'A reviewed first follow-up.', follow_up_2_subject: 'Re: A tailored guest idea', follow_up_2_body: 'A reviewed final follow-up.', status: 'ready', instantly_lead_id: null, instantly_lead_status: null, email_open_count: 0, email_reply_count: 0, approved_at: null, launched_at: null, last_activity_at: null, last_error: null, created_at: '2026-07-22T00:00:00Z', updated_at: '2026-07-22T00:00:00Z',
+    id: 'target-one', shortlist_podcast_id: 'shortlist-one', podcast_id: 'podcast-one', podcast_name: 'Founder Show', podcast_url: 'https://founder.example.com', host_name: 'Jamie Host', contact_email: 'host@founder.example', selection_source: 'client_positive', wave_started_on: '2026-07-22', research_notes: 'A researched founder audience.', pitch_subject: 'A tailored guest idea', pitch_body: 'A reviewed opening pitch.', follow_up_1_subject: 'Re: A tailored guest idea', follow_up_1_body: 'A reviewed first follow-up.', follow_up_2_subject: 'Re: A tailored guest idea', follow_up_2_body: 'A reviewed final follow-up.', status: 'ready', instantly_lead_id: null, instantly_lead_status: null, email_open_count: 0, email_reply_count: 0, approved_at: null, launched_at: null, last_activity_at: null, last_error: null, prior_outreach_at: null, created_at: '2026-07-22T00:00:00Z', updated_at: '2026-07-22T00:00:00Z',
   },
   {
-    id: 'target-two', shortlist_podcast_id: 'shortlist-two', podcast_id: 'podcast-two', podcast_name: 'Operator Stories', podcast_url: null, host_name: null, contact_email: null, selection_source: 'client_positive', wave_started_on: '2026-07-22', research_notes: null, pitch_subject: null, pitch_body: null, follow_up_1_subject: null, follow_up_1_body: null, follow_up_2_subject: null, follow_up_2_body: null, status: 'draft', instantly_lead_id: null, instantly_lead_status: null, email_open_count: 0, email_reply_count: 0, approved_at: null, launched_at: null, last_activity_at: null, last_error: null, created_at: '2026-07-22T00:00:00Z', updated_at: '2026-07-22T00:00:00Z',
+    id: 'target-two', shortlist_podcast_id: 'shortlist-two', podcast_id: 'podcast-two', podcast_name: 'Operator Stories', podcast_url: null, host_name: null, contact_email: null, selection_source: 'client_positive', wave_started_on: '2026-07-22', research_notes: null, pitch_subject: null, pitch_body: null, follow_up_1_subject: null, follow_up_1_body: null, follow_up_2_subject: null, follow_up_2_body: null, status: 'draft', instantly_lead_id: null, instantly_lead_status: null, email_open_count: 0, email_reply_count: 0, approved_at: null, launched_at: null, last_activity_at: null, last_error: null, prior_outreach_at: null, created_at: '2026-07-22T00:00:00Z', updated_at: '2026-07-22T00:00:00Z',
   },
 ] as WorkspaceCampaignDetailResponse['targets']
 
@@ -191,6 +191,23 @@ describe('WorkspaceCampaignDetail', () => {
     expect(within(founderRow as HTMLElement).getByText('Follow-ups stopped')).toBeInTheDocument()
     expect(within(founderRow as HTMLElement).getByText('3')).toBeInTheDocument()
     expect(within(founderRow as HTMLElement).getByText('1')).toBeInTheDocument()
+  })
+
+  it('labels preserved legacy outreach instead of presenting it as ready to email again', async () => {
+    mockedCampaign.mockResolvedValueOnce({
+      ...campaignState,
+      targets: [{ ...sentTargets[0], prior_outreach_at: '2026-07-10T00:00:00Z' }],
+    })
+    renderPage()
+
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Podcasts' }), { button: 0 })
+    const founderRow = within(screen.getByRole('table')).getByText('Founder Show').closest('tr')
+    expect(founderRow).not.toBeNull()
+    expect(within(founderRow as HTMLElement).getByText('Previously contacted')).toBeInTheDocument()
+    expect(within(founderRow as HTMLElement).getByText('Earlier client outreach')).toBeInTheDocument()
+
+    fireEvent.click(within(founderRow as HTMLElement).getByRole('button', { name: /view details/i }))
+    expect(await screen.findByText(/A second launch is blocked to prevent duplicate contact/i)).toBeInTheDocument()
   })
 
   it('shows only podcasts sent through the Write Pitch modal', async () => {

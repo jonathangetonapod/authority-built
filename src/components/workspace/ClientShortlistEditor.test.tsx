@@ -59,6 +59,7 @@ function podcast(overrides: Partial<ClientShortlistPodcast> = {}): ClientShortli
     feedback_status: 'approved',
     feedback_notes: 'This one looks great.',
     feedback_updated_at: '2026-07-22T00:00:00.000Z',
+    prior_outreach_at: null,
     created_at: '2026-07-20T00:00:00.000Z',
     updated_at: '2026-07-22T00:00:00.000Z',
     ...overrides,
@@ -76,6 +77,7 @@ function renderEditor(viewerRole: 'owner' | 'admin' | 'member' | 'platform_admin
           clientName="Taylor Client"
           clientBio="Taylor helps founders turn complicated ideas into practical growth systems."
           viewerRole={viewerRole}
+          databaseHref={`/app/podcast-database?client=${clientId}`}
           finderHref={`/app/podcast-finder?client=${clientId}`}
           campaignHref={`/app/client-campaigns/${clientId}`}
         />
@@ -149,6 +151,10 @@ describe('ClientShortlistEditor', () => {
     expect(screen.queryByText('Archived Show')).not.toBeInTheDocument()
     expect(screen.queryByText(/google sheet/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/^Hidden\b/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Browse database' })).toHaveAttribute(
+      'href',
+      `/app/podcast-database?client=${clientId}`,
+    )
 
     fireEvent.click(screen.getByRole('button', { name: 'View details for Founder Stories' }))
     expect(screen.getByRole('heading', { name: 'Founder Stories' })).toBeInTheDocument()
@@ -173,6 +179,22 @@ describe('ClientShortlistEditor', () => {
     actions.focus()
     fireEvent.keyDown(actions, { key: 'Enter', code: 'Enter' })
     expect(await screen.findByRole('menuitem', { name: 'Add to featured' })).toBeInTheDocument()
+  })
+
+  it('shows earlier client outreach and prevents a duplicate pitch workflow', async () => {
+    vi.mocked(getClientShortlist).mockResolvedValueOnce({
+      client: { id: clientId, name: 'Taylor Client' },
+      podcasts: [podcast({ prior_outreach_at: '2026-07-10T00:00:00.000Z' })],
+    })
+    renderEditor()
+
+    expect((await screen.findAllByLabelText('Founder Stories was previously contacted')).length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Founder Stories was previously contacted' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Write Pitch for Founder Stories' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'View details for Founder Stories' }))
+    expect(screen.getByRole('heading', { name: 'Outreach history' })).toBeInTheDocument()
+    expect(screen.getByText(/protected from being added to a second campaign/i)).toBeInTheDocument()
   })
 
   it('lets an owner mark a podcast approved or passed directly from its actions menu', async () => {
@@ -762,7 +784,7 @@ describe('ClientShortlistEditor', () => {
     renderEditor()
     await screen.findByRole('heading', { name: 'Client podcast list' })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add podcasts' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Quick add' }))
     fireEvent.change(screen.getByPlaceholderText('Search by podcast or publisher…'), { target: { value: 'new show' } })
     expect(await screen.findByText('The New Show')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select The New Show' }))

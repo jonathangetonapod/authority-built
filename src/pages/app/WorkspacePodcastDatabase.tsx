@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
   ArrowRight,
@@ -39,6 +39,7 @@ import { getWorkspaceClients } from '@/services/clients'
 import {
   getWorkspacePodcastCatalog,
   type WorkspacePodcastCatalogActivityFilter,
+  type WorkspacePodcastCatalogAudienceFilter,
   type WorkspacePodcastCatalogContactFilter,
   type WorkspacePodcastCatalogItem,
   type WorkspacePodcastCatalogSort,
@@ -110,6 +111,7 @@ function formattedDate(value: string | null) {
 }
 
 const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatabaseProps) => {
+  const [searchParams] = useSearchParams()
   const { isPlatformAdmin, membership, user, workspace } = useAuth()
   const isPlatformWorkspace = platformWorkspaceId !== undefined
   const selectedWorkspaceId = (platformWorkspaceId || '').toLowerCase()
@@ -122,17 +124,20 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
     || isPlatformAdmin
     || membership?.role === 'owner'
     || membership?.role === 'admin'
+  const requestedClientId = (searchParams.get('client') || '').toLowerCase()
+  const targetClientId = UUID_PATTERN.test(requestedClientId) ? requestedClientId : ''
 
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
   const [contact, setContact] = useState<WorkspacePodcastCatalogContactFilter>('all')
   const [activity, setActivity] = useState<WorkspacePodcastCatalogActivityFilter>('active')
+  const [audience, setAudience] = useState<WorkspacePodcastCatalogAudienceFilter>('all')
   const [sort, setSort] = useState<WorkspacePodcastCatalogSort>('audience')
   const [page, setPage] = useState(1)
   const [selectedPodcasts, setSelectedPodcasts] = useState<Map<string, WorkspacePodcastCatalogItem>>(new Map())
   const [addDialogOpen, setAddDialogOpen] = useState(false)
-  const [selectedClientId, setSelectedClientId] = useState('')
+  const [selectedClientId, setSelectedClientId] = useState(targetClientId)
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -151,6 +156,7 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
       category,
       contact,
       activity,
+      audience,
       sort,
       page,
     ],
@@ -159,6 +165,7 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
       category: category === 'all' ? undefined : category,
       contact,
       activity,
+      audience,
       sort,
       page,
       pageSize: PAGE_SIZE,
@@ -172,7 +179,7 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
   const clientsQuery = useQuery({
     queryKey: ['workspace-podcast-catalog', user?.id || 'unknown', workspaceId, 'clients'],
     queryFn: () => getWorkspaceClients(workspaceId),
-    enabled: validWorkspaceId && addDialogOpen,
+    enabled: validWorkspaceId && canAddToClient && (addDialogOpen || Boolean(targetClientId)),
     retry: false,
   })
 
@@ -193,7 +200,7 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
         toast.info('Those podcasts are already on this client shortlist.')
       }
       setSelectedPodcasts(new Map())
-      setSelectedClientId('')
+      setSelectedClientId(targetClientId)
       setAddDialogOpen(false)
       void catalogQuery.refetch()
     },
@@ -205,10 +212,17 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
   const catalog = catalogQuery.data
   const podcasts = catalog?.items || []
   const activeClients = (clientsQuery.data || []).filter((client) => client.status === 'active')
+  const targetClient = activeClients.find((client) => client.id === targetClientId) || null
   const pagePodcastIds = podcasts.map((podcast) => podcast.podcast_id)
   const allPageSelected = pagePodcastIds.length > 0
     && pagePodcastIds.every((podcastId) => selectedPodcasts.has(podcastId))
-  const filtersActive = Boolean(search || category !== 'all' || contact !== 'all' || activity !== 'active')
+  const filtersActive = Boolean(
+    search
+    || category !== 'all'
+    || contact !== 'all'
+    || activity !== 'active'
+    || audience !== 'all'
+  )
 
   const platformWorkspace: PlatformWorkspaceConfig | undefined = isPlatformWorkspace
     ? {
@@ -244,9 +258,17 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
     setCategory('all')
     setContact('all')
     setActivity('active')
+    setAudience('all')
     setSort('audience')
     setPage(1)
   }
+
+  useEffect(() => {
+    if (!addDialogOpen || clientsQuery.isLoading) return
+    if (selectedClientId && !activeClients.some((client) => client.id === selectedClientId)) {
+      setSelectedClientId('')
+    }
+  }, [activeClients, addDialogOpen, clientsQuery.isLoading, selectedClientId])
 
   const copyEmail = async (email: string) => {
     try {
@@ -292,20 +314,32 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
           </div>
         </div>
 
+        {targetClient && (
+          <div className="flex flex-col gap-3 rounded-xl border border-primary/20 bg-primary/[0.035] p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-semibold">Browsing for {targetClient.name}</p>
+              <p className="mt-1 text-sm text-muted-foreground">Select podcasts here and they’ll be ready to add to this client’s approval list.</p>
+            </div>
+            <Button asChild variant="outline" size="sm" className="shrink-0">
+              <Link to={`${baseHref}/clients/${encodeURIComponent(targetClient.id)}`}><ArrowLeft className="mr-2 h-4 w-4" />Back to client</Link>
+            </Button>
+          </div>
+        )}
+
         <Card>
           <CardHeader className="pb-4">
             <CardTitle className="text-lg">Search the shared catalog</CardTitle>
-            <CardDescription>Public show data and usable Podscan inboxes are shared. Workspace client data remains private.</CardDescription>
+            <CardDescription>Search show details, topics, audiences, or conversation ideas. Scout uses semantic matching when available and always falls back safely to catalog keywords; workspace client data remains private.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-3 lg:grid-cols-[minmax(260px,1fr)_220px_180px_180px_180px]">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(240px,1fr)_repeat(5,minmax(140px,180px))]">
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   aria-label="Search podcasts"
                   value={searchInput}
                   onChange={(event) => setSearchInput(event.target.value)}
-                  placeholder="Search show, publisher, host, or topic"
+                  placeholder="Search a show, host, topic, or ideal conversation"
                   className="pl-9"
                 />
               </div>
@@ -317,19 +351,34 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
                 </SelectContent>
               </Select>
               <Select value={contact} onValueChange={(value: WorkspacePodcastCatalogContactFilter) => { setContact(value); setPage(1) }}>
-                <SelectTrigger aria-label="Contact availability"><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="Email availability"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Any contact status</SelectItem>
-                  <SelectItem value="any">Contact available</SelectItem>
+                  <SelectItem value="all">All podcasts</SelectItem>
+                  <SelectItem value="any">Has an email</SelectItem>
                   <SelectItem value="free">Free Podscan email</SelectItem>
-                  <SelectItem value="direct">Direct email</SelectItem>
+                  <SelectItem value="direct">Verified direct email</SelectItem>
+                  <SelectItem value="none">No email yet</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={activity} onValueChange={(value: WorkspacePodcastCatalogActivityFilter) => { setActivity(value); setPage(1) }}>
-                <SelectTrigger aria-label="Podcast activity"><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="Publishing recency"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="active">Active shows</SelectItem>
+                  <SelectItem value="last_30_days">Published in 30 days</SelectItem>
+                  <SelectItem value="last_90_days">Published in 90 days</SelectItem>
+                  <SelectItem value="last_180_days">Published in 6 months</SelectItem>
+                  <SelectItem value="last_year">Published in 1 year</SelectItem>
                   <SelectItem value="all">All shows</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={audience} onValueChange={(value: WorkspacePodcastCatalogAudienceFilter) => { setAudience(value); setPage(1) }}>
+                <SelectTrigger aria-label="Audience size"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Any audience size</SelectItem>
+                  <SelectItem value="under_10k">Under 10K</SelectItem>
+                  <SelectItem value="10k_50k">10K–50K</SelectItem>
+                  <SelectItem value="50k_250k">50K–250K</SelectItem>
+                  <SelectItem value="250k_plus">250K+</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={sort} onValueChange={(value: WorkspacePodcastCatalogSort) => { setSort(value); setPage(1) }}>
@@ -377,7 +426,7 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
             </div>
             <div className="flex gap-2">
               <Button variant="ghost" onClick={() => setSelectedPodcasts(new Map())}>Clear</Button>
-              <Button onClick={() => setAddDialogOpen(true)}><Plus className="mr-2 h-4 w-4" />Add to client</Button>
+              <Button onClick={() => { setSelectedClientId(targetClientId); setAddDialogOpen(true) }}><Plus className="mr-2 h-4 w-4" />Add to client</Button>
             </div>
           </div>
         )}

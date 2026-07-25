@@ -14,6 +14,7 @@ import {
   Loader2,
   Lightbulb,
   Mail,
+  MailCheck,
   Mic2,
   Radio,
   RefreshCw,
@@ -201,7 +202,8 @@ export function ClientCampaignPrepDialog({
   const canManageCampaigns = Boolean(campaignQuery.data?.can_manage_campaigns)
   const canCustomizePrompts = viewerRole === 'owner' || viewerRole === 'platform_admin'
   const target = campaignQuery.data?.targets.find((item) => item.shortlist_podcast_id === podcast?.id) || null
-  const locked = Boolean(target && (
+  const previouslyContacted = Boolean(podcast?.prior_outreach_at || target?.prior_outreach_at)
+  const locked = previouslyContacted || Boolean(target && (
     target.instantly_lead_id
     || ['launching', 'in_outreach', 'replied', 'completed'].includes(target.status)
   ))
@@ -492,10 +494,10 @@ export function ClientCampaignPrepDialog({
             <div className="flex min-h-96 flex-col items-center justify-center gap-3"><Loader2 className="h-7 w-7 animate-spin text-primary" /><p className="text-sm text-muted-foreground">Loading the pitch workspace…</p></div>
           ) : locked ? (
             <div className="m-6 flex min-h-80 flex-col items-center justify-center rounded-2xl border border-dashed px-6 text-center">
-              <Send className="h-9 w-9 text-sky-600" />
-              <h3 className="mt-4 text-lg font-semibold">This podcast is already in outreach</h3>
-              <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">The sequence is locked so active Instantly outreach cannot be changed accidentally.</p>
-              <Button asChild className="mt-5"><Link to={campaignHref}>View outreach</Link></Button>
+              {previouslyContacted ? <MailCheck className="h-9 w-9 text-sky-600" /> : <Send className="h-9 w-9 text-sky-600" />}
+              <h3 className="mt-4 text-lg font-semibold">{previouslyContacted ? 'This podcast was already contacted' : 'This podcast is already in outreach'}</h3>
+              <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">{previouslyContacted ? 'Earlier outreach history for this client is preserved, so Scout will not create a duplicate campaign sequence.' : 'The sequence is locked so active Instantly outreach cannot be changed accidentally.'}</p>
+              {previouslyContacted ? <Button className="mt-5" onClick={() => onOpenChange(false)}>Close</Button> : <Button asChild className="mt-5"><Link to={campaignHref}>View outreach</Link></Button>}
             </div>
           ) : podcast ? (
             <div>

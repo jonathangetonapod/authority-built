@@ -1,8 +1,9 @@
 import { supabase } from '@/lib/supabase'
 import { toFunctionError } from '@/lib/functionErrors'
 
-export type WorkspacePodcastCatalogContactFilter = 'all' | 'any' | 'free' | 'direct'
-export type WorkspacePodcastCatalogActivityFilter = 'active' | 'all'
+export type WorkspacePodcastCatalogContactFilter = 'all' | 'any' | 'free' | 'direct' | 'none'
+export type WorkspacePodcastCatalogActivityFilter = 'active' | 'last_30_days' | 'last_90_days' | 'last_180_days' | 'last_year' | 'all'
+export type WorkspacePodcastCatalogAudienceFilter = 'all' | 'under_10k' | '10k_50k' | '50k_250k' | '250k_plus'
 export type WorkspacePodcastCatalogSort = 'audience' | 'name' | 'recent' | 'community'
 
 export interface WorkspacePodcastCatalogCategory {
@@ -50,6 +51,7 @@ export interface WorkspacePodcastCatalogSummary {
 
 export interface WorkspacePodcastCatalogPage {
   workspace: { id: string; name: string }
+  search_mode?: 'browse' | 'keyword' | 'hybrid'
   items: WorkspacePodcastCatalogItem[]
   categories: string[]
   pagination: {
@@ -66,6 +68,7 @@ export interface WorkspacePodcastCatalogParams {
   category?: string
   contact?: WorkspacePodcastCatalogContactFilter
   activity?: WorkspacePodcastCatalogActivityFilter
+  audience?: WorkspacePodcastCatalogAudienceFilter
   sort?: WorkspacePodcastCatalogSort
   page?: number
   pageSize?: number
@@ -84,6 +87,7 @@ export async function getWorkspacePodcastCatalog(
       category: params.category || undefined,
       contact: params.contact || 'all',
       activity: params.activity || 'active',
+      audience: params.audience || 'all',
       sort: params.sort || 'audience',
       page: params.page || 1,
       page_size: params.pageSize || 24,

@@ -183,6 +183,7 @@ const RELEASE_INPUT_PATHS = [
   'supabase/migrations/20260724000200_client_dashboards_always_live.sql',
   'supabase/migrations/20260724000300_workspace_campaign_sequence_copy.sql',
   'supabase/migrations/20260725000600_workspace_podcast_catalog.sql',
+  'supabase/migrations/20260725000700_workspace_podcast_catalog_filters.sql',
   'supabase/tests/20260722_subagency_workspace_foundation_behavior.sql',
   'supabase/tests/20260720_invite_only_workspace_verification.sql',
   'supabase/functions/account-context/index.ts',

@@ -65,11 +65,11 @@ const catalogResponse = {
   }],
 } as const
 
-function renderPage() {
+function renderPage(initialEntry = '/app/podcast-database') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/app/podcast-database']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter initialEntries={[initialEntry]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <WorkspacePodcastDatabase />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -100,16 +100,40 @@ describe('WorkspacePodcastDatabase', () => {
     expect(screen.getByText('The Founder Show')).toBeInTheDocument()
     expect(screen.getByText('show@example.com')).toBeInTheDocument()
     expect(screen.getByText('Free · Podscan')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Email availability' })).toHaveTextContent('All podcasts')
+    expect(screen.getByRole('combobox', { name: 'Publishing recency' })).toHaveTextContent('Active shows')
+    expect(screen.getByRole('combobox', { name: 'Audience size' })).toHaveTextContent('Any audience size')
     expect(screen.getByRole('link', { name: /find and contribute podcasts/i })).toHaveAttribute('href', '/app/podcast-finder')
   })
 
-  it('adds selected shared podcasts to a workspace client shortlist', async () => {
+  it('filters by email availability, publishing recency, and audience size', async () => {
     renderPage()
+    await screen.findByText('The Founder Show')
 
+    fireEvent.click(screen.getByRole('combobox', { name: 'Email availability' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Has an email' }))
+    fireEvent.click(screen.getByRole('combobox', { name: 'Publishing recency' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Published in 90 days' }))
+    fireEvent.click(screen.getByRole('combobox', { name: 'Audience size' }))
+    fireEvent.click(await screen.findByRole('option', { name: '10K–50K' }))
+
+    await waitFor(() => expect(mockedCatalog).toHaveBeenLastCalledWith(
+      workspaceId,
+      expect.objectContaining({
+        contact: 'any',
+        activity: 'last_90_days',
+        audience: '10k_50k',
+      }),
+    ))
+  })
+
+  it('adds selected shared podcasts to a workspace client shortlist', async () => {
+    renderPage(`/app/podcast-database?client=${clientId}`)
+
+    expect(await screen.findByText('Browsing for Dallas Fontaine')).toBeInTheDocument()
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Select The Founder Show' }))
     fireEvent.click(screen.getByRole('button', { name: 'Add to client' }))
-    fireEvent.click(await screen.findByRole('combobox', { name: 'Client' }))
-    fireEvent.click(await screen.findByRole('option', { name: 'Dallas Fontaine' }))
+    expect(await screen.findByRole('combobox', { name: 'Client' })).toHaveTextContent('Dallas Fontaine')
     fireEvent.click(screen.getByRole('button', { name: 'Add to shortlist' }))
 
     await waitFor(() => expect(mockedAdd).toHaveBeenCalledWith(

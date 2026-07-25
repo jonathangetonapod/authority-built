@@ -136,6 +136,7 @@ export interface WorkspaceCampaignTarget {
   launched_at: string | null
   last_activity_at: string | null
   last_error: string | null
+  prior_outreach_at: string | null
   created_at: string
   updated_at: string
 }

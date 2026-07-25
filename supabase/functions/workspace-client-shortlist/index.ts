@@ -17,6 +17,7 @@ import {
   type AuthContext,
   type WorkspaceFeatureAccess,
 } from '../_shared/workspaceAuth.ts'
+import { generatePodcastSearchEmbedding } from '../_shared/podcastSearch.ts'
 
 const METHODS = ['POST'] as const
 const MANAGER_ROLES = new Set(['owner', 'admin', 'platform_admin'])
@@ -109,7 +110,28 @@ interface CatalogPodcastRow extends Record<string, unknown> {
   region: string | null
   podscan_email: string | null
   rss_url: string | null
+  free_podscan_email?: string | null
+  direct_email?: string | null
+  rss_feed?: string | null
   demographics?: unknown
+}
+
+interface WorkspaceCatalogSearchRow extends Record<string, unknown> {
+  podcast_id: string
+  podcast_name: string
+  podcast_description: string | null
+  podcast_image_url: string | null
+  podcast_url: string | null
+  publisher_name: string | null
+  itunes_rating: number | null
+  episode_count: number | null
+  audience_size: number | null
+  last_posted_at: string | null
+  podcast_categories: unknown
+  language: string | null
+  region: string | null
+  free_podscan_email: string | null
+  rss_feed: string | null
 }
 
 interface DirectContactRow extends Record<string, unknown> {
@@ -304,7 +326,7 @@ serve(async (req) => {
 
     if (action === 'list') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'client_id'])
-      const [shortlistResult, feedbackResult] = await Promise.all([
+      const [shortlistResult, feedbackResult, priorOutreachResult] = await Promise.all([
         authContext.admin
           .from('client_dashboard_podcasts')
           .select(SHORTLIST_FIELDS)
@@ -319,8 +341,16 @@ serve(async (req) => {
           .select('podcast_id,status,notes,updated_at')
           .eq('client_id', clientId)
           .limit(1_000),
+        authContext.admin
+          .from('podcast_outreach_actions')
+          .select('podcast_id,webhook_sent_at,created_at')
+          .eq('client_id', clientId)
+          .eq('action', 'sent')
+          .gte('webhook_response_status', 200)
+          .lt('webhook_response_status', 300)
+          .limit(1_000),
       ])
-      if (shortlistResult.error || feedbackResult.error) {
+      if (shortlistResult.error || feedbackResult.error || priorOutreachResult.error) {
         throw new HttpError(500, 'SHORTLIST_LOOKUP_FAILED', 'The client podcast list could not be loaded')
       }
       const shortlistRows = (shortlistResult.data || []) as unknown as ShortlistPodcastRow[]
@@ -347,6 +377,12 @@ serve(async (req) => {
       }
       const feedbackByPodcast = new Map(
         (feedbackResult.data || []).map((feedback) => [feedback.podcast_id, feedback]),
+      )
+      const priorOutreachByPodcast = new Map(
+        (priorOutreachResult.data || []).map((outreach) => [
+          outreach.podcast_id,
+          outreach.webhook_sent_at || outreach.created_at,
+        ]),
       )
       const catalogByPodcast = new Map(
         catalogRows.map((podcast) => [podcast.podscan_id, podcast]),
@@ -392,6 +428,7 @@ serve(async (req) => {
           feedback_status: feedback?.status || null,
           feedback_notes: feedback?.notes || null,
           feedback_updated_at: feedback?.updated_at || null,
+          prior_outreach_at: priorOutreachByPodcast.get(podcast.podcast_id) || null,
         }
       })
       return jsonResponse(req, METHODS, 200, { client, podcasts })
@@ -400,32 +437,26 @@ serve(async (req) => {
     if (action === 'catalog-search') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'query'])
       const query = requireString(body.query, 'query', { min: 2, max: 120 })
-      const pattern = `%${query.replaceAll('%', '').replaceAll('_', '').trim()}%`
-      const catalogQuery = () => authContext.admin
-        .from('podcasts')
-        .select(CATALOG_FIELDS)
-        .eq('is_active', true)
-        .order('audience_size', { ascending: false, nullsFirst: false })
-        .limit(24)
-      const [nameResult, publisherResult] = await Promise.all([
-        catalogQuery().ilike('podcast_name', pattern),
-        catalogQuery().ilike('publisher_name', pattern),
-      ])
-      if (nameResult.error || publisherResult.error) {
+      const queryEmbedding = await generatePodcastSearchEmbedding(query)
+      const catalogResult = await authContext.admin.rpc('workspace_podcast_catalog_page_v2', {
+        p_search: query,
+        p_category: null,
+        p_contact: 'all',
+        p_activity: 'active',
+        p_audience: 'all',
+        p_query_embedding: queryEmbedding,
+        p_sort: 'audience',
+        p_page: 1,
+        p_page_size: 24,
+      })
+      if (catalogResult.error || !catalogResult.data || typeof catalogResult.data !== 'object') {
         throw new HttpError(500, 'CATALOG_SEARCH_FAILED', 'The podcast catalog could not be searched')
       }
-      const merged = new Map<string, Record<string, unknown>>()
-      const catalogRows = [
-        ...((nameResult.data || []) as unknown as CatalogPodcastRow[]),
-        ...((publisherResult.data || []) as unknown as CatalogPodcastRow[]),
-      ]
-      for (const podcast of catalogRows) {
-        if (!merged.has(podcast.podscan_id)) merged.set(podcast.podscan_id, podcast)
-      }
-      const results = Array.from(merged.values())
-        .sort((left, right) => Number(right.audience_size || 0) - Number(left.audience_size || 0))
-        .slice(0, 24)
-      const resultIds = results.map((podcast) => String(podcast.podscan_id))
+      const catalogPayload = catalogResult.data as Record<string, unknown>
+      const results = Array.isArray(catalogPayload.items)
+        ? catalogPayload.items as WorkspaceCatalogSearchRow[]
+        : []
+      const resultIds = results.map((podcast) => String(podcast.podcast_id))
       const existingResult = resultIds.length > 0
         ? await authContext.admin
           .from('client_dashboard_podcasts')
@@ -439,7 +470,7 @@ serve(async (req) => {
       const existingById = new Map((existingResult.data || []).map((row) => [row.podcast_id, row.visibility]))
       return jsonResponse(req, METHODS, 200, {
         podcasts: results.map((podcast) => ({
-          podcast_id: podcast.podscan_id,
+          podcast_id: podcast.podcast_id,
           podcast_name: podcast.podcast_name,
           podcast_description: podcast.podcast_description,
           podcast_image_url: podcast.podcast_image_url,
@@ -452,10 +483,10 @@ serve(async (req) => {
           podcast_categories: podcast.podcast_categories,
           language: podcast.language,
           region: podcast.region,
-          podcast_email: podcast.podscan_email,
-          rss_feed: podcast.rss_url,
-          already_added: existingById.has(String(podcast.podscan_id)),
-          existing_visibility: existingById.get(String(podcast.podscan_id)) || null,
+          podcast_email: podcast.free_podscan_email || null,
+          rss_feed: podcast.rss_feed || null,
+          already_added: existingById.has(String(podcast.podcast_id)),
+          existing_visibility: existingById.get(String(podcast.podcast_id)) || null,
         })),
       })
     }

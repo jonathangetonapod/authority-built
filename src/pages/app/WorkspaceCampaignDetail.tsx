@@ -53,7 +53,7 @@ import {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-type PitchStage = 'ready' | 'launching' | 'in-outreach' | 'replied' | 'failed' | 'completed'
+type PitchStage = 'ready' | 'previously-contacted' | 'launching' | 'in-outreach' | 'replied' | 'failed' | 'completed'
 
 interface WorkspaceCampaignDetailProps {
   platformWorkspaceId?: string
@@ -67,6 +67,7 @@ function formatDate(value: string | null | undefined): string {
 }
 
 function pitchStage(target?: WorkspaceCampaignTarget): PitchStage {
+  if (target?.prior_outreach_at && !target.launched_at) return 'previously-contacted'
   if (!target || target.status === 'draft') return 'ready'
   if (target.status === 'in_outreach') return 'in-outreach'
   return target.status
@@ -84,6 +85,7 @@ function targetWasSentToCampaign(target: WorkspaceCampaignTarget): boolean {
 function stageLabel(stage: PitchStage): string {
   const labels: Record<PitchStage, string> = {
     ready: 'Ready for outreach',
+    'previously-contacted': 'Previously contacted',
     launching: 'Launching',
     'in-outreach': 'In outreach',
     replied: 'Replied',
@@ -95,6 +97,7 @@ function stageLabel(stage: PitchStage): string {
 
 function stageClass(stage: PitchStage): string {
   if (stage === 'failed') return 'border-amber-200 bg-amber-50 text-amber-800'
+  if (stage === 'previously-contacted') return 'border-sky-200 bg-sky-50 text-sky-800'
   if (stage === 'ready') return 'border-violet-200 bg-violet-50 text-violet-800'
   if (stage === 'in-outreach' || stage === 'launching') return 'border-sky-200 bg-sky-50 text-sky-800'
   if (stage === 'replied' || stage === 'completed') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
@@ -104,6 +107,7 @@ function stageClass(stage: PitchStage): string {
 function leadDelivery(target?: WorkspaceCampaignTarget): { label: string; detail: string; className: string } {
   const stage = pitchStage(target)
   if (stage === 'ready') return { label: 'Not emailed', detail: 'Ready for campaign', className: 'border-slate-200 bg-slate-50 text-slate-700' }
+  if (stage === 'previously-contacted') return { label: 'Previously contacted', detail: 'Earlier client outreach', className: 'border-sky-200 bg-sky-50 text-sky-800' }
   if (stage === 'launching') return { label: 'Queued', detail: 'Preparing first email', className: 'border-violet-200 bg-violet-50 text-violet-800' }
   if (stage === 'in-outreach') return { label: 'Emailed', detail: 'Sequence running', className: 'border-sky-200 bg-sky-50 text-sky-800' }
   if (stage === 'replied') return { label: 'Replied', detail: 'Follow-ups stopped', className: 'border-emerald-200 bg-emerald-50 text-emerald-800' }
@@ -637,7 +641,9 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                     <div><p className="text-xs font-medium text-muted-foreground">Follow-up 2 reply</p><p className="mt-1 whitespace-pre-wrap rounded-lg bg-muted/25 p-3 text-sm leading-6">{selectedTarget?.follow_up_2_body || 'Final follow-up unavailable'}</p></div>
                   </div>
                   <div className="rounded-xl border border-dashed bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
-                    {selectedTarget?.last_error
+                    {selectedTarget?.prior_outreach_at && !selectedTarget.launched_at
+                      ? `Earlier outreach was recorded for this client on ${formatDate(selectedTarget.prior_outreach_at)}. A second launch is blocked to prevent duplicate contact.`
+                      : selectedTarget?.last_error
                       || (selectedTarget?.launched_at
                         ? `Outreach started ${formatDate(selectedTarget.launched_at)}. Reply activity updates automatically.`
                         : 'This final sequence is ready for outreach. Launch or pause delivery for the entire campaign from Options.')}
