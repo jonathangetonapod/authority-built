@@ -18,6 +18,9 @@ import {
   updateWorkspaceStaffRole,
   type WorkspaceStaffMember,
   type WorkspaceStaffView,
+  getWorkspaceBillingOverview,
+  getWorkspaceAiKeys,
+  grantWorkspaceCredits,
 } from '@/services/workspaceStaff'
 
 const { toastError, toastSuccess } = vi.hoisted(() => ({
@@ -32,6 +35,11 @@ vi.mock('@/components/admin/WorkspaceSwitcher', () => ({
 }))
 vi.mock('@/services/workspaceStaff', () => ({
   createWorkspaceStaffTemporaryPassword: vi.fn(),
+  getWorkspaceAiKeys: vi.fn(),
+  setWorkspaceAiKey: vi.fn(),
+  clearWorkspaceAiKey: vi.fn(),
+  getWorkspaceBillingOverview: vi.fn(),
+  grantWorkspaceCredits: vi.fn(),
   inviteWorkspaceStaff: vi.fn(),
   listWorkspaceStaff: vi.fn(),
   mutateWorkspaceStaff: vi.fn(),
@@ -151,6 +159,26 @@ function renderPage(platformWorkspaceId?: string) {
 describe('WorkspaceStaff', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(getWorkspaceAiKeys).mockResolvedValue({
+      anthropic: { configured: false, last_four: null, updated_at: null },
+      openai: { configured: false, last_four: null, updated_at: null },
+    })
+    vi.mocked(getWorkspaceBillingOverview).mockResolvedValue({
+      plan_key: 'founding_member',
+      billing_status: 'trialing',
+      base_price_cents: 3900,
+      per_client_price_cents: 3900,
+      included_active_clients: 1,
+      monthly_credit_allowance: 25,
+      enforcement_enabled: false,
+      balance: 10,
+      expiring_credits: 0,
+      next_expiry_at: null,
+      usage_this_month: {},
+      prices: {},
+      recent_activity: [],
+    })
+    vi.mocked(grantWorkspaceCredits).mockResolvedValue({ granted: 100, balance: 110 })
     refreshAccount.mockResolvedValue(true)
     refreshSession.mockResolvedValue(true)
     signOut.mockResolvedValue(undefined)
@@ -481,9 +509,9 @@ describe('WorkspaceStaff', () => {
     const settingsNavigation = screen.getByRole('navigation', { name: 'Settings sections' })
     expect(within(settingsNavigation).getByRole('link', { name: /^Credits/ })).toHaveAttribute('href', '#workspace-credits')
     const creditsSection = screen.getByRole('region', { name: 'Workspace credits' })
-    expect(within(creditsSection).getByText('Design preview · not saved')).toBeInTheDocument()
+    expect(within(creditsSection).getByText('Live · grants apply immediately')).toBeInTheDocument()
     expect(within(creditsSection).getByText(/credits are granted to Acme Workspace, not to this person/i)).toBeInTheDocument()
-    expect(within(creditsSection).getByLabelText('0 credits available')).toBeInTheDocument()
+    await waitFor(() => expect(within(creditsSection).getByLabelText('10 credits available')).toBeInTheDocument())
     expect(screen.queryByText(/admin preview/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Sidebar navigation' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Organize sidebar' })).not.toBeInTheDocument()
@@ -549,12 +577,12 @@ describe('WorkspaceStaff', () => {
     expect(within(confirmation).getByText('Workspace Owner')).toBeInTheDocument()
     expect(within(confirmation).getByText('Customer support')).toBeInTheDocument()
     expect(within(confirmation).getByText('Onboarding courtesy for the new workspace.')).toBeInTheDocument()
-    fireEvent.click(within(confirmation).getByRole('button', { name: 'Confirm preview' }))
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Add credits' }))
 
-    await waitFor(() => expect(within(creditsSection).getByLabelText('100 credits available')).toBeInTheDocument())
+    expect(await within(creditsSection).findByText('Granted by platform@example.com')).toBeInTheDocument()
+    expect(within(creditsSection).getByText('Balance 110')).toBeInTheDocument()
     expect(within(creditsSection).getByText('+100 credits')).toBeInTheDocument()
-    expect(within(creditsSection).getByText('Previewed by platform@example.com')).toBeInTheDocument()
-    expect(toastSuccess).toHaveBeenCalledWith('Credit grant previewed. No changes were saved.')
+    expect(toastSuccess).toHaveBeenCalledWith('100 credits added to Acme Workspace.')
   })
 
   it('lets the platform owner reset the selected workspace owner without exposing an old password', async () => {

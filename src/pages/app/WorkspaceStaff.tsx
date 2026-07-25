@@ -1008,6 +1008,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
 
                   {isPlatformWorkspace && workspaceOwner && (
                     <WorkspaceCreditGrantPreview
+                      workspaceId={workspaceId}
                       workspaceName={data.workspace.name}
                       ownerName={workspaceOwner.full_name || workspaceOwner.email}
                       ownerEmail={workspaceOwner.email}

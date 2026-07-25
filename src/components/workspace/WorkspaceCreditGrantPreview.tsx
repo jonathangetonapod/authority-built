@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, CheckCircle2, Coins, Crown, History, Plus, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
+import { getWorkspaceBillingOverview, grantWorkspaceCredits } from '@/services/workspaceStaff'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,6 +29,7 @@ type CreditReason =
   | 'other'
 
 interface WorkspaceCreditGrantPreviewProps {
+  workspaceId: string
   workspaceName: string
   ownerName: string
   ownerEmail: string
@@ -60,39 +63,61 @@ function creditAmount(value: string): number | null {
 }
 
 export function WorkspaceCreditGrantPreview({
+  workspaceId,
   workspaceName,
   ownerName,
   ownerEmail,
   actorEmail,
 }: WorkspaceCreditGrantPreviewProps) {
-  const [balance, setBalance] = useState(0)
+  const queryClient = useQueryClient()
   const [amount, setAmount] = useState('100')
   const [reason, setReason] = useState<CreditReason | ''>('')
   const [note, setNote] = useState('')
   const [reviewOpen, setReviewOpen] = useState(false)
   const [adjustments, setAdjustments] = useState<PreviewAdjustment[]>([])
 
+  const overviewQueryKey = ['workspace-credit-grants', workspaceId, 'overview'] as const
+  const overviewQuery = useQuery({
+    queryKey: overviewQueryKey,
+    queryFn: () => getWorkspaceBillingOverview(workspaceId),
+    retry: false,
+    staleTime: 30_000,
+  })
+  const balance = overviewQuery.data?.balance ?? 0
+
   const parsedAmount = useMemo(() => creditAmount(amount), [amount])
   const trimmedNote = note.trim()
-  const formReady = parsedAmount !== null && reason !== '' && trimmedNote.length >= 8
+  const grantMutation = useMutation({
+    mutationFn: () => grantWorkspaceCredits(workspaceId, {
+      amount: parsedAmount ?? 0,
+      reason: reason || 'other',
+      note: trimmedNote,
+    }),
+    onSuccess: (result) => {
+      setAdjustments((current) => [{
+        id: Date.now(),
+        amount: result.granted,
+        reason: (reason || 'other') as CreditReason,
+        note: trimmedNote,
+        balanceAfter: result.balance ?? balance + result.granted,
+      }, ...current])
+      void queryClient.invalidateQueries({ queryKey: overviewQueryKey })
+      setAmount('100')
+      setReason('')
+      setNote('')
+      setReviewOpen(false)
+      toast.success(`${result.granted.toLocaleString()} credits added to ${workspaceName}.`)
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'The credit grant could not be recorded.')
+    },
+  })
+  const formReady = parsedAmount !== null && reason !== '' && trimmedNote.length >= 8 && !grantMutation.isPending
   const projectedBalance = balance + (parsedAmount || 0)
 
   const confirmPreview = () => {
-    if (parsedAmount === null || reason === '' || trimmedNote.length < 8) return
-    const nextBalance = balance + parsedAmount
-    setBalance(nextBalance)
-    setAdjustments((current) => [{
-      id: Date.now(),
-      amount: parsedAmount,
-      reason,
-      note: trimmedNote,
-      balanceAfter: nextBalance,
-    }, ...current])
-    setAmount('100')
-    setReason('')
-    setNote('')
-    setReviewOpen(false)
-    toast.success('Credit grant previewed. No changes were saved.')
+    if (parsedAmount === null || reason === '' || trimmedNote.length < 8 || grantMutation.isPending) return
+    grantMutation.mutate()
   }
 
   return (
@@ -110,8 +135,8 @@ export function WorkspaceCreditGrantPreview({
               Add complimentary credits for support, onboarding, or account adjustments without changing the workspace plan.
             </p>
           </div>
-          <Badge variant="outline" className="w-fit rounded-full border-amber-300 bg-amber-50 text-amber-800">
-            Design preview · not saved
+          <Badge variant="outline" className="w-fit rounded-full border-emerald-300 bg-emerald-50 text-emerald-800">
+            Live · grants apply immediately
           </Badge>
         </div>
 
@@ -164,7 +189,7 @@ export function WorkspaceCreditGrantPreview({
                     </span>
                     <div>
                       <h3 className="font-semibold">Add credits manually</h3>
-                      <p className="text-xs text-muted-foreground">No charge or plan change is created from this screen.</p>
+                      <p className="text-xs text-muted-foreground">Adds spendable credits to the workspace ledger. No charge or plan change.</p>
                     </div>
                   </div>
                 </div>
@@ -266,8 +291,8 @@ export function WorkspaceCreditGrantPreview({
             {adjustments.length === 0 ? (
               <div className="flex flex-col items-center px-6 py-10 text-center">
                 <span className="flex h-11 w-11 items-center justify-center rounded-full bg-muted text-muted-foreground"><History className="h-5 w-5" /></span>
-                <p className="mt-3 text-sm font-semibold">No preview adjustments yet</p>
-                <p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">Complete the form above to see how a manual grant will appear in the workspace history.</p>
+                <p className="mt-3 text-sm font-semibold">No manual grants this session</p>
+                <p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">Grants recorded here also appear in the workspace's billing activity and audit log.</p>
               </div>
             ) : (
               <div className="divide-y">
@@ -278,7 +303,7 @@ export function WorkspaceCreditGrantPreview({
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold">{reasonLabels[adjustment.reason]}</p><Badge variant="outline" className="text-[10px]">Just now</Badge></div>
                         <p className="mt-1 truncate text-xs text-muted-foreground">{adjustment.note}</p>
-                        <p className="mt-1 text-[11px] text-muted-foreground">Previewed by {actorEmail}</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">Granted by {actorEmail}</p>
                       </div>
                     </div>
                     <div className="shrink-0 text-left sm:text-right">
@@ -310,13 +335,18 @@ export function WorkspaceCreditGrantPreview({
             <div className="border-t pt-3"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Internal note</p><p className="mt-1 leading-6">{trimmedNote || '—'}</p></div>
           </div>
 
-          <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-            This is an interface preview. Confirming updates only this screen and does not save credits to the workspace.
+          <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs leading-5 text-emerald-900">
+            Confirming immediately adds these credits to the workspace balance and records the grant in the ledger and audit log.
           </div>
 
           <AlertDialogFooter>
-            <AlertDialogCancel>Go back</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmPreview}>Confirm preview</AlertDialogAction>
+            <AlertDialogCancel disabled={grantMutation.isPending}>Go back</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={grantMutation.isPending}
+              onClick={(event) => { event.preventDefault(); confirmPreview() }}
+            >
+              {grantMutation.isPending ? 'Adding…' : 'Add credits'}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

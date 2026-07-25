@@ -2845,6 +2845,51 @@ serve(async (req) => {
       });
     }
 
+    if (action === "credits-grant") {
+      requireOnlyKeys(body, ["action", "workspace_id", "amount", "reason", "note", "grant_key"]);
+      await requireWorkspaceFeatureAccess(authContext, workspaceId);
+      if (!platformAdmin) {
+        throw new HttpError(403, "PLATFORM_ADMIN_REQUIRED", "Platform administrator access is required");
+      }
+      const amount = typeof body.amount === "number" && Number.isSafeInteger(body.amount)
+        ? body.amount
+        : NaN;
+      if (!Number.isSafeInteger(amount) || amount < 1 || amount > 10_000) {
+        throw new HttpError(400, "INVALID_AMOUNT", "Grant between 1 and 10,000 credits");
+      }
+      const reason = requireString(body.reason, "reason", { max: 60 });
+      const note = requireString(body.note, "note", { max: 500 });
+      const grantKey = requireUuid(body.grant_key, "grant_key");
+
+      const { data, error } = await admin.rpc("grant_workspace_credits_v1", {
+        p_workspace_id: workspaceId,
+        p_source: "admin_grant",
+        p_amount: amount,
+        p_reference_kind: reason,
+        p_reference_id: grantKey,
+        p_actor_user_id: user.id,
+        p_idempotency_key: `admin-grant:${grantKey}`,
+      });
+      if (error) {
+        throw new HttpError(503, "CREDIT_GRANT_FAILED", "The credit grant could not be recorded");
+      }
+      const result = data as { balance?: number; idempotent?: boolean } | null;
+      await writeAudit(admin, {
+        workspaceId,
+        actorUserId: user.id,
+        action: "workspace.credits.granted",
+        entityType: "workspace",
+        entityId: workspaceId,
+        metadata: { amount, reason, note, grant_key: grantKey },
+      });
+      return jsonResponse(req, METHODS, 200, {
+        success: true,
+        granted: amount,
+        balance: typeof result?.balance === "number" ? result.balance : null,
+        idempotent: result?.idempotent === true,
+      });
+    }
+
     if (action === "ai-keys-status" || action === "ai-keys-set" || action === "ai-keys-clear") {
       const access = await requireWorkspaceFeatureAccess(authContext, workspaceId);
       if (!["owner", "platform_admin"].includes(access.role)) {

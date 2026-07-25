@@ -866,3 +866,31 @@ export async function getWorkspaceBillingOverview(workspaceId: string): Promise<
     recent_activity: Array.isArray(data.billing.recent_activity) ? data.billing.recent_activity : [],
   }
 }
+
+export interface WorkspaceCreditGrantResult {
+  granted: number
+  balance: number | null
+}
+
+export async function grantWorkspaceCredits(
+  workspaceId: string,
+  input: { amount: number; reason: string; note: string },
+): Promise<WorkspaceCreditGrantResult> {
+  const canonicalWorkspaceId = canonicalUuid(workspaceId, 'Workspace ID')
+  const data = await invoke({
+    action: 'credits-grant',
+    workspace_id: canonicalWorkspaceId,
+    amount: input.amount,
+    reason: input.reason,
+    note: input.note,
+    grant_key: crypto.randomUUID(),
+  }, 'The credit grant could not be recorded.') as {
+    success?: boolean
+    granted?: number
+    balance?: number | null
+  }
+  if (data?.success !== true || typeof data.granted !== 'number') {
+    throw new Error('The credit grant could not be recorded.')
+  }
+  return { granted: data.granted, balance: typeof data.balance === 'number' ? data.balance : null }
+}
