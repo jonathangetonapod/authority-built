@@ -20,6 +20,14 @@ import {
 } from '../_shared/workspaceAuth.ts'
 
 const METHODS = ['POST'] as const
+const PROSPECT_IMAGE_BUCKET = 'prospect-images'
+const PROSPECT_IMAGE_TYPES = new Map([
+  ['image/jpeg', 'jpg'],
+  ['image/png', 'png'],
+  ['image/webp', 'webp'],
+])
+const MAX_PROSPECT_IMAGE_BYTES = 5 * 1024 * 1024
+const MAX_PROSPECT_IMAGE_MULTIPART_BYTES = MAX_PROSPECT_IMAGE_BYTES + (64 * 1024)
 const MANAGER_ROLES = new Set(['owner', 'admin', 'platform_admin'])
 const PROFILE_FIELDS = [
   'name',
@@ -226,6 +234,42 @@ function optionalTimestamp(value: unknown, field: string): string | null {
     throw new HttpError(400, 'INVALID_FIELD', `${field} must be a valid timestamp`)
   }
   return parsed.toISOString()
+}
+
+function managedProspectImagePath(
+  value: unknown,
+  workspaceId: string,
+  dashboardId: string,
+): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null
+  try {
+    const parsed = new URL(value)
+    const marker = `/storage/v1/object/public/${PROSPECT_IMAGE_BUCKET}/`
+    const markerIndex = parsed.pathname.indexOf(marker)
+    if (markerIndex < 0) return null
+    const encodedPath = parsed.pathname.slice(markerIndex + marker.length)
+    const path = encodedPath.split('/').map(decodeURIComponent).join('/')
+    const prefix = `${workspaceId}/${dashboardId}/`
+    return path.startsWith(prefix) ? path : null
+  } catch {
+    return null
+  }
+}
+
+function matchesProspectImageSignature(bytes: Uint8Array, contentType: string): boolean {
+  if (contentType === 'image/jpeg') {
+    return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+  }
+  if (contentType === 'image/png') {
+    const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+    return bytes.length >= signature.length && signature.every((byte, index) => bytes[index] === byte)
+  }
+  if (contentType === 'image/webp') {
+    return bytes.length >= 12
+      && String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF'
+      && String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP'
+  }
+  return false
 }
 
 function podcastCategories(value: unknown): Array<{ category_id: string; category_name: string }> | null {
@@ -960,8 +1004,42 @@ serve(async (req) => {
 
   try {
     if (req.method !== 'POST') throw new HttpError(405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed')
-    const body = await parseJsonObject(req, 1_000_000)
+    let photoFile: File | null = null
+    let body: Record<string, unknown>
+    const multipartRequest = (req.headers.get('content-type') || '')
+      .toLowerCase()
+      .startsWith('multipart/form-data')
+    if (multipartRequest) {
+      const declaredLength = Number(req.headers.get('content-length'))
+      if (!Number.isSafeInteger(declaredLength) || declaredLength < 1) {
+        throw new HttpError(411, 'CONTENT_LENGTH_REQUIRED', 'Prospect photo uploads require a valid Content-Length')
+      }
+      if (declaredLength > MAX_PROSPECT_IMAGE_MULTIPART_BYTES) {
+        throw new HttpError(413, 'BODY_TOO_LARGE', 'Prospect photo upload is too large')
+      }
+      const form = await req.formData()
+      const allowedFormFields = new Set(['action', 'workspace_id', 'dashboard_id', 'photo'])
+      const formKeys = Array.from(form.keys())
+      if (
+        formKeys.some((key) => !allowedFormFields.has(key))
+        || Array.from(allowedFormFields).some((key) => form.getAll(key).length > 1)
+      ) {
+        throw new HttpError(400, 'INVALID_MULTIPART_BODY', 'Prospect photo upload fields are invalid')
+      }
+      const candidate = form.get('photo')
+      if (candidate instanceof File) photoFile = candidate
+      body = {
+        action: form.get('action'),
+        workspace_id: form.get('workspace_id'),
+        dashboard_id: form.get('dashboard_id'),
+      }
+    } else {
+      body = await parseJsonObject(req, 1_000_000)
+    }
     const action = typeof body.action === 'string' ? body.action : ''
+    if (multipartRequest && action !== 'photo-upload') {
+      throw new HttpError(400, 'INVALID_ACTION', 'Multipart requests are only accepted for prospect photo uploads')
+    }
     const context = await requireAuthenticatedUser(req)
     if (!workspaceCredentialIsFresh(context)) {
       throw new HttpError(401, 'REAUTHENTICATION_REQUIRED', 'Sign in again with the newest account credentials')
@@ -1059,6 +1137,117 @@ serve(async (req) => {
     requireManager(access)
 
     const existing = await requireWorkspaceProspect(context.admin, workspaceId, dashboardId)
+
+    if (action === 'photo-upload') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'dashboard_id'])
+      if (!photoFile || photoFile.size < 1) {
+        throw new HttpError(400, 'PHOTO_REQUIRED', 'Choose a prospect photo to upload')
+      }
+      const extension = PROSPECT_IMAGE_TYPES.get(photoFile.type.toLowerCase())
+      if (!extension) {
+        throw new HttpError(400, 'INVALID_PHOTO_TYPE', 'Use a JPEG, PNG, or WebP image')
+      }
+      if (photoFile.size > MAX_PROSPECT_IMAGE_BYTES) {
+        throw new HttpError(400, 'PHOTO_TOO_LARGE', 'Prospect photos must be 5 MB or smaller')
+      }
+
+      const photoBytes = new Uint8Array(await photoFile.arrayBuffer())
+      if (!matchesProspectImageSignature(photoBytes, photoFile.type.toLowerCase())) {
+        throw new HttpError(400, 'INVALID_PHOTO_CONTENT', 'The uploaded file does not match its image type')
+      }
+
+      const path = `${workspaceId}/${dashboardId}/${crypto.randomUUID()}.${extension}`
+      const uploaded = await context.admin.storage
+        .from(PROSPECT_IMAGE_BUCKET)
+        .upload(path, photoBytes, {
+          cacheControl: '3600',
+          contentType: photoFile.type.toLowerCase(),
+          upsert: false,
+        })
+      if (uploaded.error) {
+        throw new HttpError(500, 'PHOTO_UPLOAD_FAILED', 'The prospect photo could not be uploaded')
+      }
+      const imageUrl = context.admin.storage.from(PROSPECT_IMAGE_BUCKET).getPublicUrl(path).data.publicUrl
+      const now = new Date().toISOString()
+      const update: Record<string, unknown> = {
+        prospect_image_url: imageUrl,
+        build_error: null,
+        updated_at: now,
+      }
+      if (existing.published_at) {
+        update.lifecycle_status = 'review'
+        update.published_at = null
+        update.content_ready = false
+      }
+      const { data: updated, error: updateError } = await context.admin
+        .from('prospect_dashboards')
+        .update(update)
+        .eq('id', dashboardId)
+        .eq('workspace_id', workspaceId)
+        .eq('updated_at', existing.updated_at)
+        .select('id')
+        .maybeSingle()
+      if (updateError || !updated) {
+        await context.admin.storage.from(PROSPECT_IMAGE_BUCKET).remove([path])
+        if (!updateError) throw new HttpError(409, 'PROSPECT_CHANGED', 'This prospect changed. Refresh and try again')
+        throw new HttpError(500, 'PHOTO_UPLOAD_FAILED', 'The prospect photo could not be saved')
+      }
+
+      const oldPath = managedProspectImagePath(existing.prospect_image_url, workspaceId, dashboardId)
+      if (oldPath && oldPath !== path) {
+        const removed = await context.admin.storage.from(PROSPECT_IMAGE_BUCKET).remove([oldPath])
+        if (removed.error) console.error('Previous prospect photo cleanup failed')
+      }
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: 'workspace.prospect.photo_uploaded',
+        entityType: 'prospect_dashboard',
+        entityId: dashboardId,
+        metadata: { unpublished_for_review: Boolean(existing.published_at) },
+      })
+      return jsonResponse(req, METHODS, 200, await detailPayload(context.admin, workspaceId, dashboardId))
+    }
+
+    if (action === 'photo-remove') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'dashboard_id'])
+      const now = new Date().toISOString()
+      const update: Record<string, unknown> = {
+        prospect_image_url: null,
+        build_error: null,
+        updated_at: now,
+      }
+      if (existing.published_at) {
+        update.lifecycle_status = 'review'
+        update.published_at = null
+        update.content_ready = false
+      }
+      const { data: updated, error: updateError } = await context.admin
+        .from('prospect_dashboards')
+        .update(update)
+        .eq('id', dashboardId)
+        .eq('workspace_id', workspaceId)
+        .eq('updated_at', existing.updated_at)
+        .select('id')
+        .maybeSingle()
+      if (updateError) throw new HttpError(500, 'PHOTO_REMOVE_FAILED', 'The prospect photo could not be removed')
+      if (!updated) throw new HttpError(409, 'PROSPECT_CHANGED', 'This prospect changed. Refresh and try again')
+
+      const oldPath = managedProspectImagePath(existing.prospect_image_url, workspaceId, dashboardId)
+      if (oldPath) {
+        const removed = await context.admin.storage.from(PROSPECT_IMAGE_BUCKET).remove([oldPath])
+        if (removed.error) console.error('Prospect photo cleanup failed')
+      }
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: 'workspace.prospect.photo_removed',
+        entityType: 'prospect_dashboard',
+        entityId: dashboardId,
+        metadata: { unpublished_for_review: Boolean(existing.published_at) },
+      })
+      return jsonResponse(req, METHODS, 200, await detailPayload(context.admin, workspaceId, dashboardId))
+    }
 
     if (action === 'update') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'dashboard_id', 'profile', 'expected_updated_at'])

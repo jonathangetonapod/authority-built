@@ -271,7 +271,9 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
   const tenantClientsQuery = useQuery({
     queryKey: ['tenant', user?.id || 'unknown', workspace?.id || 'missing', 'campaign-clients'],
     queryFn: () => getWorkspaceClients(workspace?.id || ''),
-    enabled: module === 'client-campaigns' && !isSelectedWorkspace && Boolean(workspace?.id),
+    enabled: ['client-campaigns', 'master-inbox'].includes(module)
+      && !isSelectedWorkspace
+      && Boolean(workspace?.id),
     retry: false,
   })
   const mailboxWorkspaceId = isSelectedWorkspace ? selectedWorkspaceId : workspace?.id || ''
@@ -386,7 +388,15 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
             }}
           />
         )}
-        {module === 'master-inbox' && <MasterInboxPreview />}
+        {module === 'master-inbox' && (
+          <MasterInboxPreview
+            workspaceId={effectiveWorkspace.id}
+            clients={campaignClients}
+            clientsLoading={campaignClientsLoading}
+            clientsError={campaignClientsError}
+            baseHref={baseHref}
+          />
+        )}
         {module === 'mailboxes' && (
           <MailboxesContent
             data={mailboxesQuery.data}
@@ -400,7 +410,7 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
           <div className="flex items-start gap-3 rounded-2xl border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
             <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
             <p className="leading-6">
-              This page remains a layout preview until its own workspace-safe Instantly data boundary is released.
+              Client AI SDR profiles are live and workspace-scoped. Conversation syncing, drafting, and sending remain disabled here until the workspace-safe Instantly inbox boundary is released.
             </p>
           </div>
         )}

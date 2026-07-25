@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   getClients,
   getWorkspaceClientDetail,
+  getWorkspaceClientSdrContext,
   getWorkspaceResearchContext,
   setWorkspaceClientPassword,
   updateWorkspaceClientProfile,
+  updateWorkspaceClientSdrProfile,
 } from '@/services/clients'
 
 const { from, invoke } = vi.hoisted(() => ({ from: vi.fn(), invoke: vi.fn() }))
@@ -15,6 +17,22 @@ vi.mock('@/lib/supabase', () => ({
     functions: { invoke },
   },
 }))
+
+const emptySdrProfile = {
+  positioning: '',
+  ideal_opportunities: '',
+  qualification_signals: '',
+  proof_points: '',
+  voice_and_tone: '',
+  reply_rules: '',
+}
+const emptySdrReadiness = {
+  ready: false,
+  completed_fields: 0,
+  total_fields: 6,
+  missing_fields: ['positioning', 'ideal_opportunities', 'qualification_signals', 'proof_points', 'voice_and_tone', 'reply_rules'],
+  missing_core_fields: ['positioning', 'ideal_opportunities', 'voice_and_tone', 'reply_rules'],
+}
 
 describe('getClients', () => {
   beforeEach(() => {
@@ -190,6 +208,9 @@ describe('getWorkspaceClientDetail', () => {
         bookings: undefined,
         dashboard_slug: 'client-dashboard',
         dashboard_enabled: true,
+        ai_sdr_profile: emptySdrProfile,
+        ai_sdr_profile_updated_at: null,
+        ai_sdr_readiness: emptySdrReadiness,
       },
       dashboard: {
         configured: true,
@@ -235,7 +256,15 @@ describe('getWorkspaceClientDetail', () => {
     invoke.mockResolvedValue({
       data: {
         workspace: { id: workspaceId },
-        client: { id: clientId, workspace_id: workspaceId, dashboard_slug: null, dashboard_enabled: false },
+        client: {
+          id: clientId,
+          workspace_id: workspaceId,
+          dashboard_slug: null,
+          dashboard_enabled: false,
+          ai_sdr_profile: emptySdrProfile,
+          ai_sdr_profile_updated_at: null,
+          ai_sdr_readiness: emptySdrReadiness,
+        },
         dashboard: {
           configured: false,
           enabled: false,
@@ -268,7 +297,15 @@ describe('getWorkspaceClientDetail', () => {
     invoke.mockResolvedValue({
       data: {
         workspace: { id: workspaceId },
-        client: { id: clientId, workspace_id: workspaceId, dashboard_slug: 'client-dashboard', dashboard_enabled: true },
+        client: {
+          id: clientId,
+          workspace_id: workspaceId,
+          dashboard_slug: 'client-dashboard',
+          dashboard_enabled: true,
+          ai_sdr_profile: emptySdrProfile,
+          ai_sdr_profile_updated_at: null,
+          ai_sdr_readiness: emptySdrReadiness,
+        },
         dashboard: {
           configured: true,
           enabled: true,
@@ -361,6 +398,117 @@ describe('updateWorkspaceClientProfile', () => {
       'Wrong workspace.',
       '2026-07-23T00:00:00.000Z',
     )).rejects.toThrow('did not match the workspace client address')
+  })
+})
+
+describe('client AI SDR profile', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  const profile = {
+    positioning: 'Position the client as a practical operations expert.',
+    ideal_opportunities: 'Founder and B2B operations podcasts.',
+    qualification_signals: '',
+    proof_points: '',
+    voice_and_tone: 'Warm, concise, and direct.',
+    reply_rules: 'Route pricing and uncertain scheduling to a human.',
+  }
+  const readiness = {
+    ready: true,
+    completed_fields: 4,
+    total_fields: 6,
+    missing_fields: ['qualification_signals', 'proof_points'],
+    missing_core_fields: [],
+  }
+
+  it('loads the exact read-only context Master Inbox may attach to a mapped reply', async () => {
+    const workspaceId = '11111111-1111-4111-8111-111111111111'
+    const clientId = '22222222-2222-4222-8222-222222222222'
+    invoke.mockResolvedValue({
+      data: {
+        context: {
+          client_id: clientId,
+          workspace_id: workspaceId,
+          client_name: 'Client',
+          client_status: 'active',
+          approved_guest_profile: 'Approved guest profile.',
+          calendar_link: null,
+          ai_sdr_profile: profile,
+          ai_sdr_profile_updated_at: '2026-07-25T00:00:00.000Z',
+          readiness,
+          safe_to_draft: true,
+          delivery_authorized: false,
+        },
+      },
+      error: null,
+    })
+
+    await expect(getWorkspaceClientSdrContext(
+      workspaceId.toUpperCase(),
+      clientId.toUpperCase(),
+    )).resolves.toMatchObject({
+      client_id: clientId,
+      workspace_id: workspaceId,
+      ai_sdr_profile: profile,
+      safe_to_draft: true,
+      delivery_authorized: false,
+    })
+    expect(invoke).toHaveBeenCalledWith('workspace-clients', {
+      body: {
+        action: 'sdr-context-get',
+        workspace_id: workspaceId,
+        client_id: clientId,
+      },
+    })
+  })
+
+  it('saves a partial profile without granting delivery authority', async () => {
+    const workspaceId = '11111111-1111-4111-8111-111111111111'
+    const clientId = '22222222-2222-4222-8222-222222222222'
+    invoke.mockResolvedValue({
+      data: {
+        client: {
+          id: clientId,
+          workspace_id: workspaceId,
+          ai_sdr_profile: {
+            positioning: profile.positioning,
+            ideal_opportunities: profile.ideal_opportunities,
+            voice_and_tone: profile.voice_and_tone,
+            reply_rules: profile.reply_rules,
+          },
+          ai_sdr_profile_updated_at: '2026-07-25T00:00:00.000Z',
+          ai_sdr_readiness: readiness,
+        },
+      },
+      error: null,
+    })
+
+    await expect(updateWorkspaceClientSdrProfile(
+      workspaceId,
+      clientId,
+      profile,
+      null,
+    )).resolves.toMatchObject({
+      id: clientId,
+      workspace_id: workspaceId,
+      ai_sdr_profile: profile,
+      ai_sdr_readiness: readiness,
+    })
+    expect(invoke).toHaveBeenCalledWith('workspace-clients', {
+      body: {
+        action: 'sdr-profile-update',
+        workspace_id: workspaceId,
+        client_id: clientId,
+        ai_sdr_profile: {
+          positioning: profile.positioning,
+          ideal_opportunities: profile.ideal_opportunities,
+          voice_and_tone: profile.voice_and_tone,
+          reply_rules: profile.reply_rules,
+        },
+        expected_profile_updated_at: null,
+      },
+    })
   })
 })
 

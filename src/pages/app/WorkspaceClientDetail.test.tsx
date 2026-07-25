@@ -9,6 +9,7 @@ import {
   setWorkspaceClientPassword,
   updateWorkspaceClient,
   updateWorkspaceClientProfile,
+  updateWorkspaceClientSdrProfile,
   type WorkspaceClientDetail as WorkspaceClientDetailData,
 } from '@/services/clients'
 
@@ -19,6 +20,7 @@ vi.mock('@/services/clients', () => ({
   setWorkspaceClientPassword: vi.fn(),
   updateWorkspaceClient: vi.fn(),
   updateWorkspaceClientProfile: vi.fn(),
+  updateWorkspaceClientSdrProfile: vi.fn(),
 }))
 vi.mock('@/components/admin/WorkspaceSwitcher', () => ({ WorkspaceSwitcher: () => <div>Workspace switcher</div> }))
 vi.mock('@/components/workspace/ClientShortlistEditor', () => ({
@@ -30,6 +32,7 @@ const mockedDetail = vi.mocked(getWorkspaceClientDetail)
 const mockedSetPortalPassword = vi.mocked(setWorkspaceClientPassword)
 const mockedUpdateClient = vi.mocked(updateWorkspaceClient)
 const mockedUpdateProfile = vi.mocked(updateWorkspaceClientProfile)
+const mockedUpdateSdrProfile = vi.mocked(updateWorkspaceClientSdrProfile)
 const workspaceId = '11111111-1111-4111-8111-111111111111'
 const clientId = '22222222-2222-4222-8222-222222222222'
 const onboardingId = '33333333-3333-4333-8333-333333333333'
@@ -58,6 +61,22 @@ const detail: WorkspaceClientDetailData = {
     status: 'active',
     notes: 'High-priority launch in September.',
     bio: 'Taylor helps founders build durable operations.',
+    ai_sdr_profile: {
+      positioning: 'Position Taylor as an operations leader and move interested hosts toward a guest-fit call.',
+      ideal_opportunities: 'Founder and operations podcasts for growth-stage teams.',
+      qualification_signals: 'Prioritize active interview shows with operator audiences.',
+      proof_points: 'Approved operating case studies and media kit only.',
+      voice_and_tone: 'Warm, concise, practical, and direct.',
+      reply_rules: 'Route pricing and unclear scheduling to a human for review.',
+    },
+    ai_sdr_profile_updated_at: '2026-07-23T01:00:00.000Z',
+    ai_sdr_readiness: {
+      ready: true,
+      completed_fields: 6,
+      total_fields: 6,
+      missing_fields: [],
+      missing_core_fields: [],
+    },
     photo_url: null,
     media_kit_url: 'https://docs.google.com/document/d/example',
     prospect_dashboard_slug: null,
@@ -169,6 +188,21 @@ describe('WorkspaceClientDetail', () => {
     mockedDetail.mockResolvedValue(detail)
     mockedSetPortalPassword.mockResolvedValue(undefined)
     mockedUpdateClient.mockResolvedValue(detail.client)
+    mockedUpdateSdrProfile.mockResolvedValue({
+      id: clientId,
+      workspace_id: workspaceId,
+      ai_sdr_profile: {
+        ...detail.client.ai_sdr_profile,
+        positioning: detail.client.ai_sdr_profile.positioning || '',
+        ideal_opportunities: detail.client.ai_sdr_profile.ideal_opportunities || '',
+        qualification_signals: detail.client.ai_sdr_profile.qualification_signals || '',
+        proof_points: detail.client.ai_sdr_profile.proof_points || '',
+        voice_and_tone: 'Direct, concise, and warm.',
+        reply_rules: detail.client.ai_sdr_profile.reply_rules || '',
+      },
+      ai_sdr_profile_updated_at: '2026-07-24T00:00:00.000Z',
+      ai_sdr_readiness: detail.client.ai_sdr_readiness,
+    })
   })
 
   it('rebuilds the legacy client command center inside the workspace shell', async () => {
@@ -234,6 +268,51 @@ describe('WorkspaceClientDetail', () => {
     expect(screen.getByRole('button', { name: 'View full profile' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Reorder sidebar pages' })).toBeInTheDocument()
     expect(mockedDetail).toHaveBeenCalledWith(workspaceId, clientId)
+  })
+
+  it('creates and edits a client-scoped AI SDR profile for Master Inbox', async () => {
+    renderPage()
+    await screen.findByRole('heading', { name: 'Taylor Client' })
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'AI SDR Profile' }), { button: 0 })
+
+    expect(screen.getByRole('heading', { name: 'Taylor Client AI SDR Profile' })).toBeInTheDocument()
+    expect(screen.getByText('Context ready')).toBeInTheDocument()
+    expect(screen.getByText('Warm, concise, practical, and direct.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open Master Inbox' })).toHaveAttribute(
+      'href',
+      `/app/master-inbox?client=${clientId}`,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit profile' }))
+    const voice = screen.getByLabelText('Voice & response style')
+    fireEvent.change(voice, { target: { value: 'Direct, concise, and warm.' } })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save profile' }).at(-1) as HTMLElement)
+
+    await waitFor(() => expect(mockedUpdateSdrProfile).toHaveBeenCalledWith(
+      workspaceId,
+      clientId,
+      expect.objectContaining({ voice_and_tone: 'Direct, concise, and warm.' }),
+      '2026-07-23T01:00:00.000Z',
+    ))
+  })
+
+  it('opens directly to the AI SDR profile from its stable client deep link', async () => {
+    renderPage(`/app/clients/${clientId}?tab=ai-sdr`)
+
+    expect(await screen.findByRole('heading', { name: 'Taylor Client AI SDR Profile' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'AI SDR Profile' })).toHaveAttribute('data-state', 'active')
+    expect(screen.queryByRole('heading', { name: 'Campaign snapshot' })).not.toBeInTheDocument()
+  })
+
+  it('keeps AI SDR profile editing manager-only', async () => {
+    mockedDetail.mockResolvedValueOnce({ ...detail, viewer_role: 'member', can_manage: false })
+    renderPage()
+    await screen.findByRole('heading', { name: 'Taylor Client' })
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'AI SDR Profile' }), { button: 0 })
+
+    expect(screen.getByText('Warm, concise, practical, and direct.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit profile' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit context' })).not.toBeInTheDocument()
   })
 
   it('keeps long approved profiles compact until the full profile is opened', async () => {

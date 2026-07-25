@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowUpRight, Loader2, Pencil, Plus, Trash2, Users } from 'lucide-react'
+import { ArrowUpRight, Bot, Loader2, Pencil, Plus, Trash2, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
@@ -263,7 +263,7 @@ const WorkspaceClients = ({ platformWorkspaceId, mode = 'manage' }: WorkspaceCli
             ) : (
               <div className="overflow-x-auto">
                 <Table>
-                  <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Contact</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Contact</TableHead><TableHead>AI SDR Profile</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                   <TableBody>
                     {clients.map((client) => {
                       const clientDetailHref = `${clientBaseHref}/clients/${encodeURIComponent(client.id)}`
@@ -283,6 +283,19 @@ const WorkspaceClients = ({ platformWorkspaceId, mode = 'manage' }: WorkspaceCli
                       >
                         <TableCell><Link to={clientDetailHref} onClick={(event) => event.stopPropagation()} aria-label={`Open ${client.name}`} className="inline-flex items-center gap-1.5 font-medium group-hover:text-primary group-hover:underline">{client.name}<ArrowUpRight className="h-3.5 w-3.5" /></Link>{client.website && <p className="max-w-xs truncate text-xs text-muted-foreground">{client.website}</p>}</TableCell>
                         <TableCell><p>{client.contact_person || '—'}</p><p className="text-xs text-muted-foreground">{client.email || 'No email'}</p></TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={client.ai_sdr_profile_ready
+                              ? 'gap-1.5 border-emerald-200 bg-emerald-50 text-emerald-800'
+                              : 'gap-1.5 border-amber-200 bg-amber-50 text-amber-800'}
+                          >
+                            <Bot className="h-3 w-3" />
+                            {client.ai_sdr_profile_ready
+                              ? 'Ready'
+                              : `${client.ai_sdr_profile_completed_fields || 0} of ${client.ai_sdr_profile_total_fields || 6}`}
+                          </Badge>
+                        </TableCell>
                         <TableCell><Badge variant={client.status === 'active' ? 'default' : 'secondary'} className="capitalize">{client.status}</Badge></TableCell>
                         <TableCell className="text-right" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
                           <div className="inline-flex items-center gap-1">

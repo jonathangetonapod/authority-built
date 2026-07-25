@@ -38,7 +38,7 @@ Each client command center includes an approval-dashboard editor. The agency can
 
 ### 4. Run outreach
 
-Client Campaigns gives each active client one ongoing podcast-outreach campaign. From the client's Approval Dashboard, an operator can open an approved podcast, review the existing research, prepare the opening pitch and two follow-ups, and explicitly push that unsent package into the client's mapped campaign. Client Campaigns remains the final launch gate. The workspace owner connects one Instantly V2 API key; authorized workspace managers can run campaigns without seeing the credential. Master Inbox and Mailboxes remain separate future integrations.
+Client Campaigns gives each active client one ongoing podcast-outreach campaign. From the client's Approval Dashboard, an operator can open an approved podcast, review the existing research, prepare the opening pitch and two follow-ups, and explicitly push that unsent package into the client's mapped campaign. Client Campaigns remains the final launch gate. The workspace owner connects one Instantly V2 API key; authorized workspace managers can run campaigns without seeing the credential. Each client also has a compact AI SDR Profile that Master Inbox can load as read-only, client-scoped response context. Live reply ingestion and delivery remain separate future boundaries.
 
 ### 5. Deliver a white-label client experience
 
@@ -53,13 +53,13 @@ Workspace branding controls the agency name, logo, primary color, and accent col
 | Overview | Available | Workspace launchpad and module map |
 | Onboarding | Available | Forms, invitations, autosave, review, revisions, files, and pitch approval |
 | Podcast Finder | Available | Client-selectable recurring discovery with history deduplication |
-| Clients | Available | Client records and command centers |
+| Clients | Available | Client records, command centers, and compact per-client AI SDR Profiles |
 | Client Campaigns | Available with Instantly V2 | Encrypted workspace connection, campaign index, per-podcast research and sequence preparation, explicit launch, activity, analytics sync, and settings |
-| Master Inbox | Layout preview | Future cross-campaign reply queue with client and thread context |
+| Master Inbox | Client context available; reply queue preview | Selects and validates the exact client's AI SDR Profile; live conversations, drafting actions, and sends remain disabled |
 | Mailboxes | Layout preview | Future sending-account health, capacity, and assignment surface |
 | Guest Resources | Available | Workspace-authored resources for all clients or selected clients |
 | Settings | Available to owners/admins | Team access, credentials, branding, agency name, and sidebar order |
-| Prospect Dashboards | Planned workspace migration | Prospect lead-magnet dashboards |
+| Prospect Studio | Available | Workspace-scoped prospect dashboards, shortlist building, publication review, and prospect photos |
 | Podcast Database | Planned workspace migration | Read-only shared-catalog browsing before any tenant write support |
 | Client Podcast System | Planned workspace migration | Recording, scheduled, and going-live operations |
 
@@ -89,7 +89,11 @@ The same campaign surfaces are available in My Workspace and in a platform-owner
 
 ### Master Inbox
 
-The inbox should unify replies without flattening their context. Each conversation should retain:
+Each client now owns a lightweight AI SDR Profile in its Clients command center. It is deliberately separate from the long-form approved guest profile used by Podcast Finder. The structured profile covers the client's offer, ideal opportunities, qualification signals, approved proof, voice, and reply/scheduling rules. Four core fields determine readiness; incomplete profiles can still be saved as drafts.
+
+Master Inbox can select a real workspace client and load that exact structured profile through the authenticated workspace boundary. The response is independently checked against the selected workspace/client, reports whether the client is active and ready for review drafts, and always returns `delivery_authorized: false`. Loading or viewing client context has no external side effect.
+
+The future conversation path must unify replies without flattening their context. Each conversation must retain:
 
 - workspace, client, Instantly campaign, and lead identity;
 - the original outbound message and complete thread;
@@ -121,7 +125,7 @@ The campaign boundary also enforces:
 6. fixed-origin server-side Instantly requests with timeouts, response-size limits, permission-safe provider errors, and sanitized analytics; and
 7. actor-aware audit records for connection, draft, launch, pause, resume, and other material campaign actions.
 
-Client Campaigns currently synchronizes on an explicit operator action; webhook-driven reply ingestion is not part of this release. Master Inbox and Mailboxes remain non-operational previews until their own event-ledger, ownership, and provider-write boundaries are implemented.
+Client Campaigns currently synchronizes on an explicit operator action; webhook-driven reply ingestion is not part of this release. Master Inbox's client profile/readiness boundary is operational, but its conversation list, drafting actions, and delivery controls remain a non-operational preview until the event-ledger, thread ownership, and provider-write boundaries are implemented. Mailboxes remains a non-operational preview.
 
 Legacy Bison/Clay outreach code remains in the repository for operator history. It is global-provider code and must not be wired into workspace routes without the same ownership, event-ledger, and isolation guarantees.
 

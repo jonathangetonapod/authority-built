@@ -40,7 +40,12 @@ const ownerRow: ViewerRow = {
   provisioning_method: 'email_invite',
   password_change_required: false,
 }
-const clients: WorkspaceClient[] = [{
+type AdminWorkspaceClientRow = WorkspaceClient & {
+  ai_sdr_profile: Record<string, string>
+  ai_sdr_profile_updated_at: string | null
+}
+
+const clientRows: AdminWorkspaceClientRow[] = [{
   id: 'c3333333-3333-4333-8333-33333333333c',
   workspace_id: workspaceId,
   name: 'Acme Client',
@@ -50,9 +55,17 @@ const clients: WorkspaceClient[] = [{
   website: null,
   status: 'active',
   notes: null,
+  ai_sdr_profile: {},
+  ai_sdr_profile_updated_at: null,
   created_at: '2026-07-21T00:00:00.000Z',
   updated_at: '2026-07-21T00:00:00.000Z',
 }]
+const clients: WorkspaceClient[] = clientRows.map(({ ai_sdr_profile: _profile, ...client }) => ({
+  ...client,
+  ai_sdr_profile_ready: false,
+  ai_sdr_profile_completed_fields: 0,
+  ai_sdr_profile_total_fields: 6,
+}))
 
 describe('listAdminWorkspaces', () => {
   beforeEach(() => {
@@ -242,7 +255,7 @@ function makeViewerBuilder(data: ViewerRow[]) {
   return { builder, abortSignal }
 }
 
-function makeClientsBuilder(data: WorkspaceClient[]) {
+function makeClientsBuilder(data: AdminWorkspaceClientRow[]) {
   const abortSignal = vi.fn()
   const terminalQuery = Object.assign(
     Promise.resolve({ data, error: null }),
@@ -266,7 +279,7 @@ function makeClientsBuilder(data: WorkspaceClient[]) {
 interface ArrangeOptions {
   workspaceData?: AdminWorkspaceView['workspace'] | null
   viewerData?: ViewerRow | ViewerRow[] | null
-  clientsData?: WorkspaceClient[]
+  clientsData?: AdminWorkspaceClientRow[]
 }
 
 function arrange(options: ArrangeOptions = {}) {
@@ -284,7 +297,7 @@ function arrange(options: ArrangeOptions = {}) {
     viewerRows,
   )
   const { builder: clientsBuilder, abortSignal: clientsAbortSignal } = makeClientsBuilder(
-    options.clientsData === undefined ? clients : options.clientsData,
+    options.clientsData === undefined ? clientRows : options.clientsData,
   )
 
   from.mockImplementation((table: string) => {
@@ -325,7 +338,7 @@ describe('getAdminWorkspaceView', () => {
     expect(viewerBuilder.in).toHaveBeenCalledWith('status', ['active', 'invited'])
     expect(viewerBuilder.order).toHaveBeenCalledWith('id', { ascending: true })
     expect(clientsBuilder.select).toHaveBeenCalledWith(
-      'id,workspace_id,name,email,contact_person,linkedin_url,website,status,notes,created_at,updated_at',
+      'id,workspace_id,name,email,contact_person,linkedin_url,website,status,notes,ai_sdr_profile,ai_sdr_profile_updated_at,created_at,updated_at',
     )
     expect(clientsBuilder.eq).toHaveBeenCalledWith('workspace_id', workspaceId)
     expect(workspaceBuilder.abortSignal).toHaveBeenCalledWith(controller.signal)
@@ -462,7 +475,7 @@ describe('getAdminWorkspaceView', () => {
   })
 
   it('rejects client rows outside the selected workspace', async () => {
-    const mismatchedClients = clients.map((client) => ({
+    const mismatchedClients = clientRows.map((client) => ({
       ...client,
       workspace_id: otherWorkspaceId,
     }))

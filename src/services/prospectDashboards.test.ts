@@ -6,8 +6,10 @@ import {
   createWorkspaceProspect,
   getWorkspaceProspect,
   getWorkspaceProspects,
+  removeWorkspaceProspectPhoto,
   setWorkspaceProspectPublished,
   updateWorkspaceProspectPodcast,
+  uploadWorkspaceProspectPhoto,
 } from '@/services/prospectDashboards'
 
 vi.mock('@/lib/supabase', () => ({
@@ -126,6 +128,30 @@ describe('prospectDashboards service', () => {
           relevance_score: 8.7,
           relevance_reason: 'Strong founder and SaaS audience overlap.',
         }],
+      },
+    })
+  })
+
+  it('uploads and removes a prospect photo through manager-authorized actions', async () => {
+    invoke
+      .mockResolvedValueOnce({ data: { dashboard: { id: dashboardId }, podcasts: [] }, error: null } as never)
+      .mockResolvedValueOnce({ data: { dashboard: { id: dashboardId }, podcasts: [] }, error: null } as never)
+    const photo = new File(['photo'], 'patricia.webp', { type: 'image/webp' })
+
+    await uploadWorkspaceProspectPhoto(workspaceId, dashboardId, photo)
+    await removeWorkspaceProspectPhoto(workspaceId, dashboardId)
+
+    const uploadBody = (invoke.mock.calls[0][1] as { body: FormData }).body
+    expect(uploadBody).toBeInstanceOf(FormData)
+    expect(uploadBody.get('action')).toBe('photo-upload')
+    expect(uploadBody.get('workspace_id')).toBe(workspaceId)
+    expect(uploadBody.get('dashboard_id')).toBe(dashboardId)
+    expect(uploadBody.get('photo')).toBe(photo)
+    expect(invoke).toHaveBeenNthCalledWith(2, 'workspace-prospect-dashboards', {
+      body: {
+        action: 'photo-remove',
+        workspace_id: workspaceId,
+        dashboard_id: dashboardId,
       },
     })
   })

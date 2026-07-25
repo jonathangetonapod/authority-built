@@ -58,7 +58,8 @@ import {
   Phone,
   Calendar,
   DollarSign,
-  FileText
+  FileText,
+  RefreshCw
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -161,6 +162,65 @@ type FeedbackFilter = 'all' | 'approved' | 'rejected' | 'not_reviewed'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const PUBLIC_READ_TIMEOUT_MS = 12_000
+
+class PublicReadError extends Error {
+  constructor(message: string, readonly status?: number) {
+    super(message)
+    this.name = 'PublicReadError'
+  }
+}
+
+async function readPublicEndpoint<T>(endpoint: string, body: Record<string, unknown>): Promise<T> {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), PUBLIC_READ_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+    const responseText = await response.text()
+    let payload: unknown = {}
+
+    if (responseText) {
+      try {
+        payload = JSON.parse(responseText)
+      } catch {
+        throw new PublicReadError('The server returned an unreadable response. Please try again.', response.status)
+      }
+    }
+
+    if (!response.ok) {
+      const message = payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string'
+        ? payload.error
+        : 'This page could not be loaded. Please try again.'
+      throw new PublicReadError(message, response.status)
+    }
+
+    return payload as T
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new PublicReadError('This page took too long to load. Please try again.')
+    }
+    if (error instanceof PublicReadError) throw error
+    throw new PublicReadError('We could not connect to this page. Check your connection and try again.')
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
+function shouldRetryPublicRead(failureCount: number, error: unknown): boolean {
+  if (failureCount >= 1) return false
+  if (!(error instanceof PublicReadError) || error.status === undefined) return true
+  return error.status >= 500 || [408, 425, 429].includes(error.status)
+}
 
 function ProspectViewContent() {
   const { slug } = useParams<{ slug: string }>()
@@ -219,60 +279,61 @@ function ProspectViewContent() {
   const [selectedPricingFeature, setSelectedPricingFeature] = useState<string | null>(null)
 
   // React Query: Fetch dashboard + feedback via edge function (cached for 5 minutes)
-  const { data: dashboardResponse, isLoading: dashboardLoading, error: dashboardError } = useQuery({
+  const {
+    data: dashboardResponse,
+    isLoading: dashboardLoading,
+    error: dashboardError,
+    refetch: refetchDashboard,
+  } = useQuery({
     queryKey: ['prospect-dashboard', slug],
     queryFn: async () => {
       if (!slug) throw new Error('Invalid dashboard link')
 
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/get-prospect-dashboard`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({ slug }),
-      })
+      const result = await readPublicEndpoint<{
+        success: boolean
+        error?: string
+        dashboard: ProspectDashboard
+        feedback: PodcastFeedback[]
+        workspace: ProspectWorkspaceBrand
+      }>('get-prospect-dashboard', { slug })
 
-      const result = await response.json()
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Dashboard not found')
+      if (!result.success) {
+        throw new PublicReadError(result.error || 'Dashboard not found', 400)
       }
 
       return result as { success: true; dashboard: ProspectDashboard; feedback: PodcastFeedback[]; workspace: ProspectWorkspaceBrand }
     },
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
     enabled: !!slug,
+    retry: shouldRetryPublicRead,
+    retryDelay: 600,
   })
 
   const dashboard = dashboardResponse?.dashboard ?? null
   const workspaceBrand = dashboardResponse?.workspace ?? null
 
-  // React Query: Fetch podcasts (enabled when dashboard is ready)
-  const { data: podcasts = [], isLoading: podcastsLoading, error: podcastsError } = useQuery({
+  // Fetch the shortlist in parallel with the dashboard so a slow request cannot block both.
+  const {
+    data: podcasts = [],
+    isLoading: podcastsLoading,
+    error: podcastsError,
+    refetch: refetchPodcasts,
+  } = useQuery({
     queryKey: ['prospect-podcasts', slug],
     queryFn: async () => {
-      if (!dashboard || !slug) return []
+      if (!slug) return []
 
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/get-prospect-podcasts`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({
-          dashboardSlug: slug,
-          cacheOnly: true,
-        }),
+      const data = await readPublicEndpoint<{
+        podcasts?: OutreachPodcast[]
+        cachePerformance?: {
+          cacheHitRate: number
+          apiCallsSaved: number
+          costSavings: number
+        }
+      }>('get-prospect-podcasts', {
+        dashboardSlug: slug,
+        cacheOnly: true,
       })
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({})) as { error?: string }
-        throw new Error(payload.error || 'Podcasts could not be loaded')
-      }
-      const data = await response.json()
 
       // Log cache performance
       if (data.cachePerformance) {
@@ -288,10 +349,15 @@ function ProspectViewContent() {
         console.log(`[Dashboard] Loaded ${data.podcasts?.length || 0} podcasts from cache`)
       }
 
+      if (data.podcasts !== undefined && !Array.isArray(data.podcasts)) {
+        throw new PublicReadError('The podcast shortlist could not be read. Please try again.')
+      }
       return data.podcasts || []
     },
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
-    enabled: !!dashboard && !!slug,
+    enabled: !!slug,
+    retry: shouldRetryPublicRead,
+    retryDelay: 600,
   })
 
   // Feedback data comes from the dashboard edge function response
@@ -308,7 +374,11 @@ function ProspectViewContent() {
   // Derived state
   const loading = dashboardLoading
   const loadingPodcasts = podcastsLoading
-  const error = dashboardError?.message || podcastsError?.message || null
+  const error = dashboardError instanceof Error
+    ? dashboardError.message
+    : dashboardError
+      ? 'This dashboard could not be loaded.'
+      : null
 
   // Helper function to extract Loom video ID from URL
   const getLoomEmbedUrl = (url: string): string | null => {
@@ -580,6 +650,15 @@ function ProspectViewContent() {
                 <h2 className="font-display text-2xl font-semibold tracking-[-0.04em] text-[#0d1b2a]">Dashboard not available</h2>
                 <p className="text-[#5d7188]">{error || 'This dashboard could not be found.'}</p>
               </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-full"
+                onClick={() => void refetchDashboard()}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Try again
+              </Button>
             </CardContent>
           </Card>
         </section>
@@ -768,6 +847,8 @@ function ProspectViewContent() {
               <p className="mt-5 max-w-2xl text-lg leading-8 text-[#4c5d73]">
                 {loadingPodcasts
                   ? 'Loading your personalized podcast matches.'
+                  : podcastsError
+                    ? 'Your profile is ready, but the shortlist needs a quick refresh.'
                   : personalizedTagline || `${sortedPodcasts.length} podcasts matched to your expertise and audience fit.`}
               </p>
 
@@ -809,7 +890,7 @@ function ProspectViewContent() {
                 <div className="rounded-[22px] border border-[#0d1b2a]/8 bg-[#f8fbff] px-4 py-4">
                   <p className="section-kicker">Shows matched</p>
                   <p className="mt-2 font-display text-3xl font-semibold tracking-[-0.05em] text-[#0d1b2a]">
-                    {uniquePodcasts.length}
+                    {podcastsError ? '—' : uniquePodcasts.length}
                   </p>
                 </div>
                 <div className="rounded-[22px] border border-[#0d1b2a]/8 bg-[#f8fbff] px-4 py-4">
@@ -1053,7 +1134,7 @@ function ProspectViewContent() {
                   : "bg-white dark:bg-slate-900 text-muted-foreground border-slate-200 dark:border-slate-700 hover:border-primary/50"
               )}
             >
-              All ({loadingPodcasts ? '-' : uniquePodcasts.length})
+              All ({loadingPodcasts || podcastsError ? '-' : uniquePodcasts.length})
             </button>
             <button
               onClick={() => setFeedbackFilter('approved')}
@@ -1065,7 +1146,7 @@ function ProspectViewContent() {
               )}
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
-              Approved ({loadingPodcasts ? '-' : feedbackStats.approved})
+              Approved ({loadingPodcasts || podcastsError ? '-' : feedbackStats.approved})
             </button>
             <button
               onClick={() => setFeedbackFilter('rejected')}
@@ -1077,7 +1158,7 @@ function ProspectViewContent() {
               )}
             >
               <X className="h-3.5 w-3.5" />
-              Rejected ({loadingPodcasts ? '-' : feedbackStats.rejected})
+              Rejected ({loadingPodcasts || podcastsError ? '-' : feedbackStats.rejected})
             </button>
             <button
               onClick={() => setFeedbackFilter('not_reviewed')}
@@ -1088,7 +1169,7 @@ function ProspectViewContent() {
                   : "bg-white dark:bg-slate-900 text-muted-foreground border-slate-200 dark:border-slate-700 hover:border-slate-500"
               )}
             >
-              To Review ({loadingPodcasts ? '-' : feedbackStats.notReviewed})
+              To Review ({loadingPodcasts || podcastsError ? '-' : feedbackStats.notReviewed})
             </button>
           </div>
         </div>
@@ -1201,14 +1282,33 @@ function ProspectViewContent() {
         </div>
 
         {/* Results count when filtering */}
-        {!loadingPodcasts && (searchQuery || selectedCategories.length > 0 || episodeFilter !== 'any' || audienceFilter !== 'any') && (
+        {!loadingPodcasts && !podcastsError && (searchQuery || selectedCategories.length > 0 || episodeFilter !== 'any' || audienceFilter !== 'any') && (
           <p className="text-xs sm:text-sm text-muted-foreground mb-3 sm:mb-4">
             Showing {sortedPodcasts.length} of {uniquePodcasts.length} podcasts
             {selectedCategories.length > 0 && ` in ${selectedCategories.length} ${selectedCategories.length === 1 ? 'category' : 'categories'}`}
           </p>
         )}
 
-        {loadingPodcasts ? (
+        {podcastsError ? (
+          <Card className="border border-[#0d1b2a]/8 bg-white shadow-md">
+            <CardContent className="p-8 text-center sm:p-12">
+              <RefreshCw className="mx-auto mb-4 h-10 w-10 text-[#5d7188]" />
+              <h3 className="mb-2 text-base font-semibold sm:text-lg">The shortlist needs a quick refresh</h3>
+              <p className="mx-auto max-w-lg text-sm text-muted-foreground">
+                Your dashboard is still available. We just could not load the podcast matches on this attempt.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-5 rounded-full"
+                onClick={() => void refetchPodcasts()}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Retry shortlist
+              </Button>
+            </CardContent>
+          </Card>
+        ) : loadingPodcasts ? (
           /* Podcast grid skeleton while loading */
           <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {[1, 2, 3, 4, 5, 6].map(i => (

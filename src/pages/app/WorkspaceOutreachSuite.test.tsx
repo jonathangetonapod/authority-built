@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuth } from '@/contexts/AuthContext'
 import WorkspaceOutreachSuite, { type OutreachWorkspaceModule } from '@/pages/app/WorkspaceOutreachSuite'
 import { getAdminWorkspaceView } from '@/services/adminWorkspaces'
-import { getWorkspaceClients } from '@/services/clients'
+import { getWorkspaceClients, getWorkspaceClientSdrContext } from '@/services/clients'
 import { getWorkspaceCampaignOverview, getWorkspaceMailboxes } from '@/services/workspaceCampaigns'
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
@@ -13,6 +13,7 @@ vi.mock('@/services/adminWorkspaces', () => ({ getAdminWorkspaceView: vi.fn() })
 vi.mock('@/services/clients', () => ({
   getWorkspaceClients: vi.fn(),
   getWorkspaceClientDetail: vi.fn(),
+  getWorkspaceClientSdrContext: vi.fn(),
 }))
 vi.mock('@/services/clientShortlist', () => ({ getClientShortlist: vi.fn() }))
 vi.mock('@/services/workspaceCampaigns', () => ({
@@ -41,6 +42,7 @@ vi.mock('@/components/workspace/WorkspaceLayout', () => ({
 const mockedUseAuth = vi.mocked(useAuth)
 const mockedView = vi.mocked(getAdminWorkspaceView)
 const mockedClients = vi.mocked(getWorkspaceClients)
+const mockedSdrContext = vi.mocked(getWorkspaceClientSdrContext)
 const mockedCampaignOverview = vi.mocked(getWorkspaceCampaignOverview)
 const mockedMailboxes = vi.mocked(getWorkspaceMailboxes)
 const defaultWorkspaceId = '00000000-0000-4000-8000-000000000000'
@@ -51,7 +53,7 @@ const Location = () => {
   return <output data-testid="location">{location.pathname}</output>
 }
 
-function renderPage(module: OutreachWorkspaceModule, platformWorkspaceId?: string) {
+function renderPage(module: OutreachWorkspaceModule, platformWorkspaceId?: string, search = '') {
   const baseHref = platformWorkspaceId
     ? `/app/workspaces/${platformWorkspaceId.toLowerCase()}`
     : '/app'
@@ -59,7 +61,7 @@ function renderPage(module: OutreachWorkspaceModule, platformWorkspaceId?: strin
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter
-        initialEntries={[`${baseHref}/${module}`]}
+        initialEntries={[`${baseHref}/${module}${search}`]}
         future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <WorkspaceOutreachSuite module={module} platformWorkspaceId={platformWorkspaceId} />
@@ -227,7 +229,7 @@ describe('WorkspaceOutreachSuite', () => {
     expect(screen.queryByText('Not connected')).not.toBeInTheDocument()
   })
 
-  it('visualizes deterministic client AI SDR routing without fake replies', () => {
+  it('visualizes deterministic client AI SDR routing without fake replies', async () => {
     renderPage('master-inbox')
 
     const scope = screen.getByRole('radiogroup', { name: 'Inbox scope' })
@@ -241,7 +243,7 @@ describe('WorkspaceOutreachSuite', () => {
     expect(screen.getByRole('heading', { name: 'Conversations' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Conversation thread' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Conversation context' })).not.toBeInTheDocument()
-    expect(screen.getByText('Client AI SDRs activate after connection')).toBeInTheDocument()
+    expect(await screen.findByText('Add a client to create an AI SDR profile')).toBeInTheDocument()
     const routing = screen.getByRole('list', { name: 'AI SDR reply routing' })
     expect(within(routing).getByText('Reply received')).toBeInTheDocument()
     expect(within(routing).getByText('Client resolved')).toBeInTheDocument()
@@ -255,6 +257,65 @@ describe('WorkspaceOutreachSuite', () => {
     expect(screen.getByLabelText('Conversation filters')).not.toHaveTextContent('Needs reply')
     expect(screen.getByLabelText('Conversation filters')).toHaveTextContent('Booked')
     expect(screen.getByLabelText('Conversation filters')).toHaveTextContent('Ended')
+  })
+
+  it('loads the selected client AI SDR context inside Master Inbox without send authority', async () => {
+    const clientId = '22222222-2222-4222-8222-222222222222'
+    mockedClients.mockResolvedValueOnce([{
+      id: clientId,
+      workspace_id: defaultWorkspaceId,
+      name: 'Dallas Fontaine',
+      email: 'dallas@scalelabs.dev',
+      contact_person: 'Dallas Fontaine',
+      linkedin_url: null,
+      website: 'https://scalelabs.dev',
+      status: 'active',
+      notes: null,
+      ai_sdr_profile_ready: true,
+      ai_sdr_profile_completed_fields: 4,
+      ai_sdr_profile_total_fields: 6,
+      ai_sdr_profile_updated_at: '2026-07-25T00:00:00.000Z',
+      created_at: '2026-07-01T00:00:00.000Z',
+      updated_at: '2026-07-25T00:00:00.000Z',
+    }])
+    mockedSdrContext.mockResolvedValueOnce({
+      client_id: clientId,
+      workspace_id: defaultWorkspaceId,
+      client_name: 'Dallas Fontaine',
+      client_status: 'active',
+      approved_guest_profile: 'Dallas is a B2B sales and AI implementation leader.',
+      calendar_link: null,
+      ai_sdr_profile: {
+        positioning: 'Position Dallas as a practical AI implementation leader.',
+        ideal_opportunities: 'B2B SaaS, founder, and AI operations podcasts.',
+        qualification_signals: '',
+        proof_points: '',
+        voice_and_tone: 'Warm, concise, and direct.',
+        reply_rules: 'Route pricing and unclear scheduling to a human.',
+      },
+      ai_sdr_profile_updated_at: '2026-07-25T00:00:00.000Z',
+      readiness: {
+        ready: true,
+        completed_fields: 4,
+        total_fields: 6,
+        missing_fields: ['qualification_signals', 'proof_points'],
+        missing_core_fields: [],
+      },
+      safe_to_draft: true,
+      delivery_authorized: false,
+    })
+
+    renderPage('master-inbox', undefined, `?client=${clientId}`)
+
+    expect(await screen.findByRole('heading', { name: 'Dallas Fontaine AI SDR context' })).toBeInTheDocument()
+    expect(screen.getByText('Ready for review drafts')).toBeInTheDocument()
+    expect(screen.getByText('Position Dallas as a practical AI implementation leader.')).toBeInTheDocument()
+    expect(screen.getByText('Delivery authority is off.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Edit AI SDR Profile' })).toHaveAttribute(
+      'href',
+      `/app/clients/${clientId}?tab=ai-sdr`,
+    )
+    expect(mockedSdrContext).toHaveBeenCalledWith(defaultWorkspaceId, clientId)
   })
 
   it('loads a selected workspace and scopes every suite route to it', async () => {

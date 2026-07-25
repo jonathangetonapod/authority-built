@@ -13,6 +13,7 @@ import {
   EyeOff,
   FileText,
   Globe2,
+  ImagePlus,
   Loader2,
   Mail,
   Mic2,
@@ -23,6 +24,7 @@ import {
   Sparkles,
   Star,
   Target,
+  Trash2,
   UserRound,
   Users,
 } from 'lucide-react'
@@ -51,9 +53,11 @@ import {
   createWorkspaceProspect,
   getWorkspaceProspect,
   getWorkspaceProspects,
+  removeWorkspaceProspectPhoto,
   setWorkspaceProspectPublished,
   updateWorkspaceProspect,
   updateWorkspaceProspectPodcast,
+  uploadWorkspaceProspectPhoto,
   type ProspectCtaType,
   type ProspectLifecycleStatus,
   type ProspectReadiness,
@@ -64,10 +68,14 @@ import {
 } from '@/services/prospectDashboards'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const PROSPECT_PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const MAX_PROSPECT_PHOTO_BYTES = 5 * 1024 * 1024
 
 interface WorkspaceProspectDashboardsProps {
   platformWorkspaceId?: string
 }
+
+type ProspectListFilter = 'all' | 'needs_action' | 'ready' | 'live' | 'viewed'
 
 interface ProspectProfileForm {
   name: string
@@ -200,6 +208,17 @@ function readinessPercent(readiness: ProspectReadiness): number {
   ].filter(Boolean).length / 4) * 100)
 }
 
+function prospectMatchesFilter(prospect: WorkspaceProspect, filter: ProspectListFilter): boolean {
+  if (filter === 'needs_action') {
+    return !prospect.published_at
+      && (prospect.lifecycle_status === 'failed' || !prospect.readiness.publishable)
+  }
+  if (filter === 'ready') return !prospect.published_at && prospect.readiness.publishable
+  if (filter === 'live') return Boolean(prospect.published_at)
+  if (filter === 'viewed') return (prospect.view_count || 0) > 0
+  return true
+}
+
 function publicProspectUrl(slug: string): string {
   return `${window.location.origin}/prospect/${encodeURIComponent(slug)}`
 }
@@ -220,17 +239,23 @@ function ProspectProfileDialog({
   editing,
   form,
   saving,
+  photoBusy,
   onOpenChange,
   onChange,
   onSubmit,
+  onUploadPhoto,
+  onRemovePhoto,
 }: {
   open: boolean
   editing: boolean
   form: ProspectProfileForm
   saving: boolean
+  photoBusy: boolean
   onOpenChange: (open: boolean) => void
   onChange: (form: ProspectProfileForm) => void
   onSubmit: () => void
+  onUploadPhoto: (photo: File) => void
+  onRemovePhoto: () => void
 }) {
   const linkedCta = form.ctaType === 'book_call' || form.ctaType === 'learn_more'
   return (
@@ -254,6 +279,55 @@ function ProspectProfileDialog({
                   <div className="space-y-2 sm:col-span-2">
                     <Label htmlFor="prospect-name">Name</Label>
                     <Input id="prospect-name" required autoFocus value={form.name} onChange={(event) => onChange({ ...form, name: event.target.value })} placeholder="Dallas Fontaine" />
+                  </div>
+                  <div className="space-y-3 rounded-xl border bg-muted/20 p-4 sm:col-span-2">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                      <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border bg-background">
+                        {form.imageUrl
+                          ? <img src={form.imageUrl} alt={form.name ? `${form.name} preview` : 'Prospect preview'} className="h-full w-full object-cover" />
+                          : <UserRound className="h-8 w-8 text-muted-foreground" />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <Label>Prospect photo</Label>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">Upload a square JPEG, PNG, or WebP image up to 5 MB.</p>
+                        {editing ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <input
+                              id="prospect-photo-upload"
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              className="sr-only"
+                              disabled={photoBusy}
+                              onChange={(event) => {
+                                const photo = event.currentTarget.files?.[0]
+                                event.currentTarget.value = ''
+                                if (!photo) return
+                                if (!PROSPECT_PHOTO_TYPES.has(photo.type.toLowerCase())) {
+                                  toast.error('Use a JPEG, PNG, or WebP image.')
+                                  return
+                                }
+                                if (photo.size > MAX_PROSPECT_PHOTO_BYTES) {
+                                  toast.error('Prospect photos must be 5 MB or smaller.')
+                                  return
+                                }
+                                onUploadPhoto(photo)
+                              }}
+                            />
+                            <Button type="button" variant="outline" size="sm" disabled={photoBusy} onClick={() => document.getElementById('prospect-photo-upload')?.click()}>
+                              {photoBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
+                              {form.imageUrl ? 'Replace photo' : 'Upload photo'}
+                            </Button>
+                            {form.imageUrl && <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" disabled={photoBusy} onClick={onRemovePhoto}><Trash2 className="mr-2 h-4 w-4" />Remove</Button>}
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-xs text-muted-foreground">Create the draft first, then reopen it to upload a photo.</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="prospect-image">Or use an image URL</Label>
+                      <Input id="prospect-image" type="url" value={form.imageUrl} onChange={(event) => onChange({ ...form, imageUrl: event.target.value })} placeholder="https://..." disabled={photoBusy} />
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="prospect-email">Email</Label>
@@ -323,10 +397,6 @@ function ProspectProfileDialog({
                   <div className="space-y-2">
                     <Label htmlFor="prospect-website">Website</Label>
                     <Input id="prospect-website" type="url" value={form.website} onChange={(event) => onChange({ ...form, website: event.target.value })} placeholder="https://company.com" />
-                  </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="prospect-image">Profile image URL</Label>
-                    <Input id="prospect-image" type="url" value={form.imageUrl} onChange={(event) => onChange({ ...form, imageUrl: event.target.value })} placeholder="https://..." />
                   </div>
                   <div className="space-y-2">
                     <Label>Call to action</Label>
@@ -492,6 +562,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
       : 'featured'
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [prospectFilter, setProspectFilter] = useState<ProspectListFilter>('all')
   const [profileDialogOpen, setProfileDialogOpen] = useState(false)
   const [editingProfile, setEditingProfile] = useState(false)
   const [profileForm, setProfileForm] = useState<ProspectProfileForm>(emptyProfileForm)
@@ -581,6 +652,28 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
     onError: (error) => toast.error(error instanceof Error ? error.message : 'The prospect profile could not be saved.'),
   })
 
+  const photoMutation = useMutation({
+    mutationFn: ({ photo }: { photo?: File }) => {
+      if (!canManage || !selected) throw new Error('Choose a prospect you can manage first.')
+      return photo
+        ? uploadWorkspaceProspectPhoto(workspaceId, selected.id, photo)
+        : removeWorkspaceProspectPhoto(workspaceId, selected.id)
+    },
+    onSuccess: async (nextDetail, { photo }) => {
+      const wasPublished = Boolean(selected?.published_at)
+      queryClient.setQueryData(detailQueryKey, nextDetail)
+      setProfileForm((current) => ({
+        ...current,
+        imageUrl: nextDetail.dashboard.prospect_image_url || '',
+      }))
+      await queryClient.invalidateQueries({ queryKey: listQueryKey })
+      toast.success(wasPublished
+        ? `Photo ${photo ? 'updated' : 'removed'}. The dashboard moved to Review before the public image changed.`
+        : `Prospect photo ${photo ? 'updated' : 'removed'}.`)
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'The prospect photo could not be changed.'),
+  })
+
   const buildMutation = useMutation({
     mutationFn: () => {
       if (!selected) throw new Error('Choose a prospect first.')
@@ -634,14 +727,24 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
 
   const filteredProspects = useMemo(() => {
     const query = search.trim().toLowerCase()
-    if (!query) return orderedProspects
-    return orderedProspects.filter((prospect) => [
-      prospect.prospect_name,
-      prospect.prospect_email,
-      prospect.prospect_company,
-      prospect.prospect_title,
-    ].some((value) => value?.toLowerCase().includes(query)))
-  }, [orderedProspects, search])
+    return orderedProspects.filter((prospect) => {
+      if (!prospectMatchesFilter(prospect, prospectFilter)) return false
+      if (!query) return true
+      return [
+        prospect.prospect_name,
+        prospect.prospect_email,
+        prospect.prospect_company,
+        prospect.prospect_title,
+      ].some((value) => value?.toLowerCase().includes(query))
+    })
+  }, [orderedProspects, prospectFilter, search])
+  const prospectFilterOptions: Array<{ value: ProspectListFilter; label: string; count: number }> = [
+    { value: 'all', label: 'All', count: prospects.length },
+    { value: 'needs_action', label: 'Needs action', count: prospects.filter((prospect) => prospectMatchesFilter(prospect, 'needs_action')).length },
+    { value: 'ready', label: 'Ready', count: prospects.filter((prospect) => prospectMatchesFilter(prospect, 'ready')).length },
+    { value: 'live', label: 'Live', count: prospects.filter((prospect) => prospectMatchesFilter(prospect, 'live')).length },
+    { value: 'viewed', label: 'Viewed', count: prospects.filter((prospect) => prospectMatchesFilter(prospect, 'viewed')).length },
+  ]
 
   const workspaceSummary = listQuery.data?.workspace
   const platformWorkspace = isPlatformWorkspace
@@ -693,7 +796,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
   const reviewCount = prospects.filter((prospect) => ['review', 'failed'].includes(prospect.lifecycle_status)).length
   const totalViews = prospects.reduce((total, prospect) => total + (prospect.view_count || 0), 0)
   const building = buildMutation.isPending || ['matching', 'analyzing'].includes(selected?.lifecycle_status || '')
-  const mutating = building || publicationMutation.isPending || podcastMutation.isPending || archiveMutation.isPending
+  const mutating = building || publicationMutation.isPending || podcastMutation.isPending || photoMutation.isPending || archiveMutation.isPending
   const nextActionKind = !selected?.readiness.profile_ready
     ? 'profile'
     : selected.readiness.visible_count < 5
@@ -785,10 +888,28 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
               <Card className="flex max-h-[420px] min-h-0 flex-col overflow-hidden xl:max-h-none">
                 <CardHeader className="p-4 pb-3">
                   <CardTitle className="text-base">Prospects</CardTitle>
-                  <CardDescription>Choose a prospect to build or review.</CardDescription>
+                  <CardDescription>Find the prospects that need your attention.</CardDescription>
                   <div className="relative pt-2">
                     <Search className="absolute left-3 top-1/2 mt-1 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search prospects" className="pl-9" />
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pt-1" aria-label="Filter prospects">
+                    {prospectFilterOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        aria-pressed={prospectFilter === option.value}
+                        onClick={() => setProspectFilter(option.value)}
+                        className={cn(
+                          'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+                          prospectFilter === option.value
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground',
+                        )}
+                      >
+                        {option.label} <span className="ml-1 opacity-75">{option.count}</span>
+                      </button>
+                    ))}
                   </div>
                 </CardHeader>
                 <CardContent className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
@@ -799,7 +920,9 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                       {canManage && <Button onClick={openCreate}><Plus className="mr-2 h-4 w-4" />New prospect</Button>}
                     </div>
                   ) : filteredProspects.length === 0 ? (
-                    <div className="py-12 text-center text-sm text-muted-foreground">No prospects match “{search}”.</div>
+                    <div className="py-12 text-center text-sm text-muted-foreground">
+                      {search ? `No prospects match “${search}”.` : 'No prospects in this view.'}
+                    </div>
                   ) : (
                     <div className="space-y-2">
                       {filteredProspects.map((prospect) => <ProspectListCard key={prospect.id} prospect={prospect} selected={prospect.id === selectedId} onSelect={() => { setSelectedId(prospect.id); setShortlistView('featured'); setSearchParams({ prospect: prospect.id, view: 'featured' }, { replace: true }) }} />)}
@@ -881,10 +1004,9 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
 
                           {canManage && selected.readiness.profile_ready && (
                             <div className="mt-4 border-t pt-3">
-                              <p className="mb-2 text-xs font-medium text-muted-foreground">Shortlist tools</p>
+                              <p className="mb-2 text-xs font-medium text-muted-foreground">More actions</p>
                               <div className="flex flex-wrap gap-2">
                                 <Button asChild variant="ghost" size="sm"><Link to={finderHref}><Search className="mr-2 h-4 w-4" />Find podcasts</Link></Button>
-                                {selected.readiness.visible_count > 0 && !['build', 'analyze'].includes(nextActionKind) && <Button variant="ghost" size="sm" disabled={mutating} onClick={() => buildMutation.mutate()}>{building ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}Rebuild shortlist</Button>}
                                 {selected.published_at && <Button variant="ghost" size="sm" disabled={mutating} onClick={() => publicationMutation.mutate(false)}><EyeOff className="mr-2 h-4 w-4" />Unpublish</Button>}
                               </div>
                             </div>
@@ -976,7 +1098,20 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
         )}
       </div>
 
-      <ProspectProfileDialog open={profileDialogOpen} editing={editingProfile} form={profileForm} saving={saveMutation.isPending} onOpenChange={setProfileDialogOpen} onChange={setProfileForm} onSubmit={() => saveMutation.mutate()} />
+      <ProspectProfileDialog
+        open={profileDialogOpen}
+        editing={editingProfile}
+        form={profileForm}
+        saving={saveMutation.isPending || photoMutation.isPending}
+        photoBusy={photoMutation.isPending}
+        onOpenChange={(open) => {
+          if (!photoMutation.isPending) setProfileDialogOpen(open)
+        }}
+        onChange={setProfileForm}
+        onSubmit={() => saveMutation.mutate()}
+        onUploadPhoto={(photo) => photoMutation.mutate({ photo })}
+        onRemovePhoto={() => photoMutation.mutate({})}
+      />
 
       <Dialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
         <DialogContent>

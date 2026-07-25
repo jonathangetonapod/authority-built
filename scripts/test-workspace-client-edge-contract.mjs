@@ -40,15 +40,22 @@ const clientProfileEditingMigration = readFileSync(
   'supabase/migrations/20260724000400_workspace_client_profile_editing.sql',
   'utf8',
 )
+const clientAiSdrProfileMigration = readFileSync(
+  'supabase/migrations/20260725000200_client_ai_sdr_profiles.sql',
+  'utf8',
+)
 
 assert.match(edge, /if \(req\.method === 'OPTIONS'\) return optionsResponse\(req, METHODS\)/u)
 assert.match(edge, /return errorResponse\(req, METHODS, error\)/u)
 assert.match(edge, /const authContext = await requireAuthenticatedUser\(req\)/u)
 assert.match(edge, /if \(!workspaceCredentialIsFresh\(authContext\)\)/u)
 assert.match(edge, /const workspaceId = requireUuid\(body\.workspace_id, 'workspace_id'\)/u)
-assert.match(edge, /if \(action === 'research-get' \|\| action === 'detail-get'\)[\s\S]*?clientId = requireUuid\(body\.client_id, 'client_id'\)/u)
+assert.match(edge, /if \(action === 'research-get' \|\| action === 'detail-get' \|\| action === 'sdr-context-get'\)[\s\S]*?clientId = requireUuid\(body\.client_id, 'client_id'\)/u)
 assert.match(edge, /action === 'profile-update'[\s\S]*?requireOnlyKeys\(body, \['action', 'workspace_id', 'client_id', 'bio', 'expected_updated_at'\]\)[\s\S]*?optionalString\(body\.bio, 'bio', 20_000\)/u)
+assert.match(edge, /action === 'sdr-profile-update'[\s\S]*?requireOnlyKeys\(body, \['action', 'workspace_id', 'client_id', 'ai_sdr_profile', 'expected_profile_updated_at'\]\)[\s\S]*?aiSdrProfile\(body\.ai_sdr_profile\)/u)
 assert.match(edge, /if \(action === 'profile-update'\)[\s\S]*?await requireWorkspaceFeatureAccess\(authContext, workspaceId\)[\s\S]*?\['owner', 'admin', 'platform_admin'\]\.includes\(access\.role\)[\s\S]*?admin\.rpc\('update_workspace_client_profile_v1'/u)
+assert.match(edge, /if \(action === 'sdr-profile-update'\)[\s\S]*?await requireWorkspaceFeatureAccess\(authContext, workspaceId\)[\s\S]*?\['owner', 'admin', 'platform_admin'\]\.includes\(access\.role\)[\s\S]*?admin\.rpc\('update_workspace_client_ai_sdr_profile_v1'/u)
+assert.match(edge, /if \(action === 'sdr-context-get'\)[\s\S]*?await requireWorkspaceFeatureAccess\(authContext, workspaceId\)[\s\S]*?\.eq\('id', clientId!\)[\s\S]*?\.eq\('workspace_id', workspaceId\)[\s\S]*?safe_to_draft: client\.status === 'active' && readiness\.ready,[\s\S]*?delivery_authorized: false/u)
 assert.match(edge, /if \(action === 'detail-get'\)[\s\S]*?await requireWorkspaceFeatureAccess\(authContext, workspaceId\)/u)
 assert.match(edge, /\.from\('clients'\)[\s\S]*?\.eq\('id', clientId!\)[\s\S]*?\.eq\('workspace_id', workspaceId\)/u)
 assert.match(edge, /\.from\('bookings'\)[\s\S]*?\.eq\('client_id', clientId!\)[\s\S]*?\.limit\(500\)/u)
@@ -138,6 +145,13 @@ assert.match(clientProfileEditingMigration, /workspace_staff_actor_role_v1\([\s\
 assert.match(clientProfileEditingMigration, /client\.id = p_client_id[\s\S]*?client\.workspace_id = p_workspace_id[\s\S]*?current_updated_at IS DISTINCT FROM p_expected_updated_at/u)
 assert.match(clientProfileEditingMigration, /'workspace\.client\.profile_updated'[\s\S]*?'previous_character_count'[\s\S]*?'character_count'[\s\S]*?'cleared'/u)
 assert.match(clientProfileEditingMigration, /REVOKE ALL ON FUNCTION public\.update_workspace_client_profile_v1\([\s\S]*?FROM PUBLIC, anon, authenticated, service_role;[\s\S]*?GRANT EXECUTE[\s\S]*?TO service_role;/u)
+assert.match(clientAiSdrProfileMigration, /ADD COLUMN IF NOT EXISTS ai_sdr_profile JSONB NOT NULL DEFAULT '\{\}'::JSONB/u)
+assert.match(clientAiSdrProfileMigration, /CREATE OR REPLACE FUNCTION public\.update_workspace_client_ai_sdr_profile_v1\([\s\S]*?p_expected_profile_updated_at TIMESTAMPTZ[\s\S]*?SECURITY DEFINER[\s\S]*?SET search_path = ''/u)
+assert.match(clientAiSdrProfileMigration, /p_profile - ARRAY\[[\s\S]*?'positioning'[\s\S]*?'reply_rules'[\s\S]*?\]::TEXT\[\] <> '\{\}'::JSONB/u)
+assert.doesNotMatch(clientAiSdrProfileMigration, /char_length\(p_profile::TEXT\)/u, 'valid per-field maxima must not be rejected because of JSON key overhead')
+assert.match(clientAiSdrProfileMigration, /current_profile_updated_at IS DISTINCT FROM p_expected_profile_updated_at[\s\S]*?client\.ai_sdr_profile_updated_at IS NOT DISTINCT FROM p_expected_profile_updated_at/u)
+assert.match(clientAiSdrProfileMigration, /'workspace\.client\.ai_sdr_profile_updated'[\s\S]*?'completed_fields'[\s\S]*?'ready'[\s\S]*?'cleared'/u)
+assert.match(clientAiSdrProfileMigration, /REVOKE ALL ON FUNCTION public\.update_workspace_client_ai_sdr_profile_v1\([\s\S]*?FROM PUBLIC, anon, authenticated, service_role;[\s\S]*?GRANT EXECUTE[\s\S]*?TO service_role;/u)
 assert.doesNotMatch(shortlistEdge, /'hidden'/u)
 assert.doesNotMatch(publicDashboardEdge, /dashboard_enabled/u)
 assert.doesNotMatch(clientPodcastsEdge, /dashboard_enabled/u)

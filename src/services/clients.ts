@@ -1,5 +1,13 @@
 import { supabase } from '@/lib/supabase'
 import { toFunctionError } from '@/lib/functionErrors'
+import {
+  clientSdrProfileReadiness,
+  isClientSdrProfile,
+  normalizeClientSdrProfile,
+  type ClientSdrProfile,
+  type ClientSdrProfileField,
+  type ClientSdrProfileReadiness,
+} from '@/lib/clientSdrProfile'
 
 export interface Client {
   id: string
@@ -20,6 +28,8 @@ export interface Client {
   status: 'active' | 'paused' | 'churned'
   notes: string | null
   bio: string | null
+  ai_sdr_profile?: Partial<ClientSdrProfile> | null
+  ai_sdr_profile_updated_at?: string | null
   photo_url: string | null
   google_sheet_url: string | null
   media_kit_url: string | null
@@ -49,6 +59,10 @@ export interface WorkspaceClient {
   website: string | null
   status: 'active' | 'paused' | 'churned'
   notes: string | null
+  ai_sdr_profile_ready?: boolean
+  ai_sdr_profile_completed_fields?: number
+  ai_sdr_profile_total_fields?: number
+  ai_sdr_profile_updated_at?: string | null
   created_at: string
   updated_at: string
 }
@@ -64,6 +78,9 @@ export interface WorkspaceClientProfile extends WorkspaceClient {
   portal_access_enabled: boolean
   portal_last_login_at: string | null
   password_set_at: string | null
+  ai_sdr_profile: Partial<ClientSdrProfile>
+  ai_sdr_profile_updated_at: string | null
+  ai_sdr_readiness: ClientSdrProfileReadiness
 }
 
 export interface WorkspaceClientProfileUpdate {
@@ -71,6 +88,28 @@ export interface WorkspaceClientProfileUpdate {
   workspace_id: string
   bio: string | null
   updated_at: string
+}
+
+export interface WorkspaceClientSdrProfileUpdate {
+  id: string
+  workspace_id: string
+  ai_sdr_profile: ClientSdrProfile
+  ai_sdr_profile_updated_at: string
+  ai_sdr_readiness: ClientSdrProfileReadiness
+}
+
+export interface WorkspaceClientSdrContext {
+  client_id: string
+  workspace_id: string
+  client_name: string
+  client_status: 'active' | 'paused' | 'churned'
+  approved_guest_profile: string | null
+  calendar_link: string | null
+  ai_sdr_profile: ClientSdrProfile
+  ai_sdr_profile_updated_at: string | null
+  readiness: ClientSdrProfileReadiness
+  safe_to_draft: boolean
+  delivery_authorized: false
 }
 
 export interface WorkspaceClientDashboardSummary {
@@ -210,13 +249,54 @@ function isWorkspaceClientOutreachSummary(value: unknown): value is WorkspaceCli
     && (summary.last_sent_at === null || typeof summary.last_sent_at === 'string')
 }
 
+function parseClientSdrReadiness(
+  value: unknown,
+  profile: ClientSdrProfile,
+): ClientSdrProfileReadiness | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const input = value as Record<string, unknown>
+  const expected = clientSdrProfileReadiness(profile)
+  const missingFields = input.missing_fields
+  const missingCoreFields = input.missing_core_fields
+  const validFields = (fields: unknown): fields is ClientSdrProfileField[] => (
+    Array.isArray(fields)
+    && fields.every((field) => typeof field === 'string')
+  )
+  if (
+    input.ready !== expected.ready
+    || input.completed_fields !== expected.completed_fields
+    || input.total_fields !== expected.total_fields
+    || !validFields(missingFields)
+    || !validFields(missingCoreFields)
+    || missingFields.join('|') !== expected.missing_fields.join('|')
+    || missingCoreFields.join('|') !== expected.missing_core_fields.join('|')
+  ) return null
+  return expected
+}
+
 export async function getWorkspaceClients(workspaceId: string): Promise<WorkspaceClient[]> {
+  const canonicalWorkspaceId = workspaceId.toLowerCase()
   const { data, error } = await supabase.functions.invoke('workspace-clients', {
-    body: { action: 'list', workspace_id: workspaceId },
+    body: { action: 'list', workspace_id: canonicalWorkspaceId },
   })
 
   if (error) throw await toFunctionError(error, 'Failed to fetch clients.')
-  return (data?.clients || []) as WorkspaceClient[]
+  const clients = (data?.clients || []) as WorkspaceClient[]
+  const emptyReadiness = clientSdrProfileReadiness({})
+  if (clients.some((client) => client.workspace_id !== canonicalWorkspaceId)) {
+    throw new Error('The workspace client list did not match the requested workspace.')
+  }
+  return clients.map((client) => ({
+    ...client,
+    ai_sdr_profile_ready: client.ai_sdr_profile_ready === true,
+    ai_sdr_profile_completed_fields: Number.isInteger(client.ai_sdr_profile_completed_fields)
+      ? Math.max(0, Math.min(emptyReadiness.total_fields, client.ai_sdr_profile_completed_fields || 0))
+      : 0,
+    ai_sdr_profile_total_fields: emptyReadiness.total_fields,
+    ai_sdr_profile_updated_at: typeof client.ai_sdr_profile_updated_at === 'string'
+      ? client.ai_sdr_profile_updated_at
+      : null,
+  }))
 }
 
 export async function getWorkspaceResearchContext(
@@ -295,12 +375,24 @@ export async function getWorkspaceClientDetail(
   const outreach = detail?.outreach === undefined
     ? EMPTY_WORKSPACE_CLIENT_OUTREACH
     : detail.outreach
+  const sdrProfile = detail?.client && isClientSdrProfile(detail.client.ai_sdr_profile)
+    ? normalizeClientSdrProfile(detail.client.ai_sdr_profile)
+    : null
+  const sdrReadiness = sdrProfile
+    ? parseClientSdrReadiness(detail?.client.ai_sdr_readiness, sdrProfile)
+    : null
   if (
     !detail?.workspace
     || !detail.client
     || detail.workspace.id !== canonicalWorkspaceId
     || detail.client.workspace_id !== canonicalWorkspaceId
     || detail.client.id !== canonicalClientId
+    || !sdrProfile
+    || !sdrReadiness
+    || (
+      detail.client.ai_sdr_profile_updated_at !== null
+      && typeof detail.client.ai_sdr_profile_updated_at !== 'string'
+    )
     || !Array.isArray(detail.bookings)
     || detail.bookings.length > 500
     || detail.bookings.some((booking) => booking.client_id !== canonicalClientId)
@@ -334,7 +426,15 @@ export async function getWorkspaceClientDetail(
     throw new Error('The client detail response did not match the workspace client address.')
   }
 
-  return { ...detail, outreach }
+  return {
+    ...detail,
+    client: {
+      ...detail.client,
+      ai_sdr_profile: sdrProfile,
+      ai_sdr_readiness: sdrReadiness,
+    },
+    outreach,
+  }
 }
 
 export async function createWorkspaceClient(workspaceId: string, input: WorkspaceClientInput): Promise<WorkspaceClient> {
@@ -398,6 +498,108 @@ export async function updateWorkspaceClientProfile(
     throw new Error('The updated client profile did not match the workspace client address.')
   }
   return updated
+}
+
+export async function getWorkspaceClientSdrContext(
+  workspaceId: string,
+  clientId: string,
+): Promise<WorkspaceClientSdrContext> {
+  const canonicalWorkspaceId = workspaceId.toLowerCase()
+  const canonicalClientId = clientId.toLowerCase()
+  const { data, error } = await supabase.functions.invoke('workspace-clients', {
+    body: {
+      action: 'sdr-context-get',
+      workspace_id: canonicalWorkspaceId,
+      client_id: canonicalClientId,
+    },
+  })
+
+  if (error) throw await toFunctionError(error, 'Failed to load the client AI SDR context.')
+  const context = data?.context as Record<string, unknown> | null
+  if (!context || !isClientSdrProfile(context.ai_sdr_profile)) {
+    throw new Error('The client AI SDR context response was invalid.')
+  }
+  const profile = normalizeClientSdrProfile(context.ai_sdr_profile)
+  const readiness = parseClientSdrReadiness(context.readiness, profile)
+  if (
+    context.client_id !== canonicalClientId
+    || context.workspace_id !== canonicalWorkspaceId
+    || !['active', 'paused', 'churned'].includes(String(context.client_status))
+    || typeof context.client_name !== 'string'
+    || !context.client_name.trim()
+    || (context.approved_guest_profile !== null && typeof context.approved_guest_profile !== 'string')
+    || (context.calendar_link !== null && typeof context.calendar_link !== 'string')
+    || (
+      context.ai_sdr_profile_updated_at !== null
+      && typeof context.ai_sdr_profile_updated_at !== 'string'
+    )
+    || !readiness
+    || context.safe_to_draft !== (context.client_status === 'active' && readiness.ready)
+    || context.delivery_authorized !== false
+  ) {
+    throw new Error('The client AI SDR context did not match the workspace client address.')
+  }
+
+  return {
+    client_id: canonicalClientId,
+    workspace_id: canonicalWorkspaceId,
+    client_name: context.client_name,
+    client_status: context.client_status as WorkspaceClientSdrContext['client_status'],
+    approved_guest_profile: context.approved_guest_profile as string | null,
+    calendar_link: context.calendar_link as string | null,
+    ai_sdr_profile: profile,
+    ai_sdr_profile_updated_at: context.ai_sdr_profile_updated_at as string | null,
+    readiness,
+    safe_to_draft: context.safe_to_draft,
+    delivery_authorized: false,
+  }
+}
+
+export async function updateWorkspaceClientSdrProfile(
+  workspaceId: string,
+  clientId: string,
+  profile: ClientSdrProfile,
+  expectedProfileUpdatedAt: string | null,
+): Promise<WorkspaceClientSdrProfileUpdate> {
+  const canonicalWorkspaceId = workspaceId.toLowerCase()
+  const canonicalClientId = clientId.toLowerCase()
+  const normalizedProfile = normalizeClientSdrProfile(profile)
+  const compactProfile = Object.fromEntries(
+    Object.entries(normalizedProfile).filter(([, value]) => Boolean(value)),
+  )
+  const { data, error } = await supabase.functions.invoke('workspace-clients', {
+    body: {
+      action: 'sdr-profile-update',
+      workspace_id: canonicalWorkspaceId,
+      client_id: canonicalClientId,
+      ai_sdr_profile: compactProfile,
+      expected_profile_updated_at: expectedProfileUpdatedAt,
+    },
+  })
+
+  if (error) throw await toFunctionError(error, 'Failed to update the client AI SDR profile.')
+  const updated = data?.client as Record<string, unknown> | null
+  if (!updated || !isClientSdrProfile(updated.ai_sdr_profile)) {
+    throw new Error('The updated AI SDR profile response was invalid.')
+  }
+  const updatedProfile = normalizeClientSdrProfile(updated.ai_sdr_profile)
+  const readiness = parseClientSdrReadiness(updated.ai_sdr_readiness, updatedProfile)
+  if (
+    updated.id !== canonicalClientId
+    || updated.workspace_id !== canonicalWorkspaceId
+    || typeof updated.ai_sdr_profile_updated_at !== 'string'
+    || !readiness
+  ) {
+    throw new Error('The updated AI SDR profile did not match the workspace client address.')
+  }
+
+  return {
+    id: canonicalClientId,
+    workspace_id: canonicalWorkspaceId,
+    ai_sdr_profile: updatedProfile,
+    ai_sdr_profile_updated_at: updated.ai_sdr_profile_updated_at,
+    ai_sdr_readiness: readiness,
+  }
 }
 
 export async function deleteWorkspaceClient(workspaceId: string, clientId: string): Promise<void> {

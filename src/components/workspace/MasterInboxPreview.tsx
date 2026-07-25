@@ -1,9 +1,13 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
+  AlertCircle,
   ArrowRight,
   Bot,
   CalendarCheck2,
   Inbox,
+  Loader2,
   MailOpen,
   Megaphone,
   MessageSquare,
@@ -15,10 +19,20 @@ import {
   Waypoints,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import {
+  CLIENT_SDR_PROFILE_FIELD_DEFINITIONS,
+  type ClientSdrProfile,
+} from '@/lib/clientSdrProfile'
+import {
+  getWorkspaceClientSdrContext,
+  type WorkspaceClient,
+  type WorkspaceClientSdrContext,
+} from '@/services/clients'
 
 type InboxScope = 'all' | 'interested' | 'other'
 type InboxFilter = 'all' | 'attention' | 'needs-reply' | 'review' | 'sent' | 'ai' | 'booked' | 'ended'
@@ -59,10 +73,123 @@ const aiRoutingSteps = [
   },
 ] as const
 
-const MasterInboxPreview = () => {
+interface MasterInboxPreviewProps {
+  workspaceId: string
+  clients: WorkspaceClient[]
+  clientsLoading: boolean
+  clientsError: Error | null
+  baseHref: string
+}
+
+function ClientSdrContextPanel({
+  context,
+  loading,
+  error,
+  client,
+  baseHref,
+  onRetry,
+}: {
+  context?: WorkspaceClientSdrContext
+  loading: boolean
+  error: Error | null
+  client: WorkspaceClient
+  baseHref: string
+  onRetry: () => void
+}) {
+  if (loading) {
+    return <div className="flex min-h-96 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>
+  }
+  if (error || !context) {
+    return (
+      <div className="mx-auto flex min-h-96 max-w-lg flex-col items-center justify-center px-6 text-center">
+        <AlertCircle className="h-8 w-8 text-amber-600" />
+        <h2 className="mt-4 text-lg font-semibold">AI SDR context unavailable</h2>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{error?.message || 'This client context could not be loaded.'}</p>
+        <Button type="button" variant="outline" size="sm" className="mt-4" onClick={onRetry}>Try again</Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-5xl p-5 lg:p-7">
+      <div className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="rounded-xl bg-primary/10 p-2.5 text-primary"><Bot className="h-5 w-5" /></div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-semibold">{context.client_name} AI SDR context</h2>
+              <Badge
+                variant="outline"
+                className={context.safe_to_draft
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                  : 'border-amber-200 bg-amber-50 text-amber-800'}
+              >
+                {context.client_status !== 'active'
+                  ? `${context.client_status[0].toUpperCase()}${context.client_status.slice(1)} — drafting off`
+                  : context.safe_to_draft
+                    ? 'Ready for review drafts'
+                    : `${context.readiness.completed_fields} of ${context.readiness.total_fields}`}
+              </Badge>
+            </div>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+              This is the exact client-scoped context Master Inbox will attach after a mapped reply resolves to {context.client_name}.
+            </p>
+          </div>
+        </div>
+        <Button asChild variant="outline" size="sm" className="shrink-0">
+          <Link to={`${baseHref}/clients/${encodeURIComponent(client.id)}?tab=ai-sdr`}><Bot className="mr-2 h-4 w-4" />Edit AI SDR Profile</Link>
+        </Button>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {CLIENT_SDR_PROFILE_FIELD_DEFINITIONS.map((field) => {
+          const value = context.ai_sdr_profile[field.id as keyof ClientSdrProfile]
+          return (
+            <div key={field.id} className={`rounded-xl border p-3.5 text-left ${value ? 'bg-muted/10' : 'border-dashed bg-background'}`}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold">{field.shortLabel}</p>
+                {field.core && <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Core</span>}
+              </div>
+              <p className={`mt-2 line-clamp-3 text-xs leading-5 ${value ? 'text-foreground/80' : 'italic text-muted-foreground'}`}>{value || 'Not set yet.'}</p>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-dashed bg-muted/10 px-4 py-3 text-left">
+        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+        <p className="text-xs leading-5 text-muted-foreground">
+          <span className="font-semibold text-foreground">Delivery authority is off.</span>{' '}
+          Loading this profile is read-only. Sending still requires a separate workspace-authorized action after a real conversation is connected.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError, baseHref }: MasterInboxPreviewProps) => {
   const [scope, setScope] = useState<InboxScope>('all')
   const [filter, setFilter] = useState<InboxFilter>('all')
   const [search, setSearch] = useState('')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedClientId = searchParams.get('client') || ''
+  const selectedClient = clients.find((client) => client.id === requestedClientId) || null
+  const selectedClientId = selectedClient?.id || 'all-clients'
+  const activeClients = clients.filter((client) => client.status === 'active')
+  const readyClientCount = activeClients.filter((client) => client.ai_sdr_profile_ready).length
+  const sdrContextQuery = useQuery({
+    queryKey: ['workspace-client-sdr-context', workspaceId, selectedClient?.id || 'none'],
+    queryFn: () => getWorkspaceClientSdrContext(workspaceId, selectedClient!.id),
+    enabled: Boolean(workspaceId && selectedClient),
+    retry: false,
+  })
+
+  const selectClient = (clientId: string) => {
+    const next = new URLSearchParams(searchParams)
+    if (clientId === 'all-clients') next.delete('client')
+    else next.set('client', clientId)
+    setSearchParams(next, { replace: true })
+  }
 
   return (
     <Card className="overflow-hidden shadow-none">
@@ -125,18 +252,34 @@ const MasterInboxPreview = () => {
 
           <Badge variant="outline" className="w-fit gap-2 text-muted-foreground">
             <Sparkles className="h-3.5 w-3.5" />
-            Client AI SDRs activate after connection
+            {clientsLoading
+              ? 'Loading client AI SDR profiles'
+              : clientsError
+                ? 'Client AI SDR profiles unavailable'
+                : activeClients.length === 0
+                  ? 'Add a client to create an AI SDR profile'
+                  : `${readyClientCount} of ${activeClients.length} client AI SDR${activeClients.length === 1 ? '' : 's'} ready`}
           </Badge>
         </div>
 
         <div className="flex max-w-full items-center gap-1.5 overflow-x-auto border-t bg-muted/10 px-3 py-2 lg:px-4" aria-label="Conversation filters">
-          <Select defaultValue="all-clients">
+          <Select value={selectedClientId} onValueChange={selectClient} disabled={clientsLoading || Boolean(clientsError)}>
             <SelectTrigger aria-label="Filter by client" className="h-7 w-36 shrink-0 gap-1.5 bg-background px-2.5 text-xs">
               <UserRound className="h-3.5 w-3.5 text-muted-foreground" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all-clients">All clients</SelectItem>
+              {clients.map((client) => (
+                <SelectItem key={client.id} value={client.id}>
+                  <span className="flex items-center gap-2">
+                    <span>{client.name}</span>
+                    <span className={client.ai_sdr_profile_ready ? 'text-emerald-700' : 'text-amber-700'}>
+                      {client.ai_sdr_profile_ready ? 'Ready' : `${client.ai_sdr_profile_completed_fields || 0}/${client.ai_sdr_profile_total_fields || 6}`}
+                    </span>
+                  </span>
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Select defaultValue="all-campaigns">
@@ -177,7 +320,7 @@ const MasterInboxPreview = () => {
       </div>
 
       <div className="grid min-h-[620px] md:grid-cols-[21rem_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col border-r bg-muted/10">
+        <aside className={cn('min-h-0 flex-col border-r bg-muted/10', selectedClient ? 'hidden md:flex' : 'flex')}>
           <div className="flex items-center justify-between border-b px-4 py-3">
             <div>
               <h2 className="text-sm font-semibold">Conversations</h2>
@@ -196,17 +339,27 @@ const MasterInboxPreview = () => {
           </div>
         </aside>
 
-        <section className="hidden min-w-0 flex-col bg-background md:flex">
+        <section className={cn('min-w-0 flex-col bg-background', selectedClient ? 'flex' : 'hidden md:flex')}>
           <div className="flex items-center justify-between border-b px-5 py-3.5">
             <div>
-              <h2 className="text-sm font-semibold">Conversation thread</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">Open a reply to see its history and client AI SDR state.</p>
+              <h2 className="text-sm font-semibold">{selectedClient ? 'Client AI SDR profile' : 'Conversation thread'}</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">{selectedClient ? 'Preview the exact context available to mapped inbox replies.' : 'Open a reply to see its history and client AI SDR state.'}</p>
             </div>
-            <Badge variant="outline" className="text-muted-foreground">No conversation selected</Badge>
+            <Badge variant="outline" className="text-muted-foreground">{selectedClient?.name || 'No conversation selected'}</Badge>
           </div>
 
-          <div className="flex flex-1 items-center justify-center p-5 lg:p-8">
-            <div className="w-full max-w-4xl text-center">
+          <div className="flex flex-1 items-center justify-center">
+            {selectedClient ? (
+              <ClientSdrContextPanel
+                context={sdrContextQuery.data}
+                loading={sdrContextQuery.isLoading}
+                error={sdrContextQuery.error instanceof Error ? sdrContextQuery.error : null}
+                client={selectedClient}
+                baseHref={baseHref}
+                onRetry={() => void sdrContextQuery.refetch()}
+              />
+            ) : (
+            <div className="w-full max-w-4xl p-5 text-center lg:p-8">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                 <MessageSquare className="h-7 w-7" />
               </div>
@@ -248,11 +401,12 @@ const MasterInboxPreview = () => {
                 </p>
               </div>
             </div>
+            )}
           </div>
 
           <div className="border-t bg-muted/10 p-3">
             <div className="flex items-center justify-between rounded-lg border border-dashed bg-background px-4 py-3 text-xs text-muted-foreground">
-              <span>AI draft, review, reply, and booking controls appear with a selected conversation.</span>
+              <span>{selectedClient ? 'Choose All clients to return to inbox routing, or open this client to edit its approved context.' : 'AI draft, review, reply, and booking controls appear with a selected conversation.'}</span>
               <Send className="h-4 w-4" />
             </div>
           </div>

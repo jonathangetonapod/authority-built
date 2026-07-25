@@ -311,6 +311,32 @@ export async function addWorkspaceProspectPodcasts(
   return combined
 }
 
+export async function uploadWorkspaceProspectPhoto(
+  workspaceId: string,
+  dashboardId: string,
+  photo: File,
+): Promise<WorkspaceProspectDetail> {
+  const body = new FormData()
+  body.set('action', 'photo-upload')
+  body.set('workspace_id', workspaceId.toLowerCase())
+  body.set('dashboard_id', dashboardId.toLowerCase())
+  body.set('photo', photo)
+  const { data, error } = await supabase.functions.invoke('workspace-prospect-dashboards', { body })
+  if (error) throw await toFunctionError(error, 'Failed to upload the prospect photo.')
+  return data as WorkspaceProspectDetail
+}
+
+export function removeWorkspaceProspectPhoto(
+  workspaceId: string,
+  dashboardId: string,
+): Promise<WorkspaceProspectDetail> {
+  return invokeProspectStudio({
+    action: 'photo-remove',
+    workspace_id: workspaceId.toLowerCase(),
+    dashboard_id: dashboardId.toLowerCase(),
+  }, 'Failed to remove the prospect photo.')
+}
+
 export async function archiveWorkspaceProspect(
   workspaceId: string,
   dashboardId: string,

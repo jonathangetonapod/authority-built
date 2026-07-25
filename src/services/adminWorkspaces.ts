@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { WorkspaceClient } from '@/services/clients'
+import { clientSdrProfileReadiness, isClientSdrProfile } from '@/lib/clientSdrProfile'
 
 export interface AdminWorkspace {
   id: string
@@ -53,6 +54,8 @@ const WORKSPACE_CLIENT_COLUMNS = [
   'website',
   'status',
   'notes',
+  'ai_sdr_profile',
+  'ai_sdr_profile_updated_at',
   'created_at',
   'updated_at',
 ].join(',')
@@ -160,10 +163,22 @@ export async function getAdminWorkspaceView(workspaceId: string, signal?: AbortS
 
   if (clientsError) throw new Error('The workspace clients could not be loaded.')
 
-  const clients = (clientsData || []) as unknown as WorkspaceClient[]
-  if (clients.some((client) => client.workspace_id !== canonicalWorkspaceId)) {
+  const clientRows = (clientsData || []) as unknown as Array<WorkspaceClient & { ai_sdr_profile: unknown }>
+  if (clientRows.some((client) => (
+    client.workspace_id !== canonicalWorkspaceId || !isClientSdrProfile(client.ai_sdr_profile)
+  ))) {
     throw new Error('The selected workspace response did not match the workspace address.')
   }
+  const clients = clientRows.map((client) => {
+    const readiness = clientSdrProfileReadiness(client.ai_sdr_profile)
+    const { ai_sdr_profile: _profile, ...summary } = client
+    return {
+      ...summary,
+      ai_sdr_profile_ready: readiness.ready,
+      ai_sdr_profile_completed_fields: readiness.completed_fields,
+      ai_sdr_profile_total_fields: readiness.total_fields,
+    }
+  })
 
   return {
     workspace: workspaceData as AdminWorkspace,

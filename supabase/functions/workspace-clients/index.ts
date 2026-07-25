@@ -26,6 +26,24 @@ const CLIENT_FIELDS = [
   'status',
   'notes',
 ] as const
+const AI_SDR_PROFILE_FIELDS = [
+  'positioning',
+  'ideal_opportunities',
+  'qualification_signals',
+  'proof_points',
+  'voice_and_tone',
+  'reply_rules',
+] as const
+const AI_SDR_CORE_FIELDS = [
+  'positioning',
+  'ideal_opportunities',
+  'voice_and_tone',
+  'reply_rules',
+] as const
+const AI_SDR_PROFILE_MAX_FIELD_LENGTH = 4_000
+
+type AiSdrProfileField = typeof AI_SDR_PROFILE_FIELDS[number]
+type AiSdrProfile = Partial<Record<AiSdrProfileField, string>>
 
 function optionalUrl(value: unknown, field: string): string | null {
   const result = optionalString(value, field, 2048)
@@ -49,6 +67,43 @@ function requireTimestamp(value: unknown, field: string): string {
     throw new HttpError(400, 'INVALID_FIELD', `${field} must be a valid timestamp`)
   }
   return result
+}
+
+function nullableTimestamp(value: unknown, field: string): string | null {
+  if (value === null) return null
+  return requireTimestamp(value, field)
+}
+
+function aiSdrProfile(value: unknown): AiSdrProfile {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new HttpError(400, 'INVALID_AI_SDR_PROFILE', 'ai_sdr_profile must be an object')
+  }
+  const input = value as Record<string, unknown>
+  requireOnlyKeys(input, AI_SDR_PROFILE_FIELDS)
+  const normalized: AiSdrProfile = {}
+  for (const field of AI_SDR_PROFILE_FIELDS) {
+    const fieldValue = optionalString(input[field], `ai_sdr_profile.${field}`, AI_SDR_PROFILE_MAX_FIELD_LENGTH)
+    if (fieldValue) normalized[field] = fieldValue
+  }
+  return normalized
+}
+
+function aiSdrReadiness(value: unknown) {
+  const source = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+  const completedFields = AI_SDR_PROFILE_FIELDS.filter((field) => (
+    typeof source[field] === 'string' && source[field].trim().length > 0
+  ))
+  const missingFields = AI_SDR_PROFILE_FIELDS.filter((field) => !completedFields.includes(field))
+  const missingCoreFields = AI_SDR_CORE_FIELDS.filter((field) => !completedFields.includes(field))
+  return {
+    ready: missingCoreFields.length === 0,
+    completed_fields: completedFields.length,
+    total_fields: AI_SDR_PROFILE_FIELDS.length,
+    missing_fields: missingFields,
+    missing_core_fields: missingCoreFields,
+  }
 }
 
 function clientPayload(value: unknown): Record<string, string | null> {
@@ -90,6 +145,9 @@ function rpcError(error: { message?: string }): never {
   if (message.includes('dashboard address is not configured')) {
     throw new HttpError(409, 'DASHBOARD_NOT_CONFIGURED', 'Client dashboard address is not configured')
   }
+  if (message.includes('client ai sdr profile changed')) {
+    throw new HttpError(409, 'AI_SDR_PROFILE_CHANGED', 'This AI SDR profile changed since you opened it. Reload the profile and try again.')
+  }
   if (message.includes('client profile changed')) {
     throw new HttpError(409, 'PROFILE_CHANGED', 'This client profile changed since you opened it. Reopen the editor and try again.')
   }
@@ -119,8 +177,10 @@ serve(async (req) => {
     let payload: Record<string, string | null> = {}
     let profileBio: string | null = null
     let expectedUpdatedAt: string | null = null
+    let sdrProfile: AiSdrProfile = {}
+    let expectedSdrProfileUpdatedAt: string | null = null
 
-    if (action === 'research-get' || action === 'detail-get') {
+    if (action === 'research-get' || action === 'detail-get' || action === 'sdr-context-get') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'client_id'])
       clientId = requireUuid(body.client_id, 'client_id')
     } else if (action === 'profile-update') {
@@ -128,6 +188,14 @@ serve(async (req) => {
       clientId = requireUuid(body.client_id, 'client_id')
       profileBio = optionalString(body.bio, 'bio', 20_000)
       expectedUpdatedAt = requireTimestamp(body.expected_updated_at, 'expected_updated_at')
+    } else if (action === 'sdr-profile-update') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'ai_sdr_profile', 'expected_profile_updated_at'])
+      clientId = requireUuid(body.client_id, 'client_id')
+      sdrProfile = aiSdrProfile(body.ai_sdr_profile)
+      expectedSdrProfileUpdatedAt = nullableTimestamp(
+        body.expected_profile_updated_at,
+        'expected_profile_updated_at',
+      )
     } else if (action === 'list') {
       requireOnlyKeys(body, ['action', 'workspace_id'])
     } else if (action === 'create') {
@@ -142,6 +210,29 @@ serve(async (req) => {
       clientId = requireUuid(body.client_id, 'client_id')
     } else {
       throw new HttpError(400, 'INVALID_ACTION', 'Unknown workspace client action')
+    }
+
+    if (action === 'sdr-profile-update') {
+      const access = await requireWorkspaceFeatureAccess(authContext, workspaceId)
+      if (!['owner', 'admin', 'platform_admin'].includes(access.role)) {
+        throw new HttpError(403, 'WORKSPACE_ACCESS_REQUIRED', 'Workspace manager access is required')
+      }
+      const { data, error } = await admin.rpc('update_workspace_client_ai_sdr_profile_v1', {
+        p_workspace_id: workspaceId,
+        p_client_id: clientId!,
+        p_profile: sdrProfile,
+        p_expected_profile_updated_at: expectedSdrProfileUpdatedAt,
+        p_actor_user_id: user.id,
+        p_token_issued_at: tokenIssuedAt,
+      })
+      if (error) rpcError(error)
+      const updated = data as Record<string, unknown>
+      return jsonResponse(req, METHODS, 200, {
+        client: {
+          ...updated,
+          ai_sdr_readiness: aiSdrReadiness(updated.ai_sdr_profile),
+        },
+      })
     }
 
     if (action === 'profile-update') {
@@ -161,11 +252,45 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, { client: data })
     }
 
+    if (action === 'sdr-context-get') {
+      await requireWorkspaceFeatureAccess(authContext, workspaceId)
+      const { data: client, error: clientError } = await admin
+        .from('clients')
+        .select('id,workspace_id,name,status,bio,calendar_link,ai_sdr_profile,ai_sdr_profile_updated_at')
+        .eq('id', clientId!)
+        .eq('workspace_id', workspaceId)
+        .maybeSingle()
+
+      if (clientError) {
+        throw new HttpError(500, 'CLIENT_OPERATION_FAILED', 'The client AI SDR context could not be loaded')
+      }
+      if (!client || client.workspace_id !== workspaceId) {
+        throw new HttpError(404, 'CLIENT_NOT_FOUND', 'Workspace client not found')
+      }
+
+      const readiness = aiSdrReadiness(client.ai_sdr_profile)
+      return jsonResponse(req, METHODS, 200, {
+        context: {
+          client_id: client.id,
+          workspace_id: client.workspace_id,
+          client_name: client.name,
+          client_status: client.status,
+          approved_guest_profile: client.bio,
+          calendar_link: client.calendar_link,
+          ai_sdr_profile: client.ai_sdr_profile || {},
+          ai_sdr_profile_updated_at: client.ai_sdr_profile_updated_at,
+          readiness,
+          safe_to_draft: client.status === 'active' && readiness.ready,
+          delivery_authorized: false,
+        },
+      })
+    }
+
     if (action === 'detail-get') {
       const access = await requireWorkspaceFeatureAccess(authContext, workspaceId)
       const { data: client, error: clientError } = await admin
         .from('clients')
-        .select('id,workspace_id,name,email,contact_person,linkedin_url,website,calendar_link,status,notes,bio,photo_url,media_kit_url,prospect_dashboard_slug,dashboard_slug,dashboard_tagline,dashboard_enabled,dashboard_view_count,dashboard_last_viewed_at,portal_access_enabled,portal_last_login_at,password_set_at,created_at,updated_at')
+        .select('id,workspace_id,name,email,contact_person,linkedin_url,website,calendar_link,status,notes,bio,photo_url,media_kit_url,prospect_dashboard_slug,dashboard_slug,dashboard_tagline,dashboard_enabled,dashboard_view_count,dashboard_last_viewed_at,portal_access_enabled,portal_last_login_at,password_set_at,ai_sdr_profile,ai_sdr_profile_updated_at,created_at,updated_at')
         .eq('id', clientId!)
         .eq('workspace_id', workspaceId)
         .maybeSingle()
@@ -285,7 +410,10 @@ serve(async (req) => {
         },
         viewer_role: access.role,
         can_manage: ['owner', 'admin', 'platform_admin'].includes(access.role),
-        client,
+        client: {
+          ...client,
+          ai_sdr_readiness: aiSdrReadiness(client.ai_sdr_profile),
+        },
         dashboard: {
           configured: Boolean(client.dashboard_slug),
           enabled: Boolean(client.dashboard_slug),
@@ -394,7 +522,7 @@ serve(async (req) => {
       await requireWorkspaceFeatureAccess(authContext, workspaceId)
       const { data: clients, error: clientsError } = await admin
         .from('clients')
-        .select('id,workspace_id,name,email,contact_person,linkedin_url,website,status,notes,created_at,updated_at')
+        .select('id,workspace_id,name,email,contact_person,linkedin_url,website,status,notes,ai_sdr_profile,ai_sdr_profile_updated_at,created_at,updated_at')
         .eq('workspace_id', workspaceId)
         .order('name', { ascending: true })
         .order('id', { ascending: true })
@@ -405,7 +533,18 @@ serve(async (req) => {
       if ((clients || []).some((client) => client.workspace_id !== workspaceId)) {
         throw new HttpError(500, 'CLIENT_SCOPE_MISMATCH', 'The workspace clients could not be loaded')
       }
-      return jsonResponse(req, METHODS, 200, { clients: clients || [] })
+      return jsonResponse(req, METHODS, 200, {
+        clients: (clients || []).map((client) => {
+          const readiness = aiSdrReadiness(client.ai_sdr_profile)
+          const { ai_sdr_profile: _profile, ...summary } = client
+          return {
+            ...summary,
+            ai_sdr_profile_ready: readiness.ready,
+            ai_sdr_profile_completed_fields: readiness.completed_fields,
+            ai_sdr_profile_total_fields: readiness.total_fields,
+          }
+        }),
+      })
     }
 
     const { data, error } = await admin.rpc('workspace_client_operation_v2', {
