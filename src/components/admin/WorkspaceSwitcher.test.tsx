@@ -96,7 +96,7 @@ describe('WorkspaceSwitcher', () => {
     fireEvent.click(trigger)
     fireEvent.click(await screen.findByText('Acme'))
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(
-      '/app/workspaces/11111111-1111-4111-8111-111111111111/prospect-dashboards',
+      '/app/workspaces/11111111-1111-4111-8111-111111111111/prospects',
     ))
   })
 

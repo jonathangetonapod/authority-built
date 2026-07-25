@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   Building2,
   CheckCircle2,
+  ChevronDown,
   Circle,
   Copy,
   Eye,
@@ -389,7 +390,7 @@ function ProspectListCard({
       type="button"
       onClick={onSelect}
       className={cn(
-        'w-full rounded-2xl border p-4 text-left transition-all',
+        'w-full rounded-xl border px-3 py-3 text-left transition-all',
         selected
           ? 'border-primary bg-primary/[0.04] shadow-sm ring-1 ring-primary/20'
           : 'border-border bg-background hover:border-primary/40 hover:bg-muted/30',
@@ -406,12 +407,12 @@ function ProspectListCard({
           {lifecycleLabel(prospect.lifecycle_status)}
         </Badge>
       </div>
-      <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+      <div className="mt-2.5 flex items-center justify-between text-[11px] text-muted-foreground">
         <span>{prospect.readiness.visible_count} matches</span>
         <span>{prospect.view_count || 0} views</span>
         <span>{readinessPercent(prospect.readiness)}% ready</span>
       </div>
-      <Progress value={readinessPercent(prospect.readiness)} className="mt-2 h-1.5" />
+      <Progress value={readinessPercent(prospect.readiness)} className="mt-1.5 h-1" />
     </button>
   )
 }
@@ -432,9 +433,9 @@ function ShortlistRow({
     || podcast.ai_clean_description
     || podcast.podcast_description
   return (
-    <div className={cn('rounded-2xl border bg-background p-4', podcast.visibility === 'archived' && 'opacity-65')}>
-      <div className="flex gap-4">
-        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-muted">
+    <div className={cn('rounded-xl border bg-background p-3', podcast.visibility === 'archived' && 'opacity-65')}>
+      <div className="flex gap-3">
+        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-muted">
           {podcast.podcast_image_url
             ? <img src={podcast.podcast_image_url} alt="" className="h-full w-full object-cover" loading="lazy" />
             : <div className="flex h-full w-full items-center justify-center"><Mic2 className="h-6 w-6 text-muted-foreground" /></div>}
@@ -465,8 +466,8 @@ function ShortlistRow({
               </Button>
             </div>
           </div>
-          {description && <p className="mt-3 text-sm leading-6 text-muted-foreground">{description}</p>}
-          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          {description && <p className="mt-2 line-clamp-2 text-sm leading-5 text-muted-foreground">{description}</p>}
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span>{formatNumber(podcast.audience_size)} listeners</span>
             <span>{podcast.episode_count || '—'} episodes</span>
             {podcast.itunes_rating && <span>{Number(podcast.itunes_rating).toFixed(1)} rating</span>}
@@ -487,7 +488,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
   const [editingProfile, setEditingProfile] = useState(false)
   const [profileForm, setProfileForm] = useState<ProspectProfileForm>(emptyProfileForm)
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
-  const [showRemoved, setShowRemoved] = useState(false)
+  const [shortlistView, setShortlistView] = useState<'featured' | 'all' | 'removed'>('featured')
   const isPlatformWorkspace = platformWorkspaceId !== undefined
   const selectedWorkspaceId = (platformWorkspaceId || '').toLowerCase()
   const workspaceId = isPlatformWorkspace ? selectedWorkspaceId : workspace?.id || ''
@@ -502,15 +503,20 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
   })
 
   const prospects = useMemo(() => listQuery.data?.dashboards || [], [listQuery.data?.dashboards])
+  const orderedProspects = useMemo(() => [...prospects].sort((left, right) => {
+    const publicationPriority = Number(Boolean(right.published_at)) - Number(Boolean(left.published_at))
+    if (publicationPriority !== 0) return publicationPriority
+    return new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime()
+  }), [prospects])
   useEffect(() => {
-    if (prospects.length === 0) {
+    if (orderedProspects.length === 0) {
       setSelectedId(null)
       return
     }
-    if (!selectedId || !prospects.some((prospect) => prospect.id === selectedId)) {
-      setSelectedId(prospects[0].id)
+    if (!selectedId || !orderedProspects.some((prospect) => prospect.id === selectedId)) {
+      setSelectedId(orderedProspects[0].id)
     }
-  }, [prospects, selectedId])
+  }, [orderedProspects, selectedId])
 
   const detailQueryKey = ['workspace-prospect', user?.id || 'unknown', workspaceId, selectedId] as const
   const detailQuery = useQuery({
@@ -567,6 +573,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
     },
     onSuccess: async (nextDetail) => {
       await refreshAfterMutation(nextDetail)
+      setShortlistView('featured')
       toast.success('Shortlist built. Review the matches before publishing.')
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'The shortlist could not be built.'),
@@ -612,14 +619,14 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
 
   const filteredProspects = useMemo(() => {
     const query = search.trim().toLowerCase()
-    if (!query) return prospects
-    return prospects.filter((prospect) => [
+    if (!query) return orderedProspects
+    return orderedProspects.filter((prospect) => [
       prospect.prospect_name,
       prospect.prospect_email,
       prospect.prospect_company,
       prospect.prospect_title,
     ].some((value) => value?.toLowerCase().includes(query)))
-  }, [prospects, search])
+  }, [orderedProspects, search])
 
   const workspaceSummary = listQuery.data?.workspace
   const platformWorkspace = isPlatformWorkspace
@@ -653,6 +660,14 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
 
   const visiblePodcasts = detail?.podcasts.filter((podcast) => podcast.visibility === 'visible') || []
   const removedPodcasts = detail?.podcasts.filter((podcast) => podcast.visibility === 'archived') || []
+  const featuredPodcasts = visiblePodcasts.filter((podcast) => podcast.is_featured)
+  const displayedPodcasts = shortlistView === 'removed'
+    ? removedPodcasts
+    : shortlistView === 'all'
+      ? visiblePodcasts
+      : featuredPodcasts.length > 0
+        ? featuredPodcasts
+        : visiblePodcasts.slice(0, 5)
   const publishedCount = prospects.filter((prospect) => prospect.published_at).length
   const reviewCount = prospects.filter((prospect) => ['review', 'failed'].includes(prospect.lifecycle_status)).length
   const totalViews = prospects.reduce((total, prospect) => total + (prospect.view_count || 0), 0)
@@ -676,19 +691,19 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
 
   return (
     <WorkspaceLayout platformWorkspace={platformWorkspace}>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <div className="mb-2 flex items-center gap-2 text-sm font-medium text-primary">
               <Sparkles className="h-4 w-4" />
               Lead magnet workspace
             </div>
-            <h1 className="text-3xl font-bold tracking-tight">Prospect Studio</h1>
-            <p className="mt-1 max-w-2xl text-muted-foreground">
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Prospect Studio</h1>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground sm:text-base">
               Turn a strong guest profile into a focused, share-ready podcast shortlist in minutes.
             </p>
           </div>
-          {canManage && <Button size="lg" onClick={openCreate}><Plus className="mr-2 h-4 w-4" />New prospect</Button>}
+          {canManage && <Button onClick={openCreate}><Plus className="mr-2 h-4 w-4" />New prospect</Button>}
         </div>
 
         {listQuery.isLoading ? (
@@ -697,15 +712,18 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
           <Card><CardContent className="flex min-h-[320px] flex-col items-center justify-center gap-3 text-center"><p className="font-semibold text-destructive">Prospect Studio could not be loaded</p><p className="max-w-md text-sm text-muted-foreground">{listQuery.error instanceof Error ? listQuery.error.message : 'Check your connection and try again.'}</p><Button variant="outline" onClick={() => void listQuery.refetch()}>Try again</Button></CardContent></Card>
         ) : (
           <>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Card><CardContent className="flex items-center gap-4 p-5"><div className="rounded-xl bg-blue-50 p-3 text-blue-700"><Users className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{prospects.length}</p><p className="text-sm text-muted-foreground">Active prospects</p></div></CardContent></Card>
-              <Card><CardContent className="flex items-center gap-4 p-5"><div className="rounded-xl bg-emerald-50 p-3 text-emerald-700"><Globe2 className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{publishedCount}</p><p className="text-sm text-muted-foreground">Live dashboards</p></div></CardContent></Card>
-              <Card><CardContent className="flex items-center gap-4 p-5"><div className="rounded-xl bg-violet-50 p-3 text-violet-700"><Eye className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{totalViews}</p><p className="text-sm text-muted-foreground">Prospect views{reviewCount > 0 ? ` · ${reviewCount} to review` : ''}</p></div></CardContent></Card>
-            </div>
+            <Card>
+              <CardContent className="flex flex-wrap items-center gap-x-7 gap-y-3 px-4 py-3">
+                <div className="flex items-center gap-2"><Users className="h-4 w-4 text-blue-700" /><span className="font-semibold">{prospects.length}</span><span className="text-sm text-muted-foreground">prospects</span></div>
+                <div className="flex items-center gap-2"><Globe2 className="h-4 w-4 text-emerald-700" /><span className="font-semibold">{publishedCount}</span><span className="text-sm text-muted-foreground">live</span></div>
+                <div className="flex items-center gap-2"><Eye className="h-4 w-4 text-violet-700" /><span className="font-semibold">{totalViews}</span><span className="text-sm text-muted-foreground">views</span></div>
+                {reviewCount > 0 && <Badge variant="secondary" className="ml-auto">{reviewCount} to review</Badge>}
+              </CardContent>
+            </Card>
 
-            <div className="grid min-h-[680px] gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
-              <Card className="h-fit xl:sticky xl:top-6">
-                <CardHeader className="pb-3">
+            <div className="grid gap-4 xl:h-[calc(100dvh-290px)] xl:min-h-[620px] xl:grid-cols-[320px_minmax(0,1fr)] xl:overflow-hidden">
+              <Card className="flex min-h-0 flex-col overflow-hidden">
+                <CardHeader className="p-4 pb-3">
                   <CardTitle className="text-base">Prospects</CardTitle>
                   <CardDescription>Choose a prospect to build or review.</CardDescription>
                   <div className="relative pt-2">
@@ -713,7 +731,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                     <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search prospects" className="pl-9" />
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
                   {prospects.length === 0 ? (
                     <div className="flex min-h-72 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed p-6 text-center">
                       <div className="rounded-full bg-primary/10 p-4 text-primary"><Target className="h-7 w-7" /></div>
@@ -723,8 +741,8 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                   ) : filteredProspects.length === 0 ? (
                     <div className="py-12 text-center text-sm text-muted-foreground">No prospects match “{search}”.</div>
                   ) : (
-                    <div className="space-y-3">
-                      {filteredProspects.map((prospect) => <ProspectListCard key={prospect.id} prospect={prospect} selected={prospect.id === selectedId} onSelect={() => { setSelectedId(prospect.id); setShowRemoved(false) }} />)}
+                    <div className="space-y-2">
+                      {filteredProspects.map((prospect) => <ProspectListCard key={prospect.id} prospect={prospect} selected={prospect.id === selectedId} onSelect={() => { setSelectedId(prospect.id); setShortlistView('featured') }} />)}
                     </div>
                   )}
                 </CardContent>
@@ -737,12 +755,12 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
               ) : detailQuery.error || !detail ? (
                 <Card><CardContent className="flex min-h-[520px] flex-col items-center justify-center gap-3 text-center"><p className="font-semibold text-destructive">This prospect could not be loaded</p><p className="max-w-md text-sm text-muted-foreground">{detailQuery.error instanceof Error ? detailQuery.error.message : 'Refresh and try again.'}</p><Button variant="outline" onClick={() => void detailQuery.refetch()}>Try again</Button></CardContent></Card>
               ) : (
-                <div className="space-y-5">
+                <div className="min-h-0 space-y-4 xl:overflow-y-auto xl:overscroll-contain xl:pr-2">
                   <Card className="overflow-hidden">
-                    <div className="border-b bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6 text-white sm:p-8">
-                      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="border-b bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-4 text-white sm:p-5">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div className="flex min-w-0 gap-4">
-                          <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-white/10">
+                          <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/10">
                             {selected.prospect_image_url
                               ? <img src={selected.prospect_image_url} alt={selected.prospect_name} className="h-full w-full object-cover" />
                               : <UserRound className="h-7 w-7 text-white/70" />}
@@ -752,7 +770,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                               <Badge variant="outline" className={cn('border-white/20 bg-white/10 text-white', selected.published_at && 'border-emerald-400/40 bg-emerald-400/15 text-emerald-100')}>{lifecycleLabel(selected.lifecycle_status)}</Badge>
                               {selected.prospect_company && <span className="text-sm text-white/60">{selected.prospect_company}</span>}
                             </div>
-                            <h2 className="mt-2 truncate text-2xl font-bold sm:text-3xl">{selected.prospect_name}</h2>
+                            <h2 className="mt-1.5 truncate text-2xl font-bold">{selected.prospect_name}</h2>
                             <p className="mt-1 text-sm text-white/65">{selected.prospect_title || 'Prospect dashboard'} · Updated {formatDate(selected.updated_at)}</p>
                           </div>
                         </div>
@@ -763,16 +781,16 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                         </div>
                       </div>
 
-                      <div className="mt-7 grid grid-cols-4 gap-2">
+                      <div className="mt-4 grid grid-cols-4 gap-2">
                         {['Profile', 'Build', 'Review', 'Live'].map((label, index) => (
                           <div key={label}>
                             <div className={cn('h-1.5 rounded-full', index <= stage ? 'bg-blue-400' : 'bg-white/15')} />
-                            <p className={cn('mt-2 text-xs', index <= stage ? 'text-white' : 'text-white/45')}>{index + 1}. {label}</p>
+                            <p className={cn('mt-1.5 text-[11px]', index <= stage ? 'text-white' : 'text-white/45')}>{index + 1}. {label}</p>
                           </div>
                         ))}
                       </div>
                     </div>
-                    <CardContent className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+                    <CardContent className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_260px]">
                       <div>
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <div>
@@ -804,10 +822,10 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                         {selected.build_error && <Alert variant="destructive" className="mt-4"><AlertTitle>Build needs attention</AlertTitle><AlertDescription>{selected.build_error}</AlertDescription></Alert>}
                       </div>
 
-                      <div className="rounded-2xl border bg-muted/30 p-4">
+                      <div className="rounded-xl border bg-muted/30 p-3">
                         <div className="flex items-center justify-between"><p className="font-medium">Publish readiness</p><span className="text-sm font-semibold">{readinessPercent(selected.readiness)}%</span></div>
-                        <Progress value={readinessPercent(selected.readiness)} className="my-3 h-2" />
-                        <div className="space-y-2">
+                        <Progress value={readinessPercent(selected.readiness)} className="my-2.5 h-1.5" />
+                        <div className="space-y-1.5">
                           <ReadinessItem complete={selected.readiness.profile_ready}>Focused profile (80+ characters)</ReadinessItem>
                           <ReadinessItem complete={selected.readiness.visible_count >= 5}>{selected.readiness.visible_count}/5 visible matches</ReadinessItem>
                           <ReadinessItem complete={selected.readiness.analyzed_count >= 5}>{selected.readiness.analyzed_count}/5 explained matches</ReadinessItem>
@@ -817,52 +835,64 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                     </CardContent>
                   </Card>
 
-                  <div className="grid gap-5 lg:grid-cols-3">
-                    <Card className="lg:col-span-2">
-                      <CardHeader>
-                        <div className="flex items-start justify-between gap-3">
-                          <div><CardTitle className="flex items-center gap-2 text-lg"><FileText className="h-5 w-5" />Guest profile</CardTitle><CardDescription>The approved positioning used to match and rank shows.</CardDescription></div>
-                          {canManage && <Button size="sm" variant="ghost" onClick={openEdit}><Pencil className="mr-2 h-3.5 w-3.5" />Edit</Button>}
+                  <Card>
+                    <details className="group [&_summary::-webkit-details-marker]:hidden">
+                      <summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-muted/30">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="rounded-lg bg-muted p-2 text-muted-foreground"><FileText className="h-4 w-4" /></div>
+                          <div className="min-w-0">
+                            <p className="font-semibold">Profile &amp; share details</p>
+                            <p className="truncate text-sm text-muted-foreground">Approved positioning, audience, contact, and call to action</p>
+                          </div>
                         </div>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <p className="whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{selected.prospect_bio || 'No guest profile yet. Add the person’s credibility, outcomes, point of view, and strongest stories.'}</p>
-                        {(selected.prospect_topics?.length || selected.prospect_expertise?.length) && (
-                          <div className="flex flex-wrap gap-2">{[...(selected.prospect_topics || []), ...(selected.prospect_expertise || [])].map((item) => <Badge key={item} variant="secondary">{item}</Badge>)}</div>
-                        )}
-                        <div className="grid gap-3 border-t pt-4 text-sm sm:grid-cols-2">
-                          <div className="flex gap-2"><Target className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /><span>{selected.prospect_target_audience || 'Ideal audience not specified'}</span></div>
-                          <div className="flex gap-2"><Building2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /><span>{[selected.prospect_industry, selected.prospect_company].filter(Boolean).join(' · ') || 'Industry not specified'}</span></div>
+                        <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                          <span className="hidden sm:inline">{selected.prospect_company || selected.prospect_title || 'Profile'}</span>
+                          <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
                         </div>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader><CardTitle className="text-lg">Share details</CardTitle><CardDescription>The link remains private until published.</CardDescription></CardHeader>
-                      <CardContent className="space-y-4 text-sm">
-                        <div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Status</p><p className="mt-1 font-medium">{selected.published_at ? `Published ${formatDate(selected.published_at)}` : 'Not published'}</p></div>
-                        <div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Views</p><p className="mt-1 font-medium">{selected.view_count || 0}{selected.last_viewed_at ? ` · Last ${formatDate(selected.last_viewed_at)}` : ''}</p></div>
-                        <div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Next step</p><p className="mt-1 font-medium">{selected.cta_label}</p>{selected.cta_url && <p className="mt-1 truncate text-xs text-muted-foreground">{selected.cta_url}</p>}</div>
-                        {selected.prospect_email && <div className="flex items-center gap-2 text-muted-foreground"><Mail className="h-4 w-4" /><span className="truncate">{selected.prospect_email}</span></div>}
-                      </CardContent>
-                    </Card>
-                  </div>
+                      </summary>
+                      <div className="grid gap-6 border-t p-4 lg:grid-cols-[minmax(0,2fr)_minmax(240px,1fr)]">
+                        <div className="space-y-4">
+                          <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{selected.prospect_bio || 'No guest profile yet. Add the person’s credibility, outcomes, point of view, and strongest stories.'}</p>
+                          {(selected.prospect_topics?.length || selected.prospect_expertise?.length) && (
+                            <div className="flex flex-wrap gap-2">{[...(selected.prospect_topics || []), ...(selected.prospect_expertise || [])].map((item) => <Badge key={item} variant="secondary">{item}</Badge>)}</div>
+                          )}
+                          <div className="grid gap-3 border-t pt-4 text-sm sm:grid-cols-2">
+                            <div className="flex gap-2"><Target className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /><span>{selected.prospect_target_audience || 'Ideal audience not specified'}</span></div>
+                            <div className="flex gap-2"><Building2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /><span>{[selected.prospect_industry, selected.prospect_company].filter(Boolean).join(' · ') || 'Industry not specified'}</span></div>
+                          </div>
+                        </div>
+                        <div className="space-y-3 border-t pt-4 text-sm lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+                          <div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Status</p><p className="mt-1 font-medium">{selected.published_at ? `Published ${formatDate(selected.published_at)}` : 'Not published'}</p></div>
+                          <div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Views</p><p className="mt-1 font-medium">{selected.view_count || 0}{selected.last_viewed_at ? ` · Last ${formatDate(selected.last_viewed_at)}` : ''}</p></div>
+                          <div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Next step</p><p className="mt-1 font-medium">{selected.cta_label}</p>{selected.cta_url && <p className="mt-1 truncate text-xs text-muted-foreground">{selected.cta_url}</p>}</div>
+                          {selected.prospect_email && <div className="flex items-center gap-2 text-muted-foreground"><Mail className="h-4 w-4" /><span className="truncate">{selected.prospect_email}</span></div>}
+                        </div>
+                      </div>
+                    </details>
+                  </Card>
 
                   <Card>
-                    <CardHeader>
+                    <CardHeader className="p-4 pb-3">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div><CardTitle className="flex items-center gap-2"><Mic2 className="h-5 w-5" />Podcast shortlist</CardTitle><CardDescription>{visiblePodcasts.length > 0 ? `${visiblePodcasts.length} visible opportunities. Feature up to six to lead the public experience.` : 'Build the shortlist once the profile is ready.'}</CardDescription></div>
-                        {removedPodcasts.length > 0 && <Button variant="ghost" size="sm" onClick={() => setShowRemoved((current) => !current)}>{showRemoved ? 'Show shortlist' : `Removed (${removedPodcasts.length})`}</Button>}
+                        <div><CardTitle className="flex items-center gap-2"><Mic2 className="h-5 w-5" />Podcast shortlist</CardTitle><CardDescription>{visiblePodcasts.length > 0 ? `${visiblePodcasts.length} approved opportunities. Start with the strongest featured matches.` : 'Build the shortlist once the profile is ready.'}</CardDescription></div>
+                        {visiblePodcasts.length > 0 && (
+                          <div className="flex shrink-0 rounded-lg border bg-muted/30 p-1">
+                            <Button variant={shortlistView === 'featured' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShortlistView('featured')}>Featured ({featuredPodcasts.length})</Button>
+                            <Button variant={shortlistView === 'all' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShortlistView('all')}>All ({visiblePodcasts.length})</Button>
+                            {removedPodcasts.length > 0 && <Button variant={shortlistView === 'removed' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShortlistView('removed')}>Removed ({removedPodcasts.length})</Button>}
+                          </div>
+                        )}
                       </div>
                     </CardHeader>
-                    <CardContent>
-                      {(showRemoved ? removedPodcasts : visiblePodcasts).length === 0 ? (
-                        <div className="flex min-h-60 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed p-8 text-center">
+                    <CardContent className="p-4 pt-0">
+                      {displayedPodcasts.length === 0 ? (
+                        <div className="flex min-h-52 flex-col items-center justify-center gap-4 rounded-xl border border-dashed p-6 text-center">
                           <div className="rounded-full bg-primary/10 p-4 text-primary"><Mic2 className="h-7 w-7" /></div>
-                          <div><p className="font-semibold">{showRemoved ? 'No removed podcasts' : 'No matches yet'}</p><p className="mt-1 max-w-md text-sm text-muted-foreground">{showRemoved ? 'Removed matches will appear here and can be restored.' : 'A focused profile lets Scout find and explain the strongest 8–12 opportunities.'}</p></div>
-                          {!showRemoved && canManage && <Button disabled={mutating || !selected.readiness.profile_ready} onClick={() => buildMutation.mutate()}>{building ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}Build shortlist</Button>}
+                          <div><p className="font-semibold">{shortlistView === 'removed' ? 'No removed podcasts' : 'No matches yet'}</p><p className="mt-1 max-w-md text-sm text-muted-foreground">{shortlistView === 'removed' ? 'Removed matches will appear here and can be restored.' : 'A focused profile lets Scout find and explain the strongest 8–12 opportunities.'}</p></div>
+                          {shortlistView !== 'removed' && canManage && <Button disabled={mutating || !selected.readiness.profile_ready} onClick={() => buildMutation.mutate()}>{building ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}Build shortlist</Button>}
                         </div>
                       ) : (
-                        <div className="space-y-3">{(showRemoved ? removedPodcasts : visiblePodcasts).map((podcast) => <ShortlistRow key={podcast.id} podcast={podcast} disabled={!canManage || podcastMutation.isPending} onFeature={() => podcastMutation.mutate({ podcast, changes: { is_featured: !podcast.is_featured } })} onVisibility={() => podcastMutation.mutate({ podcast, changes: { visibility: podcast.visibility === 'visible' ? 'archived' : 'visible' } })} />)}</div>
+                        <div className="space-y-2">{displayedPodcasts.map((podcast) => <ShortlistRow key={podcast.id} podcast={podcast} disabled={!canManage || podcastMutation.isPending} onFeature={() => podcastMutation.mutate({ podcast, changes: { is_featured: !podcast.is_featured } })} onVisibility={() => podcastMutation.mutate({ podcast, changes: { visibility: podcast.visibility === 'visible' ? 'archived' : 'visible' } })} />)}</div>
                       )}
                     </CardContent>
                   </Card>

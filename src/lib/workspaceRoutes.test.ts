@@ -28,8 +28,9 @@ describe('workspace routes', () => {
   )
 
   it('preserves Prospect Studio while switching workspaces', () => {
-    expect(workspaceModuleFromPath('/app/prospect-dashboards')).toBe('prospect-dashboards')
-    expect(workspaceModuleHref('/app', 'prospect-dashboards')).toBe('/app/prospect-dashboards')
+    expect(workspaceModuleFromPath('/app/prospects')).toBe('prospects')
+    expect(workspaceModuleHref('/app', 'prospects')).toBe('/app/prospects')
+    expect(workspaceModuleFromPath('/app/prospect-dashboards')).toBe('prospects')
   })
 
   it('returns a client campaign detail to the campaign index when switching workspaces', () => {
@@ -48,6 +49,6 @@ describe('workspace routes', () => {
   })
 
   it('keeps the retired admin prospect address in Prospect Studio', () => {
-    expect(workspaceModuleFromPath('/admin/prospect-dashboards')).toBe('prospect-dashboards')
+    expect(workspaceModuleFromPath('/admin/prospect-dashboards')).toBe('prospects')
   })
 })

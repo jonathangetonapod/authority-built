@@ -77,7 +77,7 @@ describe('WorkspaceLayout', () => {
     expect(within(navigation).getByRole('link', { name: 'Onboarding' })).toHaveAttribute('href', '/app/onboarding')
     expect(within(navigation).getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/app/overview')
     expect(within(navigation).getByRole('link', { name: 'Podcast Finder' })).toHaveAttribute('href', '/app/podcast-finder')
-    expect(within(navigation).getByRole('link', { name: 'Prospect Studio' })).toHaveAttribute('href', '/app/prospect-dashboards')
+    expect(within(navigation).getByRole('link', { name: 'Prospect Studio' })).toHaveAttribute('href', '/app/prospects')
     expect(within(navigation).getByRole('link', { name: 'Client Campaigns' })).toHaveAttribute('href', '/app/client-campaigns')
     expect(within(navigation).getByRole('link', { name: 'Master Inbox' })).toHaveAttribute('href', '/app/master-inbox')
     expect(within(navigation).getByRole('link', { name: 'Mailboxes' })).toHaveAttribute('href', '/app/mailboxes')
@@ -193,7 +193,7 @@ describe('WorkspaceLayout', () => {
     )
     expect(within(navigation).getByRole('link', { name: 'Prospect Studio' })).toHaveAttribute(
       'href',
-      `/app/workspaces/${workspaceId}/prospect-dashboards`,
+      `/app/workspaces/${workspaceId}/prospects`,
     )
     expect(within(navigation).getByRole('link', { name: 'Client Campaigns' })).toHaveAttribute(
       'href',

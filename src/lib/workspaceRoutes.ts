@@ -4,7 +4,7 @@ export type WorkspaceModule =
   | 'overview'
   | 'onboarding'
   | 'podcast-finder'
-  | 'prospect-dashboards'
+  | 'prospects'
   | 'clients'
   | 'client-campaigns'
   | 'master-inbox'
@@ -16,7 +16,7 @@ const WORKSPACE_MODULES = new Set<WorkspaceModule>([
   'overview',
   'onboarding',
   'podcast-finder',
-  'prospect-dashboards',
+  'prospects',
   'clients',
   'client-campaigns',
   'master-inbox',
@@ -35,6 +35,7 @@ export function workspaceModuleHref(baseHref: string, module: WorkspaceModule): 
 
 export function workspaceModuleFromPath(pathname: string): WorkspaceModule {
   if (pathname.includes('/podcast-finder')) return 'podcast-finder'
+  if (pathname.includes('/prospect-dashboards')) return 'prospects'
   if (pathname.includes('/client-campaigns')) return 'client-campaigns'
   if (pathname.includes('/settings')) return 'settings'
 

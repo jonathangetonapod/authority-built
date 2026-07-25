@@ -59,7 +59,7 @@ const defaultNavItems: NavItem[] = [
   { id: 'workspace-users', name: 'Settings', href: '/app/settings', icon: UserPlus },
   { id: 'onboarding', name: 'Onboarding', href: '/app/onboarding', icon: ClipboardList },
   { id: 'podcast-finder', name: 'Podcast Finder', href: '/app/podcast-finder', icon: Search },
-  { id: 'prospect-dashboards', name: 'Prospect Dashboards', href: '/admin/prospect-dashboards', icon: Share2 },
+  { id: 'prospects', name: 'Prospect Studio', href: '/app/prospects', icon: Share2 },
   { id: 'podcast-database', name: 'Podcast Database', href: '/admin/podcast-database', icon: Database },
   { id: 'calendar', name: 'Client Podcast System', href: '/admin/calendar', icon: Calendar },
   { id: 'clients', name: 'Clients', href: '/admin/clients', icon: Users },

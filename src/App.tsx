@@ -166,13 +166,14 @@ const App = () => (
               }
             />
             <Route
-              path="/app/prospect-dashboards"
+              path="/app/prospects"
               element={
                 <ProtectedRoute>
                   <WorkspaceProspectDashboards />
                 </ProtectedRoute>
               }
             />
+            <Route path="/app/prospect-dashboards" element={<Navigate to="/app/prospects" replace />} />
             <Route
               path="/app/clients/:clientId/podcast-finder"
               element={
@@ -258,12 +259,16 @@ const App = () => (
               }
             />
             <Route
-              path="/app/workspaces/:workspaceId/prospect-dashboards"
+              path="/app/workspaces/:workspaceId/prospects"
               element={
                 <PlatformAdminRoute>
                   <AdminWorkspaceProspectDashboards />
                 </PlatformAdminRoute>
               }
+            />
+            <Route
+              path="/app/workspaces/:workspaceId/prospect-dashboards"
+              element={<LegacyAdminWorkspaceRedirect module="prospects" />}
             />
             <Route
               path="/app/workspaces/:workspaceId/clients"
@@ -407,8 +412,9 @@ const App = () => (
             />
             <Route
               path="/admin/prospect-dashboards"
-              element={<Navigate to="/app/prospect-dashboards" replace />}
+              element={<Navigate to="/app/prospects" replace />}
             />
+            <Route path="/admin/prospects" element={<Navigate to="/app/prospects" replace />} />
             <Route
               path="/admin/podcast-database"
               element={
@@ -463,7 +469,7 @@ const App = () => (
             />
             <Route
               path="/admin/workspaces/:workspaceId/prospect-dashboards"
-              element={<LegacyAdminWorkspaceRedirect module="prospect-dashboards" />}
+              element={<LegacyAdminWorkspaceRedirect module="prospects" />}
             />
             <Route
               path="/admin/workspaces/:workspaceId/clients"
