@@ -3230,10 +3230,23 @@ serve(async (req) => {
             }),
           },
         ).catch((error) => {
-          if (error instanceof InstantlyApiError) throw providerHttpError(error);
+          if (error instanceof InstantlyApiError) {
+            // A rejected or under-scoped key is a connection state, not a
+            // request failure — the inbox renders it as "reconnect Instantly".
+            if (error.status === 401) return { auth_failure: "key_rejected" as const };
+            if (error.status === 403) return { auth_failure: "scope_missing" as const };
+            throw providerHttpError(error);
+          }
           throw error;
         }),
       ]);
+      if (emailsPayload && "auth_failure" in emailsPayload) {
+        return jsonResponse(req, METHODS, 200, {
+          connected: false,
+          reason: emailsPayload.auth_failure,
+          threads: [],
+        });
+      }
       const campaignByProviderId = new Map(
         ((campaignRows ?? []) as Array<Record<string, unknown>>).flatMap((row) => {
           const providerId = row.instantly_campaign_id;

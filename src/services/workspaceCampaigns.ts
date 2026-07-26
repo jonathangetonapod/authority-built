@@ -465,10 +465,16 @@ export interface WorkspaceInboxThread {
   } | null
 }
 
+export interface WorkspaceInboxThreadsResponse {
+  connected: boolean
+  reason?: 'key_rejected' | 'scope_missing'
+  threads: WorkspaceInboxThread[]
+}
+
 export async function getWorkspaceInboxThreads(
   workspaceId: string,
-): Promise<{ connected: boolean; threads: WorkspaceInboxThread[] }> {
-  return await invokeWorkspaceCampaigns<{ connected: boolean; threads: WorkspaceInboxThread[] }>({
+): Promise<WorkspaceInboxThreadsResponse> {
+  return await invokeWorkspaceCampaigns<WorkspaceInboxThreadsResponse>({
     action: 'inbox-list',
     workspace_id: workspaceId,
   }, 'Inbox replies could not be loaded.')
