@@ -7,7 +7,7 @@ import { getWorkspaceClients, getWorkspaceResearchContext } from '@/services/cli
 import { generatePodcastQueries } from '@/services/queryGeneration'
 import { searchPodcastsWithMeta } from '@/services/podscan'
 import { scoreCompatibilityBatch } from '@/services/compatibilityScoring'
-import { addClientShortlistPodcasts } from '@/services/clientShortlist'
+import { addClientShortlistPodcasts, searchClientPodcastCatalog } from '@/services/clientShortlist'
 
 vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({
@@ -29,7 +29,7 @@ vi.mock('@/services/clients', () => ({
 vi.mock('@/services/queryGeneration', () => ({ generatePodcastQueries: vi.fn() }))
 vi.mock('@/services/podscan', () => ({ searchPodcastsWithMeta: vi.fn() }))
 vi.mock('@/services/compatibilityScoring', () => ({ scoreCompatibilityBatch: vi.fn() }))
-vi.mock('@/services/clientShortlist', () => ({ addClientShortlistPodcasts: vi.fn() }))
+vi.mock('@/services/clientShortlist', () => ({ addClientShortlistPodcasts: vi.fn(), searchClientPodcastCatalog: vi.fn() }))
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() } }))
 
 const workspaceId = '11111111-1111-4111-8111-111111111111'
@@ -106,9 +106,31 @@ describe('WorkspaceSmartPodcastFinder', () => {
     } as never)
     vi.mocked(scoreCompatibilityBatch).mockResolvedValue([
       { podcast_id: 'pd-high', score: 92, reasoning: 'Perfect audience overlap.' },
+      { podcast_id: 'pd-catalog', score: 88, reasoning: 'Strong database match.' },
       { podcast_id: 'pd-low', score: 41, reasoning: 'Weak topical match.' },
     ])
     vi.mocked(addClientShortlistPodcasts).mockResolvedValue({ added: 2, skipped: 0, podcast_ids: ['pd-high', 'pd-low'] })
+    vi.mocked(searchClientPodcastCatalog).mockResolvedValue([
+      {
+        podcast_id: 'pd-catalog',
+        podcast_name: 'Catalog Growth Show',
+        podcast_description: 'From the shared database.',
+        podcast_image_url: null,
+        podcast_url: null,
+        publisher_name: null,
+        itunes_rating: null,
+        episode_count: 80,
+        audience_size: 9_000,
+        last_posted_at: '2026-07-18',
+        podcast_categories: null,
+        language: 'en',
+        region: null,
+        podcast_email: null,
+        rss_feed: null,
+        already_added: false,
+        existing_visibility: null,
+      },
+    ] as never)
   })
 
   it('scans, ranks by AI fit, and never rescored podcasts already on the list', async () => {
@@ -125,35 +147,36 @@ describe('WorkspaceSmartPodcastFinder', () => {
     )
     const scored = vi.mocked(scoreCompatibilityBatch).mock.calls[0]
     expect(scored[0]).toBe('Taylor helps founders scale.')
-    expect((scored[1] as Array<{ podcast_id: string }>).map((entry) => entry.podcast_id)).toEqual(['pd-low', 'pd-high'])
+    expect((scored[1] as Array<{ podcast_id: string }>).map((entry) => entry.podcast_id)).toEqual(['pd-catalog', 'pd-low', 'pd-high'])
 
     const items = screen.getAllByRole('listitem')
     expect(items[0]).toHaveTextContent('Founder Stories')
     expect(items[0]).toHaveTextContent('92 fit')
     expect(items[0]).toHaveTextContent('Perfect audience overlap.')
-    expect(items[1]).toHaveTextContent('Low Fit Weekly')
+    expect(items[1]).toHaveTextContent('Catalog Growth Show')
+    expect(items[1]).toHaveTextContent('In your database')
+    expect(items[2]).toHaveTextContent('Low Fit Weekly')
     expect(screen.queryByText('Already Listed')).not.toBeInTheDocument()
   })
 
   it('adds the ranked podcasts to the client list with their compatibility scores', async () => {
     renderFinder()
     fireEvent.click(await screen.findByRole('button', { name: 'Scan podcasts for Taylor Client' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Add top 2' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Add top 3' }))
 
     await waitFor(() => expect(vi.mocked(addClientShortlistPodcasts)).toHaveBeenCalled())
     const [calledWorkspaceId, calledClientId, inputs] = vi.mocked(addClientShortlistPodcasts).mock.calls[0]
     expect(calledWorkspaceId).toBe(workspaceId)
     expect(calledClientId).toBe(clientId)
-    expect(inputs.map((input) => input.podcast_id)).toEqual(['pd-high', 'pd-low'])
+    expect(inputs.map((input) => input.podcast_id)).toEqual(['pd-high', 'pd-catalog', 'pd-low'])
     expect(inputs[0]).toMatchObject({ compatibility_score: 9.2, compatibility_reasoning: 'Perfect audience overlap.' })
-    expect(await screen.findAllByRole('button', { name: /Added/ })).toHaveLength(2)
+    expect(await screen.findAllByRole('button', { name: /Added/ })).toHaveLength(3)
   })
 
   it('lets the owner search with their own keywords and filters instead of the AI strategy', async () => {
     renderFinder()
     await screen.findByRole('button', { name: 'Scan podcasts for Taylor Client' })
 
-    fireEvent.click(screen.getByRole('button', { name: /Refine search/ }))
     fireEvent.change(screen.getByLabelText('Your keywords'), { target: { value: '"b2b saas" AND founders' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     fireEvent.click(screen.getByRole('switch', { name: 'AI search strategy' }))
@@ -176,7 +199,6 @@ describe('WorkspaceSmartPodcastFinder', () => {
     renderFinder()
     await screen.findByRole('button', { name: 'Scan podcasts for Taylor Client' })
 
-    fireEvent.click(screen.getByRole('button', { name: /Refine search/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Preview strategy' }))
     expect(await screen.findByText('founder stories')).toBeInTheDocument()
 

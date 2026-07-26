@@ -6,6 +6,7 @@ import {
   ArrowRight,
   CheckCircle2,
   ExternalLink,
+  Info,
   Loader2,
   Plus,
   RefreshCw,
@@ -22,6 +23,7 @@ import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { normalizePodscanQuery } from '@/lib/podcastResearch'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
 import { useAuth } from '@/contexts/AuthContext'
@@ -29,11 +31,37 @@ import { getWorkspaceClients, getWorkspaceResearchContext } from '@/services/cli
 import { generatePodcastQueries } from '@/services/queryGeneration'
 import { searchPodcastsWithMeta, type PodcastData } from '@/services/podscan'
 import { scoreCompatibilityBatch } from '@/services/compatibilityScoring'
-import { addClientShortlistPodcasts, type ClientShortlistPodcastInput } from '@/services/clientShortlist'
+import {
+  addClientShortlistPodcasts,
+  searchClientPodcastCatalog,
+  type ClientShortlistCatalogPodcast,
+  type ClientShortlistPodcastInput,
+} from '@/services/clientShortlist'
 import { safeExternalUrl } from '@/lib/externalUrl'
 
+// One normalized shape for both discovery sources: the shared internal
+// catalog and live Podscan search.
+interface ScanPodcast {
+  podcast_id: string
+  podcast_name: string
+  podcast_description?: string | null
+  podcast_image_url?: string | null
+  podcast_url?: string | null
+  publisher_name?: string | null
+  itunes_rating?: number | null
+  episode_count?: number | null
+  audience_size?: number | null
+  last_posted_at?: string | null
+  language?: string | null
+  region?: string | null
+  podcast_email?: string | null
+  rss_feed?: string | null
+  podcast_categories?: Array<{ category_id: string; category_name: string }> | null
+  source: 'database' | 'podscan'
+}
+
 interface ScanResult {
-  podcast: PodcastData
+  podcast: ScanPodcast
   score: number | null
   reasoning: string | null
 }
@@ -41,9 +69,53 @@ interface ScanResult {
 type ScanPhase = 'idle' | 'strategy' | 'search' | 'score' | 'done'
 
 const MAX_QUERIES = 6
-const PAGES_PER_QUERY = 2
-const MAX_SCORED = 60
+const PAGES_PER_QUERY = 3
+const MAX_SCORED = 100
 const SEARCH_SPACING_MS = 525
+
+function fromPodscan(podcast: PodcastData): ScanPodcast {
+  return {
+    podcast_id: podcast.podcast_id,
+    podcast_name: podcast.podcast_name,
+    podcast_description: podcast.podcast_description ?? null,
+    podcast_image_url: podcast.podcast_image_url ?? null,
+    podcast_url: podcast.podcast_url ?? null,
+    publisher_name: podcast.publisher_name ?? null,
+    itunes_rating: podcast.reach?.itunes?.itunes_rating_average
+      ? Number.parseFloat(podcast.reach.itunes.itunes_rating_average)
+      : null,
+    episode_count: podcast.episode_count ?? null,
+    audience_size: podcast.reach?.audience_size ?? null,
+    last_posted_at: podcast.last_posted_at ?? null,
+    language: podcast.language ?? null,
+    region: podcast.region ?? null,
+    podcast_email: podcast.reach?.email ?? null,
+    rss_feed: podcast.rss_url ?? null,
+    podcast_categories: podcast.podcast_categories ?? null,
+    source: 'podscan',
+  }
+}
+
+function fromCatalog(podcast: ClientShortlistCatalogPodcast): ScanPodcast {
+  return {
+    podcast_id: podcast.podcast_id,
+    podcast_name: podcast.podcast_name,
+    podcast_description: podcast.podcast_description,
+    podcast_image_url: podcast.podcast_image_url,
+    podcast_url: podcast.podcast_url,
+    publisher_name: podcast.publisher_name,
+    itunes_rating: podcast.itunes_rating,
+    episode_count: podcast.episode_count,
+    audience_size: podcast.audience_size,
+    last_posted_at: podcast.last_posted_at,
+    language: podcast.language,
+    region: podcast.region,
+    podcast_email: podcast.podcast_email,
+    rss_feed: podcast.rss_feed,
+    podcast_categories: podcast.podcast_categories,
+    source: 'database',
+  }
+}
 
 const LANGUAGE_OPTIONS = [
   { value: 'any', label: 'Any language' },
@@ -71,7 +143,7 @@ const ACTIVITY_OPTIONS = [
 
 const phaseSteps: Array<{ id: Exclude<ScanPhase, 'idle' | 'done'>; label: string }> = [
   { id: 'strategy', label: 'Building the search strategy from the client profile' },
-  { id: 'search', label: 'Searching active guest-interview podcasts' },
+  { id: 'search', label: 'Searching the shared database and Podscan' },
   { id: 'score', label: 'Scoring every match against the client with AI' },
 ]
 
@@ -86,20 +158,31 @@ function toShortlistInput(result: ScanResult): ClientShortlistPodcastInput {
     podcast_url: podcast.podcast_url,
     publisher_name: podcast.publisher_name,
     episode_count: podcast.episode_count,
-    itunes_rating: podcast.reach?.itunes?.itunes_rating_average
-      ? Number.parseFloat(podcast.reach.itunes.itunes_rating_average)
-      : undefined,
-    audience_size: podcast.reach?.audience_size,
+    itunes_rating: podcast.itunes_rating ?? undefined,
+    audience_size: podcast.audience_size,
     last_posted_at: podcast.last_posted_at,
     language: podcast.language,
     region: podcast.region,
-    podcast_email: podcast.reach?.email,
-    rss_feed: podcast.rss_url,
+    podcast_email: podcast.podcast_email,
+    rss_feed: podcast.rss_feed,
     podcast_categories: podcast.podcast_categories,
     compatibility_score: result.score === null ? null : result.score / 10,
     compatibility_reasoning: result.reasoning ?? undefined,
   }
 }
+
+const FieldHint = ({ text }: { text: string }) => (
+  <TooltipProvider delayDuration={150}>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span role="img" aria-label={text} className="inline-flex cursor-help text-muted-foreground/70 hover:text-muted-foreground">
+          <Info className="h-3.5 w-3.5" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-64 text-xs leading-5">{text}</TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
+)
 
 function scoreBadgeClass(score: number | null): string {
   if (score === null) return 'border-border bg-muted text-muted-foreground'
@@ -146,7 +229,6 @@ const WorkspaceSmartPodcastFinder = () => {
   const [isAdding, setIsAdding] = useState(false)
   const scanRunId = useRef(0)
 
-  const [showRefine, setShowRefine] = useState(false)
   const [customKeywords, setCustomKeywords] = useState<string[]>([])
   const [keywordDraft, setKeywordDraft] = useState('')
   const [aiQueries, setAiQueries] = useState<string[]>([])
@@ -240,7 +322,41 @@ const WorkspaceSmartPodcastFinder = () => {
       setPhase('search')
       const minPostedAt = new Date()
       if (activityDays !== 'any') minPostedAt.setDate(minPostedAt.getDate() - Number.parseInt(activityDays, 10))
-      const collected = new Map<string, PodcastData>()
+      const collected = new Map<string, ScanPodcast>()
+      const collect = (podcast: ScanPodcast) => {
+        const key = podcast.podcast_id.toLowerCase()
+        if (!collected.has(key)) collected.set(key, podcast)
+      }
+      const matchesFilters = (podcast: ScanPodcast) => {
+        if (minAudience && (podcast.audience_size ?? 0) < Number.parseInt(minAudience, 10)) return false
+        if (maxAudience && (podcast.audience_size ?? 0) > Number.parseInt(maxAudience, 10)) return false
+        if (minEpisodes && (podcast.episode_count ?? 0) < Number.parseInt(minEpisodes, 10)) return false
+        if (language !== 'any' && podcast.language && podcast.language !== language) return false
+        if (region !== 'any' && podcast.region && podcast.region !== region) return false
+        if (activityDays !== 'any' && podcast.last_posted_at
+          && Date.parse(podcast.last_posted_at) < minPostedAt.getTime()) return false
+        return true
+      }
+
+      // The shared internal database first — instant, free of Podscan rate
+      // limits, and already enriched by every workspace on the platform.
+      setStatusMessage('Checking the shared podcast database…')
+      for (const query of queries) {
+        if (scanRunId.current !== runId) return
+        try {
+          const catalogPodcasts = await searchClientPodcastCatalog(workspaceId, clientId, query)
+          for (const podcast of catalogPodcasts) {
+            const normalized = fromCatalog(podcast)
+            if (matchesFilters(normalized)) collect(normalized)
+          }
+        } catch (error) {
+          console.error('Smart scan catalog search failed:', error)
+        }
+      }
+      if (collected.size > 0) {
+        setStatusMessage(`${collected.size.toLocaleString()} matches in the shared database — expanding with Podscan…`)
+      }
+
       const totalRequests = queries.length * PAGES_PER_QUERY
       let completedRequests = 0
       for (const query of queries) {
@@ -263,10 +379,7 @@ const WorkspaceSmartPodcastFinder = () => {
               ...(minEpisodes ? { min_episode_count: Number.parseInt(minEpisodes, 10) } : {}),
             }, workspaceId)
             const podcasts = response.data.podcasts || []
-            for (const podcast of podcasts) {
-              const key = podcast.podcast_id.toLowerCase()
-              if (!collected.has(key)) collected.set(key, podcast)
-            }
+            for (const podcast of podcasts) collect(fromPodscan(podcast))
             const lastPage = Number.parseInt(String(response.data.pagination?.last_page ?? PAGES_PER_QUERY), 10)
             if (podcasts.length === 0 || page >= lastPage) {
               completedRequests += PAGES_PER_QUERY - page + 1
@@ -302,11 +415,11 @@ const WorkspaceSmartPodcastFinder = () => {
         candidates.map((podcast) => ({
           podcast_id: podcast.podcast_id,
           podcast_name: podcast.podcast_name,
-          podcast_description: podcast.podcast_description,
-          publisher_name: podcast.publisher_name,
-          podcast_categories: podcast.podcast_categories,
-          audience_size: podcast.reach?.audience_size,
-          episode_count: podcast.episode_count,
+          podcast_description: podcast.podcast_description ?? undefined,
+          publisher_name: podcast.publisher_name ?? undefined,
+          podcast_categories: podcast.podcast_categories ?? undefined,
+          audience_size: podcast.audience_size ?? undefined,
+          episode_count: podcast.episode_count ?? undefined,
         })),
         10,
         (completed, total) => {
@@ -420,23 +533,16 @@ const WorkspaceSmartPodcastFinder = () => {
                       : 'Scan podcasts'}
               </Button>
             </div>
-            <div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-                onClick={() => setShowRefine((current) => !current)}
-                aria-expanded={showRefine}
-              >
-                <SlidersHorizontal className="mr-2 h-3.5 w-3.5" />
-                Refine search{activeFilterCount > 0 ? ` · ${activeFilterCount} active` : ''}
-              </Button>
-            </div>
-            {showRefine && (
               <div className="space-y-5 rounded-xl border border-border/70 bg-muted/20 p-4">
+                <p className="flex items-center gap-2 text-sm font-semibold">
+                  <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+                  Refine the search{activeFilterCount > 0 ? ` · ${activeFilterCount} setting${activeFilterCount === 1 ? '' : 's'} changed` : ''}
+                </p>
                 <div>
-                  <Label htmlFor="finder-keyword" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Your keywords</Label>
+                  <span className="flex items-center gap-1.5">
+                    <Label htmlFor="finder-keyword" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Your keywords</Label>
+                    <FieldHint text='Search terms you choose yourself, searched in addition to the AI strategy. Quotes match exact phrases ("founder led sales"), and AND / OR / NOT combine terms.' />
+                  </span>
                   <p className="mt-1 text-xs text-muted-foreground">Run alongside the AI strategy. Quotes match exact phrases, AND/OR/NOT work too.</p>
                   {customKeywords.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
@@ -478,6 +584,7 @@ const WorkspaceSmartPodcastFinder = () => {
                     <div className="flex items-center gap-2">
                       <Switch id="finder-ai-strategy" checked={includeAiStrategy} onCheckedChange={setIncludeAiStrategy} />
                       <Label htmlFor="finder-ai-strategy" className="text-sm font-medium">AI search strategy</Label>
+                      <FieldHint text="The AI reads the client profile and drafts search angles automatically. Preview it to see and edit the queries before the scan runs, or switch it off to search only your own keywords." />
                     </div>
                     <Button
                       type="button"
@@ -518,7 +625,10 @@ const WorkspaceSmartPodcastFinder = () => {
 
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div>
-                    <Label className="text-xs text-muted-foreground">Language</Label>
+                    <span className="flex items-center gap-1.5">
+                      <Label className="text-xs text-muted-foreground">Language</Label>
+                      <FieldHint text="Only include podcasts published in this language." />
+                    </span>
                     <Select value={language} onValueChange={setLanguage}>
                       <SelectTrigger aria-label="Language" className="mt-1"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -529,7 +639,10 @@ const WorkspaceSmartPodcastFinder = () => {
                     </Select>
                   </div>
                   <div>
-                    <Label className="text-xs text-muted-foreground">Region</Label>
+                    <span className="flex items-center gap-1.5">
+                      <Label className="text-xs text-muted-foreground">Region</Label>
+                      <FieldHint text="Where the show is based. Useful when the client wants audiences in a specific market." />
+                    </span>
                     <Select value={region} onValueChange={setRegion}>
                       <SelectTrigger aria-label="Region" className="mt-1"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -540,7 +653,10 @@ const WorkspaceSmartPodcastFinder = () => {
                     </Select>
                   </div>
                   <div>
-                    <Label className="text-xs text-muted-foreground">Recency</Label>
+                    <span className="flex items-center gap-1.5">
+                      <Label className="text-xs text-muted-foreground">Recency</Label>
+                      <FieldHint text="How recently the show must have published an episode. Inactive shows rarely book guests." />
+                    </span>
                     <Select value={activityDays} onValueChange={setActivityDays}>
                       <SelectTrigger aria-label="Recency" className="mt-1"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -551,7 +667,10 @@ const WorkspaceSmartPodcastFinder = () => {
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor="finder-min-audience" className="text-xs text-muted-foreground">Min audience</Label>
+                    <span className="flex items-center gap-1.5">
+                      <Label htmlFor="finder-min-audience" className="text-xs text-muted-foreground">Min audience</Label>
+                      <FieldHint text="Skip shows with fewer estimated listeners per episode than this." />
+                    </span>
                     <Input
                       id="finder-min-audience"
                       type="number"
@@ -563,7 +682,10 @@ const WorkspaceSmartPodcastFinder = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="finder-max-audience" className="text-xs text-muted-foreground">Max audience</Label>
+                    <span className="flex items-center gap-1.5">
+                      <Label htmlFor="finder-max-audience" className="text-xs text-muted-foreground">Max audience</Label>
+                      <FieldHint text="Cap the audience size — smaller shows reply more often and are easier to land early wins on." />
+                    </span>
                     <Input
                       id="finder-max-audience"
                       type="number"
@@ -575,7 +697,10 @@ const WorkspaceSmartPodcastFinder = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="finder-min-episodes" className="text-xs text-muted-foreground">Min episodes</Label>
+                    <span className="flex items-center gap-1.5">
+                      <Label htmlFor="finder-min-episodes" className="text-xs text-muted-foreground">Min episodes</Label>
+                      <FieldHint text="Filters out brand-new shows. 10+ episodes signals the podcast is here to stay." />
+                    </span>
                     <Input
                       id="finder-min-episodes"
                       type="number"
@@ -592,6 +717,7 @@ const WorkspaceSmartPodcastFinder = () => {
                   <div className="flex items-center gap-2">
                     <Switch id="finder-guests-only" checked={guestsOnly} onCheckedChange={setGuestsOnly} />
                     <Label htmlFor="finder-guests-only" className="text-sm">Guest-interview shows only</Label>
+                    <FieldHint text="Only shows that actually host guests. Turn off to include solo and narrative formats too." />
                   </div>
                   <Button
                     type="button"
@@ -617,7 +743,6 @@ const WorkspaceSmartPodcastFinder = () => {
                   </Button>
                 </div>
               </div>
-            )}
             {selectedClient && !contextQuery.isLoading && !clientBio && (
               <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">
                 {selectedClient.name} has no profile bio yet, so the AI has nothing to match against.{' '}
@@ -695,6 +820,9 @@ const WorkspaceSmartPodcastFinder = () => {
                           <Badge variant="outline" className={scoreBadgeClass(result.score)}>
                             {result.score === null ? 'Unscored' : `${result.score} fit`}
                           </Badge>
+                          {podcast.source === 'database' && (
+                            <Badge variant="secondary" className="font-normal text-muted-foreground">In your database</Badge>
+                          )}
                           {websiteUrl && (
                             <a
                               href={websiteUrl}
@@ -712,7 +840,7 @@ const WorkspaceSmartPodcastFinder = () => {
                         )}
                         <p className="mt-1 text-xs text-muted-foreground">
                           {[
-                            podcast.reach?.audience_size ? `${Number(podcast.reach.audience_size).toLocaleString()} listeners` : null,
+                            podcast.audience_size ? `${Number(podcast.audience_size).toLocaleString()} listeners` : null,
                             podcast.episode_count ? `${podcast.episode_count.toLocaleString()} episodes` : null,
                             podcast.podcast_categories?.[0]?.category_name || null,
                           ].filter(Boolean).join(' · ')}
