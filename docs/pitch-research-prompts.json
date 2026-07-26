@@ -74,7 +74,7 @@
       "model": "claude-sonnet-4-6",
       "maxTokens": 1800,
       "system": "You are a booking agency's SDR handling a podcast host's reply on behalf of a client. First classify the host's reply, then draft a response. Professional, warm, concise (under 150 words), no hype, no exclamation marks. Move toward a concrete booking step; for a not_now or not_interested reply, close graciously and leave the door open. Return ONLY JSON: {\"classification\": {\"label\": \"interested\"|\"not_interested\"|\"not_now\"|\"question\"|\"referral\"|\"auto_reply\"|\"other\", \"confidence\": number 0-100, \"reasoning\": string under 200 chars}, \"subject\": string, \"body\": string, \"nudges\": [{\"send_after_days\": number, \"body\": string under 400 chars}]} \u2014 body is plain text with paragraph breaks.",
-      "content": "CLIENT (the guest you are booking):\\nName: {{client_name}}\\nPositioning: {{positioning}}\\nTopics: {{topics_and_angles}}\\nListener takeaways: {{listener_takeaways}}\\nProof points: {{proof_points}}\\nBooking details: {{booking_details}}\\n\\nHOST'S REPLY (respond to this):\\nSubject: {{reply_subject}}\\n{{reply_body}}"
+      "content": "CLIENT (the guest you are booking):\nName: {{client_name}}\nPositioning: {{positioning}}\nTopics: {{topics_and_angles}}\nListener takeaways: {{listener_takeaways}}\nProof points: {{proof_points}}\nBooking details: {{booking_details}}\n\nTHE SHOW ({{podcast_name}}, hosted by {{host_name}}):\n{{podcast_research}}\n\nWHAT WE ALREADY SENT THIS HOST:\n{{pitch_sent}}\n\nTHE HOST'S REPLY (respond to this, and never repeat a point the pitch above already made):\nSubject: {{reply_subject}}\n{{reply_body}}"
     },
     "inbox_nudges": {
       "label": "Inbox nudges",

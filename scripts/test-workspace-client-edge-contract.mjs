@@ -195,7 +195,7 @@ assert.match(clientPodcastsEdge, /\.eq\('visibility', 'visible'\)[\s\S]*?\.order
 assert.doesNotMatch(clientPodcastsEdge, /select\('id,name,bio,google_sheet_url/u)
 assert.doesNotMatch(clientPodcastsEdge, /\.from\('client_dashboard_podcasts'\)[\s\S]*?\.delete\(\)/u)
 assert.match(publicDashboardEdge, /\.eq\('visibility', 'visible'\)/u)
-assert.match(publicDashboardEdge, /workspace:workspaces\(id,name,status,logo_path,logo_updated_at\)/u)
+assert.match(publicDashboardEdge, /workspace:workspaces!clients_workspace_id_fkey\(id,name,status,logo_path,logo_updated_at\)/u)
 assert.match(publicDashboardEdge, /import \{ loadWorkspacePresentation \} from '\.\.\/_shared\/portalBranding\.ts'/u)
 assert.match(portalBrandingShared, /\.select\('client_brand_name,client_brand_primary_color,client_brand_accent_color'\)/u)
 assert.match(portalBrandingShared, /brandSchemaUnavailable\(canonicalBrandError\)/u)

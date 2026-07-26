@@ -90,6 +90,8 @@ export interface GenerateReplyPackageInput {
   message: string
   actorUserId: string | null
   referenceKind: string
+  /** The host's address, used to recover what we pitched this show. */
+  leadEmail?: string | null
 }
 
 /**
@@ -122,6 +124,48 @@ export async function generateReplyPackage(input: GenerateReplyPackageInput): Pr
       'SDR_PROFILE_NOT_READY',
       'Complete the core AI SDR profile fields before drafting replies for this client',
     )
+  }
+
+  // Conversation context: what we pitched this show, and what the research
+  // found about it. Without this the SDR answers a host it knows nothing
+  // about, with no memory of the email that started the thread.
+  let pitchSent = ''
+  let podcastName = ''
+  let hostName = ''
+  let podcastResearch = ''
+  if (input.leadEmail) {
+    const { data: target } = await admin
+      .from('workspace_client_campaign_targets')
+      .select('podcast_name, host_name, pitch_subject, pitch_body, shortlist_podcast_id')
+      .eq('workspace_id', workspaceId)
+      .eq('client_id', clientId)
+      .ilike('contact_email', input.leadEmail)
+      .limit(1)
+      .maybeSingle()
+    if (target) {
+      podcastName = typeof target.podcast_name === 'string' ? target.podcast_name : ''
+      hostName = typeof target.host_name === 'string' ? target.host_name : ''
+      const subjectLine = typeof target.pitch_subject === 'string' ? target.pitch_subject : ''
+      const bodyText = typeof target.pitch_body === 'string' ? target.pitch_body : ''
+      pitchSent = [subjectLine && `Subject: ${subjectLine}`, bodyText]
+        .filter(Boolean).join('\n').slice(0, 3_000)
+      if (typeof target.shortlist_podcast_id === 'string') {
+        const { data: shortlist } = await admin
+          .from('client_dashboard_podcasts')
+          .select('podcast_description, research_document')
+          .eq('client_id', clientId)
+          .eq('id', target.shortlist_podcast_id)
+          .maybeSingle()
+        const document = shortlist?.research_document && typeof shortlist.research_document === 'object'
+          ? shortlist.research_document as Record<string, unknown>
+          : null
+        podcastResearch = [
+          typeof shortlist?.podcast_description === 'string' ? shortlist.podcast_description : '',
+          typeof document?.podcast_research === 'string' ? document.podcast_research : '',
+          typeof document?.host_info === 'string' ? document.host_info : '',
+        ].filter(Boolean).join('\n\n').slice(0, 4_000)
+      }
+    }
   }
 
   // Workspace-editable prompt (Client Campaigns -> prompt settings) with the
@@ -161,6 +205,10 @@ export async function generateReplyPackage(input: GenerateReplyPackageInput): Pr
     booking_details: profileText('booking_details'),
     reply_subject: subject,
     reply_body: message,
+    podcast_name: podcastName,
+    host_name: hostName,
+    pitch_sent: pitchSent,
+    podcast_research: podcastResearch,
   }
   const fill = (template: string): string =>
     template.replace(/\{\{\s*([a-z_]+)\s*\}\}/gu, (_match, key: string) => {

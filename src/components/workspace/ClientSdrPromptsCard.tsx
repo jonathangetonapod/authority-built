@@ -26,6 +26,10 @@ const REPLY_VARIABLES = [
   '{{booking_details}}',
   '{{reply_subject}}',
   '{{reply_body}}',
+  '{{podcast_name}}',
+  '{{host_name}}',
+  '{{pitch_sent}}',
+  '{{podcast_research}}',
 ]
 
 const RESEARCH_BASE_VARIABLES = [

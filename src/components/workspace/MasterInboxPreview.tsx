@@ -315,7 +315,12 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
       thread.subject || '(no subject)',
       thread.body_text,
       thread.thread_key
-        ? { thread_key: thread.thread_key, email_id: thread.id, force: draftedForThread === thread.id }
+        ? {
+          thread_key: thread.thread_key,
+          email_id: thread.id,
+          force: draftedForThread === thread.id,
+          lead_email: thread.lead_email || thread.from_email,
+        }
         : undefined,
     ),
     onSuccess: (draft, thread) => {

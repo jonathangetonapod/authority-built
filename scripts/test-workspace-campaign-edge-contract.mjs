@@ -236,3 +236,9 @@ assert.match(edge, /addCampaignTargets\(context, campaign, \[\s*shortlistPodcast
 // Scheduled sync: shared secret only, no user input, bounded per run.
 assert.match(edge, /Deno\.env\.get\("CAMPAIGN_SYNC_SECRET"\)/u)
 assert.match(edge, /x-campaign-sync-secret/u)
+
+// Prompt enrichment: the SDR sees what we pitched and what research found,
+// so a reply never repeats the opening email or invents show details.
+assert.match(sdrShared, /pitch_sent: pitchSent/u)
+assert.match(sdrShared, /podcast_research: podcastResearch/u)
+assert.match(sdrShared, /from\('workspace_client_campaign_targets'\)[\s\S]*?pitch_subject, pitch_body/u)

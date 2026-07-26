@@ -238,6 +238,7 @@ serve(async (req) => {
             message: messageText,
             actorUserId: ownerRow?.user_id ?? null,
             referenceKind: 'inbox_auto_draft',
+            leadEmail: typeof email.lead === 'string' ? email.lead : null,
           })
           await admin
             .from('workspace_inbox_thread_state')

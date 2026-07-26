@@ -2671,7 +2671,7 @@ serve(async (req) => {
     }
 
     if (action === "inbox-draft") {
-      requireOnlyKeys(body, ["action", "workspace_id", "client_id", "subject", "message", "thread_key", "email_id", "force"]);
+      requireOnlyKeys(body, ["action", "workspace_id", "client_id", "subject", "message", "thread_key", "email_id", "force", "lead_email"]);
       const clientId = requireUuid(body.client_id, "client_id");
       const subject = requireString(body.subject ?? "(no subject)", "subject", { max: 300 });
       const message = requireString(body.message, "message", { max: 8_000 });
@@ -2682,6 +2682,9 @@ serve(async (req) => {
         ? null
         : requireString(body.email_id, "email_id", { max: 120 });
       const force = body.force === true;
+      const draftLeadEmail = body.lead_email === undefined
+        ? null
+        : requireString(body.lead_email, "lead_email", { max: 320 });
 
       // Idempotency: a fresh persisted package for this exact message is
       // returned free — Redraft passes force to spend a new model call.
@@ -2742,6 +2745,7 @@ serve(async (req) => {
         message,
         actorUserId: context.user.id,
         referenceKind: "inbox_draft",
+        leadEmail: draftLeadEmail,
       });
       let persisted = true;
       if (threadKey) {
