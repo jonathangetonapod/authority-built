@@ -704,9 +704,10 @@ export async function setWorkspaceInboxThreadStatus(
     client_id: string
     status?: 'needs_reply' | 'booked' | 'archived'
     nudges_paused?: boolean
+    lead_email?: string
   },
-): Promise<void> {
-  await invokeWorkspaceCampaigns<{ success: boolean }>({
+): Promise<{ booking_id: string | null }> {
+  return await invokeWorkspaceCampaigns<{ success: boolean; booking_id: string | null }>({
     action: 'inbox-thread-state',
     workspace_id: workspaceId,
     ...input,

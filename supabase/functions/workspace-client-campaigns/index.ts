@@ -26,6 +26,7 @@ import { chargeCredits, logOperationCost } from "../_shared/billing.ts";
 import { resolveAiKey } from "../_shared/workspaceAiKeys.ts";
 import {
   type AuthContext,
+  createAdminClient,
   errorResponse,
   HttpError,
   jsonResponse,
@@ -1177,9 +1178,11 @@ async function requireCampaignTarget(
   campaign: CampaignRow,
   shortlistPodcastId: string,
 ): Promise<TargetRow> {
+  // Same approval gate the add-podcasts and prepare-podcast paths enforce:
+  // a show the client has not approved is never pitched by accident.
   const targets = await addCampaignTargets(context, campaign, [
     shortlistPodcastId,
-  ]);
+  ], { requireApproved: true });
   const target = targets.find((item) =>
     item.shortlist_podcast_id === shortlistPodcastId
   );
@@ -1934,6 +1937,59 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return optionsResponse(req, METHODS);
 
   try {
+    // Scheduled provider sync. pg_cron posts here with the project anon key
+    // (so the gateway's JWT check passes) plus a shared secret only the
+    // scheduler knows. No user session is involved and no user input is read.
+    const syncSecret = Deno.env.get("CAMPAIGN_SYNC_SECRET")?.trim();
+    if (syncSecret && req.headers.get("x-campaign-sync-secret") === syncSecret) {
+      const admin = createAdminClient();
+      const { data: connections } = await admin
+        .from("workspace_instantly_integrations")
+        .select(CONNECTION_COLUMNS)
+        .eq("status", "connected")
+        .order("last_verified_at", { ascending: true, nullsFirst: true })
+        .limit(5);
+      let synced = 0;
+      let failed = 0;
+      for (const connection of (connections ?? []) as unknown as ConnectionRow[]) {
+        try {
+          const { data: owner } = await admin
+            .from("workspace_memberships")
+            .select("user_id")
+            .eq("workspace_id", connection.workspace_id)
+            .eq("role", "owner")
+            .eq("status", "active")
+            .limit(1)
+            .maybeSingle();
+          const { data: campaigns } = await admin
+            .from("workspace_client_campaigns")
+            .select(CAMPAIGN_COLUMNS)
+            .eq("workspace_id", connection.workspace_id)
+            .not("instantly_campaign_id", "is", null)
+            .in("provider_sync_state", ["idle", "error"])
+            .order("last_synced_at", { ascending: true, nullsFirst: true })
+            .limit(10);
+          // syncProviderCampaign only needs the admin client and an actor id
+          // for the updated_by stamp.
+          const cronContext = {
+            admin,
+            user: { id: owner?.user_id ?? null },
+          } as unknown as AuthContext;
+          for (const campaign of (campaigns ?? []) as unknown as CampaignRow[]) {
+            try {
+              await syncProviderCampaign(cronContext, connection, campaign);
+              synced += 1;
+            } catch (_error) {
+              failed += 1;
+            }
+          }
+        } catch (_error) {
+          failed += 1;
+        }
+      }
+      return jsonResponse(req, METHODS, 200, { synced, failed });
+    }
+
     if (req.method !== "POST") {
       throw new HttpError(405, "METHOD_NOT_ALLOWED", "Only POST is allowed");
     }
@@ -2940,7 +2996,7 @@ serve(async (req) => {
     }
 
     if (action === "inbox-thread-state") {
-      requireOnlyKeys(body, ["action", "workspace_id", "thread_key", "client_id", "status", "nudges_paused"]);
+      requireOnlyKeys(body, ["action", "workspace_id", "thread_key", "client_id", "status", "nudges_paused", "lead_email"]);
       if (!["owner", "admin", "platform_admin"].includes(access.role)) {
         throw new HttpError(403, "WORKSPACE_ACCESS_REQUIRED", "Workspace manager access is required");
       }
@@ -2950,6 +3006,9 @@ serve(async (req) => {
       if (status !== null && !["needs_reply", "booked", "archived"].includes(status)) {
         throw new HttpError(400, "INVALID_FIELD", "status must be needs_reply, booked, or archived");
       }
+      const leadEmail = body.lead_email === undefined
+        ? null
+        : requireString(body.lead_email, "lead_email", { max: 320 });
       const nudgesPaused = body.nudges_paused === undefined ? null : body.nudges_paused === true;
       if (status === null && nudgesPaused === null) {
         throw new HttpError(400, "INVALID_FIELD", "Provide status or nudges_paused");
@@ -2969,15 +3028,65 @@ serve(async (req) => {
       if (stateError) {
         throw new HttpError(503, "THREAD_STATE_UNAVAILABLE", "The conversation state could not be saved");
       }
+      // Marking a conversation booked is the moment a show becomes a real
+      // placement — create the booking so the client's calendar fills in
+      // without anyone retyping the podcast on another page.
+      let bookingId: string | null = null;
+      if (status === "booked" && leadEmail) {
+        const { data: target } = await context.admin
+          .from("workspace_client_campaign_targets")
+          .select("id, shortlist_podcast_id, podcast_id, podcast_name, podcast_url, host_name")
+          .eq("workspace_id", workspaceId)
+          .eq("client_id", stateClientId)
+          .ilike("contact_email", leadEmail)
+          .limit(1)
+          .maybeSingle();
+        if (target?.id) {
+          // The unique index on campaign_target_id makes this idempotent:
+          // a second click can never create a duplicate placement.
+          const { data: existing } = await context.admin
+            .from("bookings")
+            .select("id")
+            .eq("campaign_target_id", target.id)
+            .maybeSingle();
+          if (existing?.id) {
+            bookingId = existing.id;
+          } else {
+            const { data: created } = await context.admin
+              .from("bookings")
+              .insert({
+                client_id: stateClientId,
+                workspace_id: workspaceId,
+                campaign_target_id: target.id,
+                shortlist_podcast_id: target.shortlist_podcast_id ?? null,
+                podcast_id: target.podcast_id ?? null,
+                podcast_name: target.podcast_name,
+                podcast_url: target.podcast_url ?? null,
+                host_name: target.host_name ?? null,
+                status: "conversation_started",
+                notes: "Created from the Master Inbox when the conversation was marked booked.",
+              })
+              .select("id")
+              .maybeSingle();
+            bookingId = created?.id ?? null;
+          }
+          // The outreach that earned the booking is finished.
+          await context.admin
+            .from("workspace_client_campaign_targets")
+            .update({ status: "completed", last_activity_at: new Date().toISOString() })
+            .eq("id", target.id)
+            .in("status", ["in_outreach", "replied"]);
+        }
+      }
       await writeAudit(context.admin, {
         workspaceId,
         actorUserId: context.user.id,
         action: "workspace.inbox.thread_status_set",
         entityType: "client",
         entityId: stateClientId,
-        metadata: { thread_key: threadKey, status },
+        metadata: { thread_key: threadKey, status, booking_id: bookingId },
       });
-      return jsonResponse(req, METHODS, 200, { success: true });
+      return jsonResponse(req, METHODS, 200, { success: true, booking_id: bookingId });
     }
 
     const clientId = requireUuid(body.client_id, "client_id");

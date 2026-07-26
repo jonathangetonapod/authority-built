@@ -129,6 +129,8 @@ const BOOKING_FIELDS = [
   'episode_url',
   'notes',
   'prep_sent',
+  'shortlist_podcast_id',
+  'campaign_target_id',
 ]
 
 function optionalDate(value: unknown, field: string): string | null {
@@ -138,6 +140,15 @@ function optionalDate(value: unknown, field: string): string | null {
     throw new HttpError(400, 'INVALID_FIELD', `${field} must be a YYYY-MM-DD date`)
   }
   return text
+}
+
+function optionalUuid(value: unknown, field: string): string | null {
+  const text = optionalString(value, field, 40)
+  if (!text) return null
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(text)) {
+    throw new HttpError(400, 'INVALID_FIELD', `${field} must be a UUID`)
+  }
+  return text.toLowerCase()
 }
 
 function bookingPayload(value: unknown): Record<string, string | boolean | null> {
@@ -165,6 +176,10 @@ function bookingPayload(value: unknown): Record<string, string | boolean | null>
     episode_url: optionalString(input.episode_url, 'episode_url', 2048),
     notes: optionalString(input.notes, 'notes', 10_000),
     prep_sent: input.prep_sent === true,
+    // The journey links: which shortlist row and which outreach this
+    // placement came from. Composite FKs reject a mismatched client.
+    shortlist_podcast_id: optionalUuid(input.shortlist_podcast_id, 'shortlist_podcast_id'),
+    campaign_target_id: optionalUuid(input.campaign_target_id, 'campaign_target_id'),
   }
 }
 
@@ -503,12 +518,12 @@ serve(async (req) => {
         return jsonResponse(req, METHODS, 200, { success: true })
       }
 
-      const columns = 'id,client_id,podcast_id,podcast_name,podcast_url,host_name,scheduled_date,recording_date,publish_date,status,episode_url,prep_sent,notes,created_at,updated_at'
+      const columns = 'id,client_id,workspace_id,podcast_id,shortlist_podcast_id,campaign_target_id,podcast_name,podcast_url,host_name,scheduled_date,recording_date,publish_date,status,episode_url,prep_sent,notes,created_at,updated_at'
       const now = new Date().toISOString()
       const { data: booking, error: bookingError } = action === 'booking-create'
         ? await admin
           .from('bookings')
-          .insert({ ...bookingInput, client_id: clientId })
+          .insert({ ...bookingInput, client_id: clientId, workspace_id: workspaceId })
           .select(columns)
           .maybeSingle()
         : await admin
@@ -616,7 +631,7 @@ serve(async (req) => {
       const [bookingsResult, onboardingResult, dashboardPodcastsResult, dashboardFeedbackResult, outreachResult] = await Promise.all([
         admin
           .from('bookings')
-          .select('id,client_id,podcast_id,podcast_name,podcast_url,host_name,scheduled_date,recording_date,publish_date,status,episode_url,prep_sent,notes,created_at,updated_at')
+          .select('id,client_id,workspace_id,podcast_id,shortlist_podcast_id,campaign_target_id,podcast_name,podcast_url,host_name,scheduled_date,recording_date,publish_date,status,episode_url,prep_sent,notes,created_at,updated_at')
           .eq('client_id', clientId!)
           .order('scheduled_date', { ascending: false, nullsFirst: false })
           .order('created_at', { ascending: false })

@@ -225,3 +225,14 @@ assert.match(enrollTick, /email\.i_status !== 1\) continue/u)
 // the reply call as the nudge-array guidance.
 assert.match(sdrShared, /FOLLOW-UP NUDGE GUIDANCE/u)
 assert.match(sdrShared, /resolvePrompt\('inbox_nudges', nudgeDefault\.content\)/u)
+
+// Journey links: marking a conversation booked creates the placement against
+// the outreach it came from, exactly once, and finishes that target.
+assert.match(edge, /status === "booked" && leadEmail[\s\S]*?workspace_client_campaign_targets/u)
+assert.match(edge, /campaign_target_id: target\.id[\s\S]*?shortlist_podcast_id: target\.shortlist_podcast_id/u)
+assert.match(edge, /\.update\(\{ status: "completed"[\s\S]*?\.in\("status", \["in_outreach", "replied"\]\)/u)
+// The launch path enforces the same approval gate as its siblings.
+assert.match(edge, /addCampaignTargets\(context, campaign, \[\s*shortlistPodcastId,\s*\], \{ requireApproved: true \}\)/u)
+// Scheduled sync: shared secret only, no user input, bounded per run.
+assert.match(edge, /Deno\.env\.get\("CAMPAIGN_SYNC_SECRET"\)/u)
+assert.match(edge, /x-campaign-sync-secret/u)

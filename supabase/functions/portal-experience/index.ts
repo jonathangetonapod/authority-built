@@ -34,6 +34,7 @@ const PORTAL_BOOKING_FIELDS = [
   'itunes_rating',
   'episode_count',
   'created_by_client',
+  'shortlist_podcast_id',
 ].join(',')
 
 function clampText(value: unknown, max: number): string | null {
@@ -255,7 +256,7 @@ serve(async (req) => {
         .limit(500),
       admin
         .from('client_dashboard_podcasts')
-        .select('id,podcast_id,podcast_image_url')
+        .select('id,podcast_id,podcast_image_url,podcast_name,podcast_description,audience_size,itunes_rating,episode_count')
         .eq('client_id', clientId)
         .eq('visibility', 'visible')
         .limit(2_000),
@@ -337,11 +338,38 @@ serve(async (req) => {
     // and how the conversation is going. Internal failures stay hidden — the
     // workspace resolves those, the client just sees the show as preparing.
     const imageByShortlistId = new Map<string, string>()
+    const shortlistById = new Map<string, Record<string, unknown>>()
     for (const row of visibleRows) {
-      if (typeof row.id === 'string' && typeof row.podcast_image_url === 'string' && row.podcast_image_url) {
+      if (typeof row.id !== 'string') continue
+      shortlistById.set(row.id, row)
+      if (typeof row.podcast_image_url === 'string' && row.podcast_image_url) {
         imageByShortlistId.set(row.id, row.podcast_image_url.slice(0, 2_000))
       }
     }
+    // Artwork, audience and rating live on the shortlist row — booking columns
+    // for them are never written, so resolve through the link and fall back.
+    const enrichedBookings = ((bookingsResult.data ?? []) as unknown as Array<Record<string, unknown>>).map((booking) => {
+      const shortlist = typeof booking.shortlist_podcast_id === 'string'
+        ? shortlistById.get(booking.shortlist_podcast_id)
+        : null
+      if (!shortlist) return booking
+      const inherit = (key: string) => booking[key] ?? shortlist[key] ?? null
+      return {
+        ...booking,
+        podcast_image_url: inherit('podcast_image_url'),
+        podcast_description: inherit('podcast_description'),
+        audience_size: inherit('audience_size'),
+        itunes_rating: inherit('itunes_rating'),
+        episode_count: inherit('episode_count'),
+      }
+    })
+    // One journey per show: an outreach target whose booking already exists is
+    // the same podcast, so the client never sees it as two separate things.
+    const bookedShortlistIds = new Set(
+      enrichedBookings.flatMap((booking) => (
+        typeof booking.shortlist_podcast_id === 'string' ? [booking.shortlist_podcast_id] : []
+      )),
+    )
     const targetStage = (status: unknown): string | null => {
       if (status === 'in_outreach') return 'contacted'
       if (status === 'replied') return 'replied'
@@ -353,6 +381,9 @@ serve(async (req) => {
       .flatMap((row) => {
         const stage = targetStage(row.status)
         if (!stage || typeof row.podcast_name !== 'string' || !row.podcast_name) return []
+        if (typeof row.shortlist_podcast_id === 'string' && bookedShortlistIds.has(row.shortlist_podcast_id)) {
+          return []
+        }
         return [{
           id: typeof row.id === 'string' ? row.id : '',
           podcast_name: row.podcast_name.slice(0, 300),
@@ -402,7 +433,7 @@ serve(async (req) => {
       outreach,
       outreach_targets: outreachTargets,
       pitch_profile: pitchProfile,
-      bookings: bookingsResult.data ?? [],
+      bookings: enrichedBookings,
     })
   } catch (error) {
     return errorResponse(req, METHODS, error)

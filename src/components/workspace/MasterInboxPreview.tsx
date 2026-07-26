@@ -374,12 +374,19 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
         client_id: input.thread.campaign!.client!.id,
         ...(input.status ? { status: input.status } : {}),
         ...(input.nudges_paused !== undefined ? { nudges_paused: input.nudges_paused } : {}),
+        // Booking a conversation needs the lead address to find the outreach
+        // it came from, so the placement is created against the right show.
+        ...(input.status === 'booked' && (input.thread.lead_email || input.thread.from_email)
+          ? { lead_email: input.thread.lead_email || input.thread.from_email }
+          : {}),
       }),
     onSuccess: (_result, input) => {
       toast.success(input.status === 'archived'
         ? 'Conversation archived.'
         : input.status === 'booked'
-          ? 'Marked as booked.'
+          ? _result?.booking_id
+            ? 'Booked — the placement is on the client’s calendar.'
+            : 'Marked as booked.'
           : input.status === 'needs_reply'
             ? 'Conversation reopened.'
             : input.nudges_paused
