@@ -59,10 +59,28 @@ export interface ClientShortlistPodcastInput {
   compatibility_reasoning?: string | null
 }
 
+export interface ClientShortlistEpisodePerson {
+  name: string
+  company: string | null
+  role: string | null
+}
+
 export interface ClientShortlistEpisode {
   title: string
   description: string | null
   posted_at: string | null
+  episode_id?: string | null
+  url?: string | null
+  audio_url?: string | null
+  image_url?: string | null
+  duration_seconds?: number | null
+  word_count?: number | null
+  has_guests?: boolean
+  hosts?: ClientShortlistEpisodePerson[]
+  guests?: ClientShortlistEpisodePerson[]
+  summary?: string | null
+  keywords?: string[]
+  topics?: string[]
 }
 
 export interface ClientShortlistPodcast extends ClientShortlistPodcastInput {
@@ -79,6 +97,7 @@ export interface ClientShortlistPodcast extends ClientShortlistPodcastInput {
   podcast_categories: ClientShortlistCategory[] | null
   recent_episodes?: ClientShortlistEpisode[] | null
   episodes_fetched_at?: string | null
+  host_name?: string | null
   ai_clean_description: string | null
   ai_fit_reasons: string[] | null
   ai_pitch_angles: Array<{ title: string; description: string }> | null

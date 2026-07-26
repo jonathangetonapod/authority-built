@@ -73,6 +73,7 @@ const CATALOG_FIELDS = [
   'region',
   'podscan_email',
   'rss_url',
+  'host_name',
   // Stored episode capture (ensureEpisodesCaptured). The transcript column
   // is deliberately excluded — it is heavy and only research reads it.
   'recent_episodes',
@@ -122,6 +123,7 @@ interface CatalogPodcastRow extends Record<string, unknown> {
   region: string | null
   podscan_email: string | null
   rss_url: string | null
+  host_name?: string | null
   recent_episodes?: unknown
   episodes_fetched_at?: string | null
   free_podscan_email?: string | null
@@ -557,6 +559,7 @@ serve(async (req) => {
           podcast_categories: catalog?.podcast_categories ?? podcast.podcast_categories ?? null,
           recent_episodes: catalog?.recent_episodes ?? null,
           episodes_fetched_at: catalog?.episodes_fetched_at ?? null,
+          host_name: catalog?.host_name ?? null,
           podcast_email: catalog?.podscan_email || null,
           rss_feed: catalog?.rss_url || null,
           language: catalog?.language || null,
@@ -978,11 +981,9 @@ serve(async (req) => {
       }
       const captured = await ensureEpisodesCaptured(authContext.admin, podcastId)
       return jsonResponse(req, METHODS, 200, {
-        episodes: (captured?.episodes ?? []).map((episode) => ({
-          title: episode.title,
-          description: episode.description.slice(0, 300),
-          posted_at: episode.posted_at,
-        })),
+        // The full stored shape (minus transcript): title, description, urls,
+        // duration, hosts, guests, summary, keywords, topics.
+        episodes: captured?.episodes ?? [],
         last_posted_at: captured?.last_posted_at ?? null,
         episodes_fetched_at: captured?.episodes_fetched_at ?? null,
       })
@@ -1169,9 +1170,12 @@ serve(async (req) => {
         const hostName = typeof parsed.host_name === 'string' && parsed.host_name.trim()
           ? parsed.host_name.trim().slice(0, 200)
           : null
+        // The model's transcript-verified answer wins; Podscan's per-episode
+        // speaker analysis fills in when the model could not verify one.
+        const analyzedGuestName = firstEpisode?.guests?.[0]?.name ?? null
         const recentGuestName = typeof parsed.recent_guest_name === 'string' && parsed.recent_guest_name.trim()
           ? parsed.recent_guest_name.trim().slice(0, 200)
-          : null
+          : analyzedGuestName
 
         const completedAt = new Date().toISOString()
         const { error: persistError } = await authContext.admin
@@ -1605,10 +1609,13 @@ serve(async (req) => {
         .eq('podscan_id', shortlistRow.podcast_id)
         .maybeSingle()
       const storedEpisodes = Array.isArray(pitchCatalogRow?.recent_episodes)
-        ? pitchCatalogRow.recent_episodes as Array<{ title?: unknown }>
+        ? pitchCatalogRow.recent_episodes as Array<{ title?: unknown; guests?: Array<{ name?: unknown }> }>
         : []
       const storedEpisodeTitle = typeof storedEpisodes[0]?.title === 'string'
         ? storedEpisodes[0].title as string
+        : null
+      const storedGuestName = typeof storedEpisodes[0]?.guests?.[0]?.name === 'string'
+        ? storedEpisodes[0].guests[0].name as string
         : null
       const researchDocument = (shortlistRow.research_document ?? null) as
         | {
@@ -1685,7 +1692,7 @@ serve(async (req) => {
           : null,
         recent_guest_name: typeof researchDocument.recent_guest_name === 'string'
           ? researchDocument.recent_guest_name.slice(0, 200)
-          : null,
+          : storedGuestName,
         topic_proposal: [
           angle?.title && angle?.description ? `SELECTED ANGLE: ${angle.title} — ${angle.description}` : '',
           typeof researchDocument.find_topics === 'string' ? String(researchDocument.find_topics).slice(0, 4_000) : '',

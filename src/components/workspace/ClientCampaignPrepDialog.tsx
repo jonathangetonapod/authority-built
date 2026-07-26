@@ -745,7 +745,7 @@ export function ClientCampaignPrepDialog({
                         <section aria-labelledby="pitch-host-and-show-heading" className="border-b px-4 py-4 sm:px-5 lg:border-b-0 lg:border-r">
                           <div className="flex items-center gap-2"><Mic2 className="h-4 w-4 text-primary" /><h4 id="pitch-host-and-show-heading" className="font-semibold">Host and show</h4></div>
                           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-1">
-                            <div><dt className="text-xs text-muted-foreground">Host or publisher on record</dt><dd className="mt-1 font-medium">{podcast.publisher_name || 'Not identified yet'}</dd></div>
+                            <div><dt className="text-xs text-muted-foreground">Host or publisher on record</dt><dd className="mt-1 font-medium">{latestEpisode?.hosts?.length ? latestEpisode.hosts.map((host) => host.name).join(' & ') : podcast.host_name || podcast.publisher_name || 'Not identified yet'}</dd></div>
                             <div><dt className="text-xs text-muted-foreground">Latest activity</dt><dd className="mt-1 font-medium">{latestActivityAt ? formatPodcastDate(latestActivityAt) : episodeMetadataQuery.isLoading ? 'Checking…' : '—'}</dd></div>
                             <div className="sm:col-span-2 lg:col-span-1">
                               <dt className="text-xs text-muted-foreground">Latest episode</dt>
@@ -757,6 +757,11 @@ export function ClientCampaignPrepDialog({
                               {latestEpisode?.posted_at && (
                                 <p className="mt-0.5 text-xs text-muted-foreground">Released {formatPodcastDate(latestEpisode.posted_at)}</p>
                               )}
+                              {(latestEpisode?.guests?.length ?? 0) > 0 && (
+                                <p className="mt-0.5 text-xs text-muted-foreground">
+                                  Guest: {latestEpisode!.guests!.map((guest) => [guest.name, [guest.role, guest.company].filter(Boolean).join(', ')].filter(Boolean).join(' — ')).join(' · ')}
+                                </p>
+                              )}
                             </div>
                           </dl>
                         </section>
@@ -767,7 +772,11 @@ export function ClientCampaignPrepDialog({
                             <div><p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Estimated audience</p><p className="mt-1 text-base font-semibold">{compactNumber(podcast.audience_size)}</p></div>
                             <div><p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Apple rating</p><p className="mt-1 text-base font-semibold">{podcast.itunes_rating ? Number(podcast.itunes_rating).toFixed(1) : '—'}</p></div>
                             <div><p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Episode library</p><p className="mt-1 text-base font-semibold">{podcast.episode_count?.toLocaleString() || '—'}</p></div>
-                            <div><p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Primary themes</p><div className="mt-1.5 flex flex-wrap gap-1.5">{podcast.podcast_categories?.length ? podcast.podcast_categories.slice(0, 3).map((category) => <Badge key={category.category_id} variant="secondary" className="font-normal">{category.category_name}</Badge>) : <span className="text-sm font-medium">—</span>}</div></div>
+                            <div><p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Primary themes</p><div className="mt-1.5 flex flex-wrap gap-1.5">{podcast.podcast_categories?.length
+                              ? podcast.podcast_categories.slice(0, 3).map((category) => <Badge key={category.category_id} variant="secondary" className="font-normal">{category.category_name}</Badge>)
+                              : latestEpisode?.topics?.length
+                                ? latestEpisode.topics.slice(0, 3).map((topic) => <Badge key={topic} variant="secondary" className="font-normal">{topic}</Badge>)
+                                : <span className="text-sm font-medium">—</span>}</div></div>
                           </div>
                         </section>
                       </div>
