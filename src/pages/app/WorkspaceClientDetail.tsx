@@ -66,6 +66,7 @@ import {
   updateWorkspaceClient,
   updateWorkspaceClientProfile,
   setWorkspaceClientSdrMode,
+  type WorkspaceClientSdrMode,
   updateWorkspaceClientSdrProfile,
   type WorkspaceClientBooking,
   type WorkspaceClientOnboardingSummary,
@@ -570,14 +571,16 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
     }
   }
 
-  const changeSdrMode = async (mode: 'manual' | 'auto_draft') => {
+  const changeSdrMode = async (mode: WorkspaceClientSdrMode) => {
     if (!client || client.ai_sdr_mode === mode || sdrModeBusy) return
     setSdrModeBusy(true)
     try {
       await setWorkspaceClientSdrMode(workspaceId, client.id, mode)
-      toast.success(mode === 'auto_draft'
-        ? 'Auto-draft is on — every new reply gets a staged review package.'
-        : 'Auto-draft is off — drafts run when you ask for them.')
+      toast.success(mode === 'auto_send'
+        ? 'Auto-send is on — confident replies go out on their own after a 15 minute hold.'
+        : mode === 'auto_draft'
+          ? 'Auto-draft is on — every new reply gets a staged review package.'
+          : 'Automation is off — drafts run when you ask for them.')
       await detailQuery.refetch()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'The AI SDR mode could not be saved.')
@@ -955,11 +958,11 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">SDR mode</CardTitle>
                 <CardDescription>
-                  Choose how replies for {client.name} are handled. Auto-draft never sends —
-                  every package waits for review in the Master Inbox.
+                  Choose how replies for {client.name} are handled. Only auto-send emails a host
+                  without a person reading it first.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-3 sm:grid-cols-2">
+              <CardContent className="grid gap-3 sm:grid-cols-3">
                 {([
                   {
                     id: 'manual' as const,
@@ -969,11 +972,16 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                   {
                     id: 'auto_draft' as const,
                     title: 'Auto-draft',
-                    detail: 'Replies marked Interested in Instantly are classified and a reply + nudge package is staged for review automatically.',
+                    detail: 'Replies marked Interested in Instantly are classified and a reply + nudge package is staged for review automatically. Nothing sends.',
+                  },
+                  {
+                    id: 'auto_send' as const,
+                    title: 'Auto-send',
+                    detail: 'Everything auto-draft does, then sends it — but only a confidently interested or question reply, after a 15 minute hold you can cancel, inside business hours.',
                   },
                 ]).map((option) => {
                   const selected = (client.ai_sdr_mode ?? 'manual') === option.id
-                  const autoBlocked = option.id === 'auto_draft' && !sdrReadiness.ready
+                  const autoBlocked = option.id !== 'manual' && !sdrReadiness.ready
                   return (
                     <button
                       key={option.id}

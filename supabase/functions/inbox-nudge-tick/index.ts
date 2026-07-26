@@ -13,6 +13,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 import { createAdminClient, writeAudit } from '../_shared/workspaceAuth.ts'
+import { withinSendWindow } from '../_shared/inboxSdr.ts'
 import {
   decryptInstantlyApiKey,
   InstantlyApiError,
@@ -29,22 +30,6 @@ const DAY_MS = 24 * 60 * 60 * 1000
 // Nudges only dispatch inside business hours in the client's campaign
 // timezone (Mon-Fri, 8:00-17:59). Eligibility is recomputed every tick, so
 // an out-of-window candidate simply waits for a later tick.
-function withinSendWindow(timezone: string): boolean {
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      hour: 'numeric',
-      hour12: false,
-      weekday: 'short',
-    }).formatToParts(new Date())
-    const weekday = parts.find((part) => part.type === 'weekday')?.value ?? ''
-    const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '-1')
-    return !['Sat', 'Sun'].includes(weekday) && hour >= 8 && hour < 18
-  } catch (_error) {
-    return true
-  }
-}
-
 interface NudgeStep {
   send_after_days: number
   body: string

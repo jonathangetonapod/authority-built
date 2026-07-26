@@ -2453,7 +2453,7 @@ serve(async (req) => {
           .limit(5_000),
         context.admin
           .from("workspace_inbox_thread_state")
-          .select("thread_key, client_id, status, classification, draft, nudges_sent, nudges_paused, last_nudge_at, last_nudge_error, suppressed_at")
+          .select("thread_key, client_id, status, classification, draft, nudges_sent, nudges_paused, last_nudge_at, last_nudge_error, suppressed_at, auto_send_eligible_at, auto_sent_at, auto_send_error")
           .eq("workspace_id", workspaceId)
           .limit(5_000),
       ]);
@@ -2614,6 +2614,11 @@ serve(async (req) => {
               last_nudge_at: typeof stateRow.last_nudge_at === "string" ? stateRow.last_nudge_at : null,
               last_nudge_error: typeof stateRow.last_nudge_error === "string" ? stateRow.last_nudge_error : null,
               suppressed_at: typeof stateRow.suppressed_at === "string" ? stateRow.suppressed_at : null,
+              // A draft queued to send itself must say so, and say when — an
+              // operator cannot intervene in a countdown they cannot see.
+              auto_send_eligible_at: typeof stateRow.auto_send_eligible_at === "string" ? stateRow.auto_send_eligible_at : null,
+              auto_sent_at: typeof stateRow.auto_sent_at === "string" ? stateRow.auto_sent_at : null,
+              auto_send_error: typeof stateRow.auto_send_error === "string" ? stateRow.auto_send_error : null,
               draft: draftRecord
                 ? {
                   subject: typeof draftRecord.subject === "string" ? draftRecord.subject : "",
@@ -3000,7 +3005,7 @@ serve(async (req) => {
     }
 
     if (action === "inbox-thread-state") {
-      requireOnlyKeys(body, ["action", "workspace_id", "thread_key", "client_id", "status", "nudges_paused", "lead_email"]);
+      requireOnlyKeys(body, ["action", "workspace_id", "thread_key", "client_id", "status", "nudges_paused", "lead_email", "cancel_auto_send"]);
       if (!["owner", "admin", "platform_admin"].includes(access.role)) {
         throw new HttpError(403, "WORKSPACE_ACCESS_REQUIRED", "Workspace manager access is required");
       }
@@ -3014,8 +3019,11 @@ serve(async (req) => {
         ? null
         : requireString(body.lead_email, "lead_email", { max: 320 });
       const nudgesPaused = body.nudges_paused === undefined ? null : body.nudges_paused === true;
-      if (status === null && nudgesPaused === null) {
-        throw new HttpError(400, "INVALID_FIELD", "Provide status or nudges_paused");
+      // Clearing the eligibility stamp is how a human takes a queued reply
+      // back: the dispatch sweep only considers rows that still carry one.
+      const cancelAutoSend = body.cancel_auto_send === true;
+      if (status === null && nudgesPaused === null && !cancelAutoSend) {
+        throw new HttpError(400, "INVALID_FIELD", "Provide status, nudges_paused, or cancel_auto_send");
       }
       await requireWorkspaceClient(context.admin, workspaceId, stateClientId);
       const { error: stateError } = await context.admin
@@ -3026,6 +3034,9 @@ serve(async (req) => {
           client_id: stateClientId,
           ...(status !== null ? { status } : {}),
           ...(nudgesPaused !== null ? { nudges_paused: nudgesPaused } : {}),
+          ...(cancelAutoSend
+            ? { auto_send_eligible_at: null, auto_send_error: "cancelled by an operator before sending" }
+            : {}),
           updated_by: context.user.id,
           updated_at: new Date().toISOString(),
         }, { onConflict: "workspace_id,thread_key" });

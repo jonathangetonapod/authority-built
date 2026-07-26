@@ -30,7 +30,7 @@ export interface Client {
   bio: string | null
   ai_sdr_profile?: Partial<ClientSdrProfile> | null
   ai_sdr_profile_updated_at?: string | null
-  ai_sdr_mode?: 'manual' | 'auto_draft'
+  ai_sdr_mode?: WorkspaceClientSdrMode
   photo_url: string | null
   google_sheet_url: string | null
   media_kit_url: string | null
@@ -81,7 +81,7 @@ export interface WorkspaceClientProfile extends WorkspaceClient {
   password_set_at: string | null
   ai_sdr_profile: Partial<ClientSdrProfile>
   ai_sdr_profile_updated_at: string | null
-  ai_sdr_mode?: 'manual' | 'auto_draft'
+  ai_sdr_mode?: WorkspaceClientSdrMode
   ai_sdr_readiness: ClientSdrProfileReadiness
 }
 
@@ -630,11 +630,18 @@ export async function getWorkspaceClientSdrContext(
   }
 }
 
+/**
+ * manual     — nothing happens without a person.
+ * auto_draft — replies are written and staged for review, never sent.
+ * auto_send  — staged replies dispatch themselves after a hold window.
+ */
+export type WorkspaceClientSdrMode = 'manual' | 'auto_draft' | 'auto_send'
+
 export async function setWorkspaceClientSdrMode(
   workspaceId: string,
   clientId: string,
-  mode: 'manual' | 'auto_draft',
-): Promise<'manual' | 'auto_draft'> {
+  mode: WorkspaceClientSdrMode,
+): Promise<WorkspaceClientSdrMode> {
   const { data, error } = await supabase.functions.invoke('workspace-clients', {
     body: {
       action: 'sdr-mode-set',
@@ -644,7 +651,9 @@ export async function setWorkspaceClientSdrMode(
     },
   })
   if (error) throw await toFunctionError(error, 'The AI SDR mode could not be saved.')
-  return data?.ai_sdr_mode === 'auto_draft' ? 'auto_draft' : 'manual'
+  return data?.ai_sdr_mode === 'auto_draft' || data?.ai_sdr_mode === 'auto_send'
+    ? data.ai_sdr_mode
+    : 'manual'
 }
 
 export async function updateWorkspaceClientSdrProfile(

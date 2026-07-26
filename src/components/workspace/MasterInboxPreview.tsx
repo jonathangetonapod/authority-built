@@ -280,6 +280,33 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
   const threadClient = selectedThread?.campaign?.client
     ? clients.find((client) => client.id === selectedThread.campaign?.client?.id) ?? null
     : null
+  // A reply that is going to send itself has to say so before it does. The
+  // countdown is approximate on purpose — the tick runs every 15 minutes, so
+  // promising a to-the-second time would be a lie.
+  const autoSendNotice = (() => {
+    const state = selectedThread?.state
+    if (!state) return null
+    if (state.auto_sent_at) {
+      return {
+        tone: 'sent' as const,
+        title: 'Sent automatically',
+        detail: `The AI SDR sent this reply on ${new Date(state.auto_sent_at).toLocaleString()}. Follow-up nudges are now running.`,
+      }
+    }
+    if (state.auto_send_eligible_at) {
+      const dueMs = Date.parse(state.auto_send_eligible_at) - Date.now()
+      const minutes = Math.max(0, Math.round(dueMs / 60_000))
+      return {
+        tone: 'pending' as const,
+        title: minutes > 0 ? `Sending automatically in about ${minutes} min` : 'Sending automatically on the next run',
+        detail: 'Edit the reply and send it yourself, or cancel to keep it here. Sends only happen Mon–Fri, 8am–6pm in the campaign timezone.',
+      }
+    }
+    if (state.auto_send_error) {
+      return { tone: 'error' as const, title: 'Auto-send stopped', detail: state.auto_send_error }
+    }
+    return null
+  })()
   // Lead identity is fetched lazily for the open conversation only: campaigns
   // built directly in Instantly have no local target row, so this is the only
   // place a host's real name, company, and engagement can come from.
@@ -373,12 +400,13 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
     },
   })
   const statusMutation = useMutation({
-    mutationFn: (input: { thread: WorkspaceInboxThread; status?: 'needs_reply' | 'booked' | 'archived'; nudges_paused?: boolean }) =>
+    mutationFn: (input: { thread: WorkspaceInboxThread; status?: 'needs_reply' | 'booked' | 'archived'; nudges_paused?: boolean; cancel_auto_send?: boolean }) =>
       setWorkspaceInboxThreadStatus(workspaceId, {
         thread_key: input.thread.thread_key || input.thread.id,
         client_id: input.thread.campaign!.client!.id,
         ...(input.status ? { status: input.status } : {}),
         ...(input.nudges_paused !== undefined ? { nudges_paused: input.nudges_paused } : {}),
+        ...(input.cancel_auto_send ? { cancel_auto_send: true } : {}),
         // Booking a conversation needs the lead address to find the outreach
         // it came from, so the placement is created against the right show.
         ...(input.status === 'booked' && (input.thread.lead_email || input.thread.from_email)
@@ -386,7 +414,9 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
           : {}),
       }),
     onSuccess: (_result, input) => {
-      toast.success(input.status === 'archived'
+      toast.success(input.cancel_auto_send
+        ? 'Auto-send cancelled — this reply now waits for you.'
+        : input.status === 'archived'
         ? 'Conversation archived.'
         : input.status === 'booked'
           ? _result?.booking_id
@@ -695,6 +725,31 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                         {draftedForThread === selectedThread.id ? 'Redraft with AI' : 'Draft with AI'}
                       </Button>
                     </div>
+                    {autoSendNotice && (
+                      <div className={`rounded-xl border p-3 text-xs leading-5 ${autoSendNotice.tone === 'pending'
+                        ? 'border-amber-200 bg-amber-50 text-amber-900'
+                        : autoSendNotice.tone === 'sent'
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                          : 'border-destructive/30 bg-destructive/5 text-destructive'}`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-semibold">{autoSendNotice.title}</p>
+                          {autoSendNotice.tone === 'pending' && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 bg-background text-xs"
+                              disabled={statusMutation.isPending || !selectedThread.campaign?.client}
+                              onClick={() => statusMutation.mutate({ thread: selectedThread, cancel_auto_send: true })}
+                            >
+                              Cancel auto-send
+                            </Button>
+                          )}
+                        </div>
+                        <p className="mt-1">{autoSendNotice.detail}</p>
+                      </div>
+                    )}
                     <Input
                       value={draftSubject}
                       onChange={(event) => setDraftSubject(event.target.value)}

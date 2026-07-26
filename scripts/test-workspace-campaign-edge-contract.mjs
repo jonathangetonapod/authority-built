@@ -196,7 +196,7 @@ assert.match(nudgeTick, /withinSendWindow/u)
 // model call, claim before billing, and review-only output.
 assert.match(enrollTick, /Deno\.env\.get\('ENROLL_TICK_SECRET'\)/u)
 assert.match(enrollTick, /x-enroll-secret/u)
-assert.match(enrollTick, /\.eq\('ai_sdr_mode', 'auto_draft'\)/u)
+assert.match(enrollTick, /\.in\('ai_sdr_mode', \['auto_draft', 'auto_send'\]\)/u)
 assert.match(enrollTick, /detectDeterministicReply/u)
 assert.match(enrollTick, /draft_claim_email_id/u)
 assert.ok(
@@ -204,7 +204,35 @@ assert.ok(
   'the enrollment claim must precede the model call',
 )
 assert.match(enrollTick, /status: 'review'/u)
-assert.doesNotMatch(enrollTick, /\/emails\/reply/u)
+// Auto-send: every package still lands in review. Dispatch is a separate
+// phase that may only act on a package whose client opted into auto_send AND
+// whose classification cleared the shared gate.
+assert.match(enrollTick, /const autoSendable = autoSendClientIds\.has\(clientId\)\s*\n\s*&& packageIsAutoSendable\(pkg\.classification\)/u)
+assert.match(enrollTick, /auto_send_eligible_at: autoSendable/u)
+assert.match(enrollTick, /AUTO_SEND_HOLD_MS/u)
+// The hold is real time, not a formality.
+assert.ok(
+  /const AUTO_SEND_HOLD_MS = (\d+) \* 60 \* 1000/u.exec(enrollTick)?.[1] >= 10,
+  'the auto-send hold window must be at least ten minutes',
+)
+// Dispatch re-checks the mode, refuses a superseded draft, respects business
+// hours, and claims the row before the send so it can never double-fire.
+assert.match(enrollTick, /clientRow\?\.ai_sdr_mode !== 'auto_send'/u)
+assert.match(enrollTick, /latestHuman\.id !== draft\?\.based_on_email_id/u)
+assert.match(enrollTick, /withinSendWindow/u)
+assert.ok(
+  enrollTick.indexOf('auto_sent_at: new Date().toISOString()') < enrollTick.indexOf("'/emails/reply'"),
+  'the auto-send claim must precede dispatch',
+)
+// A generated package is never sent by the phase that writes it.
+assert.ok(
+  enrollTick.indexOf("'/emails/reply'") > enrollTick.indexOf('async function dispatchDueAutoSends'),
+  'sending must live in the dispatch phase, not the drafting loop',
+)
+// The shared gate itself: two labels, a confidence floor, fail closed.
+assert.match(sdrShared, /export const AUTO_SEND_LABELS = \['interested', 'question'\]/u)
+assert.match(sdrShared, /if \(!classification\) return false/u)
+assert.match(sdrShared, /classification\.confidence >= AUTO_SEND_MIN_CONFIDENCE/u)
 // Shared generator: deterministic filters exist and the profile gate holds.
 assert.match(sdrShared, /SDR_PROFILE_NOT_READY/u)
 assert.match(sdrShared, /OPT_OUT_PATTERNS/u)

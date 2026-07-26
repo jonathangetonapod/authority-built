@@ -482,6 +482,9 @@ export interface WorkspaceInboxThread {
     last_nudge_at: string | null
     last_nudge_error?: string | null
     suppressed_at?: string | null
+    auto_send_eligible_at?: string | null
+    auto_sent_at?: string | null
+    auto_send_error?: string | null
     draft: {
       subject: string
       body: string
@@ -705,6 +708,7 @@ export async function setWorkspaceInboxThreadStatus(
     status?: 'needs_reply' | 'booked' | 'archived'
     nudges_paused?: boolean
     lead_email?: string
+    cancel_auto_send?: boolean
   },
 ): Promise<{ booking_id: string | null }> {
   return await invokeWorkspaceCampaigns<{ success: boolean; booking_id: string | null }>({

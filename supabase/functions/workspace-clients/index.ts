@@ -588,8 +588,8 @@ serve(async (req) => {
         throw new HttpError(403, 'WORKSPACE_ACCESS_REQUIRED', 'Workspace manager access is required')
       }
       const mode = requireString(body.mode, 'mode', { max: 20 })
-      if (!['manual', 'auto_draft'].includes(mode)) {
-        throw new HttpError(400, 'INVALID_FIELD', 'mode must be manual or auto_draft')
+      if (!['manual', 'auto_draft', 'auto_send'].includes(mode)) {
+        throw new HttpError(400, 'INVALID_FIELD', 'mode must be manual, auto_draft, or auto_send')
       }
       const { data: updated, error: modeError } = await admin
         .from('clients')

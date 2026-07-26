@@ -33,6 +33,44 @@ export interface SdrReplyPackage {
   body: string
 }
 
+/**
+ * Business-hours guard for anything the platform sends on its own. Mon-Fri,
+ * 08:00-17:59 in the campaign's timezone. An unparseable timezone returns
+ * true rather than stranding a thread forever — the caller's other gates
+ * still apply.
+ */
+export function withinSendWindow(timezone: string): boolean {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      hour12: false,
+      weekday: 'short',
+    }).formatToParts(new Date())
+    const weekday = parts.find((part) => part.type === 'weekday')?.value ?? ''
+    const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '-1')
+    return !['Sat', 'Sun'].includes(weekday) && hour >= 8 && hour < 18
+  } catch (_error) {
+    return true
+  }
+}
+
+/**
+ * Classifications the AI is allowed to answer without a human. Both are
+ * "keep the conversation moving" cases. Everything else — a decline, a
+ * not-now, a referral to someone else, an autoresponder, or anything the
+ * model could not place — stops in review, where a person decides.
+ */
+export const AUTO_SEND_LABELS = ['interested', 'question']
+export const AUTO_SEND_MIN_CONFIDENCE = 70
+
+/** Whether a generated package cleared the bar for sending itself. */
+export function packageIsAutoSendable(classification: SdrClassification | null): boolean {
+  if (!classification) return false
+  return AUTO_SEND_LABELS.includes(classification.label)
+    && classification.confidence >= AUTO_SEND_MIN_CONFIDENCE
+}
+
 const CLASSIFICATION_LABELS = [
   'interested',
   'not_interested',
