@@ -476,6 +476,9 @@ export interface WorkspaceInboxThread {
   state?: {
     status: WorkspaceInboxThreadStatus
     classification: WorkspaceInboxReplyClassification | null
+    nudges_sent: number
+    nudges_paused: boolean
+    last_nudge_at: string | null
     draft: {
       subject: string
       body: string
@@ -596,7 +599,12 @@ export async function draftWorkspaceInboxReply(
 
 export async function setWorkspaceInboxThreadStatus(
   workspaceId: string,
-  input: { thread_key: string; client_id: string; status: 'needs_reply' | 'booked' | 'archived' },
+  input: {
+    thread_key: string
+    client_id: string
+    status?: 'needs_reply' | 'booked' | 'archived'
+    nudges_paused?: boolean
+  },
 ): Promise<void> {
   await invokeWorkspaceCampaigns<{ success: boolean }>({
     action: 'inbox-thread-state',

@@ -299,18 +299,23 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
     },
   })
   const statusMutation = useMutation({
-    mutationFn: (input: { thread: WorkspaceInboxThread; status: 'needs_reply' | 'booked' | 'archived' }) =>
+    mutationFn: (input: { thread: WorkspaceInboxThread; status?: 'needs_reply' | 'booked' | 'archived'; nudges_paused?: boolean }) =>
       setWorkspaceInboxThreadStatus(workspaceId, {
         thread_key: input.thread.thread_key || input.thread.id,
         client_id: input.thread.campaign!.client!.id,
-        status: input.status,
+        ...(input.status ? { status: input.status } : {}),
+        ...(input.nudges_paused !== undefined ? { nudges_paused: input.nudges_paused } : {}),
       }),
     onSuccess: (_result, input) => {
       toast.success(input.status === 'archived'
         ? 'Conversation archived.'
         : input.status === 'booked'
           ? 'Marked as booked.'
-          : 'Conversation reopened.')
+          : input.status === 'needs_reply'
+            ? 'Conversation reopened.'
+            : input.nudges_paused
+              ? 'Nudges paused for this conversation.'
+              : 'Nudges resumed.')
       void inboxQuery.refetch()
     },
     onError: (error) => {
@@ -646,16 +651,43 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                     </div>
                     {draftNudges.length > 0 && draftedForThread === selectedThread.id && (
                       <div className="rounded-xl border bg-muted/10 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Follow-up nudge plan</p>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Follow-up nudge plan
+                            {selectedThread.state ? ` · ${selectedThread.state.nudges_sent} of ${draftNudges.length} sent` : ''}
+                          </p>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs text-muted-foreground"
+                            disabled={statusMutation.isPending || !selectedThread.campaign?.client}
+                            onClick={() => statusMutation.mutate({
+                              thread: selectedThread,
+                              nudges_paused: !selectedThread.state?.nudges_paused,
+                            })}
+                          >
+                            {selectedThread.state?.nudges_paused ? 'Resume nudges' : 'Pause nudges'}
+                          </Button>
+                        </div>
                         <ol className="mt-2 space-y-2">
-                          {draftNudges.map((nudge, index) => (
-                            <li key={`${index}-${nudge.send_after_days}`} className="text-xs leading-5">
-                              <span className="font-semibold text-foreground">Nudge {index + 1} · after {nudge.send_after_days} day{nudge.send_after_days === 1 ? '' : 's'} of silence</span>
-                              <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">{nudge.body}</p>
-                            </li>
-                          ))}
+                          {draftNudges.map((nudge, index) => {
+                            const sent = (selectedThread.state?.nudges_sent ?? 0) > index
+                            return (
+                              <li key={`${index}-${nudge.send_after_days}`} className="text-xs leading-5">
+                                <span className={`font-semibold ${sent ? 'text-emerald-700' : 'text-foreground'}`}>
+                                  Nudge {index + 1} · {sent ? 'sent' : `after ${nudge.send_after_days} day${nudge.send_after_days === 1 ? '' : 's'} of silence`}
+                                </span>
+                                <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">{nudge.body}</p>
+                              </li>
+                            )
+                          })}
                         </ol>
-                        <p className="mt-2 text-[11px] text-muted-foreground">Nudges are staged with the reply — send them from here when the host goes quiet.</p>
+                        <p className="mt-2 text-[11px] text-muted-foreground">
+                          {selectedThread.state?.nudges_paused
+                            ? 'Nudges are paused for this conversation.'
+                            : 'After you send the reply, nudges go out automatically when the host stays quiet — a reply from them cancels the rest of the plan.'}
+                        </p>
                       </div>
                     )}
                     <div className="flex flex-wrap items-center gap-2 border-t pt-3">

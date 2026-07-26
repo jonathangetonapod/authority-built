@@ -12,6 +12,7 @@ const sequenceMigration = readFileSync(
   'utf8',
 )
 const config = readFileSync('supabase/config.toml', 'utf8')
+const nudgeTick = readFileSync('supabase/functions/inbox-nudge-tick/index.ts', 'utf8')
 
 assert.match(edge, /if \(req\.method === "OPTIONS"\) return optionsResponse\(req, METHODS\)/u)
 assert.match(edge, /const context = await requireAuthenticatedUser\(req\)/u)
@@ -164,3 +165,13 @@ for (const [promptId, prompt] of Object.entries(canonicalPrompts.prompts)) {
 }
 
 process.stdout.write('Workspace Client Campaign Edge contract checks passed\n')
+
+// Nudge tick safety gates: shared-secret auth, never send on an inbound or
+// missing latest message, per-tick caps, and a concurrency-safe step claim.
+assert.match(nudgeTick, /Deno\.env\.get\('NUDGE_TICK_SECRET'\)/u)
+assert.match(nudgeTick, /x-nudge-secret/u)
+assert.match(nudgeTick, /const MAX_SENDS_PER_TICK = 15/u)
+assert.match(nudgeTick, /const MAX_SENDS_PER_WORKSPACE = 5/u)
+assert.match(nudgeTick, /latest\.ue_type === 2[\s\S]*?status: 'needs_reply'/u)
+assert.match(nudgeTick, /\.eq\('nudges_sent', raw\.nudges_sent\)/u)
+assert.match(config, /\[functions\.inbox-nudge-tick\]\nverify_jwt = false/u)

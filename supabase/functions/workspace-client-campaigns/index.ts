@@ -2386,7 +2386,7 @@ serve(async (req) => {
           .limit(5_000),
         context.admin
           .from("workspace_inbox_thread_state")
-          .select("thread_key, client_id, status, classification, draft")
+          .select("thread_key, client_id, status, classification, draft, nudges_sent, nudges_paused, last_nudge_at")
           .eq("workspace_id", workspaceId)
           .limit(5_000),
       ]);
@@ -2541,6 +2541,9 @@ serve(async (req) => {
             ? {
               status: typeof stateRow.status === "string" ? stateRow.status : "needs_reply",
               classification: stateRow.classification ?? null,
+              nudges_sent: typeof stateRow.nudges_sent === "number" ? stateRow.nudges_sent : 0,
+              nudges_paused: stateRow.nudges_paused === true,
+              last_nudge_at: typeof stateRow.last_nudge_at === "string" ? stateRow.last_nudge_at : null,
               draft: draftRecord
                 ? {
                   subject: typeof draftRecord.subject === "string" ? draftRecord.subject : "",
@@ -2797,15 +2800,19 @@ serve(async (req) => {
 
 
     if (action === "inbox-thread-state") {
-      requireOnlyKeys(body, ["action", "workspace_id", "thread_key", "client_id", "status"]);
+      requireOnlyKeys(body, ["action", "workspace_id", "thread_key", "client_id", "status", "nudges_paused"]);
       if (!["owner", "admin", "platform_admin"].includes(access.role)) {
         throw new HttpError(403, "WORKSPACE_ACCESS_REQUIRED", "Workspace manager access is required");
       }
       const threadKey = requireString(body.thread_key, "thread_key", { max: 120 });
       const stateClientId = requireUuid(body.client_id, "client_id");
-      const status = requireString(body.status, "status", { max: 20 });
-      if (!["needs_reply", "booked", "archived"].includes(status)) {
+      const status = body.status === undefined ? null : requireString(body.status, "status", { max: 20 });
+      if (status !== null && !["needs_reply", "booked", "archived"].includes(status)) {
         throw new HttpError(400, "INVALID_FIELD", "status must be needs_reply, booked, or archived");
+      }
+      const nudgesPaused = body.nudges_paused === undefined ? null : body.nudges_paused === true;
+      if (status === null && nudgesPaused === null) {
+        throw new HttpError(400, "INVALID_FIELD", "Provide status or nudges_paused");
       }
       await requireWorkspaceClient(context.admin, workspaceId, stateClientId);
       const { error: stateError } = await context.admin
@@ -2814,7 +2821,8 @@ serve(async (req) => {
           workspace_id: workspaceId,
           thread_key: threadKey,
           client_id: stateClientId,
-          status,
+          ...(status !== null ? { status } : {}),
+          ...(nudgesPaused !== null ? { nudges_paused: nudgesPaused } : {}),
           updated_by: context.user.id,
           updated_at: new Date().toISOString(),
         }, { onConflict: "workspace_id,thread_key" });
