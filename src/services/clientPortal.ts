@@ -215,6 +215,7 @@ export interface PortalExperienceOverview {
     media_kit_url: string | null
     calendar_link: string | null
     dashboard_tagline: string | null
+    notifications_enabled?: boolean
   }
   review: {
     dashboard_slug: string | null
@@ -310,6 +311,16 @@ export async function removePortalCalendarEvent(clientId: string, eventId: strin
   })
   if (error) throw await toFunctionError(error, 'That event could not be removed — try again.')
   if (!data?.success) throw new Error('That event could not be removed — try again.')
+}
+
+/** Turn milestone emails on or off for this client. */
+export async function setPortalNotifications(clientId: string, enabled: boolean): Promise<boolean> {
+  const { data, error } = await supabase.functions.invoke('portal-experience', {
+    body: portalRequestBody(clientId, { notifications_enabled: enabled }),
+  })
+  if (error) throw await toFunctionError(error, 'That setting could not be saved — try again.')
+  if (!data?.success) throw new Error('That setting could not be saved — try again.')
+  return data.notifications_enabled !== false
 }
 
 /**

@@ -23,6 +23,7 @@ import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 import { fetchPodcastHosts, fetchRecentEpisodes } from '../_shared/podcastEpisodes.ts'
 import { decryptInstantlyApiKey, instantlyRequest } from '../_shared/instantly.ts'
 import { RESEARCH_PROMPT_DEFAULTS } from '../_shared/researchPromptDefaults.ts'
+import { notifyShortlistReady } from '../_shared/clientNotify.ts'
 
 const METHODS = ['POST'] as const
 const MANAGER_ROLES = new Set(['owner', 'admin', 'platform_admin'])
@@ -747,6 +748,16 @@ serve(async (req) => {
         entityId: clientId,
         metadata: { podcast_ids: addedPodcastIds },
       })
+
+      // Shows the client cannot see are not news. Once anything lands on the
+      // review list, tell them — at most once a day, and never fatally.
+      if (addedPodcastIds.length > 0) {
+        await notifyShortlistReady(authContext.admin, {
+          workspaceId,
+          clientId,
+          day: new Date().toISOString().slice(0, 10),
+        }).catch(() => null)
+      }
       return jsonResponse(req, METHODS, 200, {
         added: addedPodcastIds.length,
         skipped: podcasts.length - addedPodcastIds.length,

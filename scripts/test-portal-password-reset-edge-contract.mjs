@@ -46,7 +46,16 @@ assert.match(manageEdge, /PASSWORD_MANAGER_ROLES\.has\(access\.role\)/u)
 assert.match(manageEdge, /const tokenHash = await hashPortalSessionToken\(token\)/u)
 assert.match(manageEdge, /client_portal_reset_tokens[\s\S]*?token_hash: tokenHash/u)
 assert.match(manageEdge, /delivery: \{ status: delivery\.status \}/u)
-assert.doesNotMatch(manageEdge, /jsonResponse\([^)]*token[^_]/u)
+// Scoped to the invite action: 'setup-link' and 'preview-session' return a
+// capability URL and an audited preview session on purpose, so a file-wide
+// ban would forbid the features rather than the leak it is guarding against.
+const inviteBranchStart = manageEdge.indexOf("if (action === 'invite')")
+const inviteBranchEnd = manageEdge.indexOf("if (action === 'setup-link')")
+assert.ok(inviteBranchStart > 0 && inviteBranchEnd > inviteBranchStart, 'invite branch markers missing')
+assert.doesNotMatch(
+  manageEdge.slice(inviteBranchStart, inviteBranchEnd),
+  /jsonResponse\([^)]*token[^_]/u,
+)
 // The invite action is unreachable from the legacy platform-admin branch.
 const legacyBranchStart = manageEdge.indexOf('Compatibility path for the legacy platform-only client screen')
 assert.ok(legacyBranchStart > 0, 'legacy branch marker missing')

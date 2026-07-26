@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import {
   ArrowRight,
   CalendarDays,
@@ -21,10 +23,11 @@ import { PortalLayout } from '@/components/portal/PortalLayout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Switch } from '@/components/ui/switch'
 import { useClientPortal } from '@/contexts/ClientPortalContext'
 import { usePortalExperience } from '@/hooks/usePortalExperience'
 import { safeExternalUrl } from '@/lib/externalUrl'
-import { type PortalExperienceBooking } from '@/services/clientPortal'
+import { setPortalNotifications, type PortalExperienceBooking } from '@/services/clientPortal'
 
 const statusPresentation: Record<string, { label: string; className: string }> = {
   conversation_started: { label: 'In conversation', className: 'bg-sky-50 text-sky-700 border-sky-200' },
@@ -76,7 +79,23 @@ interface JourneyStat {
 export default function PortalDashboardMvp() {
   const { client } = useClientPortal()
   const overviewQuery = usePortalExperience()
+  const queryClient = useQueryClient()
   const [detailBooking, setDetailBooking] = useState<PortalExperienceBooking | null>(null)
+  // Optimistic so the switch answers immediately; the refetch is the truth.
+  const [emailUpdatesOverride, setEmailUpdatesOverride] = useState<boolean | null>(null)
+
+  const notificationsMutation = useMutation({
+    mutationFn: (enabled: boolean) => setPortalNotifications(client!.id, enabled),
+    onMutate: (enabled) => setEmailUpdatesOverride(enabled),
+    onSuccess: (enabled) => {
+      toast.success(enabled ? 'Email updates are on.' : 'Email updates are off.')
+      queryClient.invalidateQueries({ queryKey: ['portal-experience', client?.id] })
+    },
+    onError: (error) => {
+      setEmailUpdatesOverride(null)
+      toast.error(error instanceof Error ? error.message : 'That setting could not be saved.')
+    },
+  })
 
   const overview = overviewQuery.data ?? null
   const bookings = overview?.bookings ?? []
@@ -92,6 +111,8 @@ export default function PortalDashboardMvp() {
     .filter((booking) => !booking.publish_date || isUpcoming(booking.publish_date))
     .sort((a, b) => String(a.publish_date || '9999').localeCompare(String(b.publish_date || '9999')))
     .slice(0, 4)
+
+  const emailUpdates = emailUpdatesOverride ?? overview?.profile.notifications_enabled !== false
 
   const review = overview?.review ?? null
   const outreach = overview?.outreach ?? null
@@ -349,6 +370,22 @@ export default function PortalDashboardMvp() {
             </CardContent>
           </Card>
         )}
+        <Card>
+          <CardContent className="flex flex-wrap items-center justify-between gap-4 py-5">
+            <div>
+              <p className="text-sm font-medium">Email updates</p>
+              <p className="text-sm text-muted-foreground">
+                We email you when new shows are ready to review, a recording is booked, and an episode goes live.
+              </p>
+            </div>
+            <Switch
+              checked={emailUpdates}
+              disabled={notificationsMutation.isPending || !client?.id}
+              onCheckedChange={(next) => notificationsMutation.mutate(next)}
+              aria-label="Email updates"
+            />
+          </CardContent>
+        </Card>
       </div>
       <BookingDetailDialog booking={detailBooking} onOpenChange={(open) => { if (!open) setDetailBooking(null) }} />
     </PortalLayout>

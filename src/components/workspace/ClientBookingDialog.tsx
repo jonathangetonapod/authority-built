@@ -78,6 +78,9 @@ interface BookingForm {
   episode_url: string
   notes: string
   prep_sent: boolean
+  // Set when the show came from this client's shortlist, so the placement
+  // stays joinable to its research, campaign and portal artwork.
+  shortlist_podcast_id: string | null
 }
 
 const emptyForm: BookingForm = {
@@ -91,6 +94,7 @@ const emptyForm: BookingForm = {
   episode_url: '',
   notes: '',
   prep_sent: false,
+  shortlist_podcast_id: null,
 }
 
 interface ClientBookingDialogProps {
@@ -150,6 +154,7 @@ export const ClientBookingDialog = ({
         episode_url: booking.episode_url || '',
         notes: booking.notes || '',
         prep_sent: booking.prep_sent,
+        shortlist_podcast_id: booking.shortlist_podcast_id ?? null,
       }
       : emptyForm)
   }, [open, booking])
@@ -169,6 +174,7 @@ export const ClientBookingDialog = ({
         episode_url: form.episode_url.trim() || null,
         notes: form.notes.trim() || null,
         prep_sent: form.prep_sent,
+        shortlist_podcast_id: form.shortlist_podcast_id,
       },
       booking?.id,
     ),
@@ -217,7 +223,11 @@ export const ClientBookingDialog = ({
               id="booking-podcast"
               value={form.podcast_name}
               onChange={(event) => {
-                setForm((current) => ({ ...current, podcast_name: event.target.value }))
+                setForm((current) => ({
+                  ...current,
+                  podcast_name: event.target.value,
+                  shortlist_podcast_id: null,
+                }))
                 setPodcastQuery(event.target.value)
               }}
               placeholder="Start typing — shows on this client’s list appear"
@@ -236,6 +246,7 @@ export const ClientBookingDialog = ({
                           ...current,
                           podcast_name: podcast.podcast_name,
                           podcast_url: podcast.podcast_url || current.podcast_url,
+                          shortlist_podcast_id: podcast.id,
                         }))
                         setPodcastQuery('')
                       }}

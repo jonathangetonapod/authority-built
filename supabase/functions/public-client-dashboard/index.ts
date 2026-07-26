@@ -11,6 +11,7 @@ import {
   requireString,
 } from '../_shared/workspaceAuth.ts'
 import { loadWorkspacePresentation } from '../_shared/portalBranding.ts'
+import { notifyWorkspaceOfApprovals } from '../_shared/clientNotify.ts'
 
 const METHODS = ['POST'] as const
 const DASHBOARD_FIELDS = [
@@ -200,6 +201,25 @@ serve(async (req) => {
         .single()
 
       if (error || !data) throw new HttpError(500, 'FEEDBACK_SAVE_FAILED', 'Feedback could not be saved')
+
+      // An approval that nobody notices is a show that never gets pitched.
+      // Nudge the team once a day; a mail problem must not fail the approval.
+      if (status === 'approved') {
+        // The branding payload deliberately omits the workspace id, so look it
+        // up rather than widening what this public endpoint selects.
+        const { data: owner } = await admin
+          .from('clients')
+          .select('workspace_id')
+          .eq('id', dashboard.id)
+          .maybeSingle()
+        if (owner?.workspace_id) {
+          await notifyWorkspaceOfApprovals(admin, {
+            workspaceId: owner.workspace_id as string,
+            clientId: dashboard.id,
+            day: new Date().toISOString().slice(0, 10),
+          }).catch(() => null)
+        }
+      }
       return jsonResponse(req, METHODS, 200, { feedback: data })
     }
 

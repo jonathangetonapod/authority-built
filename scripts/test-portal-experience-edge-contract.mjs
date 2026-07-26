@@ -8,7 +8,7 @@ const manifest = readFileSync('docs/invite-only-edge-manifest.json', 'utf8')
 // Auth: a valid client-scoped portal session, or the explicit
 // platform-admin impersonation path — never workspace auth.
 assert.match(edge, /if \(req\.method === 'OPTIONS'\) return optionsResponse\(req, METHODS\)/u)
-assert.match(edge, /requireOnlyKeys\(body, \['clientId', 'sessionToken', 'addon_request', 'calendar_event', 'delete_event_id'\]\)/u)
+assert.match(edge, /requireOnlyKeys\(body, \['clientId', 'sessionToken', 'addon_request', 'calendar_event', 'delete_event_id', 'notifications_enabled'\]\)/u)
 // Add-on requests are recorded before any notification is attempted, and the
 // notification failure never fails the request.
 assert.match(edge, /from\('client_portal_activity_log'\)[\s\S]*?action: 'addon_request'/u)
@@ -48,6 +48,14 @@ assert.match(edge, /select\('id,shortlist_podcast_id,podcast_name,status,launche
 // Release plumbing.
 assert.match(config, /\[functions\.portal-experience\]\nverify_jwt = false/u)
 assert.ok(manifest.includes('"portal-experience"'), 'portal-experience must be in the release manifest')
+
+// The milestone emails are answerable: the client can switch them off, and
+// the switch is a boolean scoped to their own row.
+assert.match(edge, /notifications_enabled must be true or false/u)
+assert.match(
+  edge,
+  /\.from\('clients'\)\s*\n\s*\.update\(\{ notifications_enabled: body\.notifications_enabled \}\)\s*\n\s*\.eq\('id', clientId\)/u,
+)
 
 console.log('Portal Experience Edge contract checks passed')
 

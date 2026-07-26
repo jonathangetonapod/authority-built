@@ -143,6 +143,8 @@ export interface WorkspaceClientBooking {
   id: string
   client_id: string
   podcast_id: string | null
+  shortlist_podcast_id?: string | null
+  campaign_target_id?: string | null
   podcast_name: string
   podcast_url: string | null
   host_name: string | null
@@ -168,6 +170,8 @@ export interface WorkspaceClientBookingInput {
   episode_url?: string | null
   notes?: string | null
   prep_sent?: boolean
+  shortlist_podcast_id?: string | null
+  campaign_target_id?: string | null
 }
 
 export async function saveWorkspaceClientBooking(

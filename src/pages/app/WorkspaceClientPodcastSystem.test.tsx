@@ -10,6 +10,9 @@ import {
   type ClientPodcastSystemResponse,
 } from '@/services/clientPodcastSystem'
 
+// The page mounts the booking dialog, which reaches services that build a
+// Supabase client at import time. The suite runs without env, so stub it.
+vi.mock('@/lib/supabase', () => ({ supabase: { functions: { invoke: vi.fn() } } }))
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('@/services/clientPodcastSystem', () => ({ getWorkspaceClientPodcastSystem: vi.fn() }))
 vi.mock('@/components/workspace/WorkspaceLayout', () => ({

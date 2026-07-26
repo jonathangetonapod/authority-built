@@ -18,6 +18,7 @@ import {
 } from '../_shared/workspaceAuth.ts'
 import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
+import { notifyBookingConfirmed, notifyEpisodePublished } from '../_shared/clientNotify.ts'
 
 const METHODS = ['POST'] as const
 const CLIENT_FIELDS = [
@@ -520,6 +521,16 @@ serve(async (req) => {
 
       const columns = 'id,client_id,workspace_id,podcast_id,shortlist_podcast_id,campaign_target_id,podcast_name,podcast_url,host_name,scheduled_date,recording_date,publish_date,status,episode_url,prep_sent,notes,created_at,updated_at'
       const now = new Date().toISOString()
+      // Read the prior state before writing so the notifier can tell a real
+      // transition from a re-save of a row that was already in that stage.
+      const previousStatus = action === 'booking-update'
+        ? (await admin
+          .from('bookings')
+          .select('status')
+          .eq('id', bookingId!)
+          .eq('client_id', clientId!)
+          .maybeSingle()).data?.status ?? null
+        : null
       const { data: booking, error: bookingError } = action === 'booking-create'
         ? await admin
           .from('bookings')
@@ -544,6 +555,30 @@ serve(async (req) => {
         entityId: clientId,
         metadata: { booking_id: booking.id, status: booking.status },
       })
+
+      // Tell the client when their placement reaches a stage that matters to
+      // them. Best-effort by contract: a mail failure never fails the save,
+      // and the send log makes a repeat announcement impossible.
+      if (booking.status !== previousStatus) {
+        if (booking.status === 'booked') {
+          await notifyBookingConfirmed(admin, {
+            workspaceId,
+            clientId: clientId!,
+            bookingId: booking.id,
+            podcastName: booking.podcast_name,
+            hostName: booking.host_name,
+            recordingDate: booking.recording_date || booking.scheduled_date,
+          }).catch(() => null)
+        } else if (booking.status === 'published') {
+          await notifyEpisodePublished(admin, {
+            workspaceId,
+            clientId: clientId!,
+            bookingId: booking.id,
+            podcastName: booking.podcast_name,
+            episodeUrl: booking.episode_url,
+          }).catch(() => null)
+        }
+      }
       return jsonResponse(req, METHODS, 200, { booking })
     }
 

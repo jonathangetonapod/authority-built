@@ -5,6 +5,7 @@ import {
   loginWithPassword,
   requestPortalPasswordReset,
   sessionStorage,
+  setPortalNotifications,
   validateSession,
 } from '@/services/clientPortal'
 import { supabase } from '@/lib/supabase'
@@ -168,6 +169,53 @@ describe('clientPortal experience overview', () => {
     )
 
     await expect(getPortalExperience('44444444-4444-4444-8444-444444444444'))
+      .rejects.toThrow('Portal session does not match the requested client.')
+    expect(mockedInvoke).not.toHaveBeenCalled()
+  })
+})
+
+describe('setPortalNotifications', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    sessionStorage.clear()
+  })
+
+  it('sends the opt-out with the portal session and returns the saved value', async () => {
+    const client = { id: '55555555-5555-4555-8555-555555555555', name: 'Taylor', email: 't@example.com' }
+    const session = {
+      session_token: '66666666-6666-4666-8666-666666666666',
+      expires_at: '2099-01-01T00:00:00.000Z',
+      client_id: client.id,
+    }
+    sessionStorage.save(session as never, client as never)
+    mockedInvoke.mockResolvedValue({
+      data: { success: true, notifications_enabled: false },
+      error: null,
+    } as never)
+
+    await expect(setPortalNotifications(client.id, false)).resolves.toBe(false)
+
+    expect(mockedInvoke).toHaveBeenCalledWith('portal-experience', {
+      body: {
+        clientId: client.id,
+        sessionToken: session.session_token,
+        notifications_enabled: false,
+      },
+    })
+  })
+
+  it('refuses to change the setting for a client the session does not own', async () => {
+    const client = { id: '55555555-5555-4555-8555-555555555555', name: 'Taylor', email: 't@example.com' }
+    sessionStorage.save(
+      {
+        session_token: '66666666-6666-4666-8666-666666666666',
+        expires_at: '2099-01-01T00:00:00.000Z',
+        client_id: client.id,
+      } as never,
+      client as never,
+    )
+
+    await expect(setPortalNotifications('77777777-7777-4777-8777-777777777777', true))
       .rejects.toThrow('Portal session does not match the requested client.')
     expect(mockedInvoke).not.toHaveBeenCalled()
   })

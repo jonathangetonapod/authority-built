@@ -64,7 +64,7 @@ serve(async (req) => {
     }
 
     const body = await parseJsonObject(req, 4_096)
-    requireOnlyKeys(body, ['clientId', 'sessionToken', 'addon_request', 'calendar_event', 'delete_event_id'])
+    requireOnlyKeys(body, ['clientId', 'sessionToken', 'addon_request', 'calendar_event', 'delete_event_id', 'notifications_enabled'])
     const clientId = requireUuid(body.clientId, 'clientId')
     const sessionToken = body.sessionToken === undefined
       ? null
@@ -96,6 +96,21 @@ serve(async (req) => {
     } else {
       // No portal token means this is the explicit operator impersonation path.
       await requirePlatformAdmin(req)
+    }
+
+    if (body.notifications_enabled !== undefined) {
+      // We email these clients now, so they get a switch to stop us.
+      if (typeof body.notifications_enabled !== 'boolean') {
+        throw new HttpError(400, 'INVALID_FIELD', 'notifications_enabled must be true or false')
+      }
+      const { error: prefError } = await admin
+        .from('clients')
+        .update({ notifications_enabled: body.notifications_enabled })
+        .eq('id', clientId)
+      if (prefError) {
+        throw new HttpError(503, 'PREFERENCE_SAVE_FAILED', 'That setting could not be saved — try again')
+      }
+      return jsonResponse(req, METHODS, 200, { success: true, notifications_enabled: body.notifications_enabled })
     }
 
     if (body.delete_event_id !== undefined) {
@@ -245,7 +260,7 @@ serve(async (req) => {
     ] = await Promise.all([
       admin
         .from('clients')
-        .select('id,name,photo_url,bio,media_kit_url,calendar_link,dashboard_slug,dashboard_tagline')
+        .select('id,name,photo_url,bio,media_kit_url,calendar_link,dashboard_slug,dashboard_tagline,notifications_enabled')
         .eq('id', clientId)
         .maybeSingle(),
       admin
@@ -422,6 +437,7 @@ serve(async (req) => {
         media_kit_url: clampText(clientRow.media_kit_url, 2_000),
         calendar_link: clampText(clientRow.calendar_link, 2_000),
         dashboard_tagline: clampText(clientRow.dashboard_tagline, 400),
+        notifications_enabled: clientRow.notifications_enabled !== false,
       },
       review: {
         dashboard_slug: clampText(clientRow.dashboard_slug, 200),
