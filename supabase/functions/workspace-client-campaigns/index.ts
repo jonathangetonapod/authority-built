@@ -55,6 +55,8 @@ const RESEARCH_PROMPT_IDS = [
   "inbox_nudges",
 ];
 
+const CLIENT_PROMPT_IDS = RESEARCH_PROMPT_IDS;
+
 function requireResearchPromptId(value: unknown): string {
   if (typeof value !== "string" || !RESEARCH_PROMPT_IDS.includes(value)) {
     throw new HttpError(400, "INVALID_PROMPT", "Unknown research prompt");
@@ -2982,6 +2984,87 @@ serve(async (req) => {
       workspaceId,
       clientId,
     );
+
+    if (action === "client-prompts-get") {
+      requireOnlyKeys(body, ["action", "workspace_id", "client_id"]);
+      const { data: rows, error: promptsError } = await context.admin
+        .from("client_ai_sdr_prompts")
+        .select("prompt_id, content, updated_at")
+        .eq("workspace_id", workspaceId)
+        .eq("client_id", clientId);
+      if (promptsError) {
+        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "Client prompts are temporarily unavailable");
+      }
+      const overrides: Record<string, { content: string; updated_at: string | null }> = {};
+      for (const row of rows ?? []) {
+        if (CLIENT_PROMPT_IDS.includes(String(row.prompt_id)) && typeof row.content === "string") {
+          overrides[String(row.prompt_id)] = {
+            content: row.content,
+            updated_at: typeof row.updated_at === "string" ? row.updated_at : null,
+          };
+        }
+      }
+      return jsonResponse(req, METHODS, 200, { overrides });
+    }
+
+    if (action === "client-prompts-set") {
+      requireOnlyKeys(body, ["action", "workspace_id", "client_id", "prompt_id", "content"]);
+      requireIntegrationOwner(access);
+      const promptId = requireString(body.prompt_id, "prompt_id", { max: 32 });
+      if (!CLIENT_PROMPT_IDS.includes(promptId)) {
+        throw new HttpError(400, "INVALID_PROMPT", "Unknown client AI SDR prompt");
+      }
+      const content = requireString(body.content, "content", { max: 20_000 });
+      const { error: saveError } = await context.admin
+        .from("client_ai_sdr_prompts")
+        .upsert({
+          workspace_id: workspaceId,
+          client_id: clientId,
+          prompt_id: promptId,
+          content,
+          updated_by: context.user.id,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "workspace_id,client_id,prompt_id" });
+      if (saveError) {
+        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "The client prompt could not be saved");
+      }
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: "client.ai_sdr_prompts.updated",
+        entityType: "client",
+        entityId: clientId,
+        metadata: { prompt_id: promptId },
+      });
+      return jsonResponse(req, METHODS, 200, { success: true });
+    }
+
+    if (action === "client-prompts-reset") {
+      requireOnlyKeys(body, ["action", "workspace_id", "client_id", "prompt_id"]);
+      requireIntegrationOwner(access);
+      const promptId = requireString(body.prompt_id, "prompt_id", { max: 32 });
+      if (!CLIENT_PROMPT_IDS.includes(promptId)) {
+        throw new HttpError(400, "INVALID_PROMPT", "Unknown client AI SDR prompt");
+      }
+      const { error: resetError } = await context.admin
+        .from("client_ai_sdr_prompts")
+        .delete()
+        .eq("workspace_id", workspaceId)
+        .eq("client_id", clientId)
+        .eq("prompt_id", promptId);
+      if (resetError) {
+        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "The client prompt could not be reset");
+      }
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: "client.ai_sdr_prompts.reset",
+        entityType: "client",
+        entityId: clientId,
+        metadata: { prompt_id: promptId },
+      });
+      return jsonResponse(req, METHODS, 200, { success: true });
+    }
 
     if (action === "client-links-list") {
       requireOnlyKeys(body, ["action", "workspace_id", "client_id"]);

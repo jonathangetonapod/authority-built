@@ -126,16 +126,31 @@ export async function generateReplyPackage(input: GenerateReplyPackageInput): Pr
 
   // Workspace-editable prompt (Client Campaigns -> prompt settings) with the
   // shipped default as the fallback, exactly like the research prompts.
+  // Resolution order: this client's own prompt -> the workspace house style
+  // -> the shipped default.
   const replyDefault = RESEARCH_PROMPT_DEFAULTS.inbox_reply
-  const { data: promptRow } = await admin
-    .from('workspace_research_prompts')
-    .select('content')
-    .eq('workspace_id', workspaceId)
-    .eq('prompt_id', 'inbox_reply')
-    .maybeSingle()
-  const promptTemplate = typeof promptRow?.content === 'string' && promptRow.content.trim()
-    ? promptRow.content
-    : replyDefault.content
+  const [clientPromptResult, workspacePromptResult] = await Promise.all([
+    admin
+      .from('client_ai_sdr_prompts')
+      .select('content')
+      .eq('workspace_id', workspaceId)
+      .eq('client_id', clientId)
+      .eq('prompt_id', 'inbox_reply')
+      .maybeSingle(),
+    admin
+      .from('workspace_research_prompts')
+      .select('content')
+      .eq('workspace_id', workspaceId)
+      .eq('prompt_id', 'inbox_reply')
+      .maybeSingle(),
+  ])
+  const clientPrompt = clientPromptResult.data?.content
+  const workspacePrompt = workspacePromptResult.data?.content
+  const promptTemplate = typeof clientPrompt === 'string' && clientPrompt.trim()
+    ? clientPrompt
+    : typeof workspacePrompt === 'string' && workspacePrompt.trim()
+      ? workspacePrompt
+      : replyDefault.content
   const filled = promptTemplate
     .replaceAll('{{client_name}}', String(client.name ?? ''))
     .replaceAll('{{positioning}}', profileText('positioning'))

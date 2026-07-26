@@ -212,3 +212,12 @@ assert.match(sdrShared, /OPT_OUT_PATTERNS/u)
 assert.match(edge, /THREAD_ADVANCED/u)
 assert.match(edge, /\.in\("status", \["needs_reply", "review", "replied"\]\)/u)
 assert.match(config, /\[functions\.inbox-enroll-tick\]\nverify_jwt = false/u)
+
+// Per-client AI SDR prompts: owner-gated writes, inbox ids only, and the
+// generator resolves client -> workspace -> shipped default.
+assert.match(edge, /const CLIENT_PROMPT_IDS = RESEARCH_PROMPT_IDS/u)
+assert.match(edge, /action === "client-prompts-set"[\s\S]*?requireIntegrationOwner\(access\)/u)
+assert.match(edge, /action === "client-prompts-reset"[\s\S]*?requireIntegrationOwner\(access\)/u)
+assert.match(sdrShared, /from\('client_ai_sdr_prompts'\)[\s\S]*?\.eq\('client_id', clientId\)/u)
+assert.match(sdrShared, /clientPrompt[\s\S]*?workspacePrompt[\s\S]*?replyDefault\.content/u)
+assert.match(enrollTick, /email\.i_status !== 1\) continue/u)

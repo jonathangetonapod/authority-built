@@ -37,6 +37,7 @@ import {
 import { toast } from 'sonner'
 import { WorkspaceLayout, type PlatformWorkspaceConfig } from '@/components/workspace/WorkspaceLayout'
 import { ClientInstantlyCampaignsCard } from '@/components/workspace/ClientInstantlyCampaignsCard'
+import { ClientSdrPromptsCard } from '@/components/workspace/ClientSdrPromptsCard'
 import { ClientShortlistEditor } from '@/components/workspace/ClientShortlistEditor'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -964,7 +965,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                   {
                     id: 'auto_draft' as const,
                     title: 'Auto-draft',
-                    detail: 'Every new reply is classified and a reply + nudge package is staged for review automatically.',
+                    detail: 'Replies marked Interested in Instantly are classified and a reply + nudge package is staged for review automatically.',
                   },
                 ]).map((option) => {
                   const selected = (client.ai_sdr_mode ?? 'manual') === option.id
@@ -990,6 +991,13 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                 })}
               </CardContent>
             </Card>
+
+            <ClientSdrPromptsCard
+              workspaceId={workspaceId}
+              clientId={client.id}
+              clientName={client.name}
+              canManage={canManage && detail.viewer_role === 'owner'}
+            />
 
             <section aria-labelledby="ai-sdr-context-heading">
               <div className="mb-3 flex flex-wrap items-end justify-between gap-3">

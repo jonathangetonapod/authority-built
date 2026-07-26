@@ -993,11 +993,22 @@ serve(async (req) => {
           .from('workspace_research_prompts')
           .select('prompt_id, content')
           .eq('workspace_id', workspaceId)
+        const { data: clientOverrideRows } = await authContext.admin
+          .from('client_ai_sdr_prompts')
+          .select('prompt_id, content')
+          .eq('workspace_id', workspaceId)
+          .eq('client_id', clientId)
         const overrides = new Map(
           (overrideRows ?? []).map((row) => [String(row.prompt_id), String(row.content)]),
         )
+        // This client's own prompt wins over the workspace house style.
+        const clientOverrides = new Map(
+          (clientOverrideRows ?? []).map((row) => [String(row.prompt_id), String(row.content)]),
+        )
         const promptContent = (promptId: string): string =>
-          overrides.get(promptId) ?? RESEARCH_PROMPT_DEFAULTS[promptId].content
+          clientOverrides.get(promptId)
+            ?? overrides.get(promptId)
+            ?? RESEARCH_PROMPT_DEFAULTS[promptId].content
 
         const episodes = await fetchRecentEpisodes(shortlistRow.podcast_id)
         const firstEpisode = episodes[0] ?? null
@@ -1551,11 +1562,23 @@ serve(async (req) => {
         .select('prompt_id, content')
         .eq('workspace_id', workspaceId)
         .in('prompt_id', ['write_email', 'clean_email'])
+      const { data: clientOverrideRows } = await authContext.admin
+        .from('client_ai_sdr_prompts')
+        .select('prompt_id, content')
+        .eq('workspace_id', workspaceId)
+        .eq('client_id', clientId)
+        .in('prompt_id', ['write_email', 'clean_email'])
       const overrides = new Map(
         (overrideRows ?? []).map((row) => [String(row.prompt_id), String(row.content)]),
       )
+      // This client's own prompt wins over the workspace house style.
+      const clientOverrides = new Map(
+        (clientOverrideRows ?? []).map((row) => [String(row.prompt_id), String(row.content)]),
+      )
       const promptContent = (promptId: string): string =>
-        overrides.get(promptId) ?? RESEARCH_PROMPT_DEFAULTS[promptId].content
+        clientOverrides.get(promptId)
+          ?? overrides.get(promptId)
+          ?? RESEARCH_PROMPT_DEFAULTS[promptId].content
 
       // Every template variable is mapped from stored research and catalog
       // data — nothing raw (like the client bio document) leaks into the email.

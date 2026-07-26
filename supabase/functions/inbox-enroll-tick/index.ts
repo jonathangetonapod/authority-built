@@ -5,6 +5,7 @@
 // Generation NEVER grants send authority: packages always stop at review.
 //
 // Cost and safety gates:
+// - interested-only: replies Instantly has not flagged interested are skipped
 // - per-workspace high-water cursor: each reply is considered once
 // - deterministic opt-out/autoresponder pre-filter spends zero tokens
 // - an idempotency claim precedes every model call, so an overlapping tick
@@ -158,6 +159,10 @@ serve(async (req) => {
         if (createdAt && (!cursorHigh || createdAt > cursorHigh)) cursorHigh = createdAt
         if (drafted >= MAX_DRAFTS_PER_TICK || workspaceDrafts >= MAX_DRAFTS_PER_WORKSPACE || creditsExhausted) continue
 
+        // Auto-draft is for interested leads only: Instantly's own interest
+        // flag on the reply decides. Everything else waits for an operator
+        // to mark it interested (which moves it into scope for a later tick).
+        if (email.i_status !== 1) continue
         const campaignId = typeof email.campaign_id === 'string' ? email.campaign_id : null
         const clientId = campaignId ? clientByCampaign.get(campaignId) ?? null : null
         if (!clientId || !autoClientIds.has(clientId)) continue

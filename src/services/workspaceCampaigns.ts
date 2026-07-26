@@ -629,6 +629,61 @@ export async function getWorkspaceInboxLeadDetail(
   return data.lead ?? null
 }
 
+export type ClientSdrPromptId =
+  | 'podcast_research'
+  | 'host_info'
+  | 'guest_info'
+  | 'host_name_extractor'
+  | 'find_topics'
+  | 'write_email'
+  | 'clean_email'
+  | 'inbox_reply'
+  | 'inbox_nudges'
+
+export type ClientSdrPromptOverrides = Partial<
+  Record<ClientSdrPromptId, { content: string; updated_at: string | null }>
+>
+
+export async function getClientSdrPrompts(
+  workspaceId: string,
+  clientId: string,
+): Promise<ClientSdrPromptOverrides> {
+  const data = await invokeWorkspaceCampaigns<{ overrides?: ClientSdrPromptOverrides }>({
+    action: 'client-prompts-get',
+    workspace_id: workspaceId,
+    client_id: clientId,
+  }, 'The client AI SDR prompts could not be loaded.')
+  return data.overrides ?? {}
+}
+
+export async function setClientSdrPrompt(
+  workspaceId: string,
+  clientId: string,
+  promptId: ClientSdrPromptId,
+  content: string,
+): Promise<void> {
+  await invokeWorkspaceCampaigns<{ success: boolean }>({
+    action: 'client-prompts-set',
+    workspace_id: workspaceId,
+    client_id: clientId,
+    prompt_id: promptId,
+    content,
+  }, 'The client AI SDR prompt could not be saved.')
+}
+
+export async function resetClientSdrPrompt(
+  workspaceId: string,
+  clientId: string,
+  promptId: ClientSdrPromptId,
+): Promise<void> {
+  await invokeWorkspaceCampaigns<{ success: boolean }>({
+    action: 'client-prompts-reset',
+    workspace_id: workspaceId,
+    client_id: clientId,
+    prompt_id: promptId,
+  }, 'The client AI SDR prompt could not be reset.')
+}
+
 export type WorkspaceLeadInterestValue = 1 | 2 | 3 | 4 | 0 | -1 | -2 | -3 | -4 | null
 
 export async function setWorkspaceInboxLeadInterest(
