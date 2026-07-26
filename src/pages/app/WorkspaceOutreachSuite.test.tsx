@@ -260,8 +260,9 @@ describe('WorkspaceOutreachSuite', () => {
     renderPage('master-inbox')
 
     const scope = screen.getByRole('radiogroup', { name: 'Inbox scope' })
-    expect(within(scope).getByRole('radio', { name: /all replies/i })).toHaveAttribute('aria-checked', 'true')
-    expect(within(scope).getByRole('radio', { name: /^interested/i })).toHaveAttribute('aria-checked', 'false')
+    // Two mutually exclusive scopes; Interested only leads.
+    expect(within(scope).getAllByRole('radio')).toHaveLength(2)
+    expect(within(scope).getByRole('radio', { name: /interested only/i })).toHaveAttribute('aria-checked', 'true')
     expect(within(scope).getByRole('radio', { name: /other replies/i })).toHaveAttribute('aria-checked', 'false')
     expect(screen.getByPlaceholderText('Search conversations')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Filter by client' })).toHaveTextContent('All clients')

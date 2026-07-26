@@ -33,12 +33,14 @@ import {
   draftWorkspaceInboxReply,
   getWorkspaceInboxLeadDetail,
   getWorkspaceInboxThreads,
+  setWorkspaceInboxLeadInterest,
   sendWorkspaceInboxReply,
   setWorkspaceInboxThreadStatus,
   type WorkspaceInboxNudge,
   type WorkspaceInboxReplyClassification,
   type WorkspaceInboxThread,
   type WorkspaceInboxThreadStatus,
+  type WorkspaceLeadInterestValue,
 } from '@/services/workspaceCampaigns'
 import {
   CLIENT_SDR_PROFILE_FIELD_DEFINITIONS,
@@ -50,7 +52,7 @@ import {
   type WorkspaceClientSdrContext,
 } from '@/services/clients'
 
-type InboxScope = 'all' | 'interested' | 'other'
+type InboxScope = 'interested' | 'other'
 type InboxFilter = 'all' | 'needs_reply' | 'review' | 'replied' | 'booked' | 'archived'
 
 const inboxFilters: Array<{ value: InboxFilter; label: string; title: string }> = [
@@ -61,6 +63,19 @@ const inboxFilters: Array<{ value: InboxFilter; label: string; title: string }> 
   { value: 'booked', label: 'Booked', title: 'Conversations marked as a confirmed booking' },
   { value: 'archived', label: 'Archived', title: 'Conversations closed out of the inbox — reopen any time' },
 ]
+
+// Instantly lt_interest_status values.
+const INTEREST_STATUS: Record<number, { label: string; className: string }> = {
+  1: { label: 'Interested', className: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
+  2: { label: 'Meeting booked', className: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
+  3: { label: 'Meeting completed', className: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
+  4: { label: 'Won', className: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
+  0: { label: 'Out of office', className: 'bg-muted text-muted-foreground' },
+  [-1]: { label: 'Not interested', className: 'bg-muted text-muted-foreground' },
+  [-2]: { label: 'Wrong person', className: 'bg-muted text-muted-foreground' },
+  [-3]: { label: 'Lost', className: 'bg-muted text-muted-foreground' },
+  [-4]: { label: 'No show', className: 'border-amber-200 bg-amber-50 text-amber-800' },
+}
 
 const leadInitials = (name: string): string => {
   const parts = name.trim().split(/\s+/u).filter(Boolean)
@@ -198,7 +213,7 @@ function ClientSdrContextPanel({
 }
 
 const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError, baseHref }: MasterInboxPreviewProps) => {
-  const [scope, setScope] = useState<InboxScope>('all')
+  const [scope, setScope] = useState<InboxScope>('interested')
   const [filter, setFilter] = useState<InboxFilter>('all')
   const [search, setSearch] = useState('')
   const [searchParams, setSearchParams] = useSearchParams()
@@ -230,7 +245,6 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
   const [sentThreadIds, setSentThreadIds] = useState<Set<string>>(new Set())
 
   const counts = useMemo(() => ({
-    all: threads.length,
     interested: threads.filter((thread) => thread.interested).length,
     other: threads.filter((thread) => !thread.interested).length,
   }), [threads])
@@ -247,8 +261,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
   const visibleThreads = useMemo(() => {
     const query = search.trim().toLowerCase()
     return threads.filter((thread) => {
-      if (scope === 'interested' && !thread.interested) return false
-      if (scope === 'other' && thread.interested) return false
+      if (scope === 'interested' ? !thread.interested : thread.interested) return false
       if (selectedClient && thread.campaign?.client?.id !== selectedClient.id) return false
       const status = threadStatus(thread, sentThreadIds)
       if (filter === 'all' ? status === 'archived' : status !== filter) return false
@@ -338,6 +351,22 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
       toast.error(error instanceof Error ? error.message : 'The reply could not be sent.')
     },
   })
+  const interestMutation = useMutation({
+    mutationFn: (input: { thread: WorkspaceInboxThread; value: WorkspaceLeadInterestValue }) =>
+      setWorkspaceInboxLeadInterest(workspaceId, {
+        lead_email: input.thread.lead_email || input.thread.from_email,
+        interest_value: input.value,
+        ...(input.thread.campaign?.campaign_id ? { campaign_id: input.thread.campaign.campaign_id } : {}),
+      }),
+    onSuccess: (_result, input) => {
+      toast.success(input.value === null ? 'Status reset in Instantly.' : 'Status updated in Instantly.')
+      void inboxQuery.refetch()
+      void leadDetailQuery.refetch()
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'The lead status could not be updated.')
+    },
+  })
   const statusMutation = useMutation({
     mutationFn: (input: { thread: WorkspaceInboxThread; status?: 'needs_reply' | 'booked' | 'archived'; nudges_paused?: boolean }) =>
       setWorkspaceInboxThreadStatus(workspaceId, {
@@ -405,18 +434,6 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
               <button
                 type="button"
                 role="radio"
-                aria-checked={scope === 'all'}
-                onClick={() => setScope('all')}
-                className={cn(
-                  'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                  scope === 'all' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                All replies <span className="ml-1 text-muted-foreground">{counts.all}</span>
-              </button>
-              <button
-                type="button"
-                role="radio"
                 aria-checked={scope === 'interested'}
                 onClick={() => setScope('interested')}
                 className={cn(
@@ -424,7 +441,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                   scope === 'interested' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
-                Interested <span className="ml-1 text-muted-foreground">{counts.interested}</span>
+                Interested only <span className="ml-1 text-muted-foreground">{counts.interested}</span>
               </button>
               <button
                 type="button"
@@ -769,9 +786,17 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                     </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-1.5">
-                    {selectedThread.interested && (
-                      <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">Interested</Badge>
-                    )}
+                    {(() => {
+                      const interest = typeof leadDetail?.interest_status === 'number'
+                        ? INTEREST_STATUS[leadDetail.interest_status]
+                        : null
+                      if (interest) {
+                        return <Badge variant="outline" className={interest.className} title="Interest status in Instantly">{interest.label}</Badge>
+                      }
+                      return selectedThread.interested
+                        ? <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">Interested</Badge>
+                        : null
+                    })()}
                     {(() => {
                       const pill = statusPill[threadStatus(selectedThread, sentThreadIds)]
                       return pill ? <Badge variant="outline" className={pill.className}>{pill.label}</Badge> : null
@@ -780,6 +805,37 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                       <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">Opted out</Badge>
                     )}
                   </div>
+                  {selectedThread.lead_email || selectedThread.from_email ? (
+                    <div className="mt-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Instantly status</p>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {([
+                          { value: 1 as const, label: 'Interested' },
+                          { value: 2 as const, label: 'Meeting booked' },
+                          { value: -1 as const, label: 'Not interested' },
+                          { value: null, label: 'Reset' },
+                        ]).map((option) => {
+                          const active = (leadDetail?.interest_status ?? null) === option.value
+                          return (
+                            <Button
+                              key={String(option.value)}
+                              type="button"
+                              size="sm"
+                              variant={active ? 'default' : 'outline'}
+                              className="h-7 px-2.5 text-xs"
+                              disabled={interestMutation.isPending}
+                              onClick={() => interestMutation.mutate({ thread: selectedThread, value: option.value })}
+                            >
+                              {option.label}
+                            </Button>
+                          )
+                        })}
+                      </div>
+                      <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
+                        Writes straight to Instantly and moves this conversation between Interested only and Other replies.
+                      </p>
+                    </div>
+                  ) : null}
                   {(leadWebsite || leadDetail?.phone) && (
                     <div className="mt-3 flex flex-wrap gap-3 text-xs">
                       {leadWebsite && (

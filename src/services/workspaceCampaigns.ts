@@ -614,6 +614,7 @@ export interface WorkspaceInboxLeadDetail {
   first_contacted_at: string | null
   last_contacted_at: string | null
   last_reply_at: string | null
+  interest_status?: number | null
 }
 
 export async function getWorkspaceInboxLeadDetail(
@@ -626,6 +627,19 @@ export async function getWorkspaceInboxLeadDetail(
     lead_id: leadId,
   }, 'The lead details could not be loaded.')
   return data.lead ?? null
+}
+
+export type WorkspaceLeadInterestValue = 1 | 2 | 3 | 4 | 0 | -1 | -2 | -3 | -4 | null
+
+export async function setWorkspaceInboxLeadInterest(
+  workspaceId: string,
+  input: { lead_email: string; interest_value: WorkspaceLeadInterestValue; campaign_id?: string },
+): Promise<void> {
+  await invokeWorkspaceCampaigns<{ success: boolean }>({
+    action: 'inbox-interest-set',
+    workspace_id: workspaceId,
+    ...input,
+  }, 'The lead status could not be updated in Instantly.')
 }
 
 export async function setWorkspaceInboxThreadStatus(

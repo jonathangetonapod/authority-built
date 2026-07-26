@@ -8,6 +8,7 @@
 // most valuable cost control).
 
 import { HttpError } from './httpError.ts'
+import { RESEARCH_PROMPT_DEFAULTS } from './researchPromptDefaults.ts'
 import { chargeCredits, logOperationCost } from './billing.ts'
 import { resolveAiKey } from './workspaceAiKeys.ts'
 
@@ -123,6 +124,28 @@ export async function generateReplyPackage(input: GenerateReplyPackageInput): Pr
     )
   }
 
+  // Workspace-editable prompt (Client Campaigns -> prompt settings) with the
+  // shipped default as the fallback, exactly like the research prompts.
+  const replyDefault = RESEARCH_PROMPT_DEFAULTS.inbox_reply
+  const { data: promptRow } = await admin
+    .from('workspace_research_prompts')
+    .select('content')
+    .eq('workspace_id', workspaceId)
+    .eq('prompt_id', 'inbox_reply')
+    .maybeSingle()
+  const promptTemplate = typeof promptRow?.content === 'string' && promptRow.content.trim()
+    ? promptRow.content
+    : replyDefault.content
+  const filled = promptTemplate
+    .replaceAll('{{client_name}}', String(client.name ?? ''))
+    .replaceAll('{{positioning}}', profileText('positioning'))
+    .replaceAll('{{topics_and_angles}}', profileText('topics_and_angles'))
+    .replaceAll('{{listener_takeaways}}', profileText('listener_takeaways'))
+    .replaceAll('{{proof_points}}', profileText('proof_points') || 'n/a')
+    .replaceAll('{{booking_details}}', profileText('booking_details'))
+    .replaceAll('{{reply_subject}}', subject)
+    .replaceAll('{{reply_body}}', message)
+
   const anthropicKey = await resolveAiKey(admin, workspaceId, 'anthropic')
   if (!anthropicKey) {
     throw new HttpError(500, 'SERVER_MISCONFIGURED', 'AI drafting is not configured')
@@ -146,15 +169,10 @@ export async function generateReplyPackage(input: GenerateReplyPackageInput): Pr
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1_800,
-      system:
-        'You are a booking agency\'s SDR handling a podcast host\'s reply on behalf of a client. First classify the host\'s reply, then draft a response. Professional, warm, concise (under 150 words), no hype, no exclamation marks. Move toward a concrete booking step; for a not_now or not_interested reply, close graciously and leave the door open. Return ONLY JSON: {"classification": {"label": "interested"|"not_interested"|"not_now"|"question"|"referral"|"auto_reply"|"other", "confidence": number 0-100, "reasoning": string under 200 chars}, "subject": string, "body": string, "nudges": [{"send_after_days": number, "body": string under 400 chars}] with exactly 2 gentle follow-up nudges spaced for this conversation (empty array when the reply is not_interested or auto_reply)} — body is plain text with paragraph breaks.',
-      messages: [{
-        role: 'user',
-        content:
-          `CLIENT (the guest you are booking):\nName: ${client.name}\nPositioning: ${profileText('positioning')}\nTopics: ${profileText('topics_and_angles')}\nListener takeaways: ${profileText('listener_takeaways')}\nProof points: ${profileText('proof_points') || 'n/a'}\nBooking details: ${profileText('booking_details')}\n\nHOST'S REPLY (respond to this):\nSubject: ${subject}\n${message}`,
-      }],
+      model: replyDefault.model,
+      max_tokens: replyDefault.maxTokens,
+      system: replyDefault.system,
+      messages: [{ role: 'user', content: filled }],
     }),
     signal: AbortSignal.timeout(45_000),
   })

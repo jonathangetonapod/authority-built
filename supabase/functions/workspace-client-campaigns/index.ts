@@ -51,6 +51,8 @@ const RESEARCH_PROMPT_IDS = [
   "find_topics",
   "write_email",
   "clean_email",
+  "inbox_reply",
+  "inbox_nudges",
 ];
 
 function requireResearchPromptId(value: unknown): string {
@@ -2877,9 +2879,60 @@ serve(async (req) => {
             first_contacted_at: leadText(lead.timestamp_created, 40),
             last_contacted_at: leadText(lead.timestamp_last_contact, 40),
             last_reply_at: leadText(lead.timestamp_last_reply, 40),
+            interest_status: typeof lead.lt_interest_status === "number" ? lead.lt_interest_status : null,
           }
           : null,
       });
+    }
+
+    if (action === "inbox-interest-set") {
+      requireOnlyKeys(body, ["action", "workspace_id", "lead_email", "interest_value", "campaign_id"]);
+      if (!["owner", "admin", "platform_admin"].includes(access.role)) {
+        throw new HttpError(403, "WORKSPACE_ACCESS_REQUIRED", "Workspace manager access is required");
+      }
+      const leadEmail = requireString(body.lead_email, "lead_email", { max: 320 });
+      const interestCampaignId = body.campaign_id === undefined
+        ? null
+        : requireUuid(body.campaign_id, "campaign_id");
+      // null resets the lead to plain "Lead" in Instantly.
+      const INTEREST_VALUES = [1, 2, 3, 4, 0, -1, -2, -3, -4];
+      const interestValue = body.interest_value === null
+        ? null
+        : typeof body.interest_value === "number" && INTEREST_VALUES.includes(body.interest_value)
+          ? body.interest_value
+          : (() => {
+            throw new HttpError(400, "INVALID_FIELD", "interest_value must be null or a known Instantly status");
+          })();
+      const connection = await readConnection(context.admin, workspaceId);
+      if (
+        !connection || connection.status !== "connected" ||
+        !connection.api_key_ciphertext || !connection.api_key_iv
+      ) {
+        throw new HttpError(409, "INSTANTLY_NOT_CONNECTED", "Connect Instantly before updating lead status");
+      }
+      const apiKey = await integrationApiKey(connection, false);
+      try {
+        await instantlyRequest(apiKey, "/leads/update-interest-status", {
+          method: "POST",
+          body: {
+            lead_email: leadEmail,
+            interest_value: interestValue,
+            ...(interestCampaignId ? { campaign_id: interestCampaignId } : {}),
+          },
+        });
+      } catch (error) {
+        if (error instanceof InstantlyApiError) throw providerHttpError(error);
+        throw error;
+      }
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: "workspace.inbox.interest_set",
+        entityType: "campaign",
+        entityId: null,
+        metadata: { lead_email: leadEmail, interest_value: interestValue },
+      });
+      return jsonResponse(req, METHODS, 200, { success: true, interest_value: interestValue });
     }
 
     if (action === "inbox-thread-state") {
