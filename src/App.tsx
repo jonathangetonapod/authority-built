@@ -28,6 +28,7 @@ const UpcomingGoingLive = lazy(() => import("./pages/admin/UpcomingGoingLive"));
 const ClientsManagement = lazy(() => import("./pages/admin/ClientsManagement"));
 const ClientDetail = lazy(() => import("./pages/admin/ClientDetail"));
 const GuestResourcesManagement = lazy(() => import("./pages/admin/GuestResourcesManagement"));
+const PortalPreviewHandoff = lazy(() => import("./pages/portal/PreviewHandoff"));
 const PortalLogin = lazy(() => import("./pages/portal/Login"));
 const PortalDashboard = lazy(() => import("./pages/portal/DashboardMvp"));
 const PortalResources = lazy(() => import("./pages/portal/Resources"));
@@ -420,6 +421,7 @@ const App = () => (
             {/* Client Portal routes */}
             <Route path="/portal" element={<Navigate to="/portal/login" replace />} />
             <Route path="/portal/login" element={<PortalLogin />} />
+            <Route path="/portal/preview" element={<PortalPreviewHandoff />} />
             <Route path="/portal/forgot" element={<PortalForgotPassword />} />
             <Route path="/portal/reset" element={<PortalResetPassword />} />
             {/* Public prospect dashboard */}

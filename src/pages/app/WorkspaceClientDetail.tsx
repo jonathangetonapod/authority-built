@@ -17,6 +17,7 @@ import {
   Globe2,
   KeyRound,
   LayoutDashboard,
+  Link as LinkIcon,
   Linkedin,
   Loader2,
   Mail,
@@ -53,7 +54,8 @@ import {
   getWorkspaceClientDetail,
   generatePassword,
   rotateWorkspaceClientDashboardSlug,
-  sendWorkspaceClientPortalInvite,
+  createWorkspaceClientPortalPreview,
+  createWorkspaceClientPortalSetupLink,
   setWorkspaceClientPassword,
   updateWorkspaceClient,
   updateWorkspaceClientProfile,
@@ -290,6 +292,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const [slugRotateOpen, setSlugRotateOpen] = useState(false)
   const [slugRotateBusy, setSlugRotateBusy] = useState(false)
   const [portalInviteBusy, setPortalInviteBusy] = useState(false)
+  const [portalPreviewBusy, setPortalPreviewBusy] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [profileEditorOpen, setProfileEditorOpen] = useState(false)
   const [profileDraft, setProfileDraft] = useState('')
@@ -514,21 +517,33 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
     }
   }
 
-  const sendPortalInvite = async () => {
+  const copyPortalSetupLink = async () => {
     if (portalInviteBusy) return
     setPortalInviteBusy(true)
     try {
-      const status = await sendWorkspaceClientPortalInvite(workspaceId, canonicalClientId)
+      const setup = await createWorkspaceClientPortalSetupLink(workspaceId, canonicalClientId)
+      await navigator.clipboard.writeText(setup.url)
       await detailQuery.refetch()
-      if (status === 'sent') {
-        toast.success('Portal invitation emailed. The set-password link expires in 7 days.')
-      } else {
-        toast.error('Email delivery is not configured — set a password manually and share it instead.')
-      }
+      toast.success('Setup link copied. Share it with the client — they set their own password. Expires in 7 days.')
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'The portal invitation could not be sent.')
+      toast.error(error instanceof Error ? error.message : 'The setup link could not be created.')
     } finally {
       setPortalInviteBusy(false)
+    }
+  }
+
+  const openPortalPreview = async () => {
+    if (portalPreviewBusy) return
+    setPortalPreviewBusy(true)
+    try {
+      const preview = await createWorkspaceClientPortalPreview(workspaceId, canonicalClientId)
+      const clientPayload = btoa(JSON.stringify(preview.client))
+      const hash = `#session=${encodeURIComponent(preview.session_token)}&expires=${encodeURIComponent(preview.expires_at)}&client=${encodeURIComponent(clientPayload)}`
+      window.open(`/portal/preview${hash}`, '_blank', 'noopener')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The portal preview could not be started.')
+    } finally {
+      setPortalPreviewBusy(false)
     }
   }
 
@@ -1017,12 +1032,10 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                         type="button"
                         className="w-full"
                         disabled={!client.email || portalInviteBusy}
-                        onClick={() => void sendPortalInvite()}
+                        onClick={() => void copyPortalSetupLink()}
                       >
-                        <Mail className="mr-2 h-4 w-4" />
-                        {portalInviteBusy
-                          ? 'Sending invitation…'
-                          : client.portal_access_enabled ? 'Resend portal invitation' : 'Email portal invitation'}
+                        <LinkIcon className="mr-2 h-4 w-4" />
+                        {portalInviteBusy ? 'Creating link…' : 'Copy setup link'}
                       </Button>
                       <Button
                         type="button"
@@ -1034,6 +1047,18 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                         <KeyRound className="mr-2 h-4 w-4" />
                         {client.password_set_at ? 'Change portal password' : 'Set portal password'}
                       </Button>
+                      {client.portal_access_enabled && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full"
+                          disabled={portalPreviewBusy}
+                          onClick={() => void openPortalPreview()}
+                        >
+                          <Eye className="mr-2 h-4 w-4" />
+                          {portalPreviewBusy ? 'Opening preview…' : 'Preview portal as client'}
+                        </Button>
+                      )}
                       {!client.email && <p className="text-xs text-destructive">Add a client email before enabling password login.</p>}
                     </div>
                   ) : (

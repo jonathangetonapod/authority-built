@@ -217,10 +217,11 @@ serve(async (req) => {
           throw new HttpError(503, 'PASSWORD_BACKEND_UNAVAILABLE', 'The invitation could not be prepared')
         }
 
-        const branding = await safeWorkspaceBranding(admin, client.workspace ?? {})
+        const workspaceRecord = (Array.isArray(client.workspace) ? client.workspace[0] : client.workspace) ?? {}
+        const branding = await safeWorkspaceBranding(admin, workspaceRecord as Record<string, unknown>)
         const workspaceName = branding?.name
-          || (typeof (client.workspace as { name?: string } | null)?.name === 'string'
-            ? (client.workspace as { name: string }).name
+          || (typeof (workspaceRecord as { name?: string }).name === 'string'
+            ? (workspaceRecord as { name: string }).name
             : 'Your agency')
         const delivery = await sendPortalInviteEmail({
           workspaceName,
@@ -249,6 +250,133 @@ serve(async (req) => {
         })
 
         return jsonResponse(req, METHODS, 200, { success: true, delivery: { status: delivery.status } })
+      }
+
+      if (action === 'setup-link') {
+        // Same capability as the invitation, minus the email: the owner gets
+        // the set-password URL to share on their own channels.
+        requireOnlyKeys(body, ['action', 'workspace_id', 'client_id'])
+
+        const { data: client, error: clientError } = await admin
+          .from('clients')
+          .select('id, name, email, portal_access_enabled, dashboard_slug')
+          .eq('id', clientId)
+          .eq('workspace_id', workspaceId)
+          .maybeSingle()
+        if (clientError) {
+          throw new HttpError(503, 'PASSWORD_BACKEND_UNAVAILABLE', 'The setup link could not be prepared')
+        }
+        if (!client) {
+          throw new HttpError(404, 'CLIENT_NOT_FOUND', 'Client not found in this workspace')
+        }
+        if (typeof client.email !== 'string' || !client.email.trim()) {
+          throw new HttpError(409, 'CLIENT_EMAIL_REQUIRED', 'Add a client email before creating a setup link')
+        }
+
+        if (!client.portal_access_enabled) {
+          const placeholder = crypto.randomUUID() + crypto.randomUUID()
+          const placeholderHash = await hashPortalPassword(placeholder)
+          const { error: enableError } = await admin.rpc('manage_client_portal_password', {
+            p_client_id: clientId,
+            p_workspace_id: workspaceId,
+            p_password_hash: placeholderHash,
+            p_set_by: actorLabel(user),
+            p_actor_user_id: user.id,
+            p_token_issued_at: tokenIssuedAt,
+          })
+          if (enableError) passwordMutationError(enableError, 'set')
+        }
+
+        const token = crypto.randomUUID()
+        const tokenHash = await hashPortalSessionToken(token)
+        const expiresAt = new Date(Date.now() + INVITE_TOKEN_TTL_DAYS * 86_400_000).toISOString()
+        const { error: tokenError } = await admin
+          .from('client_portal_reset_tokens')
+          .upsert({
+            client_id: clientId,
+            token_hash: tokenHash,
+            expires_at: expiresAt,
+            requested_ip: null,
+          }, { onConflict: 'client_id' })
+        if (tokenError) {
+          throw new HttpError(503, 'PASSWORD_BACKEND_UNAVAILABLE', 'The setup link could not be prepared')
+        }
+
+        await writeAudit(admin, {
+          workspaceId,
+          actorUserId: user.id,
+          action: 'client.portal_setup_link.issued',
+          entityType: 'client',
+          entityId: clientId,
+          metadata: { expires_at: expiresAt },
+        })
+
+        return jsonResponse(req, METHODS, 200, {
+          success: true,
+          url: portalResetUrl(token),
+          login_url: portalLoginUrl(typeof client.dashboard_slug === 'string' ? client.dashboard_slug : null),
+          expires_at: expiresAt,
+        })
+      }
+
+      if (action === 'preview-session') {
+        // Owner opens the client's portal exactly as the client sees it. The
+        // session is real (validated server-side like any login session) but
+        // short-lived and audited.
+        requireOnlyKeys(body, ['action', 'workspace_id', 'client_id'])
+
+        const { data: client, error: clientError } = await admin
+          .from('clients')
+          .select('id, name, email, photo_url, dashboard_slug, portal_access_enabled')
+          .eq('id', clientId)
+          .eq('workspace_id', workspaceId)
+          .maybeSingle()
+        if (clientError) {
+          throw new HttpError(503, 'PASSWORD_BACKEND_UNAVAILABLE', 'The preview session could not be created')
+        }
+        if (!client) {
+          throw new HttpError(404, 'CLIENT_NOT_FOUND', 'Client not found in this workspace')
+        }
+        if (!client.portal_access_enabled) {
+          throw new HttpError(409, 'PORTAL_DISABLED', 'Enable the client portal before previewing it')
+        }
+
+        const sessionToken = crypto.randomUUID()
+        const sessionTokenHash = await hashPortalSessionToken(sessionToken)
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+        const { error: sessionError } = await admin
+          .from('client_portal_sessions')
+          .insert({
+            client_id: clientId,
+            session_token: sessionTokenHash,
+            expires_at: expiresAt,
+            user_agent: `workspace-preview:${actorLabel(user)}`.slice(0, 1024),
+          })
+        if (sessionError) {
+          throw new HttpError(503, 'PASSWORD_BACKEND_UNAVAILABLE', 'The preview session could not be created')
+        }
+
+        await writeAudit(admin, {
+          workspaceId,
+          actorUserId: user.id,
+          action: 'client.portal_preview.started',
+          entityType: 'client',
+          entityId: clientId,
+          metadata: { expires_at: expiresAt },
+        })
+
+        return jsonResponse(req, METHODS, 200, {
+          success: true,
+          session_token: sessionToken,
+          expires_at: expiresAt,
+          client: {
+            id: client.id,
+            name: client.name,
+            email: client.email,
+            photo_url: client.photo_url ?? null,
+            dashboard_slug: client.dashboard_slug ?? null,
+          },
+        })
       }
 
       throw new HttpError(400, 'INVALID_ACTION', 'Unknown portal password action')

@@ -995,3 +995,47 @@ export async function removeClientPhoto(clientId: string, photoUrl: string) {
 
   return data as Client
 }
+
+export async function createWorkspaceClientPortalSetupLink(
+  workspaceId: string,
+  clientId: string,
+): Promise<{ url: string; login_url: string; expires_at: string }> {
+  const { data, error } = await supabase.functions.invoke('manage-client-portal-password', {
+    body: { action: 'setup-link', workspace_id: workspaceId, client_id: clientId },
+  })
+  if (error) throw await toFunctionError(error, 'The setup link could not be created.')
+  if (!data || data.success !== true || typeof data.url !== 'string') {
+    throw new Error('The setup link response was invalid.')
+  }
+  return { url: data.url, login_url: data.login_url, expires_at: data.expires_at }
+}
+
+export interface WorkspaceClientPortalPreview {
+  session_token: string
+  expires_at: string
+  client: {
+    id: string
+    name: string
+    email: string | null
+    photo_url: string | null
+    dashboard_slug: string | null
+  }
+}
+
+export async function createWorkspaceClientPortalPreview(
+  workspaceId: string,
+  clientId: string,
+): Promise<WorkspaceClientPortalPreview> {
+  const { data, error } = await supabase.functions.invoke('manage-client-portal-password', {
+    body: { action: 'preview-session', workspace_id: workspaceId, client_id: clientId },
+  })
+  if (error) throw await toFunctionError(error, 'The portal preview could not be started.')
+  if (!data || data.success !== true || typeof data.session_token !== 'string' || !data.client) {
+    throw new Error('The portal preview response was invalid.')
+  }
+  return {
+    session_token: data.session_token,
+    expires_at: data.expires_at,
+    client: data.client,
+  }
+}
