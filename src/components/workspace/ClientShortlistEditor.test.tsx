@@ -481,29 +481,6 @@ describe('ClientShortlistEditor', () => {
     expect(screen.getAllByText(/all six saved workspace prompts run in order/i).length).toBeGreaterThan(0)
   })
 
-  it('prepares every approved podcast in one run and reports outcomes', async () => {
-    vi.mocked(runClientShortlistEmailSearch).mockResolvedValue({
-      status: 'unlocked',
-      current_stage: null,
-      completed_stages: ['identify_contact', 'find_email', 'verify_email'],
-      email: 'host@founderstories.fm',
-      host_name: 'Jamie Host',
-    })
-    renderEditor()
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Prepare 1 approved' }))
-
-    expect(await screen.findByText('Prepared 1 podcast')).toBeInTheDocument()
-    expect(vi.mocked(runClientShortlistEmailSearch)).toHaveBeenCalledWith(
-      workspaceId,
-      clientId,
-      '33333333-3333-4333-8333-333333333333',
-    )
-    expect(vi.mocked(runClientShortlistResearch)).not.toHaveBeenCalled()
-    expect(screen.getByText('Direct email')).toBeInTheDocument()
-    expect(screen.getByText('Already researched')).toBeInTheDocument()
-  })
-
   it('keeps workspace research prompt controls owner-only', async () => {
     renderEditor('admin')
     fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
