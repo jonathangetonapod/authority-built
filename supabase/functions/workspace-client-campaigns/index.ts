@@ -17,6 +17,8 @@ import {
   safeInstantlyAnalytics,
   safeInstantlyError,
 } from "../_shared/instantly.ts";
+import { chargeCredits, logOperationCost } from "../_shared/billing.ts";
+import { resolveAiKey } from "../_shared/workspaceAiKeys.ts";
 import {
   type AuthContext,
   errorResponse,
@@ -3198,6 +3200,233 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, {
         campaign: campaignDto(data as unknown as CampaignRow, targets),
       });
+    }
+
+    if (action === "inbox-list") {
+      requireOnlyKeys(body, ["action", "workspace_id"]);
+      const connection = await readConnection(context.admin, workspaceId);
+      if (
+        !connection || connection.status === "disconnected" ||
+        !connection.api_key_ciphertext || !connection.api_key_iv
+      ) {
+        return jsonResponse(req, METHODS, 200, { connected: false, threads: [] });
+      }
+      const apiKey = await integrationApiKey(connection, false);
+
+      const [{ data: campaignRows }, emailsPayload] = await Promise.all([
+        context.admin
+          .from("workspace_client_campaigns")
+          .select("id, client_id, instantly_campaign_id, name, client:clients(id, name)")
+          .eq("workspace_id", workspaceId)
+          .not("instantly_campaign_id", "is", null)
+          .limit(1_000),
+        instantlyRequest<{ items?: Array<Record<string, unknown>> }>(
+          apiKey,
+          "/emails",
+          {
+            query: new URLSearchParams({
+              limit: "50",
+              email_type: "received",
+            }),
+          },
+        ).catch((error) => {
+          if (error instanceof InstantlyApiError) throw providerHttpError(error);
+          throw error;
+        }),
+      ]);
+      const campaignByProviderId = new Map(
+        ((campaignRows ?? []) as Array<Record<string, unknown>>).flatMap((row) => {
+          const providerId = row.instantly_campaign_id;
+          if (typeof providerId !== "string" || !providerId) return [];
+          const clientRecord = Array.isArray(row.client) ? row.client[0] : row.client;
+          return [[providerId, {
+            campaign_id: String(row.id),
+            campaign_name: typeof row.name === "string" ? row.name : null,
+            client: clientRecord && typeof clientRecord === "object"
+              ? {
+                id: String((clientRecord as Record<string, unknown>).id ?? ""),
+                name: String((clientRecord as Record<string, unknown>).name ?? ""),
+              }
+              : null,
+          }] as const];
+        }),
+      );
+
+      const text = (value: unknown, max: number): string =>
+        typeof value === "string" ? value.slice(0, max) : "";
+      const threads = (emailsPayload.items ?? []).flatMap((raw) => {
+        if (!raw || typeof raw !== "object") return [];
+        const email = raw as Record<string, unknown>;
+        const providerCampaignId = typeof email.campaign_id === "string" ? email.campaign_id : null;
+        const mapped = providerCampaignId ? campaignByProviderId.get(providerCampaignId) ?? null : null;
+        const bodyRecord = (email.body ?? {}) as Record<string, unknown>;
+        const bodyText = text(bodyRecord.text, 2_000)
+          || text(bodyRecord.html, 4_000).replace(/<[^>]+>/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 2_000);
+        const interestValue = typeof email.i_status === "number" ? email.i_status : null;
+        return [{
+          id: String(email.id ?? crypto.randomUUID()),
+          thread_id: typeof email.thread_id === "string" ? email.thread_id : null,
+          message_id: typeof email.message_id === "string" ? email.message_id : null,
+          eaccount: typeof email.eaccount === "string" ? email.eaccount : null,
+          subject: text(email.subject, 300),
+          from_email: text(email.from_address_email, 320) || text(email.from_address, 320),
+          to_email: text(email.to_address_email_list, 320),
+          body_text: bodyText,
+          received_at: typeof email.timestamp_email === "string"
+            ? email.timestamp_email
+            : typeof email.timestamp_created === "string"
+              ? email.timestamp_created
+              : null,
+          is_unread: email.is_unread === true || email.is_unread === 1,
+          interested: interestValue === 1,
+          lead_email: text(email.lead, 320) || text(email.from_address_email, 320),
+          campaign: mapped,
+        }];
+      });
+
+      return jsonResponse(req, METHODS, 200, { connected: true, threads });
+    }
+
+    if (action === "inbox-draft") {
+      requireOnlyKeys(body, ["action", "workspace_id", "client_id", "subject", "message"]);
+      const clientId = requireUuid(body.client_id, "client_id");
+      const subject = requireString(body.subject ?? "(no subject)", "subject", { max: 300 });
+      const message = requireString(body.message, "message", { max: 8_000 });
+
+      const { data: client, error: clientError } = await context.admin
+        .from("clients")
+        .select("id, name, bio, ai_sdr_profile")
+        .eq("id", clientId)
+        .eq("workspace_id", workspaceId)
+        .maybeSingle();
+      if (clientError || !client) {
+        throw new HttpError(404, "CLIENT_NOT_FOUND", "Client not found in this workspace");
+      }
+      const profile = (client.ai_sdr_profile ?? {}) as Record<string, unknown>;
+      const profileText = (field: string): string =>
+        typeof profile[field] === "string" ? String(profile[field]).trim() : "";
+      // Reply-safety rule: no drafts without the approved core context.
+      const coreReady = ["positioning", "topics_and_angles", "listener_takeaways", "booking_details"]
+        .every((field) => profileText(field).length > 0);
+      if (!coreReady) {
+        throw new HttpError(
+          409,
+          "SDR_PROFILE_NOT_READY",
+          "Complete the core AI SDR profile fields before drafting replies for this client",
+        );
+      }
+
+      const anthropicKey = await resolveAiKey(context.admin, workspaceId, "anthropic");
+      if (!anthropicKey) {
+        throw new HttpError(500, "SERVER_MISCONFIGURED", "AI drafting is not configured");
+      }
+      const usedByoKey = anthropicKey.source === "workspace";
+      await chargeCredits(context.admin, {
+        workspaceId,
+        operationType: "query_generation",
+        referenceKind: "inbox_draft",
+        referenceId: clientId,
+        clientId,
+        actorUserId: context.user.id,
+        byoKeyUsed: usedByoKey,
+      });
+
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": anthropicKey.apiKey,
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 1_200,
+          system:
+            "You are a booking agency's SDR replying to a podcast host on behalf of a client. Professional, warm, concise (under 150 words), no hype, no exclamation marks. Move toward a concrete booking step. Return ONLY JSON: {\"subject\": string, \"body\": string} — body is plain text with paragraph breaks.",
+          messages: [{
+            role: "user",
+            content:
+              `CLIENT (the guest you are booking):\nName: ${client.name}\nPositioning: ${profileText("positioning")}\nTopics: ${profileText("topics_and_angles")}\nListener takeaways: ${profileText("listener_takeaways")}\nProof points: ${profileText("proof_points") || "n/a"}\nBooking details: ${profileText("booking_details")}\n\nHOST'S REPLY (respond to this):\nSubject: ${subject}\n${message}`,
+          }],
+        }),
+        signal: AbortSignal.timeout(45_000),
+      });
+      if (!response.ok) {
+        throw new HttpError(503, "DRAFT_FAILED", "The reply draft could not be generated. Try again shortly");
+      }
+      const payload = await response.json() as {
+        content?: Array<{ type: string; text?: string }>;
+        usage?: { input_tokens?: number; output_tokens?: number };
+      };
+      const draftText = (payload.content ?? []).find((block) => block.type === "text")?.text ?? "";
+      let draft: { subject?: unknown; body?: unknown } = {};
+      try {
+        draft = JSON.parse(draftText.replace(/^```(?:json)?\s*/u, "").replace(/\s*```$/u, ""));
+      } catch (_error) {
+        throw new HttpError(503, "DRAFT_FAILED", "The reply draft came back malformed. Try again");
+      }
+      await logOperationCost(context.admin, {
+        workspaceId,
+        operationType: "query_generation",
+        usage: {
+          anthropicInputTokens: payload.usage?.input_tokens ?? 0,
+          anthropicOutputTokens: payload.usage?.output_tokens ?? 0,
+        },
+        usedByoKey,
+        clientId,
+        referenceKind: "inbox_draft",
+        referenceId: clientId,
+      });
+      return jsonResponse(req, METHODS, 200, {
+        draft: {
+          subject: typeof draft.subject === "string" && draft.subject.trim()
+            ? draft.subject.trim().slice(0, 300)
+            : `Re: ${subject}`.slice(0, 300),
+          body: typeof draft.body === "string" ? draft.body.trim().slice(0, 6_000) : "",
+        },
+      });
+    }
+
+    if (action === "inbox-reply") {
+      requireOnlyKeys(body, ["action", "workspace_id", "reply_to_id", "eaccount", "subject", "message"]);
+      if (!["owner", "admin", "platform_admin"].includes(access.role)) {
+        throw new HttpError(403, "WORKSPACE_ACCESS_REQUIRED", "Workspace manager access is required");
+      }
+      const replyToId = requireString(body.reply_to_id, "reply_to_id", { max: 120 });
+      const eaccount = requireString(body.eaccount, "eaccount", { max: 320 });
+      const subject = requireString(body.subject, "subject", { max: 300 });
+      const message = requireString(body.message, "message", { max: 8_000 });
+      const connection = await readConnection(context.admin, workspaceId);
+      if (
+        !connection || connection.status !== "connected" ||
+        !connection.api_key_ciphertext || !connection.api_key_iv
+      ) {
+        throw new HttpError(409, "INSTANTLY_NOT_CONNECTED", "Connect Instantly before replying from the inbox");
+      }
+      const apiKey = await integrationApiKey(connection, false);
+      try {
+        await instantlyRequest(apiKey, "/emails/reply", {
+          method: "POST",
+          body: {
+            reply_to_uuid: replyToId,
+            eaccount,
+            subject,
+            body: { text: message },
+          },
+        });
+      } catch (error) {
+        if (error instanceof InstantlyApiError) throw providerHttpError(error);
+        throw error;
+      }
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: "workspace.inbox.reply_sent",
+        entityType: "campaign",
+        entityId: null,
+        metadata: { eaccount, reply_to_id: replyToId },
+      });
+      return jsonResponse(req, METHODS, 200, { success: true });
     }
 
     throw new HttpError(

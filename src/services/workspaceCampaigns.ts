@@ -444,3 +444,59 @@ export async function resetWorkspaceResearchPrompt(
   }, 'The prompt could not be reset.')
   if (data?.success !== true) throw new Error('The prompt could not be reset.')
 }
+
+export interface WorkspaceInboxThread {
+  id: string
+  thread_id: string | null
+  message_id: string | null
+  eaccount: string | null
+  subject: string
+  from_email: string
+  to_email: string
+  body_text: string
+  received_at: string | null
+  is_unread: boolean
+  interested: boolean
+  lead_email: string
+  campaign: {
+    campaign_id: string
+    campaign_name: string | null
+    client: { id: string; name: string } | null
+  } | null
+}
+
+export async function getWorkspaceInboxThreads(
+  workspaceId: string,
+): Promise<{ connected: boolean; threads: WorkspaceInboxThread[] }> {
+  return await invokeWorkspaceCampaigns<{ connected: boolean; threads: WorkspaceInboxThread[] }>({
+    action: 'inbox-list',
+    workspace_id: workspaceId,
+  }, 'Inbox replies could not be loaded.')
+}
+
+export async function draftWorkspaceInboxReply(
+  workspaceId: string,
+  clientId: string,
+  subject: string,
+  message: string,
+): Promise<{ subject: string; body: string }> {
+  const data = await invokeWorkspaceCampaigns<{ draft: { subject: string; body: string } }>({
+    action: 'inbox-draft',
+    workspace_id: workspaceId,
+    client_id: clientId,
+    subject,
+    message,
+  }, 'The reply draft could not be generated.')
+  return data.draft
+}
+
+export async function sendWorkspaceInboxReply(
+  workspaceId: string,
+  input: { reply_to_id: string; eaccount: string; subject: string; message: string },
+): Promise<void> {
+  await invokeWorkspaceCampaigns<{ success: boolean }>({
+    action: 'inbox-reply',
+    workspace_id: workspaceId,
+    ...input,
+  }, 'The reply could not be sent.')
+}

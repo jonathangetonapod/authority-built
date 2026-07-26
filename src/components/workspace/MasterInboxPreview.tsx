@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   AlertCircle,
@@ -22,8 +22,16 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import {
+  draftWorkspaceInboxReply,
+  getWorkspaceInboxThreads,
+  sendWorkspaceInboxReply,
+  type WorkspaceInboxThread,
+} from '@/services/workspaceCampaigns'
 import {
   CLIENT_SDR_PROFILE_FIELD_DEFINITIONS,
   type ClientSdrProfile,
@@ -183,6 +191,85 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
     enabled: Boolean(workspaceId && selectedClient),
     retry: false,
   })
+  const inboxQuery = useQuery({
+    queryKey: ['workspace-inbox', workspaceId],
+    queryFn: () => getWorkspaceInboxThreads(workspaceId),
+    enabled: Boolean(workspaceId),
+    retry: false,
+    staleTime: 30_000,
+  })
+  const threads = useMemo(() => inboxQuery.data?.threads ?? [], [inboxQuery.data?.threads])
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null)
+  const [draftSubject, setDraftSubject] = useState('')
+  const [draftBody, setDraftBody] = useState('')
+  const [draftedForThread, setDraftedForThread] = useState<string | null>(null)
+  const [sentThreadIds, setSentThreadIds] = useState<Set<string>>(new Set())
+
+  const counts = useMemo(() => ({
+    all: threads.length,
+    interested: threads.filter((thread) => thread.interested).length,
+    other: threads.filter((thread) => !thread.interested).length,
+  }), [threads])
+  const visibleThreads = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return threads.filter((thread) => {
+      if (scope === 'interested' && !thread.interested) return false
+      if (scope === 'other' && thread.interested) return false
+      if (selectedClient && thread.campaign?.client?.id !== selectedClient.id) return false
+      if (query) {
+        const haystack = [thread.subject, thread.from_email, thread.body_text, thread.campaign?.client?.name ?? '', thread.campaign?.campaign_name ?? '']
+          .join(' ')
+          .toLowerCase()
+        if (!haystack.includes(query)) return false
+      }
+      return true
+    })
+  }, [threads, scope, search, selectedClient])
+  const selectedThread = visibleThreads.find((thread) => thread.id === selectedThreadId)
+    || threads.find((thread) => thread.id === selectedThreadId)
+    || null
+  const threadClient = selectedThread?.campaign?.client
+    ? clients.find((client) => client.id === selectedThread.campaign?.client?.id) ?? null
+    : null
+
+  const draftMutation = useMutation({
+    mutationFn: () => draftWorkspaceInboxReply(
+      workspaceId,
+      selectedThread!.campaign!.client!.id,
+      selectedThread!.subject || '(no subject)',
+      selectedThread!.body_text,
+    ),
+    onSuccess: (draft) => {
+      setDraftSubject(draft.subject)
+      setDraftBody(draft.body)
+      setDraftedForThread(selectedThread?.id ?? null)
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'The reply draft could not be generated.')
+    },
+  })
+  const sendMutation = useMutation({
+    mutationFn: () => sendWorkspaceInboxReply(workspaceId, {
+      reply_to_id: selectedThread!.id,
+      eaccount: selectedThread!.eaccount!,
+      subject: draftSubject.trim() || `Re: ${selectedThread!.subject}`,
+      message: draftBody.trim(),
+    }),
+    onSuccess: () => {
+      const threadId = selectedThread?.id
+      if (threadId) setSentThreadIds((current) => new Set([...current, threadId]))
+      toast.success('Reply sent through Instantly.')
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'The reply could not be sent.')
+    },
+  })
+  const openThread = (threadId: string) => {
+    setSelectedThreadId(threadId)
+    setDraftSubject('')
+    setDraftBody('')
+    setDraftedForThread(null)
+  }
 
   const selectClient = (clientId: string) => {
     const next = new URLSearchParams(searchParams)
@@ -207,7 +294,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                   scope === 'all' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
-                All replies <span className="ml-1 text-muted-foreground">0</span>
+                All replies <span className="ml-1 text-muted-foreground">{counts.all}</span>
               </button>
               <button
                 type="button"
@@ -219,7 +306,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                   scope === 'interested' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
-                Interested <span className="ml-1 text-muted-foreground">0</span>
+                Interested <span className="ml-1 text-muted-foreground">{counts.interested}</span>
               </button>
               <button
                 type="button"
@@ -234,7 +321,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                   scope === 'other' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
-                Other replies <span className="ml-1 text-muted-foreground">0</span>
+                Other replies <span className="ml-1 text-muted-foreground">{counts.other}</span>
               </button>
             </div>
 
@@ -326,30 +413,138 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
               <h2 className="text-sm font-semibold">Conversations</h2>
               <p className="mt-0.5 text-xs text-muted-foreground">Client and campaign shown on every reply</p>
             </div>
-            <span className="text-xs tabular-nums text-muted-foreground">0</span>
+            <span className="text-xs tabular-nums text-muted-foreground">{visibleThreads.length}</span>
           </div>
-          <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl border bg-background text-muted-foreground">
-              <Inbox className="h-5 w-5" />
+          {inboxQuery.isLoading ? (
+            <div className="flex flex-1 items-center justify-center gap-2 py-10 text-xs text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />Loading replies…
             </div>
-            <h3 className="mt-4 text-sm font-semibold">{search.trim() ? 'No matching conversations' : 'No conversations yet'}</h3>
-            <p className="mt-1 max-w-52 text-xs leading-5 text-muted-foreground">
-              {search.trim() ? 'Try another name, podcast, client, or campaign.' : 'Replies from mapped client campaigns will appear here automatically.'}
-            </p>
-          </div>
+          ) : inboxQuery.data?.connected === false ? (
+            <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
+              <h3 className="text-sm font-semibold">Instantly is not connected</h3>
+              <p className="mt-1 max-w-52 text-xs leading-5 text-muted-foreground">Connect Instantly in Client Campaigns to load replies.</p>
+            </div>
+          ) : visibleThreads.length === 0 ? (
+            <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl border bg-background text-muted-foreground">
+                <Inbox className="h-5 w-5" />
+              </div>
+              <h3 className="mt-4 text-sm font-semibold">{search.trim() ? 'No matching conversations' : 'No replies yet'}</h3>
+              <p className="mt-1 max-w-52 text-xs leading-5 text-muted-foreground">
+                {search.trim() ? 'Try another name, podcast, client, or campaign.' : 'Replies from mapped client campaigns will appear here automatically.'}
+              </p>
+            </div>
+          ) : (
+            <ul className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto" aria-label="Inbox conversations">
+              {visibleThreads.map((thread) => (
+                <li key={thread.id}>
+                  <button
+                    type="button"
+                    onClick={() => openThread(thread.id)}
+                    className={cn(
+                      'w-full px-4 py-3 text-left transition-colors hover:bg-muted/40',
+                      selectedThread?.id === thread.id && 'bg-muted/50',
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={cn('truncate text-xs', thread.is_unread ? 'font-semibold' : 'font-medium')}>{thread.from_email || thread.lead_email}</span>
+                      {thread.interested && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-label="Interested" />}
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-foreground/90">{thread.subject || '(no subject)'}</p>
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{thread.body_text}</p>
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      {thread.campaign?.client
+                        ? <Badge variant="secondary" className="px-1.5 py-0 text-[10px] font-medium">{thread.campaign.client.name}</Badge>
+                        : <Badge variant="outline" className="border-amber-200 bg-amber-50 px-1.5 py-0 text-[10px] text-amber-800">Unmapped</Badge>}
+                      {sentThreadIds.has(thread.id) && <Badge variant="outline" className="border-emerald-200 bg-emerald-50 px-1.5 py-0 text-[10px] text-emerald-800">Replied</Badge>}
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </aside>
 
         <section className={cn('min-w-0 flex-col bg-background', selectedClient ? 'flex' : 'hidden md:flex')}>
           <div className="flex items-center justify-between border-b px-5 py-3.5">
             <div>
-              <h2 className="text-sm font-semibold">{selectedClient ? 'Client AI SDR profile' : 'Conversation thread'}</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">{selectedClient ? 'Preview the exact context available to mapped inbox replies.' : 'Open a reply to see its history and client AI SDR state.'}</p>
+              <h2 className="text-sm font-semibold">{selectedThread ? 'Conversation' : selectedClient ? 'Client AI SDR profile' : 'Conversation thread'}</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">{selectedThread ? (selectedThread.campaign?.campaign_name || 'Reply from outreach') : selectedClient ? 'Preview the exact context available to mapped inbox replies.' : 'Open a reply to see its history and client AI SDR state.'}</p>
             </div>
-            <Badge variant="outline" className="text-muted-foreground">{selectedClient?.name || 'No conversation selected'}</Badge>
+            <Badge variant="outline" className="text-muted-foreground">{selectedThread ? (selectedThread.campaign?.client?.name || 'Unmapped reply') : selectedClient?.name || 'No conversation selected'}</Badge>
           </div>
 
-          <div className="flex flex-1 items-center justify-center">
-            {selectedClient ? (
+          <div className={cn('flex flex-1', selectedThread ? 'min-h-0 flex-col' : 'items-center justify-center')}>
+            {selectedThread ? (
+              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-5">
+                <div className="rounded-xl border bg-muted/15 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold">{selectedThread.subject || '(no subject)'}</p>
+                    {selectedThread.received_at && (
+                      <span className="text-xs text-muted-foreground">{new Date(selectedThread.received_at).toLocaleString()}</span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">From {selectedThread.from_email || selectedThread.lead_email}</p>
+                  <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{selectedThread.body_text || 'No text content.'}</p>
+                </div>
+
+                {!selectedThread.campaign?.client ? (
+                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs leading-5 text-amber-900">
+                    <span className="font-semibold">No client match, no AI response.</span> This reply is not mapped to a client campaign, so drafting is disabled by policy.
+                  </div>
+                ) : threadClient && !threadClient.ai_sdr_profile_ready ? (
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs leading-5 text-amber-900">
+                    <span><span className="font-semibold">{selectedThread.campaign.client.name}&rsquo;s AI SDR profile is not ready.</span> Complete the core fields before drafting replies.</span>
+                    <Button asChild size="sm" variant="outline" className="border-amber-300 bg-background">
+                      <Link to={`${baseHref}/clients/${selectedThread.campaign.client.id}`}>Open profile</Link>
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold">Reply as {selectedThread.campaign.client.name}&rsquo;s SDR</p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={draftMutation.isPending}
+                        onClick={() => draftMutation.mutate()}
+                      >
+                        {draftMutation.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-2 h-3.5 w-3.5" />}
+                        {draftedForThread === selectedThread.id ? 'Redraft with AI' : 'Draft with AI'}
+                      </Button>
+                    </div>
+                    <Input
+                      value={draftSubject}
+                      onChange={(event) => setDraftSubject(event.target.value)}
+                      placeholder={`Re: ${selectedThread.subject || ''}`}
+                      aria-label="Reply subject"
+                    />
+                    <Textarea
+                      value={draftBody}
+                      onChange={(event) => setDraftBody(event.target.value)}
+                      placeholder="Draft with AI, or write the reply yourself…"
+                      aria-label="Reply body"
+                      className="min-h-36"
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] text-muted-foreground">
+                        {selectedThread.eaccount ? `Sends from ${selectedThread.eaccount} in the same thread.` : 'Sending mailbox unknown — reply from Instantly directly.'}
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={sendMutation.isPending || !draftBody.trim() || !selectedThread.eaccount || sentThreadIds.has(selectedThread.id)}
+                        onClick={() => sendMutation.mutate()}
+                      >
+                        {sendMutation.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-2 h-3.5 w-3.5" />}
+                        {sentThreadIds.has(selectedThread.id) ? 'Replied' : 'Send reply'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : selectedClient ? (
               <ClientSdrContextPanel
                 context={sdrContextQuery.data}
                 loading={sdrContextQuery.isLoading}

@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import WorkspaceOutreachSuite, { type OutreachWorkspaceModule } from '@/pages/app/WorkspaceOutreachSuite'
 import { getAdminWorkspaceView } from '@/services/adminWorkspaces'
 import { getWorkspaceClients, getWorkspaceClientSdrContext } from '@/services/clients'
-import { getWorkspaceCampaignOverview, getWorkspaceMailboxes } from '@/services/workspaceCampaigns'
+import { getWorkspaceCampaignOverview, getWorkspaceInboxThreads, getWorkspaceMailboxes } from '@/services/workspaceCampaigns'
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('@/services/adminWorkspaces', () => ({ getAdminWorkspaceView: vi.fn() }))
@@ -28,6 +28,9 @@ vi.mock('@/services/workspaceCampaigns', () => ({
   disconnectWorkspaceInstantly: vi.fn(),
   getWorkspaceCampaignOverview: vi.fn(),
   getWorkspaceMailboxes: vi.fn(),
+  getWorkspaceInboxThreads: vi.fn().mockResolvedValue({ connected: true, threads: [] }),
+  draftWorkspaceInboxReply: vi.fn(),
+  sendWorkspaceInboxReply: vi.fn(),
   refreshWorkspaceInstantly: vi.fn(),
   saveWorkspaceCampaign: vi.fn(),
 }))
@@ -81,6 +84,7 @@ function renderPage(module: OutreachWorkspaceModule, platformWorkspaceId?: strin
 describe('WorkspaceOutreachSuite', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(getWorkspaceInboxThreads).mockResolvedValue({ connected: true, threads: [] })
     mockedUseAuth.mockReturnValue({
       user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
       workspace: {
@@ -168,7 +172,7 @@ describe('WorkspaceOutreachSuite', () => {
 
   it.each([
     ['client-campaigns', 'Client Campaigns', 'No active clients'],
-    ['master-inbox', 'Master Inbox', 'No conversations yet'],
+    ['master-inbox', 'Master Inbox', 'No replies yet'],
   ] as const)('renders the %s workspace foundation without invented provider data', async (module, title, emptyState) => {
     renderPage(module)
 
