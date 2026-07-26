@@ -343,7 +343,9 @@ export function ClientCampaignPrepDialog({
   const selectedPitchAngle = pitchAngles[selectedAngleIndex] || null
   const sequenceOptionCount = Math.max(Math.min(pitchAngles.length, 3), 1)
   const researchProgress = podcast?.research_progress || null
-  const hasLegacyAnalysis = Boolean(podcast?.ai_analyzed_at)
+  // Only the current prompt pipeline counts as research. A legacy
+  // ai_analyzed_at from the retired analysis path no longer unlocks the
+  // pitch flow — those shows re-run research through the real prompts.
   const researchRegenerating = runResearchMutation.isPending && runResearchMutation.variables === podcast?.id
   const visibleResearchSteps = useMemo(() => {
     const liveStatus = researchProgress?.status
@@ -356,7 +358,7 @@ export function ClientCampaignPrepDialog({
     }
     const completedStages = new Set(researchProgress?.completed_stages || [])
     return researchProgressSteps.map((step): ResearchProgressStep & { status: ResearchProgressStatus } => {
-      if (!researchProgress) return { ...step, status: hasLegacyAnalysis ? 'complete' : 'queued' }
+      if (!researchProgress) return { ...step, status: 'queued' }
       if (researchProgress.status === 'completed') return { ...step, status: 'complete' }
       if (completedStages.has(step.id)) return { ...step, status: 'complete' }
       if (researchProgress.current_stage === step.id) {
@@ -364,12 +366,12 @@ export function ClientCampaignPrepDialog({
       }
       return { ...step, status: 'queued' }
     })
-  }, [researchProgress, researchRegenerating, hasLegacyAnalysis])
+  }, [researchProgress, researchRegenerating])
   const completedResearchStepCount = visibleResearchSteps.filter((step) => step.status === 'complete').length
   const activeResearchStep = visibleResearchSteps.find((step) => step.status === 'active') || null
   const failedResearchStep = visibleResearchSteps.find((step) => step.status === 'failed') || null
   const researchComplete = !researchRegenerating
-    && (researchProgress ? researchProgress.status === 'completed' : hasLegacyAnalysis)
+    && researchProgress?.status === 'completed'
   const researchFailed = !researchRegenerating && researchProgress?.status === 'failed'
   const researchWorking = researchRegenerating || researchProgress?.status === 'queued' || researchProgress?.status === 'running'
   const researchStepsExpanded = !researchComplete || showResearchSteps

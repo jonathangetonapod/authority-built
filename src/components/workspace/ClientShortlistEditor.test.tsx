@@ -65,6 +65,15 @@ function podcast(overrides: Partial<ClientShortlistPodcast> = {}): ClientShortli
     ai_fit_reasons: null,
     ai_pitch_angles: null,
     ai_analyzed_at: '2026-07-21T00:00:00.000Z',
+    // Legacy ai_analyzed_at alone no longer unlocks the pitch flow — the
+    // fixture must have completed the real prompt pipeline.
+    research_progress: {
+      status: 'completed',
+      current_stage: null,
+      completed_stages: ['podcast_profile', 'recent_episodes', 'host_profile', 'guest_patterns', 'guest_fit', 'pitch_angles'],
+      started_at: '2026-07-21T00:00:00.000Z',
+      updated_at: '2026-07-21T00:02:00.000Z',
+    },
     visibility: 'visible',
     display_order: 0,
     is_featured: true,
