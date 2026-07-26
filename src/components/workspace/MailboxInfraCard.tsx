@@ -73,6 +73,7 @@ export const MailboxInfraCard = ({ workspaceId }: MailboxInfraCardProps) => {
     retry: false,
   })
 
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
   const [baseName, setBaseName] = useState('')
   const [senderName, setSenderName] = useState('')
   const [searching, setSearching] = useState(false)
@@ -90,7 +91,13 @@ export const MailboxInfraCard = ({ workspaceId }: MailboxInfraCardProps) => {
     setSearching(true)
     setSelectedDomains(new Set())
     try {
-      setSearchResults(await searchMailboxDomains(workspaceId, candidates))
+      const results = await searchMailboxDomains(workspaceId, candidates)
+      setSearchResults(results)
+      if (results.some((result) => result.available)) {
+        setStep(2)
+      } else {
+        toast.info('None of those variations are available — try a different name.')
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Domain availability could not be checked.')
     } finally {
@@ -133,6 +140,8 @@ export const MailboxInfraCard = ({ workspaceId }: MailboxInfraCardProps) => {
       setSearchResults([])
       setSelectedDomains(new Set())
       setBaseName('')
+      setSenderName('')
+      setStep(1)
       void queryClient.invalidateQueries({ queryKey: overviewKey })
       toast.success('Order placed. Domains and mailboxes are being provisioned — warming starts automatically.')
     } catch (error) {
@@ -217,14 +226,40 @@ export const MailboxInfraCard = ({ workspaceId }: MailboxInfraCardProps) => {
         )}
 
         <div className="rounded-xl border border-dashed p-4">
-          <p className="text-sm font-semibold">Buy new sending domains</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Never use your main domain for cold outreach. {CREDITS_PER_DOMAIN} credits per domain + {CREDITS_PER_MAILBOX} credits per mailbox — each domain gets {mailboxesPerDomain} warmed mailboxes.
-          </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="infra-base" className="text-xs text-muted-foreground">Brand or agency name</Label>
-              <div className="mt-1 flex gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold">Buy new sending domains</p>
+            <ol className="flex items-center gap-1" aria-label="Purchase steps">
+              {(['Name', 'Domains', 'Mailboxes', 'Review'] as const).map((label, index) => {
+                const stepNumber = (index + 1) as 1 | 2 | 3 | 4
+                const state = stepNumber < step ? 'done' : stepNumber === step ? 'active' : 'todo'
+                return (
+                  <li key={label} className="flex items-center gap-1">
+                    {index > 0 && <span className="h-px w-4 bg-border" aria-hidden="true" />}
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                        state === 'active'
+                          ? 'bg-primary text-primary-foreground'
+                          : state === 'done'
+                            ? 'bg-primary/10 text-primary'
+                            : 'bg-muted text-muted-foreground'
+                      }`}
+                    >
+                      {state === 'done' ? <CheckCircle2 className="h-3 w-3" /> : <span className="tabular-nums">{stepNumber}</span>}
+                      {label}
+                    </span>
+                  </li>
+                )
+              })}
+            </ol>
+          </div>
+
+          {step === 1 && (
+            <div className="mt-4 max-w-md">
+              <Label htmlFor="infra-base" className="text-sm">What is the client-facing brand or agency name?</Label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                We will check close variations — never your main domain, which stays protected from cold outreach.
+              </p>
+              <div className="mt-3 flex gap-2">
                 <Input
                   id="infra-base"
                   placeholder="e.g. bookedco"
@@ -237,63 +272,117 @@ export const MailboxInfraCard = ({ workspaceId }: MailboxInfraCardProps) => {
                     }
                   }}
                 />
-                <Button type="button" variant="outline" onClick={() => void runSearch()} disabled={searching || !baseName.trim()}>
-                  {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                <Button type="button" onClick={() => void runSearch()} disabled={searching || !baseName.trim()}>
+                  {searching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                  {searching ? 'Checking…' : 'Check availability'}
                 </Button>
               </div>
             </div>
-            <div>
-              <Label htmlFor="infra-sender" className="text-xs text-muted-foreground">Sender name on the mailboxes</Label>
+          )}
+
+          {step === 2 && (
+            <div className="mt-4">
+              <p className="text-sm">Pick up to 3 available domains.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Two or three domains spread sending volume and protect deliverability.</p>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {searchResults.map((result) => {
+                  const selected = selectedDomains.has(result.domain)
+                  return (
+                    <button
+                      key={result.domain}
+                      type="button"
+                      disabled={!result.available}
+                      onClick={() => toggleDomain(result.domain)}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        !result.available
+                          ? 'cursor-not-allowed border-border text-muted-foreground/50 line-through'
+                          : selected
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border hover:border-primary/50'
+                      }`}
+                      aria-pressed={selected}
+                    >
+                      {selected ? <CheckCircle2 className="h-3.5 w-3.5" /> : result.available ? <Plus className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+                      {result.domain}
+                      {result.available && typeof result.price_usd === 'number' && (
+                        <span className="text-muted-foreground">${result.price_usd.toFixed(0)}</span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="mt-4 flex items-center justify-between">
+                <Button type="button" variant="ghost" size="sm" onClick={() => setStep(1)}>Back</Button>
+                <Button type="button" size="sm" disabled={selectedDomains.size === 0} onClick={() => setStep(3)}>
+                  Continue with {selectedDomains.size || 'no'} domain{selectedDomains.size === 1 ? '' : 's'}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="mt-4 max-w-lg">
+              <Label htmlFor="infra-sender" className="text-sm">Who is sending from these mailboxes?</Label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                The name recipients see in their inbox — usually the person running outreach.
+              </p>
               <Input
                 id="infra-sender"
-                className="mt-1"
+                className="mt-3"
                 placeholder="e.g. Jamie Rivera"
                 value={senderName}
                 onChange={(event) => setSenderName(event.target.value)}
               />
-            </div>
-          </div>
-
-          {searchResults.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {searchResults.map((result) => {
-                const selected = selectedDomains.has(result.domain)
-                return (
-                  <button
-                    key={result.domain}
-                    type="button"
-                    disabled={!result.available}
-                    onClick={() => toggleDomain(result.domain)}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                      !result.available
-                        ? 'cursor-not-allowed border-border text-muted-foreground/50 line-through'
-                        : selected
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border hover:border-primary/50'
-                    }`}
-                    aria-pressed={selected}
-                  >
-                    {selected ? <CheckCircle2 className="h-3.5 w-3.5" /> : result.available ? <Plus className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
-                    {result.domain}
-                    {result.available && typeof result.price_usd === 'number' && (
-                      <span className="text-muted-foreground">${result.price_usd.toFixed(0)}</span>
-                    )}
-                  </button>
-                )
-              })}
+              {senderName.trim() && (
+                <div className="mt-3 rounded-lg border bg-muted/20 p-3">
+                  <p className="text-xs font-medium text-muted-foreground">Mailboxes that will be created and warmed:</p>
+                  <ul className="mt-1.5 space-y-1">
+                    {[...selectedDomains].flatMap((domain) => {
+                      const username = usernameFromName(senderName)
+                      return [
+                        `${username}@${domain}`,
+                        `${`${username}.${domain.split('.')[0]}`.slice(0, 30)}@${domain}`,
+                      ]
+                    }).map((address) => (
+                      <li key={address} className="font-mono text-xs">{address}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <div className="mt-4 flex items-center justify-between">
+                <Button type="button" variant="ghost" size="sm" onClick={() => setStep(2)}>Back</Button>
+                <Button type="button" size="sm" disabled={!senderName.trim()} onClick={() => setStep(4)}>Review order</Button>
+              </div>
             </div>
           )}
 
-          {selectedDomains.size > 0 && (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm">
-                {selectedDomains.size} domain{selectedDomains.size === 1 ? '' : 's'} · {selectedDomains.size * mailboxesPerDomain} warmed mailboxes ·{' '}
-                <span className="font-semibold">{orderCredits} credits</span>
-              </p>
-              <Button onClick={() => void placeOrder()} disabled={ordering}>
-                {ordering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Globe className="mr-2 h-4 w-4" />}
-                Buy and start warming
-              </Button>
+          {step === 4 && (
+            <div className="mt-4 max-w-lg">
+              <div className="rounded-lg border bg-muted/20 p-4">
+                <p className="text-sm font-semibold">Order summary</p>
+                <ul className="mt-2 space-y-1 text-sm">
+                  {[...selectedDomains].map((domain) => (
+                    <li key={domain} className="flex items-center justify-between gap-2">
+                      <span>{domain} · {mailboxesPerDomain} mailboxes</span>
+                      <span className="text-muted-foreground">{CREDITS_PER_DOMAIN + mailboxesPerDomain * CREDITS_PER_MAILBOX} credits</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-3 flex items-center justify-between border-t pt-3 text-sm font-semibold">
+                  <span>Total</span>
+                  <span>{orderCredits} credits</span>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Registration, DNS, mailbox creation, and warmup all start automatically. Warm 2–3 weeks before sending.
+                </p>
+              </div>
+              <div className="mt-4 flex items-center justify-between">
+                <Button type="button" variant="ghost" size="sm" onClick={() => setStep(3)}>Back</Button>
+                <Button type="button" onClick={() => void placeOrder()} disabled={ordering}>
+                  {ordering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Globe className="mr-2 h-4 w-4" />}
+                  {ordering ? 'Placing order…' : 'Buy and start warming'}
+                </Button>
+              </div>
             </div>
           )}
         </div>
