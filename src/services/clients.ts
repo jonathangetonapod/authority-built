@@ -1039,3 +1039,17 @@ export async function createWorkspaceClientPortalPreview(
     client: data.client,
   }
 }
+
+export async function draftWorkspaceClientSdrProfile(
+  workspaceId: string,
+  clientId: string,
+): Promise<{ draft: Partial<ClientSdrProfile>; evidence_shows: number }> {
+  const { data, error } = await supabase.functions.invoke('workspace-clients', {
+    body: { action: 'sdr-profile-draft', workspace_id: workspaceId.toLowerCase(), client_id: clientId.toLowerCase() },
+  })
+  if (error) throw await toFunctionError(error, 'The profile draft could not be generated.')
+  if (!data || data.success !== true || !data.draft || typeof data.draft !== 'object') {
+    throw new Error('The profile draft response was invalid.')
+  }
+  return { draft: data.draft as Partial<ClientSdrProfile>, evidence_shows: Number(data.evidence_shows) || 0 }
+}

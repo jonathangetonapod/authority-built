@@ -20,6 +20,7 @@ import {
   Link as LinkIcon,
   Linkedin,
   Loader2,
+  Sparkles,
   Mail,
   Megaphone,
   Mic2,
@@ -56,6 +57,7 @@ import {
   rotateWorkspaceClientDashboardSlug,
   createWorkspaceClientPortalPreview,
   createWorkspaceClientPortalSetupLink,
+  draftWorkspaceClientSdrProfile,
   setWorkspaceClientPassword,
   updateWorkspaceClient,
   updateWorkspaceClientProfile,
@@ -303,6 +305,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const [sdrDraft, setSdrDraft] = useState<ClientSdrProfile>(() => normalizeClientSdrProfile({}))
   const [sdrExpectedUpdatedAt, setSdrExpectedUpdatedAt] = useState<string | null>(null)
   const [sdrBusy, setSdrBusy] = useState(false)
+  const [sdrDrafting, setSdrDrafting] = useState(false)
   const [sdrError, setSdrError] = useState<string | null>(null)
   const [notesEditing, setNotesEditing] = useState(false)
   const [notesExpanded, setNotesExpanded] = useState(false)
@@ -627,6 +630,36 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
     setSdrEditorFieldId(null)
   }
 
+  const draftSdrProfileWithAi = async () => {
+    if (!canManage || sdrDrafting) return
+    setSdrDrafting(true)
+    try {
+      const result = await draftWorkspaceClientSdrProfile(workspaceId, canonicalClientId)
+      let filled = 0
+      // AI fills only what the owner has not written — hand-edited fields win.
+      setSdrDraft((current) => {
+        const next = { ...current }
+        for (const [field, value] of Object.entries(result.draft)) {
+          const key = field as keyof ClientSdrProfile
+          if (!String(next[key] ?? '').trim() && typeof value === 'string' && value.trim()) {
+            next[key] = value
+            filled += 1
+          }
+        }
+        return next
+      })
+      if (filled === 0) {
+        toast.info('Every field already has content — clear a field first if you want it redrafted.')
+      } else {
+        toast.success(`Drafted ${filled} field${filled === 1 ? '' : 's'} from the client profile${result.evidence_shows > 0 ? ` and ${result.evidence_shows} researched shows` : ''}. Review and save.`)
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The profile draft could not be generated.')
+    } finally {
+      setSdrDrafting(false)
+    }
+  }
+
   const saveSdrProfile = async () => {
     if (!canManage || sdrBusy || !sdrDraftChanged) return
     setSdrBusy(true)
@@ -854,6 +887,12 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <Button asChild variant="outline"><Link to={masterInboxHref}><Mail className="mr-2 h-4 w-4" />Open Master Inbox</Link></Button>
+                    {canManage && !sdrReadiness.ready && (
+                      <Button type="button" variant="outline" disabled={sdrDrafting || !client.bio} onClick={() => void draftSdrProfileWithAi()}>
+                        {sdrDrafting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                        {sdrDrafting ? 'Drafting…' : 'Draft with AI'}
+                      </Button>
+                    )}
                     {canManage && (
                       <Button type="button" onClick={() => openSdrFieldEditor(nextSdrField.id)}>
                         <Pencil className="mr-2 h-4 w-4" />

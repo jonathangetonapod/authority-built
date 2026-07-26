@@ -16,6 +16,8 @@ import {
   workspaceCredentialIsFresh,
   writeAudit,
 } from '../_shared/workspaceAuth.ts'
+import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
+import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 
 const METHODS = ['POST'] as const
 const CLIENT_FIELDS = [
@@ -197,6 +199,9 @@ serve(async (req) => {
         body.expected_profile_updated_at,
         'expected_profile_updated_at',
       )
+    } else if (action === 'sdr-profile-draft') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id'])
+      clientId = requireUuid(body.client_id, 'client_id')
     } else if (action === 'list') {
       requireOnlyKeys(body, ['action', 'workspace_id'])
     } else if (action === 'create') {
@@ -214,6 +219,107 @@ serve(async (req) => {
       clientId = requireUuid(body.client_id, 'client_id')
     } else {
       throw new HttpError(400, 'INVALID_ACTION', 'Unknown workspace client action')
+    }
+
+    if (action === 'sdr-profile-draft') {
+      const access = await requireWorkspaceFeatureAccess(authContext, workspaceId)
+      if (!['owner', 'admin', 'platform_admin'].includes(access.role)) {
+        throw new HttpError(403, 'WORKSPACE_ACCESS_REQUIRED', 'Workspace manager access is required')
+      }
+      const { data: client, error: clientError } = await admin
+        .from('clients')
+        .select('id, name, bio, website, linkedin_url, ai_sdr_profile')
+        .eq('id', clientId!)
+        .eq('workspace_id', workspaceId)
+        .maybeSingle()
+      if (clientError || !client) {
+        throw new HttpError(404, 'CLIENT_NOT_FOUND', 'Client not found in this workspace')
+      }
+      if (typeof client.bio !== 'string' || client.bio.trim().length < 40) {
+        throw new HttpError(409, 'CLIENT_BIO_REQUIRED', 'Add a client profile bio first — the draft is built from it')
+      }
+      const anthropicKey = await resolveAiKey(admin, workspaceId, 'anthropic')
+      if (!anthropicKey) {
+        throw new HttpError(500, 'SERVER_MISCONFIGURED', 'AI drafting is not configured')
+      }
+      const usedByoKey = anthropicKey.source === 'workspace'
+      await chargeCredits(admin, {
+        workspaceId,
+        operationType: 'pitch_profile',
+        referenceKind: 'sdr_profile_draft',
+        referenceId: clientId!,
+        clientId,
+        actorUserId: authContext.user.id,
+        byoKeyUsed: usedByoKey,
+      })
+
+      // Evidence: approved shows and completed research for this client.
+      const { data: researched } = await admin
+        .from('client_dashboard_podcasts')
+        .select('podcast_name, ai_fit_reasons, ai_pitch_angles, research_document')
+        .eq('client_id', clientId!)
+        .not('ai_analyzed_at', 'is', null)
+        .order('updated_at', { ascending: false })
+        .limit(3)
+      const evidence = (researched ?? []).map((row) => ({
+        podcast: row.podcast_name,
+        fit_reasons: row.ai_fit_reasons,
+        pitch_angles: row.ai_pitch_angles,
+        research_excerpt: typeof (row.research_document as { podcast_research?: unknown } | null)?.podcast_research === 'string'
+          ? String((row.research_document as { podcast_research: string }).podcast_research).slice(0, 2_000)
+          : null,
+      }))
+
+      const usage = { input: 0, output: 0 }
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': anthropicKey.apiKey,
+          'anthropic-version': '2023-06-01',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 2_500,
+          system: 'You draft podcast-guest AI SDR profiles for booking agencies. Write in the voice of the agency describing their client. Return ONLY a JSON object, no markdown.',
+          messages: [{
+            role: 'user',
+            content: `Draft the AI SDR profile fields for this podcast guest. Return ONLY JSON with these string fields (each 2-5 sentences, concrete, no hype): {"positioning": how to introduce them and what makes them credible, "topics_and_angles": the topics and specific angles they speak on best, "listener_takeaways": what an audience concretely gains, "proof_points": specific numbers/results/credentials worth citing, "ideal_opportunities": which shows and audiences are the best fit, "booking_details": practical booking notes (format preferences, availability, tech setup) — write "To be confirmed with the client" for anything unknown rather than inventing it}.\n\nGUEST:\nName: ${client.name}\nBio: ${String(client.bio).slice(0, 4_000)}\nWebsite: ${client.website ?? 'n/a'}\nLinkedIn: ${client.linkedin_url ?? 'n/a'}\n\nEVIDENCE FROM RESEARCHED SHOWS:\n${JSON.stringify(evidence).slice(0, 6_000)}`,
+          }],
+        }),
+        signal: AbortSignal.timeout(45_000),
+      })
+      if (!response.ok) {
+        throw new HttpError(503, 'DRAFT_FAILED', 'The profile draft could not be generated. Try again shortly')
+      }
+      const payloadJson = await response.json() as {
+        content?: Array<{ type: string; text?: string }>
+        usage?: { input_tokens?: number; output_tokens?: number }
+      }
+      usage.input = payloadJson.usage?.input_tokens ?? 0
+      usage.output = payloadJson.usage?.output_tokens ?? 0
+      const text = (payloadJson.content ?? []).find((block) => block.type === 'text')?.text ?? ''
+      let draft: Record<string, unknown> = {}
+      try {
+        draft = JSON.parse(text.replace(/^```(?:json)?\s*/u, '').replace(/\s*```$/u, ''))
+      } catch (_error) {
+        throw new HttpError(503, 'DRAFT_FAILED', 'The profile draft came back malformed. Try again')
+      }
+      const fields: Record<string, string> = {}
+      for (const field of AI_SDR_PROFILE_FIELDS) {
+        const value = draft[field]
+        if (typeof value === 'string' && value.trim()) fields[field] = value.trim().slice(0, 4_000)
+      }
+      await logOperationCost(admin, {
+        workspaceId,
+        operationType: 'pitch_profile',
+        usage: { anthropicInputTokens: usage.input, anthropicOutputTokens: usage.output },
+        usedByoKey,
+        clientId,
+        referenceKind: 'sdr_profile_draft',
+        referenceId: clientId!,
+      })
+      return jsonResponse(req, METHODS, 200, { success: true, draft: fields, evidence_shows: evidence.length })
     }
 
     if (action === 'dashboard-slug-rotate') {
