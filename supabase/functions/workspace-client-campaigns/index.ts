@@ -1951,7 +1951,29 @@ serve(async (req) => {
         context.admin,
         connection,
         apiKey,
-      );
+      ).catch((error) => {
+        if (error instanceof InstantlyApiError) {
+          // A rejected or under-scoped key is a connection state, not a
+          // request failure — the page renders it as "reconnect Instantly".
+          if (error.status === 401) {
+            return { auth_failure: "key_rejected" as const };
+          }
+          if (error.status === 403) {
+            return { auth_failure: "scope_missing" as const };
+          }
+        }
+        throw error;
+      });
+      if (!Array.isArray(accounts)) {
+        return jsonResponse(req, METHODS, 200, {
+          connected: false,
+          reason: accounts.auth_failure,
+          provider_workspace_name: connection.provider_workspace_name,
+          accounts: [],
+          last_synced_at: connection.last_verified_at,
+          analytics_errors: [],
+        });
+      }
       const emails = accounts.map((account) => account.email);
       const [dailyResult, warmupResult] = await Promise.allSettled([
         getInstantlyDailyAccountSends(apiKey, emails),

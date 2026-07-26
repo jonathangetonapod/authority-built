@@ -23,6 +23,10 @@ assert.match(edge, /action === "disconnect-instantly"[\s\S]*?requireIntegrationO
 assert.match(edge, /action === "mailboxes"[\s\S]*?requireOnlyKeys\(body, \["action", "workspace_id"\]\)/u)
 assert.match(edge, /action === "mailboxes"[\s\S]*?integrationApiKey\(connection, false\)[\s\S]*?refreshProviderAccounts/u)
 assert.match(edge, /action === "mailboxes"[\s\S]*?Promise\.allSettled/u)
+// A rejected or under-scoped Instantly key answers 200 with a connection
+// state instead of forwarding the provider 401/403 as an HTTP 400.
+assert.match(edge, /action === "mailboxes"[\s\S]*?error\.status === 401[\s\S]*?key_rejected[\s\S]*?error\.status === 403[\s\S]*?scope_missing/u)
+assert.match(edge, /action === "mailboxes"[\s\S]*?if \(!Array\.isArray\(accounts\)\)[\s\S]*?reason: accounts\.auth_failure/u)
 assert.match(edge, /action === "launch-pitch"[\s\S]*?requireCampaignManager\(access\)/u)
 assert.match(edge, /action === "prepare-podcast"[\s\S]*?requireCampaignManager\(access\)/u)
 assert.match(edge, /action === "prepare-podcast"[\s\S]*?CAMPAIGN_NOT_ASSIGNED[\s\S]*?requireApproved: true/u)

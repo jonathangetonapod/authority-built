@@ -229,6 +229,22 @@ describe('WorkspaceOutreachSuite', () => {
     expect(screen.getByText('Connect this workspace to load its sending accounts.')).toBeInTheDocument()
   })
 
+  it('explains a rejected Instantly key instead of rendering a plain disconnect', async () => {
+    mockedMailboxes.mockResolvedValueOnce({
+      connected: false,
+      reason: 'key_rejected',
+      provider_workspace_name: 'GOAP Sending',
+      accounts: [],
+      last_synced_at: null,
+      analytics_errors: [],
+    })
+
+    renderPage('mailboxes')
+
+    expect(await screen.findByRole('heading', { name: 'Instantly declined the connected key' })).toBeInTheDocument()
+    expect(screen.getByText('Instantly rejected the saved API key. Reconnect Instantly in Client Campaigns with a current key.')).toBeInTheDocument()
+  })
+
   it('distinguishes a mailbox request error from a disconnected workspace', async () => {
     mockedMailboxes.mockRejectedValueOnce(new Error('Mailbox request failed'))
 

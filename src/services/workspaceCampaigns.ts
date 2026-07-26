@@ -51,6 +51,7 @@ export interface WorkspaceMailboxAccount {
 
 export interface WorkspaceMailboxesResponse {
   connected: boolean
+  reason?: 'key_rejected' | 'scope_missing'
   provider_workspace_name: string | null
   accounts: WorkspaceMailboxAccount[]
   last_synced_at: string | null

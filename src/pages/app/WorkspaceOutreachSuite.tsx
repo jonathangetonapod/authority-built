@@ -218,8 +218,16 @@ const MailboxesContent = ({ data, loading, error, onRetry }: MailboxesContentPro
           {!loading && !error && !connected && (
             <TableRow className="hover:bg-transparent">
               <TableCell colSpan={4} className="h-52 text-center">
-                <h2 className="font-semibold">Instantly is not connected</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Connect this workspace to load its sending accounts.</p>
+                <h2 className="font-semibold">
+                  {data?.reason ? 'Instantly declined the connected key' : 'Instantly is not connected'}
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {data?.reason === 'key_rejected'
+                    ? 'Instantly rejected the saved API key. Reconnect Instantly in Client Campaigns with a current key.'
+                    : data?.reason === 'scope_missing'
+                      ? 'The saved API key cannot read accounts. Reconnect Instantly with a key that has all scopes enabled.'
+                      : 'Connect this workspace to load its sending accounts.'}
+                </p>
               </TableCell>
             </TableRow>
           )}
