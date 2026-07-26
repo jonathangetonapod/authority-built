@@ -35,15 +35,28 @@ describe('MyWorkspaceSettings', () => {
     expect(screen.getByText('Platform workspace settings')).toBeInTheDocument()
   })
 
-  it('gives a platform admin who owns a workspace the normal settings', () => {
+  it('gives a platform admin who owns a private workspace the normal settings', () => {
     mockedUseAuth.mockReturnValue({
       isPlatformAdmin: true,
       canManageWorkspaceStaff: false,
       membership: { role: 'owner' },
+      workspace: { id: '11111111-1111-4111-8111-111111111111', is_default: false },
     } as never)
     renderPage()
     expect(screen.getByText('Agency workspace settings')).toBeInTheDocument()
     expect(screen.queryByText('Platform workspace settings')).not.toBeInTheDocument()
+  })
+
+  it('keeps the default-workspace owner on the platform tools, which support it', () => {
+    mockedUseAuth.mockReturnValue({
+      isPlatformAdmin: true,
+      canManageWorkspaceStaff: false,
+      membership: { role: 'owner' },
+      workspace: { id: '11111111-1111-4111-8111-111111111111', is_default: true },
+    } as never)
+    renderPage()
+    expect(screen.getByText('Platform workspace settings')).toBeInTheDocument()
+    expect(screen.queryByText('Agency workspace settings')).not.toBeInTheDocument()
   })
 
   it('uses the same settings route for an agency workspace manager', () => {
