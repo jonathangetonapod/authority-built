@@ -244,8 +244,10 @@ function requireCampaignManager(access: WorkspaceFeatureAccess): void {
   }
 }
 
+const INTEGRATION_MANAGER_ROLES = new Set(["owner", "platform_admin"]);
+
 function requireIntegrationOwner(access: WorkspaceFeatureAccess): void {
-  if (access.role !== "owner") {
+  if (!INTEGRATION_MANAGER_ROLES.has(access.role)) {
     throw new HttpError(
       403,
       "WORKSPACE_OWNER_REQUIRED",
@@ -398,7 +400,7 @@ function connectionDto(
     connected_at: connection?.connected_at || null,
     last_verified_at: connection?.last_verified_at || null,
     last_error: connection?.last_error || null,
-    can_manage: access.role === "owner",
+    can_manage: INTEGRATION_MANAGER_ROLES.has(access.role),
     required_scopes: [
       "workspaces:read",
       "accounts:read",

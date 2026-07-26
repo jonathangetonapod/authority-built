@@ -17,7 +17,11 @@ assert.match(edge, /if \(req\.method === "OPTIONS"\) return optionsResponse\(req
 assert.match(edge, /const context = await requireAuthenticatedUser\(req\)/u)
 assert.match(edge, /const access = await requireWorkspaceFeatureAccess\(context, workspaceId\)/u)
 assert.match(edge, /const CAMPAIGN_MANAGER_ROLES = new Set\(\["owner", "admin", "platform_admin"\]\)/u)
-assert.match(edge, /function requireIntegrationOwner[\s\S]*?access\.role !== "owner"/u)
+// The Instantly key is managed by the workspace owner and platform admins
+// only — never workspace admins or members.
+assert.match(edge, /const INTEGRATION_MANAGER_ROLES = new Set\(\["owner", "platform_admin"\]\)/u)
+assert.match(edge, /function requireIntegrationOwner[\s\S]*?!INTEGRATION_MANAGER_ROLES\.has\(access\.role\)/u)
+assert.match(edge, /can_manage: INTEGRATION_MANAGER_ROLES\.has\(access\.role\)/u)
 assert.match(edge, /action === "connect-instantly"[\s\S]*?requireIntegrationOwner\(access\)/u)
 assert.match(edge, /action === "disconnect-instantly"[\s\S]*?requireIntegrationOwner\(access\)/u)
 assert.match(edge, /action === "mailboxes"[\s\S]*?requireOnlyKeys\(body, \["action", "workspace_id"\]\)/u)
