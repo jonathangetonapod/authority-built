@@ -1060,7 +1060,7 @@ serve(async (req) => {
         const structured = await runResearchPrompt(
           anthropicKey.apiKey,
           { model: 'claude-haiku-4-5-20251001', maxTokens: 1_500, system: 'You convert podcast research into strict JSON. Return ONLY a JSON object, no markdown.' },
-          `From the research and topic proposal below, return ONLY this JSON shape: {"clean_description": string (2 sentences about the show), "fit_reasons": string[] (3 specific reasons this guest fits), "pitch_angles": [{"title": string, "description": string}] (exactly 3 angles), "host_name": string or null}.\n\nRESEARCH:\n${researchReport.slice(0, 12_000)}\n\nHOST REPORT:\n${hostReport.slice(0, 4_000)}\n\nTOPIC PROPOSAL:\n${topicProposal.slice(0, 8_000)}`,
+          `From the research and topic proposal below, return ONLY this JSON shape: {"clean_description": string (2 sentences about the show), "fit_reasons": string[] (3 specific reasons this guest fits), "pitch_angles": [{"title": string, "description": string}] (exactly 3 angles), "host_name": string or null, "recent_guest_name": string or null (full name of the guest on the analyzed episode per the guest report; null for solo episodes or when unverified)}.\n\nRESEARCH:\n${researchReport.slice(0, 12_000)}\n\nHOST REPORT:\n${hostReport.slice(0, 4_000)}\n\nGUEST REPORT:\n${guestReport ? guestReport.slice(0, 4_000) : 'Not available'}\n\nTOPIC PROPOSAL:\n${topicProposal.slice(0, 8_000)}`,
           usage,
         )
         let parsed: {
@@ -1068,6 +1068,7 @@ serve(async (req) => {
           fit_reasons?: unknown
           pitch_angles?: unknown
           host_name?: unknown
+          recent_guest_name?: unknown
         } = {}
         try {
           parsed = JSON.parse(structured.replace(/^```(?:json)?\s*/u, '').replace(/\s*```$/u, ''))
@@ -1090,6 +1091,9 @@ serve(async (req) => {
         const hostName = typeof parsed.host_name === 'string' && parsed.host_name.trim()
           ? parsed.host_name.trim().slice(0, 200)
           : null
+        const recentGuestName = typeof parsed.recent_guest_name === 'string' && parsed.recent_guest_name.trim()
+          ? parsed.recent_guest_name.trim().slice(0, 200)
+          : null
 
         const completedAt = new Date().toISOString()
         const { error: persistError } = await authContext.admin
@@ -1105,6 +1109,10 @@ serve(async (req) => {
               guest_info: guestReport ? guestReport.slice(0, 20_000) : null,
               find_topics: topicProposal.slice(0, 20_000),
               episodes_used: episodes.map((episode) => ({ title: episode.title, had_transcript: Boolean(episode.transcript) })),
+              // Trimmed so write_email can quote the latest episode without
+              // ballooning the stored document (full transcripts run ~60k).
+              episode_transcript_excerpt: firstEpisode?.transcript ? firstEpisode.transcript.slice(0, 2_000) : null,
+              recent_guest_name: recentGuestName,
               generated_at: completedAt,
             },
             research_progress: {
@@ -1509,7 +1517,14 @@ serve(async (req) => {
       ])
       if (!shortlistRow) throw new HttpError(404, 'PODCAST_NOT_FOUND', 'Shortlist podcast not found for this client')
       const researchDocument = (shortlistRow.research_document ?? null) as
-        | { podcast_research?: unknown; host_info?: unknown; find_topics?: unknown; episodes_used?: Array<{ title?: string }> }
+        | {
+          podcast_research?: unknown
+          host_info?: unknown
+          find_topics?: unknown
+          episodes_used?: Array<{ title?: string }>
+          episode_transcript_excerpt?: unknown
+          recent_guest_name?: unknown
+        }
         | null
       if (!researchDocument || typeof researchDocument.podcast_research !== 'string') {
         throw new HttpError(409, 'RESEARCH_REQUIRED', 'Run research for this podcast before generating the pitch')
@@ -1559,8 +1574,12 @@ serve(async (req) => {
         host_name: target?.host_name ?? null,
         verified_email: target?.contact_email ?? null,
         episode_title: researchDocument.episodes_used?.[0]?.title ?? null,
-        episode_transcript: null,
-        recent_guest_name: null,
+        episode_transcript: typeof researchDocument.episode_transcript_excerpt === 'string'
+          ? researchDocument.episode_transcript_excerpt.slice(0, 2_000)
+          : null,
+        recent_guest_name: typeof researchDocument.recent_guest_name === 'string'
+          ? researchDocument.recent_guest_name.slice(0, 200)
+          : null,
         topic_proposal: [
           angle?.title && angle?.description ? `SELECTED ANGLE: ${angle.title} — ${angle.description}` : '',
           typeof researchDocument.find_topics === 'string' ? String(researchDocument.find_topics).slice(0, 4_000) : '',
