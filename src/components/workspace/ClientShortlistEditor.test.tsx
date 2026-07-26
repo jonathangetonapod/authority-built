@@ -5,8 +5,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ClientShortlistEditor } from '@/components/workspace/ClientShortlistEditor'
 import {
   addClientShortlistPodcasts,
+  generateClientShortlistPitch,
   getClientAutopilot,
   getClientShortlist,
+  getClientShortlistResearchDocument,
   runClientShortlistEmailSearch,
   runClientShortlistResearch,
   searchClientPodcastCatalog,
@@ -17,7 +19,8 @@ import { getWorkspaceCampaign, prepareWorkspaceCampaignPodcast } from '@/service
 
 vi.mock('@/services/clientShortlist', () => ({
   addClientShortlistPodcasts: vi.fn(),
-  generateClientShortlistPitch: vi.fn().mockRejectedValue(new Error('not mocked')),
+  generateClientShortlistPitch: vi.fn(),
+  getClientShortlistResearchDocument: vi.fn(),
   getClientAutopilot: vi.fn(),
   setClientAutopilot: vi.fn(),
   getClientShortlist: vi.fn(),
@@ -103,6 +106,11 @@ describe('ClientShortlistEditor', () => {
     // Research and email searches stay pending so tests can assert the in-flight UI.
     vi.mocked(runClientShortlistResearch).mockImplementation(() => new Promise(() => {}))
     vi.mocked(runClientShortlistEmailSearch).mockImplementation(() => new Promise(() => {}))
+    vi.mocked(generateClientShortlistPitch).mockResolvedValue({
+      subject: 'Research-backed pitch subject',
+      body: 'Research-backed pitch body',
+    } as never)
+    vi.mocked(getClientShortlistResearchDocument).mockResolvedValue(null)
     vi.mocked(getClientAutopilot).mockResolvedValue(null)
     vi.mocked(getClientShortlist).mockResolvedValue({
       client: { id: clientId, name: 'Taylor Client' },

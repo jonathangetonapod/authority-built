@@ -232,6 +232,9 @@ export function ClientCampaignPrepDialog({
     setPitchLoadingKey(key)
     try {
       const pitch = await generateClientShortlistPitch(workspaceId, clientId, podcast.id, angleIndex)
+      if (!pitch?.subject || !pitch?.body) {
+        throw new Error('The pitch could not be written from research.')
+      }
       setAiPitches((current) => ({ ...current, [key]: { subject: pitch.subject, body: pitch.body } }))
       setDraft((current) => ({ ...current, subject: pitch.subject, pitchBody: pitch.body }))
       setSavedDraft((current) => ({ ...current, subject: pitch.subject, pitchBody: pitch.body }))
