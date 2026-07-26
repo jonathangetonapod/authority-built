@@ -438,7 +438,7 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
       >
         <div className="flex h-full flex-col">
           <div className="flex h-16 items-center justify-between border-b border-border px-6">
-            <h1 className="text-xl font-bold">Get On A Pod</h1>
+            <h1 className="truncate text-xl font-bold">{workspaceName}</h1>
             <Button
               variant="ghost"
               size="icon"

@@ -303,7 +303,7 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
               </Badge>
               <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">Podcast Database</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-                Search one growing catalog for every client. When a workspace adds a new Podscan result to a client or prospect shortlist, its public show data becomes reusable across Get On A Pod.
+                Search one growing catalog for every client. When a new Podscan result is added to a client or prospect shortlist, its public show data becomes reusable across the Database.
               </p>
             </div>
             <Button asChild size="lg" className="shrink-0">

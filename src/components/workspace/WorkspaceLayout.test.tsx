@@ -88,7 +88,7 @@ describe('WorkspaceLayout', () => {
 
     const disabledModules = within(navigation).getAllByRole('button').filter((button) => button.hasAttribute('disabled'))
     expect(disabledModules).toHaveLength(0)
-    expect(screen.getAllByText('Acme Workspace')).toHaveLength(3)
+    expect(screen.getAllByText('Acme Workspace')).toHaveLength(4)
     expect(screen.getByText('owner@example.com')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /sign out/i })).toBeEnabled()
   })

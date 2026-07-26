@@ -708,7 +708,7 @@ export function ClientCampaignPrepDialog({
                       <div>
                         <div className="mb-5 flex gap-3 rounded-xl border border-sky-200 bg-sky-50/70 p-4 text-sky-950">
                           <Globe className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
-                          <div><p className="text-sm font-semibold">One shared contact network</p><p className="mt-1 text-xs leading-5 text-sky-900/80">Free Podscan inboxes and verified direct contacts are shared across Get On A Pod. If any workspace has already unlocked this podcast, every workspace reuses it for 0 credits.</p></div>
+                          <div><p className="text-sm font-semibold">One shared contact network</p><p className="mt-1 text-xs leading-5 text-sky-900/80">Free Podscan inboxes and verified direct contacts are shared across the Database. If this podcast has already been unlocked, it is reused for 0 credits.</p></div>
                         </div>
                         <p className="text-sm font-semibold">Choose an email path</p>
                         <p className="mt-1 text-xs leading-5 text-muted-foreground">Choose the route you want. Podscan supplies the free show inbox; the robust route identifies and verifies a direct host contact.</p>
@@ -759,7 +759,7 @@ export function ClientCampaignPrepDialog({
                             </div>
                             <h4 className="mt-4 font-semibold">{emailAlreadyUnlocked ? 'Use the direct host email' : emailSearchRunning ? 'Finding the direct host email' : emailSearchHasNoResult ? 'No direct email found yet' : "Find the host's direct email"}</h4>
                             <p className="mt-2 text-sm leading-6 text-muted-foreground">{emailAlreadyUnlocked
-                              ? 'A verified direct contact for this podcast has already been unlocked on Get On A Pod. Every workspace can reuse it for every client and campaign.'
+                              ? 'A verified direct contact for this podcast is already in the Database. It can be reused for every client and campaign.'
                               : emailSearchRunning
                                 ? 'One platform-wide search is running for this podcast. It keeps going if you close this modal, and another workspace cannot start or pay for a duplicate lookup.'
                                 : emailSearchHasNoResult
@@ -849,7 +849,7 @@ export function ClientCampaignPrepDialog({
                               </div>
                               <div className="flex shrink-0 flex-wrap gap-2"><Button asChild variant="outline" size="sm" className="border-violet-200 bg-background text-violet-900 hover:bg-violet-100"><Link to="/app/settings/billing" target="_blank" rel="noreferrer"><Coins className="mr-2 h-3.5 w-3.5" />Buy credits in Billing<ExternalLink className="ml-2 h-3.5 w-3.5" /></Link></Button><Button type="button" size="sm" onClick={beginEmailSearchPreview}><Search className="mr-2 h-3.5 w-3.5" />Start direct email search</Button></div>
                             </div>
-                            <p className="mt-3 border-t border-violet-200/70 pt-3 text-[11px] font-medium leading-5 text-violet-800">Once successfully unlocked anywhere on Get On A Pod, this podcast never costs any workspace another direct-email credit. Billing opens in a new tab so this pitch stays here.</p>
+                            <p className="mt-3 border-t border-violet-200/70 pt-3 text-[11px] font-medium leading-5 text-violet-800">Once successfully unlocked in the Database, this podcast never costs another direct-email credit. Billing opens in a new tab so this pitch stays here.</p>
                           </div>
                         )
                       )}

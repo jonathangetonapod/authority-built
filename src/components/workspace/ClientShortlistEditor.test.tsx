@@ -264,7 +264,7 @@ describe('ClientShortlistEditor', () => {
     expect(screen.getByText('hello@founderstories.fm')).toBeInTheDocument()
     expect(screen.getByText('Free · Podscan')).toBeInTheDocument()
     expect(screen.getByText('One shared contact network')).toBeInTheDocument()
-    expect(screen.getByText(/every workspace reuses it for 0 credits/i)).toBeInTheDocument()
+    expect(screen.getByText(/it is reused for 0 credits/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Try waterfall enrichment' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'Enter email manually' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByText('1 credit on success')).toBeInTheDocument()
