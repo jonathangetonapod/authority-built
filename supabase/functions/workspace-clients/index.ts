@@ -109,6 +109,65 @@ function aiSdrReadiness(value: unknown) {
   }
 }
 
+const BOOKING_STATUSES = [
+  'conversation_started',
+  'in_progress',
+  'booked',
+  'recorded',
+  'published',
+  'cancelled',
+]
+
+const BOOKING_FIELDS = [
+  'podcast_name',
+  'podcast_url',
+  'host_name',
+  'status',
+  'scheduled_date',
+  'recording_date',
+  'publish_date',
+  'episode_url',
+  'notes',
+  'prep_sent',
+]
+
+function optionalDate(value: unknown, field: string): string | null {
+  const text = optionalString(value, field, 10)
+  if (!text) return null
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(text) || Number.isNaN(Date.parse(text))) {
+    throw new HttpError(400, 'INVALID_FIELD', `${field} must be a YYYY-MM-DD date`)
+  }
+  return text
+}
+
+function bookingPayload(value: unknown): Record<string, string | boolean | null> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new HttpError(400, 'INVALID_BOOKING', 'booking must be an object')
+  }
+  const input = value as Record<string, unknown>
+  requireOnlyKeys(input, BOOKING_FIELDS)
+  const podcastName = optionalString(input.podcast_name, 'podcast_name', 300)
+  if (!podcastName) {
+    throw new HttpError(400, 'INVALID_FIELD', 'podcast_name is required')
+  }
+  const status = optionalString(input.status, 'status', 32) ?? 'conversation_started'
+  if (!BOOKING_STATUSES.includes(status)) {
+    throw new HttpError(400, 'INVALID_FIELD', 'status is not a known placement stage')
+  }
+  return {
+    podcast_name: podcastName,
+    podcast_url: optionalString(input.podcast_url, 'podcast_url', 2048),
+    host_name: optionalString(input.host_name, 'host_name', 200),
+    status,
+    scheduled_date: optionalDate(input.scheduled_date, 'scheduled_date'),
+    recording_date: optionalDate(input.recording_date, 'recording_date'),
+    publish_date: optionalDate(input.publish_date, 'publish_date'),
+    episode_url: optionalString(input.episode_url, 'episode_url', 2048),
+    notes: optionalString(input.notes, 'notes', 10_000),
+    prep_sent: input.prep_sent === true,
+  }
+}
+
 function clientPayload(value: unknown): Record<string, string | null> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new HttpError(400, 'INVALID_CLIENT', 'client must be an object')
@@ -170,6 +229,8 @@ serve(async (req) => {
 
     const body = await parseJsonObject(req)
     const action = typeof body.action === 'string' ? body.action : ''
+    let bookingInput: Record<string, string | boolean | null> | null = null
+    let bookingId: string | null = null
     const authContext = await requireAuthenticatedUser(req)
     if (!workspaceCredentialIsFresh(authContext)) {
       throw new HttpError(401, 'REAUTHENTICATION_REQUIRED', 'Sign in again with the newest account credentials')
@@ -220,6 +281,19 @@ serve(async (req) => {
     } else if (action === 'dashboard-slug-rotate') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'client_id'])
       clientId = requireUuid(body.client_id, 'client_id')
+    } else if (action === 'booking-create') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'booking'])
+      clientId = requireUuid(body.client_id, 'client_id')
+      bookingInput = bookingPayload(body.booking)
+    } else if (action === 'booking-update') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'booking_id', 'booking'])
+      clientId = requireUuid(body.client_id, 'client_id')
+      bookingId = requireUuid(body.booking_id, 'booking_id')
+      bookingInput = bookingPayload(body.booking)
+    } else if (action === 'booking-delete') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'booking_id'])
+      clientId = requireUuid(body.client_id, 'client_id')
+      bookingId = requireUuid(body.booking_id, 'booking_id')
     } else {
       throw new HttpError(400, 'INVALID_ACTION', 'Unknown workspace client action')
     }
@@ -390,6 +464,72 @@ serve(async (req) => {
       })
       if (error) rpcError(error)
       return jsonResponse(req, METHODS, 200, { client: data })
+    }
+
+    if (action === 'booking-create' || action === 'booking-update' || action === 'booking-delete') {
+      const access = await requireWorkspaceFeatureAccess(authContext, workspaceId)
+      if (!['owner', 'admin', 'platform_admin'].includes(access.role)) {
+        throw new HttpError(403, 'WORKSPACE_ACCESS_REQUIRED', 'Workspace manager access is required')
+      }
+      // Tenancy: the booking is only reachable through a client that belongs
+      // to this workspace.
+      const { data: ownerClient, error: ownerError } = await admin
+        .from('clients')
+        .select('id')
+        .eq('id', clientId!)
+        .eq('workspace_id', workspaceId)
+        .maybeSingle()
+      if (ownerError || !ownerClient) {
+        throw new HttpError(404, 'CLIENT_NOT_FOUND', 'Workspace client not found')
+      }
+
+      if (action === 'booking-delete') {
+        const { error: deleteError } = await admin
+          .from('bookings')
+          .delete()
+          .eq('id', bookingId!)
+          .eq('client_id', clientId!)
+        if (deleteError) {
+          throw new HttpError(500, 'BOOKING_OPERATION_FAILED', 'The placement could not be removed')
+        }
+        await writeAudit(admin, {
+          workspaceId,
+          actorUserId: authContext.user.id,
+          action: 'client.booking.deleted',
+          entityType: 'client',
+          entityId: clientId,
+          metadata: { booking_id: bookingId },
+        })
+        return jsonResponse(req, METHODS, 200, { success: true })
+      }
+
+      const columns = 'id,client_id,podcast_id,podcast_name,podcast_url,host_name,scheduled_date,recording_date,publish_date,status,episode_url,prep_sent,notes,created_at,updated_at'
+      const now = new Date().toISOString()
+      const { data: booking, error: bookingError } = action === 'booking-create'
+        ? await admin
+          .from('bookings')
+          .insert({ ...bookingInput, client_id: clientId })
+          .select(columns)
+          .maybeSingle()
+        : await admin
+          .from('bookings')
+          .update({ ...bookingInput, updated_at: now })
+          .eq('id', bookingId!)
+          .eq('client_id', clientId!)
+          .select(columns)
+          .maybeSingle()
+      if (bookingError || !booking) {
+        throw new HttpError(500, 'BOOKING_OPERATION_FAILED', 'The placement could not be saved')
+      }
+      await writeAudit(admin, {
+        workspaceId,
+        actorUserId: authContext.user.id,
+        action: action === 'booking-create' ? 'client.booking.created' : 'client.booking.updated',
+        entityType: 'client',
+        entityId: clientId,
+        metadata: { booking_id: booking.id, status: booking.status },
+      })
+      return jsonResponse(req, METHODS, 200, { booking })
     }
 
     if (action === 'sdr-mode-set') {

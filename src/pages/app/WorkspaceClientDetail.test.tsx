@@ -16,6 +16,8 @@ import {
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('@/services/clients', () => ({
   setWorkspaceClientSdrMode: vi.fn(),
+  saveWorkspaceClientBooking: vi.fn(),
+  deleteWorkspaceClientBooking: vi.fn(),
   generatePassword: vi.fn(() => 'Generated-Portal-42!'),
   getWorkspaceClientDetail: vi.fn(),
   setWorkspaceClientPassword: vi.fn(),

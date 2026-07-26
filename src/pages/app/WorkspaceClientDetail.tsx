@@ -25,6 +25,7 @@ import {
   Megaphone,
   Mic2,
   Pencil,
+  Plus,
   Radio,
   RefreshCw,
   Search,
@@ -36,6 +37,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { WorkspaceLayout, type PlatformWorkspaceConfig } from '@/components/workspace/WorkspaceLayout'
+import { ClientBookingDialog } from '@/components/workspace/ClientBookingDialog'
 import { ClientInstantlyCampaignsCard } from '@/components/workspace/ClientInstantlyCampaignsCard'
 import { ClientSdrPromptsCard } from '@/components/workspace/ClientSdrPromptsCard'
 import { ClientShortlistEditor } from '@/components/workspace/ClientShortlistEditor'
@@ -288,6 +290,8 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const [portalPasswordOpen, setPortalPasswordOpen] = useState(false)
   const [portalPassword, setPortalPassword] = useState('')
   const [sdrModeBusy, setSdrModeBusy] = useState(false)
+  const [bookingDialogOpen, setBookingDialogOpen] = useState(false)
+  const [editingBooking, setEditingBooking] = useState<WorkspaceClientBooking | null>(null)
   const [portalPasswordConfirm, setPortalPasswordConfirm] = useState('')
   const [portalPasswordVisible, setPortalPasswordVisible] = useState(false)
   const [portalPasswordCommitted, setPortalPasswordCommitted] = useState(false)
@@ -1190,7 +1194,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
 
           <TabsContent value="podcasts" className="mt-0 space-y-6">
             <section aria-labelledby="podcast-activity-heading">
-              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 id="podcast-activity-heading" className="text-xl font-semibold">Podcast activity</h2><p className="text-sm text-muted-foreground">Confirmed booking and publishing milestones. Use the Command Center for the complete client workflow.</p></div><div className="flex items-center gap-2"><Badge variant="outline">{bookings.length} total</Badge><Button asChild variant="outline" size="sm"><Link to={podcastSystemHref}>Open Command Center<ArrowRight className="ml-2 h-4 w-4" /></Link></Button></div></div>
+              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 id="podcast-activity-heading" className="text-xl font-semibold">Podcast activity</h2><p className="text-sm text-muted-foreground">Confirmed booking and publishing milestones. Use the Command Center for the complete client workflow.</p></div><div className="flex items-center gap-2"><Badge variant="outline">{bookings.length} total</Badge>{canManage && <Button size="sm" onClick={() => { setEditingBooking(null); setBookingDialogOpen(true) }}><Plus className="mr-2 h-4 w-4" />Log a conversation</Button>}<Button asChild variant="outline" size="sm"><Link to={podcastSystemHref}>Open Command Center<ArrowRight className="ml-2 h-4 w-4" /></Link></Button></div></div>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <MetricCard icon={CalendarDays} label="Booked" value={progress.booked} iconClassName="bg-emerald-50 text-emerald-600" />
                 <MetricCard icon={Clock3} label="In progress" value={progress.inProgress} iconClassName="bg-amber-50 text-amber-600" />
@@ -1203,11 +1207,11 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
               <CardHeader className="flex flex-row items-start justify-between gap-4"><div><CardTitle>All placements</CardTitle><CardDescription>Booked, in progress, recorded, published, and cancelled appearances.</CardDescription></div><Button asChild variant="outline" size="sm"><Link to={finderHref}><Search className="mr-2 h-4 w-4" />Find more</Link></Button></CardHeader>
               <CardContent>
                 {bookings.length === 0 ? (
-                  <div className="flex min-h-44 flex-col items-center justify-center text-center"><CheckCircle2 className="mb-3 h-9 w-9 text-muted-foreground/50" /><p className="font-medium">No confirmed placements yet</p><p className="text-sm text-muted-foreground">Shortlist, approval, preparation, and outreach activity remain available in the Command Center.</p><div className="mt-4 flex flex-wrap justify-center gap-2"><Button asChild variant="outline"><Link to={podcastSystemHref}>Open Command Center</Link></Button><Button asChild variant="outline"><Link to={finderHref}>Open Podcast Finder</Link></Button></div></div>
+                  <div className="flex min-h-44 flex-col items-center justify-center text-center"><CheckCircle2 className="mb-3 h-9 w-9 text-muted-foreground/50" /><p className="font-medium">No placements yet</p><p className="text-sm text-muted-foreground">Log the first conversation as soon as a host replies, then move it along as it progresses.</p><div className="mt-4 flex flex-wrap justify-center gap-2">{canManage && <Button onClick={() => { setEditingBooking(null); setBookingDialogOpen(true) }}><Plus className="mr-2 h-4 w-4" />Log a conversation</Button>}<Button asChild variant="outline"><Link to={podcastSystemHref}>Open Command Center</Link></Button><Button asChild variant="outline"><Link to={finderHref}>Open Podcast Finder</Link></Button></div></div>
                 ) : (
                   <div className="overflow-x-auto">
                     <Table>
-                      <TableHeader><TableRow><TableHead>Podcast</TableHead><TableHead>Host</TableHead><TableHead>Scheduled</TableHead><TableHead>Status</TableHead><TableHead>Episode</TableHead></TableRow></TableHeader>
+                      <TableHeader><TableRow><TableHead>Podcast</TableHead><TableHead>Host</TableHead><TableHead>Scheduled</TableHead><TableHead>Status</TableHead><TableHead>Episode</TableHead>{canManage && <TableHead className="w-20 text-right">Edit</TableHead>}</TableRow></TableHeader>
                       <TableBody>{bookings.map((booking) => {
                         const podcastUrl = booking.podcast_url ? safeExternalUrl(booking.podcast_url) : null
                         const episodeUrl = booking.episode_url ? safeExternalUrl(booking.episode_url) : null
@@ -1218,6 +1222,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                             <TableCell>{formatDate(scheduledDate(booking))}</TableCell>
                             <TableCell><Badge variant="outline" className={bookingStatusStyles[booking.status]}>{labelForStatus(booking.status)}</Badge></TableCell>
                             <TableCell>{episodeUrl ? <a href={episodeUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">Listen<ExternalLink className="h-3.5 w-3.5" /></a> : '—'}</TableCell>
+                            {canManage && <TableCell className="text-right"><Button variant="ghost" size="sm" onClick={() => { setEditingBooking(booking); setBookingDialogOpen(true) }}><Pencil className="h-3.5 w-3.5" /><span className="sr-only">Edit {booking.podcast_name}</span></Button></TableCell>}
                           </TableRow>
                         )
                       })}</TableBody>
@@ -1663,6 +1668,15 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <ClientBookingDialog
+        open={bookingDialogOpen}
+        onOpenChange={setBookingDialogOpen}
+        workspaceId={workspaceId}
+        clientId={client.id}
+        clientName={client.name}
+        booking={editingBooking}
+        onSaved={() => void detailQuery.refetch()}
+      />
     </WorkspaceLayout>
   )
 }

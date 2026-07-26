@@ -136,6 +136,15 @@ assert.match(autopilotMigration, /cron\.schedule\(/u)
 
 // Deno prompt defaults must stay in sync with the canonical docs JSON.
 const denoDefaults = readFileSync('supabase/functions/_shared/researchPromptDefaults.ts', 'utf8')
+// Booking writes: manager-gated, tenancy-checked through the owning client,
+// and the status set matches the placement lifecycle.
+const clientsEdge = readFileSync('supabase/functions/workspace-clients/index.ts', 'utf8')
+assert.match(clientsEdge, /const BOOKING_STATUSES = \[[\s\S]*?'conversation_started'[\s\S]*?'published'[\s\S]*?\]/u)
+assert.match(clientsEdge, /action === 'booking-create' \|\| action === 'booking-update' \|\| action === 'booking-delete'[\s\S]*?WORKSPACE_ACCESS_REQUIRED/u)
+assert.match(clientsEdge, /booking-create[\s\S]*?\.from\('clients'\)[\s\S]*?\.eq\('workspace_id', workspaceId\)/u)
+assert.match(clientsEdge, /\.from\('bookings'\)[\s\S]*?\.eq\('client_id', clientId!\)/u)
+assert.match(clientsEdge, /client\.booking\.(?:created|updated|deleted)/u)
+
 const canonicalPrompts = JSON.parse(readFileSync('docs/pitch-research-prompts.json', 'utf8'))
 for (const [promptId, prompt] of Object.entries(canonicalPrompts.prompts)) {
   assert.ok(denoDefaults.includes(`id: '${promptId}'`), `Deno defaults missing prompt ${promptId}`)

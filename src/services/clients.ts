@@ -157,6 +157,56 @@ export interface WorkspaceClientBooking {
   updated_at: string
 }
 
+export interface WorkspaceClientBookingInput {
+  podcast_name: string
+  podcast_url?: string | null
+  host_name?: string | null
+  status: WorkspaceClientBooking['status']
+  scheduled_date?: string | null
+  recording_date?: string | null
+  publish_date?: string | null
+  episode_url?: string | null
+  notes?: string | null
+  prep_sent?: boolean
+}
+
+export async function saveWorkspaceClientBooking(
+  workspaceId: string,
+  clientId: string,
+  booking: WorkspaceClientBookingInput,
+  bookingId?: string,
+): Promise<WorkspaceClientBooking> {
+  const { data, error } = await supabase.functions.invoke('workspace-clients', {
+    body: {
+      action: bookingId ? 'booking-update' : 'booking-create',
+      workspace_id: workspaceId.toLowerCase(),
+      client_id: clientId.toLowerCase(),
+      ...(bookingId ? { booking_id: bookingId } : {}),
+      booking,
+    },
+  })
+  if (error) throw await toFunctionError(error, 'The placement could not be saved.')
+  if (!data?.booking) throw new Error('The placement could not be saved.')
+  return data.booking as WorkspaceClientBooking
+}
+
+export async function deleteWorkspaceClientBooking(
+  workspaceId: string,
+  clientId: string,
+  bookingId: string,
+): Promise<void> {
+  const { data, error } = await supabase.functions.invoke('workspace-clients', {
+    body: {
+      action: 'booking-delete',
+      workspace_id: workspaceId.toLowerCase(),
+      client_id: clientId.toLowerCase(),
+      booking_id: bookingId,
+    },
+  })
+  if (error) throw await toFunctionError(error, 'The placement could not be removed.')
+  if (!data?.success) throw new Error('The placement could not be removed.')
+}
+
 export interface WorkspaceClientOnboardingSummary {
   id: string
   workspace_id: string
