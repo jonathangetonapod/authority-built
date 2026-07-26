@@ -291,7 +291,7 @@ serve(async (req) => {
       const { data: session, error: sessionError } = await admin
         .from("client_portal_sessions")
         .select(
-          "client_id,clients(portal_access_enabled,workspace:workspaces(status))",
+          "client_id,clients(portal_access_enabled,workspace:workspaces!clients_workspace_id_fkey(status))",
         )
         .eq("session_token", sessionTokenHash)
         .eq("client_id", clientId)

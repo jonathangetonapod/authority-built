@@ -10,7 +10,6 @@ export type WorkspaceModule =
   | 'client-campaigns'
   | 'master-inbox'
   | 'mailboxes'
-  | 'guest-resources'
   | 'settings'
 
 const WORKSPACE_MODULES = new Set<WorkspaceModule>([
@@ -23,7 +22,6 @@ const WORKSPACE_MODULES = new Set<WorkspaceModule>([
   'client-campaigns',
   'master-inbox',
   'mailboxes',
-  'guest-resources',
   'settings',
 ])
 

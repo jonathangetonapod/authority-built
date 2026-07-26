@@ -26,7 +26,6 @@ const expectedNavigation = [
   'Client Campaigns',
   'Master Inbox',
   'Mailboxes',
-  'Guest Resources',
   'Settings',
 ]
 
@@ -68,7 +67,7 @@ describe('WorkspaceLayout', () => {
     expect(labels).toEqual(expectedNavigation)
 
     const links = within(navigation).getAllByRole('link')
-    expect(links).toHaveLength(11)
+    expect(links).toHaveLength(10)
     expect(within(navigation).getByRole('link', { name: 'Settings' })).toHaveAttribute(
       'href',
       '/app/settings',
@@ -82,7 +81,6 @@ describe('WorkspaceLayout', () => {
     expect(within(navigation).getByRole('link', { name: 'Client Campaigns' })).toHaveAttribute('href', '/app/client-campaigns')
     expect(within(navigation).getByRole('link', { name: 'Master Inbox' })).toHaveAttribute('href', '/app/master-inbox')
     expect(within(navigation).getByRole('link', { name: 'Mailboxes' })).toHaveAttribute('href', '/app/mailboxes')
-    expect(within(navigation).getByRole('link', { name: 'Guest Resources' })).toHaveAttribute('href', '/app/guest-resources')
 
     const disabledModules = within(navigation).getAllByRole('button').filter((button) => button.hasAttribute('disabled'))
     expect(disabledModules).toHaveLength(0)
@@ -209,10 +207,6 @@ describe('WorkspaceLayout', () => {
     expect(within(navigation).getByRole('link', { name: 'Client Command Center' })).toHaveAttribute(
       'href',
       `/app/workspaces/${workspaceId}/client-podcast-system`,
-    )
-    expect(within(navigation).getByRole('link', { name: 'Guest Resources' })).toHaveAttribute(
-      'href',
-      `/app/workspaces/${workspaceId}/guest-resources`,
     )
     expect(within(navigation).getByRole('link', { name: 'Prospect Studio' })).toHaveAttribute(
       'href',

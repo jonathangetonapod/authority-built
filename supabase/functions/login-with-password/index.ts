@@ -151,7 +151,7 @@ serve(async (req) => {
     // Find client by email
     const { data: client, error: clientError } = await supabase
       .from('clients')
-      .select('id, name, email, portal_access_enabled, photo_url, dashboard_slug, workspace:workspaces(id, name, status, logo_path, logo_updated_at)')
+      .select('id, name, email, portal_access_enabled, photo_url, dashboard_slug, workspace:workspaces!clients_workspace_id_fkey(id, name, status, logo_path, logo_updated_at)')
       .eq('portal_email_normalized', email)
       .eq('portal_access_enabled', true)
       .maybeSingle()

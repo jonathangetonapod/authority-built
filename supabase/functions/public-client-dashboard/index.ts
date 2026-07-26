@@ -80,7 +80,7 @@ async function findDashboard(
 ) {
   const { data, error } = await admin
     .from('clients')
-    .select(`${DASHBOARD_FIELDS},workspace:workspaces(id,name,status,logo_path,logo_updated_at)`)
+    .select(`${DASHBOARD_FIELDS},workspace:workspaces!clients_workspace_id_fkey(id,name,status,logo_path,logo_updated_at)`)
     .eq('dashboard_slug', slug)
     .maybeSingle()
 

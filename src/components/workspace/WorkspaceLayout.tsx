@@ -65,7 +65,6 @@ const workspaceNavItems: WorkspaceNavItem[] = [
   { id: 'outreach-platform', name: 'Client Campaigns', segment: 'client-campaigns', icon: Megaphone, enabled: true },
   { id: 'unibox', name: 'Master Inbox', segment: 'master-inbox', icon: Inbox, enabled: true },
   { id: 'mailboxes', name: 'Mailboxes', segment: 'mailboxes', icon: Mailbox, enabled: true },
-  { id: 'guest-resources', name: 'Guest Resources', segment: 'guest-resources', icon: BookOpen, enabled: true },
   { id: 'settings', name: 'Settings', segment: 'settings', icon: Settings, enabled: false },
 ]
 

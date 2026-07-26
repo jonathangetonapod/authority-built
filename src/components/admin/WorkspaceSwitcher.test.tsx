@@ -100,16 +100,16 @@ describe('WorkspaceSwitcher', () => {
     ))
   })
 
-  it('preserves the guest resources module when switching workspaces', async () => {
+  it('preserves the mailboxes module when switching workspaces', async () => {
     renderSwitcher({
-      initialPath: '/app/workspaces/22222222-2222-4222-8222-222222222222/guest-resources',
+      initialPath: '/app/workspaces/22222222-2222-4222-8222-222222222222/mailboxes',
     })
 
     const trigger = await screen.findByRole('combobox', { name: 'Select a workspace' })
     fireEvent.click(trigger)
     fireEvent.click(await screen.findByText('Acme'))
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(
-      '/app/workspaces/11111111-1111-4111-8111-111111111111/guest-resources',
+      '/app/workspaces/11111111-1111-4111-8111-111111111111/mailboxes',
     ))
   })
 

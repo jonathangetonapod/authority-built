@@ -417,32 +417,6 @@ export function ClientShortlistEditor({
             <div className="rounded-xl border bg-background p-4"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Client decisions</p><p className="mt-2 text-2xl font-bold">{counts.approved + counts.rejected}</p></div>
             <div className="rounded-xl border bg-background p-4"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Archived</p><p className="mt-2 text-2xl font-bold">{counts.archived}</p></div>
           </div>
-          {viewerRole !== 'member' && !autopilotQuery.isError && (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-background px-4 py-3">
-              <div className="flex items-center gap-3">
-                <Switch
-                  id="client-autopilot"
-                  checked={Boolean(autopilot?.enabled)}
-                  disabled={autopilotSaving || autopilotQuery.isLoading}
-                  onCheckedChange={(checked) => void toggleAutopilot(checked)}
-                />
-                <div>
-                  <span className="flex items-center gap-2">
-                    <label htmlFor="client-autopilot" className="text-sm font-medium">Weekly autopilot</label>
-                    <Badge variant="outline" className="border-violet-200 bg-violet-50 text-violet-800">Beta</Badge>
-                  </span>
-                  <p className="text-xs text-muted-foreground">
-                    Automatically finds and adds high-fit podcasts for {clientName} every week.
-                  </p>
-                </div>
-              </div>
-              {autopilot?.enabled && autopilot.last_run_at && (
-                <p className="text-xs text-muted-foreground">
-                  Last run added {autopilot.last_run_added} · next {autopilot.next_run_at ? new Date(autopilot.next_run_at).toLocaleDateString() : 'soon'}
-                </p>
-              )}
-            </div>
-          )}
         </CardContent>
       </Card>
 

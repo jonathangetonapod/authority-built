@@ -74,7 +74,7 @@ serve(async (req) => {
 
       const { data: client, error: clientError } = await admin
         .from('clients')
-        .select('id, name, email, portal_access_enabled, workspace:workspaces(id, name, status, logo_path, logo_updated_at)')
+        .select('id, name, email, portal_access_enabled, workspace:workspaces!clients_workspace_id_fkey(id, name, status, logo_path, logo_updated_at)')
         .eq('portal_email_normalized', email)
         .eq('portal_access_enabled', true)
         .maybeSingle()

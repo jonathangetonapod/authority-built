@@ -47,7 +47,7 @@ serve(async (req) => {
       const sessionTokenHash = await hashPortalSessionToken(sessionToken)
       const { data: session, error } = await admin
         .from('client_portal_sessions')
-        .select('client_id,clients(portal_access_enabled,workspace:workspaces(status))')
+        .select('client_id,clients(portal_access_enabled,workspace:workspaces!clients_workspace_id_fkey(status))')
         .eq('session_token', sessionTokenHash)
         .eq('client_id', clientId)
         .gt('expires_at', new Date().toISOString())

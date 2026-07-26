@@ -31,7 +31,7 @@ serve(async (req) => {
 
     const { data: session, error: sessionError } = await admin
       .from('client_portal_sessions')
-      .select('id,client_id,clients(id,name,email,photo_url,portal_access_enabled,dashboard_slug,workspace:workspaces(id,name,status,logo_path,logo_updated_at))')
+      .select('id,client_id,clients(id,name,email,photo_url,portal_access_enabled,dashboard_slug,workspace:workspaces!clients_workspace_id_fkey(id,name,status,logo_path,logo_updated_at))')
       .eq('session_token', sessionTokenHash)
       .gt('expires_at', new Date().toISOString())
       .maybeSingle()

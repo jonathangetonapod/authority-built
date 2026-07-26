@@ -40,7 +40,6 @@ const ClientApprovalView = lazy(() => import("./pages/client/ClientApprovalView"
 const AcceptInvite = lazy(() => import("./pages/admin/AcceptInvite"));
 const WorkspaceClients = lazy(() => import("./pages/app/WorkspaceClients"));
 const WorkspaceClientDetail = lazy(() => import("./pages/app/WorkspaceClientDetail"));
-const WorkspaceGuestResources = lazy(() => import("./pages/app/WorkspaceGuestResources"));
 const WorkspaceOnboarding = lazy(() => import("./pages/app/WorkspaceOnboarding"));
 const MyWorkspaceSettings = lazy(() => import("./pages/app/MyWorkspaceSettings"));
 const ManageWorkspaces = lazy(() => import("./pages/app/ManageWorkspaces"));
@@ -57,7 +56,6 @@ const AdminWorkspaceCampaignDetail = lazy(() => import("./pages/admin/AdminWorks
 const AdminWorkspaceOutreachSuite = lazy(() => import("./pages/admin/AdminWorkspaceOutreachSuite"));
 const AdminWorkspaceClients = lazy(() => import("./pages/admin/AdminWorkspaceClients"));
 const AdminWorkspaceClientDetail = lazy(() => import("./pages/admin/AdminWorkspaceClientDetail"));
-const AdminWorkspaceGuestResources = lazy(() => import("./pages/admin/AdminWorkspaceGuestResources"));
 const AdminWorkspaceOnboarding = lazy(() => import("./pages/admin/AdminWorkspaceOnboarding"));
 const AdminWorkspaceStaff = lazy(() => import("./pages/admin/AdminWorkspaceStaff"));
 const AdminWorkspacePodcastFinderHome = lazy(() => import("./pages/admin/AdminWorkspacePodcastFinderHome"));
@@ -228,14 +226,7 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
-            <Route
-              path="/app/guest-resources"
-              element={
-                <ProtectedRoute>
-                  <WorkspaceGuestResources />
-                </ProtectedRoute>
-              }
-            />
+            <Route path="/app/guest-resources" element={<Navigate to="/app/clients" replace />} />
             <Route
               path="/app/client-campaigns"
               element={
@@ -354,11 +345,7 @@ const App = () => (
             />
             <Route
               path="/app/workspaces/:workspaceId/guest-resources"
-              element={
-                <PlatformAdminRoute>
-                  <AdminWorkspaceGuestResources />
-                </PlatformAdminRoute>
-              }
+              element={<LegacyAdminWorkspaceRedirect module="clients" />}
             />
             <Route
               path="/app/workspaces/:workspaceId/client-campaigns"
@@ -574,7 +561,7 @@ const App = () => (
             />
             <Route
               path="/admin/workspaces/:workspaceId/guest-resources"
-              element={<LegacyAdminWorkspaceRedirect module="guest-resources" />}
+              element={<LegacyAdminWorkspaceRedirect module="clients" />}
             />
             <Route path="/admin/outreach-platform" element={<Navigate to="/app/client-campaigns" replace />} />
             <Route path="/admin/leads" element={<Navigate to="/app/master-inbox" replace />} />

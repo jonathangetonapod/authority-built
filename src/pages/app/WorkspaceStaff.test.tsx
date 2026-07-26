@@ -288,7 +288,7 @@ describe('WorkspaceStaff', () => {
 
     const navigation = screen.getByRole('navigation', { name: 'Workspace navigation' })
     expect(within(navigation).getByRole('button', { name: 'Done' })).toBeInTheDocument()
-    expect(within(navigation).getAllByRole('button', { name: /^Drag /u })).toHaveLength(11)
+    expect(within(navigation).getAllByRole('button', { name: /^Drag /u })).toHaveLength(10)
   })
 
   it('lets the workspace owner change the private workspace name and public client brand independently', async () => {

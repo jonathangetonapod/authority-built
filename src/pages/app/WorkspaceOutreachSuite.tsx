@@ -408,17 +408,13 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
   return (
     <WorkspaceLayout platformWorkspace={platformWorkspace}>
       <div className="min-w-0 space-y-5 sm:space-y-6">
-        <header className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-semibold text-primary">{config.eyebrow}</span>
-              <span className="text-xs text-muted-foreground">{workspaceLabel}</span>
+        <header className="flex flex-col gap-3 border-b border-border pb-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"><ActiveIcon className="h-4.5 w-4.5" /></div>
+            <div className="min-w-0">
+              <h1 className="min-w-0 truncate text-xl font-bold tracking-tight">{config.name}</h1>
+              <p className="truncate text-xs text-muted-foreground" title={config.description}>{workspaceLabel}</p>
             </div>
-            <div className="mt-2 flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground"><ActiveIcon className="h-5 w-5" /></div>
-              <h1 className="min-w-0 text-3xl font-bold tracking-tight">{config.name}</h1>
-            </div>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">{config.description}</p>
           </div>
           {module === 'master-inbox' && (
             <div data-testid="instantly-connection-state" className="flex w-fit shrink-0 items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">

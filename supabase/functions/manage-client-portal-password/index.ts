@@ -171,7 +171,7 @@ serve(async (req) => {
 
         const { data: client, error: clientError } = await admin
           .from('clients')
-          .select('id, name, email, portal_access_enabled, dashboard_slug, workspace:workspaces(id, name, status, logo_path, logo_updated_at)')
+          .select('id, name, email, portal_access_enabled, dashboard_slug, workspace:workspaces!clients_workspace_id_fkey(id, name, status, logo_path, logo_updated_at)')
           .eq('id', clientId)
           .eq('workspace_id', workspaceId)
           .maybeSingle()
