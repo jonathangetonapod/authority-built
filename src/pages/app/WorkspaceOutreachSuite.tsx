@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   AlertCircle,
@@ -15,6 +16,7 @@ import { MailboxInfraCard } from '@/components/workspace/MailboxInfraCard'
 import WorkspaceCampaigns from '@/pages/app/WorkspaceCampaigns'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useAuth } from '@/contexts/AuthContext'
@@ -121,8 +123,20 @@ interface MailboxesContentProps {
   onRetry: () => void
 }
 
+const MAILBOX_PAGE_SIZE = 25
+
 const MailboxesContent = ({ data, loading, error, onRetry }: MailboxesContentProps) => {
-  const accounts = data?.accounts || []
+  const [search, setSearch] = useState('')
+  const [visibleCount, setVisibleCount] = useState(MAILBOX_PAGE_SIZE)
+  const allAccounts = data?.accounts || []
+  const query = search.trim().toLowerCase()
+  const accounts = query
+    ? allAccounts.filter((account) => (
+      account.email.toLowerCase().includes(query)
+      || mailboxLabel(account).toLowerCase().includes(query)
+    ))
+    : allAccounts
+  const visibleAccounts = accounts.slice(0, visibleCount)
   const connected = Boolean(data?.connected)
 
   return (
@@ -136,15 +150,31 @@ const MailboxesContent = ({ data, loading, error, onRetry }: MailboxesContentPro
             : 'Daily sends, warmup activity, and health for every mailbox.'}
         </CardDescription>
       </div>
-      <Badge variant="outline" className="mt-3 w-fit bg-background text-muted-foreground sm:mt-0">
-        {loading
-          ? 'Loading mailboxes'
-          : error
-            ? 'Unavailable'
-            : connected
-              ? `${accounts.length} mailboxes`
-              : 'Not connected'}
-      </Badge>
+      <div className="mt-3 flex items-center gap-2 sm:mt-0">
+        {connected && allAccounts.length > MAILBOX_PAGE_SIZE && (
+          <Input
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value)
+              setVisibleCount(MAILBOX_PAGE_SIZE)
+            }}
+            placeholder="Search mailboxes…"
+            aria-label="Search mailboxes"
+            className="h-8 w-48 bg-background"
+          />
+        )}
+        <Badge variant="outline" className="w-fit bg-background text-muted-foreground">
+          {loading
+            ? 'Loading mailboxes'
+            : error
+              ? 'Unavailable'
+              : connected
+                ? query
+                  ? `${accounts.length} of ${allAccounts.length}`
+                  : `${allAccounts.length} mailboxes`
+                : 'Not connected'}
+        </Badge>
+      </div>
     </CardHeader>
     {data?.analytics_errors?.length ? (
       <div role="status" className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-5 py-3 text-xs leading-5 text-amber-900">
@@ -201,7 +231,7 @@ const MailboxesContent = ({ data, loading, error, onRetry }: MailboxesContentPro
               </TableCell>
             </TableRow>
           )}
-          {!loading && !error && connected && accounts.map((account) => {
+          {!loading && !error && connected && visibleAccounts.map((account) => {
             const status = mailboxStatus(account.status)
             const sendingError = account.status < 0
             const sendProgress = account.daily_limit && account.sent_today !== null
@@ -250,6 +280,19 @@ const MailboxesContent = ({ data, loading, error, onRetry }: MailboxesContentPro
           })}
         </TableBody>
       </Table>
+      {!loading && !error && connected && accounts.length > visibleCount && (
+        <div className="border-t px-5 py-3 text-center">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={() => setVisibleCount((current) => current + 50)}
+          >
+            Show more ({accounts.length - visibleCount} remaining)
+          </Button>
+        </div>
+      )}
     </CardContent>
   </Card>
   )
