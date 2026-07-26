@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   completePortalPasswordReset,
+  getPortalExperience,
   loginWithPassword,
   requestPortalPasswordReset,
+  sessionStorage,
   validateSession,
 } from '@/services/clientPortal'
 import { supabase } from '@/lib/supabase'
@@ -120,5 +122,53 @@ describe('clientPortal password reset', () => {
 
     await expect(completePortalPasswordReset('token', 'new-password-9!'))
       .rejects.toThrow('This reset link is invalid or has expired.')
+  })
+})
+
+describe('clientPortal experience overview', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.sessionStorage.clear()
+  })
+
+  it('loads the aggregated overview with the stored session token', async () => {
+    const client = { id: '22222222-2222-4222-8222-222222222222', name: 'Taylor', email: 't@example.com' }
+    const session = {
+      session_token: '33333333-3333-4333-8333-333333333333',
+      expires_at: '2099-01-01T00:00:00.000Z',
+      client_id: client.id,
+    }
+    sessionStorage.save(session as never, client as never)
+    const overview = {
+      profile: { name: 'Taylor', photo_url: null, bio: null, media_kit_url: null, calendar_link: null, dashboard_tagline: null },
+      review: { dashboard_slug: 'taylor-ab12cd34ef', total_visible: 5, awaiting_count: 2, approved_count: 3, rejected_count: 0 },
+      outreach: { emails_sent: 40, podcasts_contacted: 18, replies: 4, meetings_booked: 1, in_outreach_count: 6, replied_count: 2, completed_count: 1 },
+      pitch_profile: null,
+      bookings: [],
+    }
+    mockedInvoke.mockResolvedValue({ data: overview, error: null } as never)
+
+    const result = await getPortalExperience(client.id)
+
+    expect(mockedInvoke).toHaveBeenCalledWith('portal-experience', {
+      body: { clientId: client.id, sessionToken: session.session_token },
+    })
+    expect(result).toEqual(overview)
+  })
+
+  it('refuses to load an overview for a different client than the session', async () => {
+    const client = { id: '22222222-2222-4222-8222-222222222222', name: 'Taylor', email: 't@example.com' }
+    sessionStorage.save(
+      {
+        session_token: '33333333-3333-4333-8333-333333333333',
+        expires_at: '2099-01-01T00:00:00.000Z',
+        client_id: client.id,
+      } as never,
+      client as never,
+    )
+
+    await expect(getPortalExperience('44444444-4444-4444-8444-444444444444'))
+      .rejects.toThrow('Portal session does not match the requested client.')
+    expect(mockedInvoke).not.toHaveBeenCalled()
   })
 })

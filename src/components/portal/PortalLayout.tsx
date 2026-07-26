@@ -25,6 +25,14 @@ export function PortalLayout({ children }: PortalLayoutProps) {
   const location = useLocation()
   const agencyName = branding?.name || 'Client Portal'
   const agencyLogoUrl = branding?.logo_url ? safeExternalUrl(branding.logo_url) : null
+  // Workspace white-label colors — only applied when they are plain hex values.
+  const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
+  const primaryColor = branding?.primary_color && HEX_COLOR.test(branding.primary_color)
+    ? branding.primary_color
+    : null
+  const accentColor = branding?.accent_color && HEX_COLOR.test(branding.accent_color)
+    ? branding.accent_color
+    : null
 
   const handleLogout = async () => {
     await logout()
@@ -72,7 +80,10 @@ export function PortalLayout({ children }: PortalLayoutProps) {
                 className="h-8 w-8 rounded-lg object-contain"
               />
             ) : (
-              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center">
+              <div
+                className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center"
+                style={primaryColor ? { backgroundImage: 'none', backgroundColor: primaryColor } : undefined}
+              >
                 <span className="text-primary-foreground font-bold text-sm">
                   {agencyName.charAt(0).toUpperCase()}
                 </span>
@@ -159,6 +170,7 @@ export function PortalLayout({ children }: PortalLayoutProps) {
                       ? 'border-primary text-primary'
                       : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/50'
                   )}
+                  style={isActive && accentColor ? { borderColor: accentColor, color: accentColor } : undefined}
                 >
                   <Icon className="h-4 w-4" />
                   {item.label}

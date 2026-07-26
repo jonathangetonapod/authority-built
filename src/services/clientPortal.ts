@@ -178,6 +178,83 @@ export async function getClientBookings(clientId: string): Promise<ClientPortalD
   }
 }
 
+export interface PortalExperienceBooking {
+  id: string
+  podcast_name: string
+  podcast_url: string | null
+  host_name: string | null
+  scheduled_date: string | null
+  recording_date: string | null
+  publish_date: string | null
+  status: string
+  episode_url: string | null
+  podcast_image_url: string | null
+  podcast_description: string | null
+  audience_size: number | null
+  itunes_rating: number | null
+  episode_count: number | null
+}
+
+export interface PortalExperienceOverview {
+  profile: {
+    name: string
+    photo_url: string | null
+    bio: string | null
+    media_kit_url: string | null
+    calendar_link: string | null
+    dashboard_tagline: string | null
+  }
+  review: {
+    dashboard_slug: string | null
+    total_visible: number
+    awaiting_count: number
+    approved_count: number
+    rejected_count: number
+  }
+  outreach: {
+    emails_sent: number
+    podcasts_contacted: number
+    replies: number
+    meetings_booked: number
+    in_outreach_count: number
+    replied_count: number
+    completed_count: number
+  } | null
+  pitch_profile: {
+    professional_bio: string | null
+    positioning_summary: string | null
+    key_messages: string[]
+    story_angles: string[]
+    talking_points: string[]
+    ideal_audience: string | null
+  } | null
+  bookings: PortalExperienceBooking[]
+}
+
+/**
+ * Load the aggregated portal overview (profile, review queue, outreach
+ * journey, approved guest profile, and placements) in one round trip.
+ */
+export async function getPortalExperience(clientId: string): Promise<PortalExperienceOverview> {
+  const { session } = sessionStorage.get()
+
+  if (session && session.client_id !== clientId) {
+    throw new Error('Portal session does not match the requested client.')
+  }
+
+  const requestBody: { clientId: string; sessionToken?: string } = { clientId }
+  if (session?.session_token) {
+    requestBody.sessionToken = session.session_token
+  }
+
+  const { data, error } = await supabase.functions.invoke('portal-experience', {
+    body: requestBody,
+  })
+  if (error) throw await toFunctionError(error, 'Your portal overview could not be loaded.')
+
+  return data as PortalExperienceOverview
+}
+
 /**
  * Get a single booking by ID (with authorization check)
  */

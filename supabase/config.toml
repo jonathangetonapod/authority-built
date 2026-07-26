@@ -157,6 +157,9 @@ verify_jwt = false
 [functions.portal-password-reset]
 verify_jwt = false
 
+[functions.portal-experience]
+verify_jwt = false
+
 [functions.get-prospect-dashboard]
 verify_jwt = false
 
