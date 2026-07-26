@@ -44,6 +44,7 @@ const WorkspaceOverview = lazy(() => import("./pages/app/WorkspaceOverview"));
 const WorkspaceCampaignDetail = lazy(() => import("./pages/app/WorkspaceCampaignDetail"));
 const WorkspaceOutreachSuite = lazy(() => import("./pages/app/WorkspaceOutreachSuite"));
 const WorkspacePodcastFinderHome = lazy(() => import("./pages/app/WorkspacePodcastFinderHome"));
+const WorkspaceSmartPodcastFinder = lazy(() => import("./pages/app/WorkspaceSmartPodcastFinder"));
 const WorkspacePodcastFinder = lazy(() => import("./pages/app/WorkspacePodcastFinder"));
 const WorkspacePodcastDatabase = lazy(() => import("./pages/app/WorkspacePodcastDatabase"));
 const WorkspaceClientPodcastSystem = lazy(() => import("./pages/app/WorkspaceClientPodcastSystem"));
@@ -177,6 +178,14 @@ const App = () => (
             />
             <Route
               path="/app/podcast-finder"
+              element={
+                <ProtectedRoute>
+                  <WorkspaceSmartPodcastFinder />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/app/podcast-finder/advanced"
               element={
                 <ProtectedRoute>
                   <WorkspacePodcastFinderHome />
