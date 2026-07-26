@@ -23,6 +23,9 @@ vi.mock('@/services/clients', () => ({
   updateWorkspaceClientSdrProfile: vi.fn(),
 }))
 vi.mock('@/components/admin/WorkspaceSwitcher', () => ({ WorkspaceSwitcher: () => <div>Workspace switcher</div> }))
+vi.mock('@/components/workspace/ClientInstantlyCampaignsCard', () => ({
+  ClientInstantlyCampaignsCard: () => <div>Instantly campaign links</div>,
+}))
 vi.mock('@/components/workspace/ClientShortlistEditor', () => ({
   ClientShortlistEditor: () => <section id="client-podcast-list">Client podcast editor</section>,
 }))

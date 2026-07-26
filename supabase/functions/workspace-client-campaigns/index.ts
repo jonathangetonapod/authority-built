@@ -2355,12 +2355,318 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, { success: true });
     }
 
+    if (action === "inbox-list") {
+      requireOnlyKeys(body, ["action", "workspace_id"]);
+      const connection = await readConnection(context.admin, workspaceId);
+      if (
+        !connection || connection.status === "disconnected" ||
+        !connection.api_key_ciphertext || !connection.api_key_iv
+      ) {
+        return jsonResponse(req, METHODS, 200, { connected: false, threads: [] });
+      }
+      const apiKey = await integrationApiKey(connection, false);
+
+      const [{ data: campaignRows }, linksResult, emailsPayload] = await Promise.all([
+        context.admin
+          .from("workspace_client_campaigns")
+          .select("id, client_id, instantly_campaign_id, name, client:clients(id, name)")
+          .eq("workspace_id", workspaceId)
+          .not("instantly_campaign_id", "is", null)
+          .limit(1_000),
+        context.admin
+          .from("client_instantly_campaign_links")
+          .select("instantly_campaign_id, campaign_name, client:clients!client_instantly_campaign_links_client_fk(id, name)")
+          .eq("workspace_id", workspaceId)
+          .limit(1_000),
+        instantlyRequest<{ items?: Array<Record<string, unknown>> }>(
+          apiKey,
+          "/emails",
+          {
+            query: new URLSearchParams({
+              limit: "50",
+              email_type: "received",
+            }),
+          },
+        ).catch((error) => {
+          if (error instanceof InstantlyApiError) {
+            // A rejected or under-scoped key is a connection state, not a
+            // request failure — the inbox renders it as "reconnect Instantly".
+            if (error.status === 401) return { auth_failure: "key_rejected" as const };
+            if (error.status === 403) return { auth_failure: "scope_missing" as const };
+            throw providerHttpError(error);
+          }
+          throw error;
+        }),
+      ]);
+      if (emailsPayload && "auth_failure" in emailsPayload) {
+        return jsonResponse(req, METHODS, 200, {
+          connected: false,
+          reason: emailsPayload.auth_failure,
+          threads: [],
+        });
+      }
+      const campaignByProviderId = new Map(
+        ((campaignRows ?? []) as Array<Record<string, unknown>>).flatMap((row) => {
+          const providerId = row.instantly_campaign_id;
+          if (typeof providerId !== "string" || !providerId) return [];
+          const clientRecord = Array.isArray(row.client) ? row.client[0] : row.client;
+          return [[providerId, {
+            campaign_id: String(row.id),
+            campaign_name: typeof row.name === "string" ? row.name : null,
+            client: clientRecord && typeof clientRecord === "object"
+              ? {
+                id: String((clientRecord as Record<string, unknown>).id ?? ""),
+                name: String((clientRecord as Record<string, unknown>).name ?? ""),
+              }
+              : null,
+          }] as const];
+        }),
+      );
+      // Manually linked Instantly campaigns attribute their replies to the
+      // linked client as well; a managed campaign mapping wins on conflict.
+      // Tolerate a missing links table so deploys ahead of the migration
+      // keep the inbox working.
+      const linkRows = linksResult.error ? [] : linksResult.data ?? [];
+      for (const raw of linkRows as Array<Record<string, unknown>>) {
+        const providerId = raw.instantly_campaign_id;
+        if (typeof providerId !== "string" || !providerId) continue;
+        if (campaignByProviderId.has(providerId)) continue;
+        const clientRecord = Array.isArray(raw.client) ? raw.client[0] : raw.client;
+        campaignByProviderId.set(providerId, {
+          campaign_id: providerId,
+          campaign_name: typeof raw.campaign_name === "string" ? raw.campaign_name : null,
+          client: clientRecord && typeof clientRecord === "object"
+            ? {
+              id: String((clientRecord as Record<string, unknown>).id ?? ""),
+              name: String((clientRecord as Record<string, unknown>).name ?? ""),
+            }
+            : null,
+        });
+      }
+
+      const text = (value: unknown, max: number): string =>
+        typeof value === "string" ? value.slice(0, max) : "";
+      const threads = (emailsPayload.items ?? []).flatMap((raw) => {
+        if (!raw || typeof raw !== "object") return [];
+        const email = raw as Record<string, unknown>;
+        const providerCampaignId = typeof email.campaign_id === "string" ? email.campaign_id : null;
+        const mapped = providerCampaignId ? campaignByProviderId.get(providerCampaignId) ?? null : null;
+        const bodyRecord = (email.body ?? {}) as Record<string, unknown>;
+        const bodyText = text(bodyRecord.text, 2_000)
+          || text(bodyRecord.html, 4_000).replace(/<[^>]+>/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 2_000);
+        const interestValue = typeof email.i_status === "number" ? email.i_status : null;
+        return [{
+          id: String(email.id ?? crypto.randomUUID()),
+          thread_id: typeof email.thread_id === "string" ? email.thread_id : null,
+          message_id: typeof email.message_id === "string" ? email.message_id : null,
+          eaccount: typeof email.eaccount === "string" ? email.eaccount : null,
+          subject: text(email.subject, 300),
+          from_email: text(email.from_address_email, 320) || text(email.from_address, 320),
+          to_email: text(email.to_address_email_list, 320),
+          body_text: bodyText,
+          received_at: typeof email.timestamp_email === "string"
+            ? email.timestamp_email
+            : typeof email.timestamp_created === "string"
+              ? email.timestamp_created
+              : null,
+          is_unread: email.is_unread === true || email.is_unread === 1,
+          interested: interestValue === 1,
+          lead_email: text(email.lead, 320) || text(email.from_address_email, 320),
+          campaign: mapped,
+        }];
+      });
+
+      return jsonResponse(req, METHODS, 200, { connected: true, threads });
+    }
+
     const clientId = requireUuid(body.client_id, "client_id");
     const client = await requireWorkspaceClient(
       context.admin,
       workspaceId,
       clientId,
     );
+
+    if (action === "client-links-list") {
+      requireOnlyKeys(body, ["action", "workspace_id", "client_id"]);
+      const [linksResult, campaignsResult] = await Promise.all([
+        context.admin
+          .from("client_instantly_campaign_links")
+          .select("client_id, instantly_campaign_id, campaign_name, created_at, client:clients!client_instantly_campaign_links_client_fk(id, name)")
+          .eq("workspace_id", workspaceId)
+          .limit(1_000),
+        context.admin
+          .from("workspace_client_campaigns")
+          .select("client_id, instantly_campaign_id")
+          .eq("workspace_id", workspaceId)
+          .not("instantly_campaign_id", "is", null)
+          .limit(1_000),
+      ]);
+      if (linksResult.error) {
+        throw new HttpError(503, "CAMPAIGN_LINKS_UNAVAILABLE", "Linked campaigns could not be loaded");
+      }
+      const allLinks = (linksResult.data ?? []) as Array<Record<string, unknown>>;
+      const links = allLinks
+        .filter((row) => row.client_id === clientId)
+        .map((row) => ({
+          instantly_campaign_id: String(row.instantly_campaign_id ?? ""),
+          campaign_name: typeof row.campaign_name === "string" ? row.campaign_name : null,
+          created_at: typeof row.created_at === "string" ? row.created_at : null,
+        }));
+      const linkedClientByCampaign = new Map(allLinks.flatMap((row) => {
+        const providerId = row.instantly_campaign_id;
+        if (typeof providerId !== "string") return [];
+        const clientRecord = Array.isArray(row.client) ? row.client[0] : row.client;
+        return [[providerId, {
+          id: String(row.client_id ?? ""),
+          name: clientRecord && typeof clientRecord === "object"
+            ? String((clientRecord as Record<string, unknown>).name ?? "")
+            : "",
+        }] as const];
+      }));
+      const managedClientByCampaign = new Map(
+        ((campaignsResult.error ? [] : campaignsResult.data ?? []) as Array<Record<string, unknown>>)
+          .flatMap((row) => (
+            typeof row.instantly_campaign_id === "string"
+              ? [[row.instantly_campaign_id, String(row.client_id ?? "")] as const]
+              : []
+          )),
+      );
+
+      const connection = await readConnection(context.admin, workspaceId);
+      let providerCampaigns: ProviderCampaign[] = [];
+      let connected = false;
+      if (
+        connection && connection.status === "connected" &&
+        connection.api_key_ciphertext && connection.api_key_iv
+      ) {
+        try {
+          providerCampaigns = await listProviderCampaigns(
+            await integrationApiKey(connection, false),
+          );
+          connected = true;
+        } catch (_error) {
+          connected = false;
+        }
+      }
+      return jsonResponse(req, METHODS, 200, {
+        connected,
+        links,
+        provider_campaigns: providerCampaigns.map((campaign) => {
+          const linkedClient = linkedClientByCampaign.get(campaign.id) ?? null;
+          return {
+            id: campaign.id,
+            name: campaign.name,
+            status: campaign.status,
+            linked_client_id: linkedClient?.id ?? null,
+            linked_client_name: linkedClient?.name ?? null,
+            managed_client_id: managedClientByCampaign.get(campaign.id) ?? null,
+          };
+        }),
+      });
+    }
+
+    if (action === "client-links-set") {
+      requireOnlyKeys(body, ["action", "workspace_id", "client_id", "campaign_ids"]);
+      requireCampaignManager(access);
+      const rawIds = body.campaign_ids;
+      if (!Array.isArray(rawIds) || rawIds.length > 100) {
+        throw new HttpError(
+          400,
+          "INVALID_FIELD",
+          "campaign_ids must be a list of at most 100 campaign ids",
+        );
+      }
+      const campaignIds = [
+        ...new Set(rawIds.map((value, index) => requireUuid(value, `campaign_ids[${index}]`))),
+      ];
+
+      const connection = await readConnection(context.admin, workspaceId);
+      if (
+        !connection || connection.status !== "connected" ||
+        !connection.api_key_ciphertext || !connection.api_key_iv
+      ) {
+        throw new HttpError(
+          409,
+          "INSTANTLY_NOT_CONNECTED",
+          "Connect Instantly before linking campaigns",
+        );
+      }
+      const providerCampaigns = await listProviderCampaigns(
+        await integrationApiKey(connection, false),
+      );
+      const providerById = new Map(providerCampaigns.map((campaign) => [campaign.id, campaign]));
+      for (const campaignId of campaignIds) {
+        if (!providerById.has(campaignId)) {
+          throw new HttpError(
+            404,
+            "CAMPAIGN_NOT_FOUND",
+            "A selected campaign no longer exists in Instantly",
+          );
+        }
+      }
+
+      // A campaign belongs to at most one client — reject links that would
+      // steal another client's campaign, whether linked or app-managed.
+      const [conflictLinks, conflictCampaigns] = await Promise.all([
+        context.admin
+          .from("client_instantly_campaign_links")
+          .select("instantly_campaign_id, client_id")
+          .eq("workspace_id", workspaceId)
+          .in("instantly_campaign_id", campaignIds.length ? campaignIds : ["00000000-0000-0000-0000-000000000000"])
+          .neq("client_id", clientId),
+        context.admin
+          .from("workspace_client_campaigns")
+          .select("instantly_campaign_id, client_id")
+          .eq("workspace_id", workspaceId)
+          .in("instantly_campaign_id", campaignIds.length ? campaignIds : ["00000000-0000-0000-0000-000000000000"])
+          .neq("client_id", clientId),
+      ]);
+      if ((conflictLinks.data ?? []).length || (conflictCampaigns.data ?? []).length) {
+        throw new HttpError(
+          409,
+          "CAMPAIGN_ALREADY_LINKED",
+          "A selected campaign is already associated with another client",
+        );
+      }
+
+      const { error: deleteError } = await context.admin
+        .from("client_instantly_campaign_links")
+        .delete()
+        .eq("workspace_id", workspaceId)
+        .eq("client_id", clientId);
+      if (deleteError) {
+        throw new HttpError(503, "CAMPAIGN_LINKS_UNAVAILABLE", "Linked campaigns could not be saved");
+      }
+      if (campaignIds.length) {
+        const { error: insertError } = await context.admin
+          .from("client_instantly_campaign_links")
+          .insert(campaignIds.map((campaignId) => ({
+            workspace_id: workspaceId,
+            client_id: clientId,
+            instantly_campaign_id: campaignId,
+            campaign_name: providerById.get(campaignId)?.name?.slice(0, 300) ?? null,
+            created_by: context.user.id,
+          })));
+        if (insertError) {
+          throw new HttpError(503, "CAMPAIGN_LINKS_UNAVAILABLE", "Linked campaigns could not be saved");
+        }
+      }
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: "client.instantly_campaigns.linked",
+        entityType: "client",
+        entityId: clientId,
+        metadata: { count: campaignIds.length, campaign_ids: campaignIds },
+      });
+      return jsonResponse(req, METHODS, 200, {
+        links: campaignIds.map((campaignId) => ({
+          instantly_campaign_id: campaignId,
+          campaign_name: providerById.get(campaignId)?.name ?? null,
+          created_at: null,
+        })),
+      });
+    }
 
     if (action === "get") {
       requireOnlyKeys(body, ["action", "workspace_id", "client_id"]);
@@ -3226,103 +3532,6 @@ serve(async (req) => {
       });
     }
 
-    if (action === "inbox-list") {
-      requireOnlyKeys(body, ["action", "workspace_id"]);
-      const connection = await readConnection(context.admin, workspaceId);
-      if (
-        !connection || connection.status === "disconnected" ||
-        !connection.api_key_ciphertext || !connection.api_key_iv
-      ) {
-        return jsonResponse(req, METHODS, 200, { connected: false, threads: [] });
-      }
-      const apiKey = await integrationApiKey(connection, false);
-
-      const [{ data: campaignRows }, emailsPayload] = await Promise.all([
-        context.admin
-          .from("workspace_client_campaigns")
-          .select("id, client_id, instantly_campaign_id, name, client:clients(id, name)")
-          .eq("workspace_id", workspaceId)
-          .not("instantly_campaign_id", "is", null)
-          .limit(1_000),
-        instantlyRequest<{ items?: Array<Record<string, unknown>> }>(
-          apiKey,
-          "/emails",
-          {
-            query: new URLSearchParams({
-              limit: "50",
-              email_type: "received",
-            }),
-          },
-        ).catch((error) => {
-          if (error instanceof InstantlyApiError) {
-            // A rejected or under-scoped key is a connection state, not a
-            // request failure — the inbox renders it as "reconnect Instantly".
-            if (error.status === 401) return { auth_failure: "key_rejected" as const };
-            if (error.status === 403) return { auth_failure: "scope_missing" as const };
-            throw providerHttpError(error);
-          }
-          throw error;
-        }),
-      ]);
-      if (emailsPayload && "auth_failure" in emailsPayload) {
-        return jsonResponse(req, METHODS, 200, {
-          connected: false,
-          reason: emailsPayload.auth_failure,
-          threads: [],
-        });
-      }
-      const campaignByProviderId = new Map(
-        ((campaignRows ?? []) as Array<Record<string, unknown>>).flatMap((row) => {
-          const providerId = row.instantly_campaign_id;
-          if (typeof providerId !== "string" || !providerId) return [];
-          const clientRecord = Array.isArray(row.client) ? row.client[0] : row.client;
-          return [[providerId, {
-            campaign_id: String(row.id),
-            campaign_name: typeof row.name === "string" ? row.name : null,
-            client: clientRecord && typeof clientRecord === "object"
-              ? {
-                id: String((clientRecord as Record<string, unknown>).id ?? ""),
-                name: String((clientRecord as Record<string, unknown>).name ?? ""),
-              }
-              : null,
-          }] as const];
-        }),
-      );
-
-      const text = (value: unknown, max: number): string =>
-        typeof value === "string" ? value.slice(0, max) : "";
-      const threads = (emailsPayload.items ?? []).flatMap((raw) => {
-        if (!raw || typeof raw !== "object") return [];
-        const email = raw as Record<string, unknown>;
-        const providerCampaignId = typeof email.campaign_id === "string" ? email.campaign_id : null;
-        const mapped = providerCampaignId ? campaignByProviderId.get(providerCampaignId) ?? null : null;
-        const bodyRecord = (email.body ?? {}) as Record<string, unknown>;
-        const bodyText = text(bodyRecord.text, 2_000)
-          || text(bodyRecord.html, 4_000).replace(/<[^>]+>/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 2_000);
-        const interestValue = typeof email.i_status === "number" ? email.i_status : null;
-        return [{
-          id: String(email.id ?? crypto.randomUUID()),
-          thread_id: typeof email.thread_id === "string" ? email.thread_id : null,
-          message_id: typeof email.message_id === "string" ? email.message_id : null,
-          eaccount: typeof email.eaccount === "string" ? email.eaccount : null,
-          subject: text(email.subject, 300),
-          from_email: text(email.from_address_email, 320) || text(email.from_address, 320),
-          to_email: text(email.to_address_email_list, 320),
-          body_text: bodyText,
-          received_at: typeof email.timestamp_email === "string"
-            ? email.timestamp_email
-            : typeof email.timestamp_created === "string"
-              ? email.timestamp_created
-              : null,
-          is_unread: email.is_unread === true || email.is_unread === 1,
-          interested: interestValue === 1,
-          lead_email: text(email.lead, 320) || text(email.from_address_email, 320),
-          campaign: mapped,
-        }];
-      });
-
-      return jsonResponse(req, METHODS, 200, { connected: true, threads });
-    }
 
     if (action === "inbox-draft") {
       requireOnlyKeys(body, ["action", "workspace_id", "client_id", "subject", "message"]);

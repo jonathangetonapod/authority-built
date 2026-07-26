@@ -32,6 +32,18 @@ assert.match(edge, /action === "mailboxes"[\s\S]*?Promise\.allSettled/u)
 assert.match(edge, /action === "mailboxes"[\s\S]*?error\.status === 401[\s\S]*?key_rejected[\s\S]*?error\.status === 403[\s\S]*?scope_missing/u)
 assert.match(edge, /action === "mailboxes"[\s\S]*?if \(!Array\.isArray\(accounts\)\)[\s\S]*?reason: accounts\.auth_failure/u)
 assert.match(edge, /action === "launch-pitch"[\s\S]*?requireCampaignManager\(access\)/u)
+// Client ↔ Instantly campaign links: manager-gated writes, one client per
+// campaign, and inbox attribution that tolerates the pre-migration state.
+assert.match(edge, /action === "client-links-set"[\s\S]*?requireCampaignManager\(access\)/u)
+assert.match(edge, /action === "client-links-set"[\s\S]*?CAMPAIGN_ALREADY_LINKED/u)
+assert.match(edge, /action === "client-links-set"[\s\S]*?CAMPAIGN_NOT_FOUND/u)
+assert.match(edge, /from\("client_instantly_campaign_links"\)[\s\S]*?\.eq\("workspace_id", workspaceId\)/u)
+assert.match(edge, /const linkRows = linksResult\.error \? \[\] : linksResult\.data \?\? \[\]/u)
+// The inbox list needs no client id and must run before the client parse.
+assert.ok(
+  edge.indexOf('if (action === "inbox-list")') < edge.indexOf('const clientId = requireUuid(body.client_id, "client_id")'),
+  'inbox-list must be handled before the generic client_id requirement',
+)
 assert.match(edge, /action === "prepare-podcast"[\s\S]*?requireCampaignManager\(access\)/u)
 assert.match(edge, /action === "prepare-podcast"[\s\S]*?CAMPAIGN_NOT_ASSIGNED[\s\S]*?requireApproved: true/u)
 assert.match(edge, /action === "update-contact"[\s\S]*?requireCampaignManager\(access\)/u)

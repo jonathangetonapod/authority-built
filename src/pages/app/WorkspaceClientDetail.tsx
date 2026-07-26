@@ -36,6 +36,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { WorkspaceLayout, type PlatformWorkspaceConfig } from '@/components/workspace/WorkspaceLayout'
+import { ClientInstantlyCampaignsCard } from '@/components/workspace/ClientInstantlyCampaignsCard'
 import { ClientShortlistEditor } from '@/components/workspace/ClientShortlistEditor'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -1175,6 +1176,13 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                 </ConnectedResource>
               </CardContent>
             </Card>
+
+            <ClientInstantlyCampaignsCard
+              workspaceId={workspaceId}
+              clientId={client.id}
+              clientName={client.name}
+              canManage={canManage}
+            />
 
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(340px,.75fr)]">
               <Card className="overflow-hidden">

@@ -472,6 +472,52 @@ export interface WorkspaceInboxThreadsResponse {
   threads: WorkspaceInboxThread[]
 }
 
+export interface ClientInstantlyCampaignLink {
+  instantly_campaign_id: string
+  campaign_name: string | null
+  created_at: string | null
+}
+
+export interface ClientLinkableInstantlyCampaign {
+  id: string
+  name: string
+  status: number | null
+  linked_client_id: string | null
+  linked_client_name: string | null
+  managed_client_id: string | null
+}
+
+export interface ClientInstantlyCampaignLinksResponse {
+  connected: boolean
+  links: ClientInstantlyCampaignLink[]
+  provider_campaigns: ClientLinkableInstantlyCampaign[]
+}
+
+export async function getClientInstantlyCampaignLinks(
+  workspaceId: string,
+  clientId: string,
+): Promise<ClientInstantlyCampaignLinksResponse> {
+  return await invokeWorkspaceCampaigns<ClientInstantlyCampaignLinksResponse>({
+    action: 'client-links-list',
+    workspace_id: workspaceId,
+    client_id: clientId,
+  }, 'Linked Instantly campaigns could not be loaded.')
+}
+
+export async function setClientInstantlyCampaignLinks(
+  workspaceId: string,
+  clientId: string,
+  campaignIds: string[],
+): Promise<ClientInstantlyCampaignLink[]> {
+  const data = await invokeWorkspaceCampaigns<{ links: ClientInstantlyCampaignLink[] }>({
+    action: 'client-links-set',
+    workspace_id: workspaceId,
+    client_id: clientId,
+    campaign_ids: campaignIds,
+  }, 'The linked Instantly campaigns could not be saved.')
+  return data.links ?? []
+}
+
 export async function getWorkspaceInboxThreads(
   workspaceId: string,
 ): Promise<WorkspaceInboxThreadsResponse> {

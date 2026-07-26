@@ -3,6 +3,8 @@ import { supabase } from '@/lib/supabase'
 import {
   addWorkspaceCampaignPodcasts,
   connectWorkspaceInstantly,
+  getClientInstantlyCampaignLinks,
+  setClientInstantlyCampaignLinks,
   getWorkspaceCampaignOverview,
   getWorkspaceMailboxes,
   getWorkspaceResearchPromptOverrides,
@@ -261,5 +263,50 @@ describe('workspace research prompts', () => {
     expect(invoke).toHaveBeenCalledWith('workspace-client-campaigns', {
       body: { action: 'prompts-reset', workspace_id: workspaceId, prompt_id: 'find_topics' },
     })
+  })
+})
+
+describe('client instantly campaign links', () => {
+  const workspaceId = '11111111-1111-4111-8111-111111111111'
+  const clientId = '22222222-2222-4222-8222-222222222222'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('loads links and linkable provider campaigns for one client', async () => {
+    const response = {
+      connected: true,
+      links: [{ instantly_campaign_id: '33333333-3333-4333-8333-333333333333', campaign_name: 'Q3 Podcast Tour', created_at: '2026-07-26T00:00:00.000Z' }],
+      provider_campaigns: [
+        { id: '33333333-3333-4333-8333-333333333333', name: 'Q3 Podcast Tour', status: 1, linked_client_id: clientId, linked_client_name: 'Taylor', managed_client_id: null },
+        { id: '44444444-4444-4444-8444-444444444444', name: 'Other Client Tour', status: 2, linked_client_id: '55555555-5555-4555-8555-555555555555', linked_client_name: 'Sky', managed_client_id: null },
+      ],
+    }
+    invoke.mockResolvedValueOnce({ data: response, error: null } as never)
+
+    const result = await getClientInstantlyCampaignLinks(workspaceId, clientId)
+
+    expect(invoke).toHaveBeenCalledWith('workspace-client-campaigns', {
+      body: { action: 'client-links-list', workspace_id: workspaceId, client_id: clientId },
+    })
+    expect(result).toEqual(response)
+  })
+
+  it('saves the selected campaign ids as a replace set', async () => {
+    const links = [{ instantly_campaign_id: '33333333-3333-4333-8333-333333333333', campaign_name: 'Q3 Podcast Tour', created_at: null }]
+    invoke.mockResolvedValueOnce({ data: { links }, error: null } as never)
+
+    const result = await setClientInstantlyCampaignLinks(workspaceId, clientId, ['33333333-3333-4333-8333-333333333333'])
+
+    expect(invoke).toHaveBeenCalledWith('workspace-client-campaigns', {
+      body: {
+        action: 'client-links-set',
+        workspace_id: workspaceId,
+        client_id: clientId,
+        campaign_ids: ['33333333-3333-4333-8333-333333333333'],
+      },
+    })
+    expect(result).toEqual(links)
   })
 })
