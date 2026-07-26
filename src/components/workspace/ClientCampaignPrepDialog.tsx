@@ -105,8 +105,8 @@ const pitchSteps: Array<{ id: PitchStep; step: string; title: string; detail: st
 
 const sequenceEmailSteps: Array<{ id: SequenceEmailStep; email: string; title: string; timing: string; detail: string }> = [
   { id: 'opening', email: 'Email 1', title: 'Opening pitch', timing: 'Day 0', detail: 'Starts the outreach' },
-  { id: 'follow_up_one', email: 'Email 2', title: 'Follow-up', timing: 'Day 3', detail: 'Replies in the same thread' },
-  { id: 'follow_up_two', email: 'Email 3', title: 'Close the loop', timing: 'Day 8', detail: 'Final same-thread reply' },
+  { id: 'follow_up_one', email: 'Email 2', title: 'Follow-up', timing: 'Day 6', detail: 'Same thread, adds a second angle' },
+  { id: 'follow_up_two', email: 'Email 3', title: 'Close the loop', timing: 'Day 13', detail: 'Final same-thread reply' },
 ]
 
 const researchProgressSteps: ResearchProgressStep[] = [
@@ -225,7 +225,14 @@ export function ClientCampaignPrepDialog({
   // Real pitch copy comes from the write_email/clean_email prompts running
   // over the stored research with mapped variables; the local template is
   // only the placeholder while it loads (or the fallback if it fails).
-  const [aiPitches, setAiPitches] = useState<Record<string, { subject: string; body: string }>>({})
+  const [aiPitches, setAiPitches] = useState<Record<string, {
+    subject: string
+    body: string
+    followUpOneBody: string | null
+    followUpTwoBody: string | null
+    auditFlags: string[]
+    chainVersion: string | null
+  }>>({})
   const [pitchLoadingKey, setPitchLoadingKey] = useState<string | null>(null)
   const pitchKey = (podcastId: string, angleIndex: number) => `${podcastId}:${angleIndex}`
   const loadAiPitch = async (angleIndex: number, options?: { skipResearchCheck?: boolean }) => {
@@ -242,9 +249,26 @@ export function ClientCampaignPrepDialog({
       if (!pitch?.subject || !pitch?.body) {
         throw new Error('The pitch could not be written from research.')
       }
-      setAiPitches((current) => ({ ...current, [key]: { subject: pitch.subject, body: pitch.body } }))
-      setDraft((current) => ({ ...current, subject: pitch.subject, pitchBody: pitch.body }))
-      setSavedDraft((current) => ({ ...current, subject: pitch.subject, pitchBody: pitch.body }))
+      const stored = {
+        subject: pitch.subject,
+        body: pitch.body,
+        followUpOneBody: pitch.follow_up_1_body ?? null,
+        followUpTwoBody: pitch.follow_up_2_body ?? null,
+        auditFlags: Array.isArray(pitch.audit_flags) ? pitch.audit_flags : [],
+        chainVersion: pitch.chain_version ?? null,
+      }
+      setAiPitches((current) => ({ ...current, [key]: stored }))
+      // The whole three-touch sequence is AI-written now; the template
+      // follow-ups only remain as the fallback for older generations.
+      const applyPitch = (current: PodcastCampaignSequenceDraft): PodcastCampaignSequenceDraft => ({
+        ...current,
+        subject: stored.subject,
+        pitchBody: stored.body,
+        ...(stored.followUpOneBody ? { followUpOneBody: stored.followUpOneBody } : {}),
+        ...(stored.followUpTwoBody ? { followUpTwoBody: stored.followUpTwoBody } : {}),
+      })
+      setDraft(applyPitch)
+      setSavedDraft(applyPitch)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'The pitch could not be written from research.')
     } finally {
@@ -379,6 +403,7 @@ export function ClientCampaignPrepDialog({
   const researchComplete = !researchRegenerating
     && researchProgress?.status === 'completed'
   const researchFailed = !researchRegenerating && researchProgress?.status === 'failed'
+  const selectedPitchMeta = podcast?.id ? aiPitches[pitchKey(podcast.id, selectedAngleIndex)] : undefined
   // The synthetic final progress step: the sequence being written by the
   // write_email/clean_email prompts for the currently selected angle.
   const sequenceWritingStatus: 'queued' | 'active' | 'complete' = (() => {
@@ -630,6 +655,8 @@ export function ClientCampaignPrepDialog({
     const selectedDraft = {
       ...nextDraft,
       ...(cached ? { subject: cached.subject, pitchBody: cached.body } : {}),
+      ...(cached?.followUpOneBody ? { followUpOneBody: cached.followUpOneBody } : {}),
+      ...(cached?.followUpTwoBody ? { followUpTwoBody: cached.followUpTwoBody } : {}),
       researchNotes: draft.researchNotes || nextDraft.researchNotes,
     }
     setDraft(selectedDraft)
@@ -673,6 +700,7 @@ export function ClientCampaignPrepDialog({
         followUpOneBody: draft.followUpOneBody,
         followUpTwoSubject: buildThreadReplySubject(draft.subject),
         followUpTwoBody: draft.followUpTwoBody,
+        pitchChainVersion: aiPitches[pitchKey(podcast.id, selectedAngleIndex)]?.chainVersion ?? null,
       })
     },
     onSuccess: async (result) => {
@@ -1306,6 +1334,14 @@ export function ClientCampaignPrepDialog({
                                 <div className="flex flex-wrap items-center gap-2"><h4 id="campaign-sequence-preview-heading" className="font-semibold">Pitch and follow-ups</h4><Badge variant="secondary">Option {Math.min(selectedAngleIndex + 1, sequenceOptionCount)} of {sequenceOptionCount}</Badge><Badge variant="outline" className="border-violet-200 bg-violet-50 text-violet-800">Selected sequence</Badge></div>
                                 {selectedPitchAngle && <p className="mt-2 text-sm font-medium text-foreground">{selectedPitchAngle.title}</p>}
                                 <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">Read-only preview. Compare the options above, then continue to Finalize Pitch to edit and save the sequence you prefer.</p>
+                                {(selectedPitchMeta?.auditFlags.length ?? 0) > 0 && (
+                                  <div className="mt-2 max-w-2xl rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs leading-5 text-amber-900">
+                                    <p className="font-semibold">Review before sending — the trust check flagged:</p>
+                                    <ul className="mt-1 list-disc pl-4">
+                                      {selectedPitchMeta!.auditFlags.slice(0, 6).map((flag) => <li key={flag}>{flag}</li>)}
+                                    </ul>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1318,12 +1354,12 @@ export function ClientCampaignPrepDialog({
 
                             <div className="grid gap-4 lg:grid-cols-2">
                               <article aria-label="First follow-up preview" className="rounded-xl border p-4">
-                                <div className="flex flex-wrap items-center justify-between gap-2"><Badge variant="secondary">Email 2 · Follow-up</Badge><span className="text-[11px] font-medium text-muted-foreground">3 days later · Same thread</span></div>
+                                <div className="flex flex-wrap items-center justify-between gap-2"><Badge variant="secondary">Email 2 · Follow-up</Badge><span className="text-[11px] font-medium text-muted-foreground">6 days later · Same thread</span></div>
                                 <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{draft.followUpOneBody || 'The first follow-up will appear here.'}</p>
                               </article>
 
                               <article aria-label="Second follow-up preview" className="rounded-xl border p-4">
-                                <div className="flex flex-wrap items-center justify-between gap-2"><Badge variant="secondary">Email 3 · Close the loop</Badge><span className="text-[11px] font-medium text-muted-foreground">5 days later · Same thread</span></div>
+                                <div className="flex flex-wrap items-center justify-between gap-2"><Badge variant="secondary">Email 3 · Close the loop</Badge><span className="text-[11px] font-medium text-muted-foreground">7 days later · Same thread</span></div>
                                 <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{draft.followUpTwoBody || 'The final follow-up will appear here.'}</p>
                               </article>
                             </div>

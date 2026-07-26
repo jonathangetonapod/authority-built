@@ -419,6 +419,57 @@ function present(value: string | null | undefined): string {
   return typeof value === 'string' && value.trim() ? value : 'Not available'
 }
 
+// Stamped on research documents and generated pitches so reply rates can be
+// compared per prompt-chain revision once volume exists. Bump on any change
+// to the prompt chain or its assembly.
+const PITCH_CHAIN_VERSION = 'p2-2026-07-27'
+
+interface PitchSequence {
+  subject: string
+  email_1: string
+  follow_up_1: string
+  follow_up_2: string
+}
+
+function parsePitchSequence(raw: string): PitchSequence | null {
+  try {
+    const parsed = JSON.parse(raw.replace(/^```(?:json)?\s*/u, '').replace(/\s*```$/u, '')) as Record<string, unknown>
+    if (parsed && typeof parsed === 'object' && typeof parsed.email_1 === 'string' && parsed.email_1.trim()) {
+      return {
+        subject: typeof parsed.subject === 'string' ? parsed.subject.trim() : '',
+        email_1: parsed.email_1.trim(),
+        follow_up_1: typeof parsed.follow_up_1 === 'string' ? parsed.follow_up_1.trim() : '',
+        follow_up_2: typeof parsed.follow_up_2 === 'string' ? parsed.follow_up_2.trim() : '',
+      }
+    }
+  } catch (_error) {
+    // Malformed JSON degrades to the caller's raw-text fallback.
+  }
+  return null
+}
+
+// The phrases podcast hosts name as instant AI-pitch tells. Deterministic,
+// so they are checked in code rather than spending model tokens on them.
+const PITCH_BANNED_PHRASES =
+  /revolutioniz|game-chang|transformative|\bjourney\b|dive into|\bunlock\b|unleash|thrilled|passionate about|compelling guest|valuable insights|hope this (?:email )?finds you well/iu
+
+function pitchSequenceChecks(sequence: PitchSequence): string[] {
+  const flags: string[] = []
+  const words = (text: string) => text.trim().split(/\s+/u).filter(Boolean).length
+  if (words(sequence.subject) > 8) flags.push('subject longer than 8 words')
+  if (words(sequence.email_1) > 150) flags.push(`email_1 runs ${words(sequence.email_1)} words (cap 130)`)
+  if (sequence.follow_up_1 && words(sequence.follow_up_1) > 100) flags.push('follow_up_1 over 80-word cap')
+  if (sequence.follow_up_2 && words(sequence.follow_up_2) > 80) flags.push('follow_up_2 over 60-word cap')
+  if ((sequence.email_1.match(/https?:\/\//gu) ?? []).length > 1) flags.push('more than one link in email_1')
+  for (const [key, value] of Object.entries(sequence)) {
+    if (!value) continue
+    if (/\{\{|Not available/iu.test(value)) flags.push(`${key} leaks an unfilled placeholder`)
+    if (PITCH_BANNED_PHRASES.test(value)) flags.push(`${key} contains banned AI-tell phrasing`)
+    if (value.includes('—')) flags.push(`${key} contains an em dash`)
+  }
+  return [...new Set(flags)]
+}
+
 function fillPromptTemplate(template: string, variables: Record<string, string | null | undefined>): string {
   return template.replace(/\{\{\s*([a-z_]+)\s*\}\}/gu, (_match, key: string) => {
     const value = variables[key]
@@ -1295,6 +1346,7 @@ serve(async (req) => {
               episode_transcript_excerpt: captured?.transcript ? captured.transcript.slice(0, 2_000) : null,
               recent_guest_name: recentGuestName,
               generated_at: completedAt,
+              chain_version: PITCH_CHAIN_VERSION,
             },
             research_progress: {
               status: 'completed',
@@ -1847,27 +1899,60 @@ serve(async (req) => {
 
       const usage = { input: 0, output: 0 }
       try {
-        const draftEmail = await runResearchPrompt(
+        const draftRaw = await runResearchPrompt(
           anthropicKey.apiKey,
           RESEARCH_PROMPT_DEFAULTS.write_email,
           { context: pitchContext, instruction: fillPromptTemplate(promptContent('write_email'), pitchVariables) },
           usage,
         )
-        const cleaned = await runResearchPrompt(
-          anthropicKey.apiKey,
-          RESEARCH_PROMPT_DEFAULTS.clean_email,
-          fillPromptTemplate(promptContent('clean_email'), { email_draft: draftEmail.slice(0, 6_000) }),
-          usage,
-        )
+        const fallbackSubject = `Guest idea for ${decodeHtmlEntities(shortlistRow.podcast_name)}`
+        // write_email returns a three-touch sequence as JSON; a malformed
+        // response degrades to the raw text as the opener, never a failure.
+        let sequence = parsePitchSequence(draftRaw) ?? {
+          subject: fallbackSubject,
+          email_1: draftRaw.trim().slice(0, 6_000),
+          follow_up_1: '',
+          follow_up_2: '',
+        }
 
-        // The cleaned output is the email body; lift a Subject: line when the
-        // prompt produced one.
-        let subject = `Guest idea for ${decodeHtmlEntities(shortlistRow.podcast_name)}: ${clientProfile?.name ?? 'a guest'}`
-        let emailBody = cleaned.trim()
-        const subjectMatch = emailBody.match(/^\s*subject\s*:\s*(.{3,200})$/imu)
-        if (subjectMatch) {
-          subject = subjectMatch[1].trim()
-          emailBody = emailBody.replace(subjectMatch[0], '').trim()
+        // Trust layer, in two parts. Deterministic checks catch style
+        // problems (caps, links, banned phrasing, leaked placeholders); the
+        // Haiku claim audit catches the fatal one — a personalization claim
+        // with no supporting evidence. One revision pass fixes what it can;
+        // anything remaining ships to the UI as visible flags, never
+        // silently.
+        let flags = pitchSequenceChecks(sequence)
+        try {
+          const auditRaw = await runResearchPrompt(
+            anthropicKey.apiKey,
+            { model: 'claude-haiku-4-5-20251001', maxTokens: 700, system: 'You audit outreach copy for factual grounding. Return ONLY JSON.' },
+            `EVIDENCE (the only permitted source of claims):\n${pitchContext}\n\nOUTREACH SEQUENCE (JSON):\n${JSON.stringify(sequence)}\n\nList every specific factual claim in the sequence (episode references, quotes, names, numbers, achievements) that is NOT supported by the evidence above. Respond ONLY with JSON: {"unsupported": [{"claim": string, "problem": string}]}. If everything is supported, return {"unsupported": []}.`,
+            usage,
+          )
+          const audit = JSON.parse(auditRaw.replace(/^```(?:json)?\s*/u, '').replace(/\s*```$/u, '')) as { unsupported?: Array<{ claim?: unknown; problem?: unknown }> }
+          for (const item of audit.unsupported ?? []) {
+            if (typeof item?.claim === 'string' && item.claim.trim()) {
+              flags.push(`unsupported claim: ${item.claim.slice(0, 160)}${typeof item.problem === 'string' ? ` (${item.problem.slice(0, 120)})` : ''}`)
+            }
+          }
+        } catch (_error) {
+          console.warn('[Client Shortlist] Claim audit unavailable; shipping with deterministic checks only')
+        }
+        if (flags.length > 0) {
+          const revisedRaw = await runResearchPrompt(
+            anthropicKey.apiKey,
+            RESEARCH_PROMPT_DEFAULTS.clean_email,
+            fillPromptTemplate(promptContent('clean_email'), {
+              sequence_json: JSON.stringify(sequence),
+              audit_flags: flags.map((flag) => `- ${flag}`).join('\n'),
+            }),
+            usage,
+          )
+          const revised = parsePitchSequence(revisedRaw)
+          if (revised) {
+            sequence = revised
+            flags = pitchSequenceChecks(sequence)
+          }
         }
 
         await logOperationCost(authContext.admin, {
@@ -1880,7 +1965,15 @@ serve(async (req) => {
           referenceId: shortlistPodcastId,
         })
         return jsonResponse(req, METHODS, 200, {
-          pitch: { subject: subject.slice(0, 300), body: emailBody.slice(0, 6_000), angle_index: angleIndex },
+          pitch: {
+            subject: (sequence.subject || fallbackSubject).slice(0, 300),
+            body: sequence.email_1.slice(0, 6_000),
+            follow_up_1_body: sequence.follow_up_1.slice(0, 3_000) || null,
+            follow_up_2_body: sequence.follow_up_2.slice(0, 3_000) || null,
+            audit_flags: flags.slice(0, 12),
+            chain_version: PITCH_CHAIN_VERSION,
+            angle_index: angleIndex,
+          },
         })
       } catch (error) {
         if (error instanceof HttpError) throw error

@@ -372,6 +372,13 @@ export async function setClientAutopilot(
 export interface ClientShortlistPitch {
   subject: string
   body: string
+  follow_up_1_body?: string | null
+  follow_up_2_body?: string | null
+  /** Unresolved trust-layer flags — style breaches or unsupported claims the
+   * revision pass could not fix. Shown to the operator, never hidden. */
+  audit_flags?: string[]
+  /** Prompt-chain revision that wrote this copy (reply-rate analytics). */
+  chain_version?: string | null
   angle_index: number
 }
 

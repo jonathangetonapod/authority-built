@@ -270,6 +270,7 @@ export async function prepareWorkspaceCampaignPodcast(input: {
   followUpOneBody: string
   followUpTwoSubject: string
   followUpTwoBody: string
+  pitchChainVersion?: string | null
 }): Promise<{ added: boolean; campaign: WorkspaceClientCampaign; target: WorkspaceCampaignTarget }> {
   return await invokeWorkspaceCampaigns({
     action: 'prepare-podcast',
@@ -285,6 +286,7 @@ export async function prepareWorkspaceCampaignPodcast(input: {
     follow_up_1_body: input.followUpOneBody,
     follow_up_2_subject: input.followUpTwoSubject,
     follow_up_2_body: input.followUpTwoBody,
+    pitch_chain_version: input.pitchChainVersion ?? null,
   }, 'The prepared outreach could not be pushed to the client campaign.')
 }
 

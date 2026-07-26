@@ -90,7 +90,7 @@ assert.match(shortlistEdge, /archived_at = visibility === 'archived'[\s\S]*?arch
 assert.match(shortlistEdge, /if \(action === 'research-run'\)[\s\S]*?requireOnlyKeys\(body, \['action', 'workspace_id', 'client_id', 'shortlist_podcast_id'\]\)/u)
 assert.match(shortlistEdge, /RESEARCH_ALREADY_RUNNING/u)
 assert.match(shortlistEdge, /RESEARCH_STALE_LOCK_MS = 3 \* 60 \* 1000/u)
-assert.match(shortlistEdge, /const anthropicKey = await resolveAiKey\(authContext\.admin, workspaceId, 'anthropic'\)[\s\S]*?await chargeCredits\(authContext\.admin, \{[\s\S]*?operationType: 'research_run'[\s\S]*?byoKeyUsed,[\s\S]*?\}\)[\s\S]*?writeProgress\(\{ status: 'running', current_stage: 'podcast_profile', completed_stages: \[\] \}\)[\s\S]*?fetchRecentEpisodes\(/u)
+assert.match(shortlistEdge, /const anthropicKey = await resolveAiKey\(authContext\.admin, workspaceId, 'anthropic'\)[\s\S]*?await chargeCredits\(authContext\.admin, \{[\s\S]*?operationType: 'research_run'[\s\S]*?byoKeyUsed,[\s\S]*?\}\)[\s\S]*?writeProgress\(\{ status: 'running', current_stage: 'podcast_profile', completed_stages: \[\] \}\)[\s\S]*?ensureEpisodesCaptured\(/u)
 assert.match(shortlistEdge, /from\('workspace_research_prompts'\)[\s\S]*?RESEARCH_PROMPT_DEFAULTS\[promptId\]\.content/u)
 assert.match(shortlistEdge, /ai_clean_description: cleanDescription,[\s\S]*?ai_analyzed_at: completedAt,[\s\S]*?research_document:[\s\S]*?research_progress:[\s\S]*?status: 'completed'/u)
 assert.match(shortlistEdge, /await logOperationCost\(authContext\.admin, \{[\s\S]*?operationType: 'research_run'[\s\S]*?podscanCalls: 1/u)
@@ -119,7 +119,7 @@ assert.match(shortlistEdge, /if \(action === 'autopilot-set'\)[\s\S]*?maxWeeklyA
 // Research inspector: read-only, scoped to one shortlist podcast, and pitch
 // generation maps the stored transcript excerpt and recent guest name.
 assert.match(shortlistEdge, /if \(action === 'research-inspect'\)[\s\S]*?requireOnlyKeys\(body, \['action', 'workspace_id', 'client_id', 'shortlist_podcast_id'\]\)/u)
-assert.match(shortlistEdge, /episode_transcript_excerpt: firstEpisode\?\.transcript \? firstEpisode\.transcript\.slice\(0, 2_000\) : null/u)
+assert.match(shortlistEdge, /episode_transcript_excerpt: captured\?\.transcript \? captured\.transcript\.slice\(0, 2_000\) : null/u)
 assert.match(shortlistEdge, /recent_guest_name: recentGuestName,/u)
 assert.match(shortlistEdge, /episode_transcript: typeof researchDocument\.episode_transcript_excerpt === 'string'/u)
 const autopilotEdge = readFileSync('supabase/functions/client-autopilot-tick/index.ts', 'utf8')

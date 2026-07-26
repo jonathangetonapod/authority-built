@@ -105,6 +105,7 @@ const TARGET_COLUMNS = [
   "follow_up_1_body",
   "follow_up_2_subject",
   "follow_up_2_body",
+  "pitch_chain_version",
   "status",
   "instantly_lead_id",
   "instantly_lead_status",
@@ -1224,7 +1225,9 @@ function campaignConfiguration(campaign: CampaignRow): Record<string, unknown> {
       steps: [
         {
           type: "email",
-          delay: 3,
+          // Research-backed cadence: first follow-up ~day 6, second ~day 13.
+          // Under 3 days reads desperate; each follow-up must add new value.
+          delay: 6,
           delay_unit: "days",
           variants: [{
             subject: "{{goapPitchSubject}}",
@@ -1234,7 +1237,7 @@ function campaignConfiguration(campaign: CampaignRow): Record<string, unknown> {
         },
         {
           type: "email",
-          delay: 5,
+          delay: 7,
           delay_unit: "days",
           variants: [{
             subject: "{{goapFollowUpOneSubject}}",
@@ -3506,8 +3509,14 @@ serve(async (req) => {
         "follow_up_1_body",
         "follow_up_2_subject",
         "follow_up_2_body",
+        "pitch_chain_version",
       ]);
       requireCampaignManager(access);
+      // Which prompt-chain revision wrote this copy — the key that makes
+      // reply-rate-by-version queryable once send volume exists.
+      const pitchChainVersion = body.pitch_chain_version === undefined || body.pitch_chain_version === null
+        ? null
+        : requireString(body.pitch_chain_version, "pitch_chain_version", { max: 60 });
       const shortlistPodcastId = requireUuid(
         body.shortlist_podcast_id,
         "shortlist_podcast_id",
@@ -3599,6 +3608,7 @@ serve(async (req) => {
           follow_up_1_body: sequence.followUpOneBody,
           follow_up_2_subject: sequence.followUpTwoSubject,
           follow_up_2_body: sequence.followUpTwoBody,
+          pitch_chain_version: pitchChainVersion,
           status: contactEmail ? "ready" : "draft",
           last_error: null,
           updated_by: context.user.id,

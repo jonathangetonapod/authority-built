@@ -177,6 +177,7 @@ describe('workspaceCampaigns service', () => {
         follow_up_1_body: 'A reviewed first follow-up.',
         follow_up_2_subject: 'Re: A tailored guest idea',
         follow_up_2_body: 'A reviewed final follow-up.',
+        pitch_chain_version: null,
       },
     })
   })

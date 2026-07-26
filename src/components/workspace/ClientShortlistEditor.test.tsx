@@ -477,7 +477,7 @@ describe('ClientShortlistEditor', () => {
 
     expect(screen.getByRole('button', { name: 'Regenerate' })).toHaveAttribute(
       'title',
-      'Reruns all six research stages using the saved prompt for each stage',
+      'Runs every research stage using the saved prompt for each stage, then writes the sequence',
     )
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate' }))
 
