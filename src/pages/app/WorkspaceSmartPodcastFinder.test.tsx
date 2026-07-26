@@ -149,6 +149,48 @@ describe('WorkspaceSmartPodcastFinder', () => {
     expect(await screen.findAllByRole('button', { name: /Added/ })).toHaveLength(2)
   })
 
+  it('lets the owner search with their own keywords and filters instead of the AI strategy', async () => {
+    renderFinder()
+    await screen.findByRole('button', { name: 'Scan podcasts for Taylor Client' })
+
+    fireEvent.click(screen.getByRole('button', { name: /Refine search/ }))
+    fireEvent.change(screen.getByLabelText('Your keywords'), { target: { value: '"b2b saas" AND founders' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    fireEvent.click(screen.getByRole('switch', { name: 'AI search strategy' }))
+    fireEvent.change(screen.getByLabelText('Min audience'), { target: { value: '5000' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Scan podcasts for Taylor Client' }))
+
+    expect(await screen.findByText('Ranked by fit for Taylor Client')).toBeInTheDocument()
+    expect(vi.mocked(generatePodcastQueries)).not.toHaveBeenCalled()
+    expect(vi.mocked(searchPodcastsWithMeta)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: '"b2b saas" AND founders',
+        min_audience_size: 5000,
+        has_guests: true,
+      }),
+      workspaceId,
+    )
+  })
+
+  it('previews the AI strategy so individual queries can be removed before scanning', async () => {
+    renderFinder()
+    await screen.findByRole('button', { name: 'Scan podcasts for Taylor Client' })
+
+    fireEvent.click(screen.getByRole('button', { name: /Refine search/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Preview strategy' }))
+    expect(await screen.findByText('founder stories')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove AI query founder stories' }))
+    fireEvent.change(screen.getByLabelText('Your keywords'), { target: { value: 'bootstrapping' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Scan podcasts for Taylor Client' }))
+
+    expect(await screen.findByText('Ranked by fit for Taylor Client')).toBeInTheDocument()
+    const searchedQueries = vi.mocked(searchPodcastsWithMeta).mock.calls.map((call) => (call[0] as { query: string }).query)
+    expect(searchedQueries).toContain('bootstrapping')
+    expect(searchedQueries).not.toContain('founder stories')
+  })
+
   it('blocks scanning until the client has a profile bio', async () => {
     vi.mocked(getWorkspaceResearchContext).mockResolvedValue({
       workspace: { id: workspaceId, name: 'Agency One', slug: null, status: 'active', is_default: false, logo_path: null, logo_updated_at: null },

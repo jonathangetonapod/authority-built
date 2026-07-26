@@ -9,14 +9,20 @@ import {
   Loader2,
   Plus,
   RefreshCw,
+  SlidersHorizontal,
   Sparkles,
   Users,
+  X,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { normalizePodscanQuery } from '@/lib/podcastResearch'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
 import { useAuth } from '@/contexts/AuthContext'
 import { getWorkspaceClients, getWorkspaceResearchContext } from '@/services/clients'
@@ -38,6 +44,30 @@ const MAX_QUERIES = 6
 const PAGES_PER_QUERY = 2
 const MAX_SCORED = 60
 const SEARCH_SPACING_MS = 525
+
+const LANGUAGE_OPTIONS = [
+  { value: 'any', label: 'Any language' },
+  { value: 'en', label: 'English' },
+  { value: 'es', label: 'Spanish' },
+  { value: 'fr', label: 'French' },
+  { value: 'de', label: 'German' },
+  { value: 'pt', label: 'Portuguese' },
+]
+const REGION_OPTIONS = [
+  { value: 'any', label: 'Any region' },
+  { value: 'US', label: 'United States' },
+  { value: 'GB', label: 'United Kingdom' },
+  { value: 'CA', label: 'Canada' },
+  { value: 'AU', label: 'Australia' },
+  { value: 'DE', label: 'Germany' },
+]
+const ACTIVITY_OPTIONS = [
+  { value: '30', label: 'Active in last 30 days' },
+  { value: '90', label: 'Active in last 90 days' },
+  { value: '180', label: 'Active in last 6 months' },
+  { value: '365', label: 'Active in last year' },
+  { value: 'any', label: 'Any activity' },
+]
 
 const phaseSteps: Array<{ id: Exclude<ScanPhase, 'idle' | 'done'>; label: string }> = [
   { id: 'strategy', label: 'Building the search strategy from the client profile' },
@@ -116,7 +146,62 @@ const WorkspaceSmartPodcastFinder = () => {
   const [isAdding, setIsAdding] = useState(false)
   const scanRunId = useRef(0)
 
+  const [showRefine, setShowRefine] = useState(false)
+  const [customKeywords, setCustomKeywords] = useState<string[]>([])
+  const [keywordDraft, setKeywordDraft] = useState('')
+  const [aiQueries, setAiQueries] = useState<string[]>([])
+  const [aiStrategyLoaded, setAiStrategyLoaded] = useState(false)
+  const [includeAiStrategy, setIncludeAiStrategy] = useState(true)
+  const [isRegenerating, setIsRegenerating] = useState(false)
+  const [language, setLanguage] = useState('en')
+  const [region, setRegion] = useState('any')
+  const [activityDays, setActivityDays] = useState('90')
+  const [guestsOnly, setGuestsOnly] = useState(true)
+  const [minAudience, setMinAudience] = useState('')
+  const [maxAudience, setMaxAudience] = useState('')
+  const [minEpisodes, setMinEpisodes] = useState('')
+
   const scanning = phase !== 'idle' && phase !== 'done'
+  const activeFilterCount = [
+    language !== 'en',
+    region !== 'any',
+    activityDays !== '90',
+    !guestsOnly,
+    minAudience !== '',
+    maxAudience !== '',
+    minEpisodes !== '',
+    customKeywords.length > 0,
+    !includeAiStrategy,
+  ].filter(Boolean).length
+
+  const addKeyword = () => {
+    const normalized = normalizePodscanQuery(keywordDraft)
+    if (!normalized) return
+    if (customKeywords.includes(normalized)) {
+      toast.info('That keyword is already in the search.')
+      return
+    }
+    setCustomKeywords((current) => [...current, normalized])
+    setKeywordDraft('')
+  }
+
+  const regenerateStrategy = async () => {
+    if (!workspaceId || !clientId || !clientBio || isRegenerating) return
+    setIsRegenerating(true)
+    try {
+      const generated = (await generatePodcastQueries({ workspaceId, clientId }))
+        .map(normalizePodscanQuery)
+        .filter(Boolean)
+        .slice(0, MAX_QUERIES)
+      setAiQueries(generated)
+      setAiStrategyLoaded(true)
+      toast.success('Fresh AI search strategy is ready — edit it below before scanning.')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The search strategy could not be generated.')
+    } finally {
+      setIsRegenerating(false)
+    }
+  }
 
   const runScan = async () => {
     if (!workspaceId || !clientId || !selectedClient || scanning) return
@@ -132,13 +217,29 @@ const WorkspaceSmartPodcastFinder = () => {
 
     try {
       setPhase('strategy')
-      setStatusMessage(`Reading ${selectedClient.name}’s profile and drafting search angles…`)
-      const queries = (await generatePodcastQueries({ workspaceId, clientId })).slice(0, MAX_QUERIES)
-      if (queries.length === 0) throw new Error('No search strategy could be generated for this client.')
+      let strategyQueries = aiQueries
+      // A previewed-then-edited strategy is authoritative, even if the owner
+      // removed every query — only draft one when none was ever loaded.
+      if (includeAiStrategy && strategyQueries.length === 0 && !aiStrategyLoaded) {
+        setStatusMessage(`Reading ${selectedClient.name}’s profile and drafting search angles…`)
+        strategyQueries = (await generatePodcastQueries({ workspaceId, clientId }))
+          .map(normalizePodscanQuery)
+          .filter(Boolean)
+          .slice(0, MAX_QUERIES)
+        setAiQueries(strategyQueries)
+        setAiStrategyLoaded(true)
+      }
+      const queries = Array.from(new Set([
+        ...customKeywords,
+        ...(includeAiStrategy ? strategyQueries : []),
+      ])).slice(0, MAX_QUERIES + customKeywords.length)
+      if (queries.length === 0) {
+        throw new Error('Add at least one keyword or turn the AI search strategy back on.')
+      }
 
       setPhase('search')
       const minPostedAt = new Date()
-      minPostedAt.setDate(minPostedAt.getDate() - 90)
+      if (activityDays !== 'any') minPostedAt.setDate(minPostedAt.getDate() - Number.parseInt(activityDays, 10))
       const collected = new Map<string, PodcastData>()
       const totalRequests = queries.length * PAGES_PER_QUERY
       let completedRequests = 0
@@ -153,15 +254,21 @@ const WorkspaceSmartPodcastFinder = () => {
               order_by: 'best_match',
               order_dir: 'desc',
               search_fields: 'name,description,publisher_name',
-              has_guests: true,
-              min_last_episode_posted_at: minPostedAt.toISOString().slice(0, 10),
+              ...(guestsOnly ? { has_guests: true } : {}),
+              ...(language !== 'any' ? { language } : {}),
+              ...(region !== 'any' ? { region } : {}),
+              ...(activityDays !== 'any' ? { min_last_episode_posted_at: minPostedAt.toISOString().slice(0, 10) } : {}),
+              ...(minAudience ? { min_audience_size: Number.parseInt(minAudience, 10) } : {}),
+              ...(maxAudience ? { max_audience_size: Number.parseInt(maxAudience, 10) } : {}),
+              ...(minEpisodes ? { min_episode_count: Number.parseInt(minEpisodes, 10) } : {}),
             }, workspaceId)
             const podcasts = response.data.podcasts || []
             for (const podcast of podcasts) {
               const key = podcast.podcast_id.toLowerCase()
               if (!collected.has(key)) collected.set(key, podcast)
             }
-            if (podcasts.length === 0) {
+            const lastPage = Number.parseInt(String(response.data.pagination?.last_page ?? PAGES_PER_QUERY), 10)
+            if (podcasts.length === 0 || page >= lastPage) {
               completedRequests += PAGES_PER_QUERY - page + 1
               break
             }
@@ -281,6 +388,8 @@ const WorkspaceSmartPodcastFinder = () => {
                 onValueChange={(value) => {
                   setClientId(value.toLowerCase())
                   setResults([])
+                  setAiQueries([])
+                  setAiStrategyLoaded(false)
                   setPhase('idle')
                 }}
                 disabled={scanning}
@@ -311,6 +420,204 @@ const WorkspaceSmartPodcastFinder = () => {
                       : 'Scan podcasts'}
               </Button>
             </div>
+            <div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                onClick={() => setShowRefine((current) => !current)}
+                aria-expanded={showRefine}
+              >
+                <SlidersHorizontal className="mr-2 h-3.5 w-3.5" />
+                Refine search{activeFilterCount > 0 ? ` · ${activeFilterCount} active` : ''}
+              </Button>
+            </div>
+            {showRefine && (
+              <div className="space-y-5 rounded-xl border border-border/70 bg-muted/20 p-4">
+                <div>
+                  <Label htmlFor="finder-keyword" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Your keywords</Label>
+                  <p className="mt-1 text-xs text-muted-foreground">Run alongside the AI strategy. Quotes match exact phrases, AND/OR/NOT work too.</p>
+                  {customKeywords.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {customKeywords.map((keyword) => (
+                        <Badge key={keyword} variant="secondary" className="gap-1 pr-1 font-normal">
+                          {keyword}
+                          <button
+                            type="button"
+                            aria-label={`Remove keyword ${keyword}`}
+                            className="rounded-full p-0.5 hover:bg-background/80"
+                            onClick={() => setCustomKeywords((current) => current.filter((entry) => entry !== keyword))}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-2 flex gap-2">
+                    <Input
+                      id="finder-keyword"
+                      value={keywordDraft}
+                      placeholder='e.g. "founder led sales" OR bootstrapping'
+                      className="sm:max-w-md"
+                      onChange={(event) => setKeywordDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          addKeyword()
+                        }
+                      }}
+                    />
+                    <Button type="button" variant="outline" onClick={addKeyword} disabled={!keywordDraft.trim()}>Add</Button>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Switch id="finder-ai-strategy" checked={includeAiStrategy} onCheckedChange={setIncludeAiStrategy} />
+                      <Label htmlFor="finder-ai-strategy" className="text-sm font-medium">AI search strategy</Label>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void regenerateStrategy()}
+                      disabled={!clientBio || isRegenerating || !includeAiStrategy || scanning}
+                    >
+                      {isRegenerating ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-2 h-3.5 w-3.5" />}
+                      {aiQueries.length > 0 ? 'Regenerate' : 'Preview strategy'}
+                    </Button>
+                  </div>
+                  {includeAiStrategy && aiQueries.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {aiQueries.map((query) => (
+                        <Badge key={query} variant="outline" className="gap-1 pr-1 font-normal">
+                          <Sparkles className="h-3 w-3 text-violet-500" />
+                          {query}
+                          <button
+                            type="button"
+                            aria-label={`Remove AI query ${query}`}
+                            className="rounded-full p-0.5 hover:bg-muted"
+                            onClick={() => setAiQueries((current) => current.filter((entry) => entry !== query))}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  {includeAiStrategy && aiQueries.length === 0 && (
+                    <p className="mt-1.5 text-xs text-muted-foreground">Drafted from the client profile when the scan starts — preview it to edit first.</p>
+                  )}
+                  {!includeAiStrategy && (
+                    <p className="mt-1.5 text-xs text-muted-foreground">Off — only your keywords above will be searched.</p>
+                  )}
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Language</Label>
+                    <Select value={language} onValueChange={setLanguage}>
+                      <SelectTrigger aria-label="Language" className="mt-1"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {LANGUAGE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Region</Label>
+                    <Select value={region} onValueChange={setRegion}>
+                      <SelectTrigger aria-label="Region" className="mt-1"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {REGION_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Recency</Label>
+                    <Select value={activityDays} onValueChange={setActivityDays}>
+                      <SelectTrigger aria-label="Recency" className="mt-1"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {ACTIVITY_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="finder-min-audience" className="text-xs text-muted-foreground">Min audience</Label>
+                    <Input
+                      id="finder-min-audience"
+                      type="number"
+                      min="0"
+                      className="mt-1"
+                      placeholder="Any"
+                      value={minAudience}
+                      onChange={(event) => setMinAudience(event.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="finder-max-audience" className="text-xs text-muted-foreground">Max audience</Label>
+                    <Input
+                      id="finder-max-audience"
+                      type="number"
+                      min="0"
+                      className="mt-1"
+                      placeholder="Any"
+                      value={maxAudience}
+                      onChange={(event) => setMaxAudience(event.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="finder-min-episodes" className="text-xs text-muted-foreground">Min episodes</Label>
+                    <Input
+                      id="finder-min-episodes"
+                      type="number"
+                      min="0"
+                      className="mt-1"
+                      placeholder="Any"
+                      value={minEpisodes}
+                      onChange={(event) => setMinEpisodes(event.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Switch id="finder-guests-only" checked={guestsOnly} onCheckedChange={setGuestsOnly} />
+                    <Label htmlFor="finder-guests-only" className="text-sm">Guest-interview shows only</Label>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground"
+                    onClick={() => {
+                      setCustomKeywords([])
+                      setKeywordDraft('')
+                      setAiQueries([])
+                      setAiStrategyLoaded(false)
+                      setIncludeAiStrategy(true)
+                      setLanguage('en')
+                      setRegion('any')
+                      setActivityDays('90')
+                      setGuestsOnly(true)
+                      setMinAudience('')
+                      setMaxAudience('')
+                      setMinEpisodes('')
+                    }}
+                  >
+                    Reset to defaults
+                  </Button>
+                </div>
+              </div>
+            )}
             {selectedClient && !contextQuery.isLoading && !clientBio && (
               <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">
                 {selectedClient.name} has no profile bio yet, so the AI has nothing to match against.{' '}
