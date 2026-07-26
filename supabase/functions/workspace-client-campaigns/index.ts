@@ -55,7 +55,9 @@ const RESEARCH_PROMPT_IDS = [
   "inbox_nudges",
 ];
 
-const CLIENT_PROMPT_IDS = RESEARCH_PROMPT_IDS;
+// Every prompt an executor actually consumes. host_name_extractor is not
+// wired to any generator today, so it is not offered as a client override.
+const CLIENT_PROMPT_IDS = RESEARCH_PROMPT_IDS.filter((id) => id !== "host_name_extractor");
 
 function requireResearchPromptId(value: unknown): string {
   if (typeof value !== "string" || !RESEARCH_PROMPT_IDS.includes(value)) {

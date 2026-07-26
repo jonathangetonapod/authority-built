@@ -215,9 +215,13 @@ assert.match(config, /\[functions\.inbox-enroll-tick\]\nverify_jwt = false/u)
 
 // Per-client AI SDR prompts: owner-gated writes, inbox ids only, and the
 // generator resolves client -> workspace -> shipped default.
-assert.match(edge, /const CLIENT_PROMPT_IDS = RESEARCH_PROMPT_IDS/u)
+assert.match(edge, /const CLIENT_PROMPT_IDS = RESEARCH_PROMPT_IDS\.filter\(\(id\) => id !== "host_name_extractor"\)/u)
 assert.match(edge, /action === "client-prompts-set"[\s\S]*?requireIntegrationOwner\(access\)/u)
 assert.match(edge, /action === "client-prompts-reset"[\s\S]*?requireIntegrationOwner\(access\)/u)
 assert.match(sdrShared, /from\('client_ai_sdr_prompts'\)[\s\S]*?\.eq\('client_id', clientId\)/u)
 assert.match(sdrShared, /clientPrompt[\s\S]*?workspacePrompt[\s\S]*?replyDefault\.content/u)
 assert.match(enrollTick, /email\.i_status !== 1\) continue/u)
+// The nudge prompt is really consumed: its resolved content is appended to
+// the reply call as the nudge-array guidance.
+assert.match(sdrShared, /FOLLOW-UP NUDGE GUIDANCE/u)
+assert.match(sdrShared, /resolvePrompt\('inbox_nudges', nudgeDefault\.content\)/u)

@@ -129,37 +129,51 @@ export async function generateReplyPackage(input: GenerateReplyPackageInput): Pr
   // Resolution order: this client's own prompt -> the workspace house style
   // -> the shipped default.
   const replyDefault = RESEARCH_PROMPT_DEFAULTS.inbox_reply
-  const [clientPromptResult, workspacePromptResult] = await Promise.all([
+  const nudgeDefault = RESEARCH_PROMPT_DEFAULTS.inbox_nudges
+  const [clientPromptRows, workspacePromptRows] = await Promise.all([
     admin
       .from('client_ai_sdr_prompts')
-      .select('content')
+      .select('prompt_id, content')
       .eq('workspace_id', workspaceId)
       .eq('client_id', clientId)
-      .eq('prompt_id', 'inbox_reply')
-      .maybeSingle(),
+      .in('prompt_id', ['inbox_reply', 'inbox_nudges']),
     admin
       .from('workspace_research_prompts')
-      .select('content')
+      .select('prompt_id, content')
       .eq('workspace_id', workspaceId)
-      .eq('prompt_id', 'inbox_reply')
-      .maybeSingle(),
+      .in('prompt_id', ['inbox_reply', 'inbox_nudges']),
   ])
-  const clientPrompt = clientPromptResult.data?.content
-  const workspacePrompt = workspacePromptResult.data?.content
-  const promptTemplate = typeof clientPrompt === 'string' && clientPrompt.trim()
-    ? clientPrompt
-    : typeof workspacePrompt === 'string' && workspacePrompt.trim()
-      ? workspacePrompt
-      : replyDefault.content
-  const filled = promptTemplate
-    .replaceAll('{{client_name}}', String(client.name ?? ''))
-    .replaceAll('{{positioning}}', profileText('positioning'))
-    .replaceAll('{{topics_and_angles}}', profileText('topics_and_angles'))
-    .replaceAll('{{listener_takeaways}}', profileText('listener_takeaways'))
-    .replaceAll('{{proof_points}}', profileText('proof_points') || 'n/a')
-    .replaceAll('{{booking_details}}', profileText('booking_details'))
-    .replaceAll('{{reply_subject}}', subject)
-    .replaceAll('{{reply_body}}', message)
+  const promptRow = (rows: { data?: Array<Record<string, unknown>> | null }, id: string): string | null => {
+    const match = (rows.data ?? []).find((row) => row.prompt_id === id)
+    return typeof match?.content === 'string' && match.content.trim() ? match.content : null
+  }
+  const resolvePrompt = (id: 'inbox_reply' | 'inbox_nudges', fallback: string): string =>
+    promptRow(clientPromptRows, id) ?? promptRow(workspacePromptRows, id) ?? fallback
+
+  // One substitution map for both prompts; an unmapped variable renders as
+  // "Not available" rather than leaking the raw placeholder into the model.
+  const variables: Record<string, string> = {
+    client_name: String(client.name ?? ''),
+    positioning: profileText('positioning'),
+    topics_and_angles: profileText('topics_and_angles'),
+    listener_takeaways: profileText('listener_takeaways'),
+    proof_points: profileText('proof_points') || 'n/a',
+    booking_details: profileText('booking_details'),
+    reply_subject: subject,
+    reply_body: message,
+  }
+  const fill = (template: string): string =>
+    template.replace(/\{\{\s*([a-z_]+)\s*\}\}/gu, (_match, key: string) => {
+      const value = variables[key]
+      return typeof value === 'string' && value.trim() ? value : 'Not available'
+    })
+
+  const filled = [
+    fill(resolvePrompt('inbox_reply', replyDefault.content)),
+    '',
+    'FOLLOW-UP NUDGE GUIDANCE (governs the "nudges" array only):',
+    fill(resolvePrompt('inbox_nudges', nudgeDefault.content)),
+  ].join('\n')
 
   const anthropicKey = await resolveAiKey(admin, workspaceId, 'anthropic')
   if (!anthropicKey) {

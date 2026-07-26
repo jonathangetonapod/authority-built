@@ -14,8 +14,9 @@ import {
   setClientSdrPrompt,
 } from '@/services/workspaceCampaigns'
 
-// Variables the generators fill from this client's approved profile, the
-// stored research, and the host's message.
+// Exactly what each generator substitutes — verified against the executors
+// in _shared/inboxSdr.ts and workspace-client-shortlist. An unmapped
+// variable renders as "Not available", so this list is the contract.
 const REPLY_VARIABLES = [
   '{{client_name}}',
   '{{positioning}}',
@@ -27,44 +28,103 @@ const REPLY_VARIABLES = [
   '{{reply_body}}',
 ]
 
-const RESEARCH_VARIABLES = [
+const RESEARCH_BASE_VARIABLES = [
   '{{client_name}}',
   '{{client_bio}}',
+  '{{client_linkedin_url}}',
+  '{{client_website}}',
   '{{podcast_name}}',
+  '{{podcast_url}}',
   '{{podcast_description}}',
+  '{{last_posted_at}}',
   '{{episode_title}}',
+  '{{episode_description}}',
   '{{episode_transcript}}',
-  '{{research_report}}',
-  '{{recent_guest_name}}',
 ]
 
-const PROMPT_GROUPS: Array<{
+const PITCH_VARIABLES = [
+  '{{client_name}}',
+  '{{client_bio}}',
+  '{{client_linkedin_url}}',
+  '{{client_website}}',
+  '{{podcast_name}}',
+  '{{podcast_url}}',
+  '{{podcast_description}}',
+  '{{host_name}}',
+  '{{verified_email}}',
+  '{{episode_title}}',
+  '{{episode_transcript}}',
+  '{{recent_guest_name}}',
+  '{{topic_proposal}}',
+  '{{research_report}}',
+]
+
+interface PromptSpec {
+  id: ResearchPromptId
   title: string
   detail: string
   variables: string[]
-  prompts: Array<{ id: ResearchPromptId; title: string; detail: string }>
-}> = [
+}
+
+const PROMPT_GROUPS: Array<{ title: string; detail: string; prompts: PromptSpec[] }> = [
   {
     title: 'Inbox replies',
     detail: 'What the AI SDR does when a host responds.',
-    variables: REPLY_VARIABLES,
     prompts: [
-      { id: 'inbox_reply', title: 'Reply instructions', detail: 'Classifies the reply and writes the response.' },
-      { id: 'inbox_nudges', title: 'Follow-up nudges', detail: 'The plan sent when a host goes quiet.' },
+      {
+        id: 'inbox_reply',
+        title: 'Reply instructions',
+        detail: 'Classifies the reply and writes the response.',
+        variables: REPLY_VARIABLES,
+      },
+      {
+        id: 'inbox_nudges',
+        title: 'Follow-up nudges',
+        detail: 'Guides the nudge plan staged with every reply and sent when a host goes quiet.',
+        variables: REPLY_VARIABLES,
+      },
     ],
   },
   {
     title: 'Research and pitching',
     detail: 'How shows are researched and the opening pitch is written for this client.',
-    variables: RESEARCH_VARIABLES,
     prompts: [
-      { id: 'podcast_research', title: 'Podcast research', detail: 'Show positioning, audience, format, and guest fit.' },
-      { id: 'host_info', title: 'Host identification', detail: 'Finds every host and the booking contact.' },
-      { id: 'guest_info', title: 'Guest verification', detail: 'Confirms the most recent guest from the episode.' },
-      { id: 'host_name_extractor', title: 'Host name extractor', detail: 'Pulls the clean host name for personalization.' },
-      { id: 'find_topics', title: 'Topic proposal', detail: 'Chooses the angles pitched to this show.' },
-      { id: 'write_email', title: 'Pitch email', detail: 'Writes the opening outreach email.' },
-      { id: 'clean_email', title: 'Pitch cleanup', detail: 'Final pass before the pitch is staged.' },
+      {
+        id: 'podcast_research',
+        title: 'Podcast research',
+        detail: 'Show positioning, audience, format, and guest fit.',
+        variables: RESEARCH_BASE_VARIABLES,
+      },
+      {
+        id: 'host_info',
+        title: 'Host identification',
+        detail: 'Finds every host and the booking contact.',
+        variables: [...RESEARCH_BASE_VARIABLES, '{{research_report}}'],
+      },
+      {
+        id: 'guest_info',
+        title: 'Guest verification',
+        detail: 'Confirms the most recent guest from the episode.',
+        variables: [...RESEARCH_BASE_VARIABLES, '{{research_report}}'],
+      },
+      {
+        id: 'find_topics',
+        title: 'Topic proposal',
+        detail: 'Chooses the angles pitched to this show.',
+        variables: [...RESEARCH_BASE_VARIABLES, '{{research_report}}'],
+      },
+      {
+        id: 'write_email',
+        title: 'Pitch email',
+        detail: 'Writes the opening outreach email.',
+        variables: PITCH_VARIABLES,
+      },
+      {
+        id: 'clean_email',
+        title: 'Pitch cleanup',
+        detail: 'Final pass over the drafted pitch before it is staged.',
+        variables: ['{{email_draft}}'],
+      },
     ],
   },
 ]
@@ -200,7 +260,22 @@ export const ClientSdrPromptsCard = ({
                       </div>
                     </div>
                     {open && (
-                      <div className="border-t p-3.5">
+                      <div className="space-y-3 border-t p-3.5">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            Variables this prompt can use
+                          </p>
+                          <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                            {prompt.variables.map((variable) => (
+                              <li key={variable}>
+                                <code className="rounded border bg-background px-1.5 py-0.5 text-[11px]">{variable}</code>
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
+                            Anything else renders as “Not available”.
+                          </p>
+                        </div>
                         <Textarea
                           value={value}
                           readOnly={!canManage}
@@ -214,16 +289,6 @@ export const ClientSdrPromptsCard = ({
                   </div>
                 )
               })}
-              <div className="rounded-lg border bg-muted/10 p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Variables available here</p>
-                <ul className="mt-2 flex flex-wrap gap-1.5">
-                  {group.variables.map((variable) => (
-                    <li key={variable}>
-                      <code className="rounded border bg-background px-1.5 py-0.5 text-[11px]">{variable}</code>
-                    </li>
-                  ))}
-                </ul>
-              </div>
             </section>
           ))
         )}
