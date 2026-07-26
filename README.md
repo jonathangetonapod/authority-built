@@ -36,11 +36,17 @@ Podcast Finder is a workspace-level tool with a selectable active client. It com
 
 Each client command center includes an approval-dashboard editor. The agency can curate, feature, reorder, archive, and decide on opportunities without returning to Podcast Finder. Once a dashboard address is configured, its shareable client URL is live without a separate visibility switch.
 
-### 4. Run outreach
+### 4. Research a show and write its pitch
 
-Client Campaigns gives each active client one ongoing podcast-outreach campaign. From the client's Approval Dashboard, an operator can open an approved podcast, review the existing research, prepare the opening pitch and two follow-ups, and explicitly push that unsent package into the client's mapped campaign. Client Campaigns remains the final launch gate. The workspace owner connects one Instantly V2 API key; authorized workspace managers can run campaigns without seeing the credential. Each client also has a compact AI SDR Profile that Master Inbox can load as read-only, client-scoped response context. Live reply ingestion and delivery remain separate future boundaries.
+From the client's Approval Dashboard, an operator opens an approved podcast and clicks once. The platform then runs the full prompt chain server-side — reading the show, confirming its hosts, verifying the most recent episode's guest from the transcript, aligning topics, and writing a complete three-touch sequence — and ends with finished copy the operator can edit. See [AI research and pitch pipeline](#ai-research-and-pitch-pipeline) for the stages, grounding data, and trust checks.
 
-### 5. Deliver a white-label client experience
+### 5. Run outreach
+
+Client Campaigns gives each active client one ongoing podcast-outreach campaign. Once a sequence is finalized, the operator explicitly pushes that unsent package into the client's mapped campaign, and Client Campaigns remains the final launch gate. The workspace owner connects one Instantly V2 API key; authorized workspace managers can run campaigns without seeing the credential. Follow-ups send in-thread on days 6 and 13, and the sequence stops at three messages.
+
+Each client also has a compact AI SDR Profile plus an SDR mode. `manual` drafts only on request; `auto_draft` stages a reply-and-nudge package for every new interested reply. **No mode sends email on its own** — automated dispatch was deliberately removed, so every message a host receives was sent by a person.
+
+### 6. Deliver a white-label client experience
 
 Workspace branding controls the agency name, logo, primary color, and accent color shown on shared client experiences. Client-specific display names and presentation settings can further tailor an approval dashboard without exposing internal workspace details or infrastructure.
 
@@ -54,8 +60,8 @@ Workspace branding controls the agency name, logo, primary color, and accent col
 | Onboarding | Available | Forms, invitations, autosave, review, revisions, files, and pitch approval |
 | Podcast Finder | Available | Client-selectable recurring discovery with history deduplication |
 | Clients | Available | Client records, command centers, and compact per-client AI SDR Profiles |
-| Client Campaigns | Available with Instantly V2 | Encrypted workspace connection, campaign index, per-podcast research and sequence preparation, explicit launch, activity, analytics sync, and settings |
-| Master Inbox | Client context available; reply queue preview | Selects and validates the exact client's AI SDR Profile; live conversations, drafting actions, and sends remain disabled |
+| Client Campaigns | Available with Instantly V2 | Encrypted workspace connection, campaign index, AI research and three-touch sequence generation, explicit launch, activity, analytics sync, and settings |
+| Master Inbox | Available for review and drafting; sending is human-only | Classifies interested replies, stages AI reply-and-nudge packages per the client's SDR mode, and routes them to a person; nothing dispatches automatically |
 | Mailboxes | Layout preview | Future sending-account health, capacity, and assignment surface |
 | Guest Resources | Available | Workspace-authored resources for all clients or selected clients |
 | Settings | Available to owners/admins | Team access, credentials, branding, agency name, and sidebar order |
@@ -77,7 +83,7 @@ The campaign experience is organized around one ongoing podcast-booking campaign
 - a two-step creation flow chooses the client, one or more sending accounts, and the starting podcasts while saving the draft in GOAP;
 - client-positive podcasts are selected automatically, while an owner can deliberately include another shortlisted show;
 - the campaign workspace keeps every eligible show in one Podcasts view with focused status filters;
-- an approved podcast's Approval Dashboard action opens a preparation modal with the show brief, fit evidence, talking-point angles, workspace-only research notes, host contact, opening pitch, and two follow-ups;
+- an approved podcast's Approval Dashboard action opens a preparation modal with the show brief, latest-episode context, fit evidence, three AI-written sequence options, workspace-only research notes, host contact, and the editable opening pitch and two follow-ups;
 - **Push to client campaign** saves that complete package but does not send it, while selecting the podcast later in Client Campaigns reopens the same contact, research, and three-email sequence;
 - saving a draft does not contact anyone; the explicit **Approve & start outreach** action creates or recovers the mapped provider campaign, adds that podcast contact, and activates sending;
 - activity and performance use sanitized workspace-scoped campaign and lead data returned by Instantly; and
@@ -93,13 +99,11 @@ Each client now owns a lightweight AI SDR Profile in its Clients command center.
 
 Master Inbox can select a real workspace client and load that exact structured profile through the authenticated workspace boundary. The response is independently checked against the selected workspace/client, reports whether the client is active and ready for review drafts, and always returns `delivery_authorized: false`. Loading or viewing client context has no external side effect.
 
-The future conversation path must unify replies without flattening their context. Each conversation must retain:
+Conversations carry their full context rather than a flattened list. Each thread retains workspace, client, campaign, and lead identity; the pitch that started it and the research behind that show; a workflow state (`needs_reply`, `review`, `replied`, `booked`, `archived`); the model's classification of the host's reply; any staged draft and nudge plan; and an audit record of every draft and send.
 
-- workspace, client, Instantly campaign, and lead identity;
-- the original outbound message and complete thread;
-- unread, interested, needs-response, snoozed, and closed workflow states;
-- provider event identifiers for idempotency; and
-- an auditable record of drafts and sends.
+Drafting is governed by the client's SDR mode. Under `auto_draft`, a scheduled tick classifies each new reply that Instantly flagged interested and stages a reply-plus-nudge package for review. Deterministic pre-filters catch opt-outs and autoresponders before any model call, so the cheapest cases cost nothing and an unsubscribe request suppresses the thread rather than drafting at it.
+
+**Sending is human-only.** Automated dispatch was built and then deliberately removed: no mode, tick, or scheduler sends a message on its own, and the nudge scheduler is gated off behind a single named constant. A staged package waits for a person, which means the failure mode of the whole subsystem is "a human does it", never an unexpected email to a host.
 
 ### Mailboxes
 
@@ -125,7 +129,7 @@ The campaign boundary also enforces:
 6. fixed-origin server-side Instantly requests with timeouts, response-size limits, permission-safe provider errors, and sanitized analytics; and
 7. actor-aware audit records for connection, draft, launch, pause, resume, and other material campaign actions.
 
-Client Campaigns currently synchronizes on an explicit operator action; webhook-driven reply ingestion is not part of this release. Master Inbox's client profile/readiness boundary is operational, but its conversation list, drafting actions, and delivery controls remain a non-operational preview until the event-ledger, thread ownership, and provider-write boundaries are implemented. Mailboxes remains a non-operational preview.
+Client Campaigns currently synchronizes on an explicit operator action; webhook-driven reply ingestion is not part of this release. Master Inbox reads conversations from the provider on demand and owns thread state, classification, and drafting, but delivery stays a human action: no scheduler or SDR mode dispatches a message, and every send is initiated by an operator through the authenticated reply path and audited. Mailboxes remains a non-operational preview.
 
 Legacy Bison/Clay outreach code remains in the repository for operator history. It is global-provider code and must not be wired into workspace routes without the same ownership, event-ledger, and isolation guarantees.
 
@@ -205,6 +209,41 @@ Legacy `/app/outreach-platform`, `/app/unibox`, `/admin/outreach-platform`, and 
 | `/portal/login` | Client portal sign-in |
 | `/portal/dashboard` | Protected client portal overview |
 | `/portal/resources` | Protected client resources |
+
+## AI research and pitch pipeline
+
+One operator click runs an ordered prompt chain against Claude. Each stage may only build on the verified output of the stage before it, so a later stage cannot invent a fact an earlier one did not establish.
+
+| Stage | Prompt | Produces |
+| --- | --- | --- |
+| 1 | `podcast_research` | Show positioning, audience, format, guest fit, and a bank of verbatim transcript quotes |
+| 2 | `host_info` | Every host and the primary booking contact |
+| 3 | `guest_info` | The latest episode's guest, verified against the transcript with quoted evidence (skipped when no transcript exists) |
+| 4 | `find_topics` | Three titled episode angles framed on listener value |
+| 5 | *(summarize)* | Structured JSON written to the shortlist row: clean description, fit reasons, angles, host, recent guest |
+| 6 | `write_email` | The complete three-touch sequence: opener, day-6 value-add follow-up, day-13 close |
+| 7 | `clean_email` | A revision pass, run only when the trust checks flag something |
+
+Every prompt is editable per workspace and per client from the pitch dialog's owner controls; the shipped defaults live in [`docs/pitch-research-prompts.json`](docs/pitch-research-prompts.json) and are mirrored into `src/lib/researchPromptDefaults.ts` and `supabase/functions/_shared/researchPromptDefaults.ts`, which contract scripts hold in sync.
+
+### Grounding data
+
+Podcast metadata and episode data are captured once from Podscan onto the **global** `podcasts` catalog row — the latest three episodes with titles, descriptions, release dates, hosts, guests, topics, and the newest transcript. Capture happens at every moment of intent (adding a show to a shortlist, opening the pitch dialog, running research) and is reused for 30 days, so one fetch serves every workspace, client, and rerun.
+
+That storage is what makes personalization real: the pitch can name the host, cite the episode, and reference the guest by name because those facts came from the transcript rather than the model. Missing data degrades honestly — with no transcript, prompts are instructed to open with a checkable detail from the research instead of inventing an episode reference.
+
+### Trust checks
+
+Generated copy passes two gates before an operator ever sees it:
+
+- **Deterministic checks** (in code, free) — word caps, link count, em dashes, leaked placeholders, and the phrasing podcast hosts report as instant "this is AI" tells.
+- **A claim audit** (Haiku) — decomposes the sequence and flags any factual claim that cannot be traced to the research evidence.
+
+Anything flagged triggers one revision pass. Whatever remains is shown to the operator as visible flags in the pitch dialog, never silently suppressed. While an operator edits, the deterministic checks rerun on every keystroke ([`src/lib/pitchQuality.ts`](src/lib/pitchQuality.ts)) so hand-written copy meets the same standard.
+
+### Cost and measurement
+
+Every stage of a run shares one byte-identical cached context block, so stage one pays the cache write and later stages read the same transcript and profile at a fraction of the input price. Each research document and generated pitch is stamped with a prompt-chain version that is persisted onto the campaign target, which makes reply rate per prompt revision queryable once send volume exists.
 
 ## System architecture
 
@@ -291,8 +330,9 @@ Provider credentials belong in Supabase secret storage or the authorized operato
 
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_DB_PASSWORD`
-- `PODSCAN_API_KEY`
-- `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
+- `PODSCAN_API_KEY` — podcast and episode data for the whole discovery and research path
+- `ANTHROPIC_API_KEY` — every AI feature depends on it (research, pitch writing, inbox drafting, autopilot scoring). A workspace may supply its own key instead; this is the platform fallback. Validate a replacement against `GET /v1/models` before relying on it — a rejected key surfaces as features that quietly do nothing.
+- `OPENAI_API_KEY` — embeddings for semantic podcast search
 - `RESEND_API_KEY`
 - `ONBOARDING_CAPABILITY_SECRET`
 - Google service-account credentials
@@ -396,6 +436,12 @@ Check that the route contains a canonical UUID, the workspace is active, and it 
 
 A configured approval dashboard is always live. If its public link does not load, confirm the client has a dashboard slug, the client belongs to an active workspace, and the public dashboard functions are deployed. There is no separate share/unshare switch.
 
+### An AI feature produces nothing, or says only “try again”
+
+Check the provider credential before reading any application code. An invalid `ANTHROPIC_API_KEY` fails in well under a second and, because every caller catches provider errors to degrade gracefully, it can present as research that never finishes, an autopilot that adds no podcasts, and an inbox that stages no drafts — all at once, with no error surfaced anywhere.
+
+Two queries settle it quickly: `SELECT max(created_at) FROM workspace_operation_costs WHERE anthropic_input_tokens > 0` proves whether any AI call has *ever* succeeded, and a failed run's `research_progress.message` on `client_dashboard_podcasts` carries the provider's real status and error body. Validate a candidate key against `GET /v1/models` before setting it. Also confirm the failure is not a timeout: research stages legitimately run 30–60 seconds each, and a full run takes two to three minutes.
+
 ### The production page still shows an older bundle
 
 Confirm the deployment commit, inspect the HTML asset references, purge only the intended CDN cache, and run `npm run verify:production-browser`. Do not assume a successful Git push proves that migrations, functions, the container, and the CDN all changed together.
@@ -409,6 +455,7 @@ Confirm the deployment commit, inspect the HTML asset references, purge only the
 - [`docs/architecture/CLIENT-DASHBOARD.md`](docs/architecture/CLIENT-DASHBOARD.md) — client dashboard concepts
 - [`docs/architecture/PODCAST-FINDER.md`](docs/architecture/PODCAST-FINDER.md) — podcast discovery architecture
 - [`docs/api/README.md`](docs/api/README.md) — API documentation index
+- [`docs/pitch-research-prompts.json`](docs/pitch-research-prompts.json) — canonical research and pitch prompt set (generated mirrors are held in sync by contract scripts)
 - [`docs/production-cutover-2026-07-21.md`](docs/production-cutover-2026-07-21.md) — historical sanitized release evidence
 
 Some historical documents describe legacy global admin tools. The current source, migrations, tests, and tenant contracts take precedence when those documents conflict.
