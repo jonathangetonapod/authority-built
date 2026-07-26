@@ -583,15 +583,16 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                   <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs leading-5 text-amber-900">
                     <span className="font-semibold">No client match, no AI response.</span> This reply is not mapped to a client campaign, so drafting is disabled by policy.
                   </div>
-                ) : threadClient && !threadClient.ai_sdr_profile_ready ? (
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs leading-5 text-amber-900">
-                    <span><span className="font-semibold">{selectedThread.campaign.client.name}&rsquo;s AI SDR profile is not ready.</span> Complete the core fields before drafting replies.</span>
-                    <Button asChild size="sm" variant="outline" className="border-amber-300 bg-background">
-                      <Link to={`${baseHref}/clients/${selectedThread.campaign.client.id}`}>Open profile</Link>
-                    </Button>
-                  </div>
                 ) : (
                   <div className="mt-4 space-y-3">
+                    {threadClient && !threadClient.ai_sdr_profile_ready && (
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs leading-5 text-amber-900">
+                        <span><span className="font-semibold">{selectedThread.campaign.client.name}&rsquo;s AI SDR profile is not ready.</span> AI drafting is off until the core fields are complete — you can still reply manually below.</span>
+                        <Button asChild size="sm" variant="outline" className="border-amber-300 bg-background">
+                          <Link to={`${baseHref}/clients/${selectedThread.campaign.client.id}`}>Open profile</Link>
+                        </Button>
+                      </div>
+                    )}
                     {selectedThread.state?.draft_stale && (
                       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs leading-5 text-amber-900">
                         <span><span className="font-semibold">This draft is no longer based on the latest message.</span> Regenerate before sending so the reply answers what the host actually said.</span>
@@ -615,7 +616,10 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                         type="button"
                         size="sm"
                         variant="outline"
-                        disabled={draftMutation.isPending}
+                        disabled={draftMutation.isPending || Boolean(threadClient && !threadClient.ai_sdr_profile_ready)}
+                        title={threadClient && !threadClient.ai_sdr_profile_ready
+                          ? 'Complete the AI SDR profile to draft with AI — manual replies work now'
+                          : undefined}
                         onClick={() => draftMutation.mutate(selectedThread)}
                       >
                         {draftMutation.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-2 h-3.5 w-3.5" />}
