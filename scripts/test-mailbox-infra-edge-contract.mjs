@@ -8,8 +8,11 @@ assert.match(edge, /const authContext = await requireAuthenticatedUser\(req\)/u)
 assert.match(edge, /if \(!workspaceCredentialIsFresh\(authContext\)\)/u)
 assert.match(edge, /const access = await requireWorkspaceFeatureAccess\(authContext, workspaceId\)[\s\S]*?requireManager\(access\)/u)
 
-// Winnr access: token from env only, never from the request.
-assert.match(edge, /Deno\.env\.get\('WINNR_API_TOKEN'\)/u)
+// Winnr access: workspace BYO key first, platform env fallback — resolved
+// server-side, never from the request. BYO orders skip platform credits.
+assert.match(edge, /resolveAiKey\(authContext\.admin, workspaceId, 'winnr'\)/u)
+assert.match(edge, /const usingWorkspaceKey = winnrKey\.source === 'workspace'/u)
+assert.match(edge, /byoKeyUsed: usingWorkspaceKey/u)
 assert.doesNotMatch(edge, /body\.(?:token|api_key|winnr)/u)
 
 // Ordering safety: credits are charged with idempotency keys BEFORE the
@@ -25,7 +28,7 @@ assert.match(edge, /USERNAME_PATTERN/u)
 
 // Overview and export only ever see workspace-tagged domains.
 assert.match(edge, /function workspaceTag\(workspaceId: string\): string \{\s*return `workspace:\$\{workspaceId\}`/u)
-assert.match(edge, /listWorkspaceDomains\(workspaceId\)/u)
+assert.match(edge, /listWorkspaceDomains\(winnrKey\.apiKey, workspaceId, !usingWorkspaceKey\)/u)
 assert.match(edge, /format: 'instantly'/u)
 
 // Release ritual: config, manifest, migration all present.

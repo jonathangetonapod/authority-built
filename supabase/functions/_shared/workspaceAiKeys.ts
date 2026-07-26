@@ -6,7 +6,7 @@
 import { createAdminClient, HttpError } from './workspaceAuth.ts'
 import { decryptInstantlyApiKey, encryptInstantlyApiKey } from './instantly.ts'
 
-export type AiProvider = 'anthropic' | 'openai'
+export type AiProvider = 'anthropic' | 'openai' | 'winnr'
 
 export interface ResolvedAiKey {
   apiKey: string
@@ -16,11 +16,12 @@ export interface ResolvedAiKey {
 const PLATFORM_ENV: Record<AiProvider, string> = {
   anthropic: 'ANTHROPIC_API_KEY',
   openai: 'OPENAI_API_KEY',
+  winnr: 'WINNR_API_TOKEN',
 }
 
 export function requireProvider(value: unknown): AiProvider {
-  if (value === 'anthropic' || value === 'openai') return value
-  throw new HttpError(400, 'INVALID_PROVIDER', 'provider must be anthropic or openai')
+  if (value === 'anthropic' || value === 'openai' || value === 'winnr') return value
+  throw new HttpError(400, 'INVALID_PROVIDER', 'provider must be anthropic, openai, or winnr')
 }
 
 export async function storeWorkspaceAiKey(
@@ -76,10 +77,11 @@ export async function workspaceAiKeyStatus(
   const status: Record<AiProvider, { configured: boolean; last_four: string | null; updated_at: string | null }> = {
     anthropic: { configured: false, last_four: null, updated_at: null },
     openai: { configured: false, last_four: null, updated_at: null },
+    winnr: { configured: false, last_four: null, updated_at: null },
   }
   for (const row of (data ?? []) as Array<{ provider?: unknown; api_key_last_four?: unknown; updated_at?: unknown }>) {
     const provider = row.provider
-    if (provider === 'anthropic' || provider === 'openai') {
+    if (provider === 'anthropic' || provider === 'openai' || provider === 'winnr') {
       status[provider] = {
         configured: true,
         last_four: typeof row.api_key_last_four === 'string' ? row.api_key_last_four : null,

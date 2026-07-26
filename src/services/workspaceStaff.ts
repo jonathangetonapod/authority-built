@@ -773,6 +773,7 @@ export interface WorkspaceAiKeyStatus {
 export interface WorkspaceAiKeysView {
   anthropic: WorkspaceAiKeyStatus
   openai: WorkspaceAiKeyStatus
+  winnr: WorkspaceAiKeyStatus
 }
 
 function parseAiKeyStatus(value: unknown): WorkspaceAiKeyStatus {
@@ -797,12 +798,13 @@ export async function getWorkspaceAiKeys(workspaceId: string): Promise<Workspace
   return {
     anthropic: parseAiKeyStatus(data.providers?.anthropic),
     openai: parseAiKeyStatus(data.providers?.openai),
+    winnr: parseAiKeyStatus(data.providers?.winnr),
   }
 }
 
 export async function setWorkspaceAiKey(
   workspaceId: string,
-  provider: 'anthropic' | 'openai',
+  provider: 'anthropic' | 'openai' | 'winnr',
   apiKey: string,
 ): Promise<void> {
   const canonicalWorkspaceId = canonicalUuid(workspaceId, 'Workspace ID')
@@ -815,7 +817,7 @@ export async function setWorkspaceAiKey(
 
 export async function clearWorkspaceAiKey(
   workspaceId: string,
-  provider: 'anthropic' | 'openai',
+  provider: 'anthropic' | 'openai' | 'winnr',
 ): Promise<void> {
   const canonicalWorkspaceId = canonicalUuid(workspaceId, 'Workspace ID')
   const data = await invoke(

@@ -17,6 +17,7 @@ import {
 const PROVIDERS = [
   { id: 'anthropic' as const, label: 'Anthropic (Claude)', placeholder: 'sk-ant-…' },
   { id: 'openai' as const, label: 'OpenAI', placeholder: 'sk-…' },
+  { id: 'winnr' as const, label: 'Winnr (sending infrastructure)', placeholder: 'wnr_…' },
 ]
 
 export function WorkspaceAiKeysCard({ workspaceId, queryScope }: { workspaceId: string; queryScope: readonly unknown[] }) {
@@ -31,7 +32,7 @@ export function WorkspaceAiKeysCard({ workspaceId, queryScope }: { workspaceId: 
   })
 
   const saveMutation = useMutation({
-    mutationFn: ({ provider, apiKey }: { provider: 'anthropic' | 'openai'; apiKey: string }) =>
+    mutationFn: ({ provider, apiKey }: { provider: 'anthropic' | 'openai' | 'winnr'; apiKey: string }) =>
       setWorkspaceAiKey(workspaceId, provider, apiKey),
     onSuccess: (_result, variables) => {
       setDrafts((current) => ({ ...current, [variables.provider]: '' }))
@@ -44,7 +45,7 @@ export function WorkspaceAiKeysCard({ workspaceId, queryScope }: { workspaceId: 
   })
 
   const removeMutation = useMutation({
-    mutationFn: (provider: 'anthropic' | 'openai') => clearWorkspaceAiKey(workspaceId, provider),
+    mutationFn: (provider: 'anthropic' | 'openai' | 'winnr') => clearWorkspaceAiKey(workspaceId, provider),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey })
       toast.success('API key removed. Operations now use platform credits.')
@@ -56,7 +57,7 @@ export function WorkspaceAiKeysCard({ workspaceId, queryScope }: { workspaceId: 
 
   const busy = saveMutation.isPending || removeMutation.isPending
 
-  const statusFor = (provider: 'anthropic' | 'openai'): WorkspaceAiKeyStatus | null =>
+  const statusFor = (provider: 'anthropic' | 'openai' | 'winnr'): WorkspaceAiKeyStatus | null =>
     keysQuery.data?.[provider] ?? null
 
   return (

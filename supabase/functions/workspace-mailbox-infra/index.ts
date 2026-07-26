@@ -21,6 +21,7 @@ import {
   type WorkspaceFeatureAccess,
 } from '../_shared/workspaceAuth.ts'
 import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
+import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 
 const METHODS = ['POST'] as const
 const MANAGER_ROLES = new Set(['owner', 'admin', 'platform_admin'])
@@ -36,13 +37,8 @@ function requireManager(access: WorkspaceFeatureAccess): void {
   }
 }
 
-function winnrToken(): string {
-  const token = Deno.env.get('WINNR_API_TOKEN')?.trim()
-  if (!token) throw new HttpError(500, 'SERVER_MISCONFIGURED', 'Mailbox infrastructure is not configured')
-  return token
-}
-
 async function winnrRequest<T>(
+  token: string,
   path: string,
   options: { method?: 'GET' | 'POST'; body?: Record<string, unknown>; query?: URLSearchParams } = {},
 ): Promise<T> {
@@ -53,7 +49,7 @@ async function winnrRequest<T>(
     response = await fetch(url, {
       method: options.method ?? 'GET',
       headers: {
-        Authorization: `Bearer ${winnrToken()}`,
+        Authorization: `Bearer ${token}`,
         Accept: 'application/json',
         ...(options.body ? { 'Content-Type': 'application/json' } : {}),
       },
@@ -108,16 +104,16 @@ interface WinnrEmailUser {
   status: string
 }
 
-async function listWorkspaceDomains(workspaceId: string): Promise<WinnrDomain[]> {
+async function listWorkspaceDomains(token: string, workspaceId: string, scopeToTag: boolean): Promise<WinnrDomain[]> {
   const tag = workspaceTag(workspaceId)
   const domains: WinnrDomain[] = []
   let cursor: string | null = null
   for (let page = 0; page < 5; page += 1) {
     const query = new URLSearchParams({ limit: '100' })
     if (cursor) query.set('cursor', cursor)
-    const result = await winnrRequest<WinnrDomain[] | { data?: WinnrDomain[] }>('/domains', { query })
+    const result = await winnrRequest<WinnrDomain[] | { data?: WinnrDomain[] }>(token, '/domains', { query })
     const rows = Array.isArray(result) ? result : (result as { data?: WinnrDomain[] }).data ?? []
-    domains.push(...rows.filter((domain) => Array.isArray(domain.tags) && domain.tags.includes(tag)))
+    domains.push(...rows.filter((domain) => !scopeToTag || (Array.isArray(domain.tags) && domain.tags.includes(tag))))
     // The list envelope's pagination is stripped by the data unwrap; a single
     // page covers the current account scale, so stop unless a full page came back.
     if (rows.length < 100) break
@@ -143,6 +139,13 @@ serve(async (req) => {
     }
     const access = await requireWorkspaceFeatureAccess(authContext, workspaceId)
     requireManager(access)
+    // Workspace Winnr key wins; the platform token is the fallback. Orders on
+    // a workspace key skip platform credits — that workspace pays Winnr.
+    const winnrKey = await resolveAiKey(authContext.admin, workspaceId, 'winnr')
+    if (!winnrKey) {
+      throw new HttpError(500, 'SERVER_MISCONFIGURED', 'Mailbox infrastructure is not configured')
+    }
+    const usingWorkspaceKey = winnrKey.source === 'workspace'
 
     if (action === 'domain-search') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'domains'])
@@ -151,6 +154,7 @@ serve(async (req) => {
       }
       const domains = body.domains.map((entry, index) => normalizedDomain(entry, `domains[${index}]`))
       const result = await winnrRequest<{ results?: Array<{ domain: string; available: boolean | null; price: number | null }> }>(
+        winnrKey.apiKey,
         '/domains/search-bulk',
         { method: 'POST', body: { domains } },
       )
@@ -205,6 +209,7 @@ serve(async (req) => {
           referenceId: order.domain,
           actorUserId: authContext.user.id,
           idempotencyKey: `mailbox-domain:${workspaceId}:${order.domain}`,
+          byoKeyUsed: usingWorkspaceKey,
         })
         for (const mailbox of order.mailboxes) {
           creditsCharged += await chargeCredits(authContext.admin, {
@@ -214,11 +219,12 @@ serve(async (req) => {
             referenceId: `${mailbox.username}@${order.domain}`,
             actorUserId: authContext.user.id,
             idempotencyKey: `mailbox-monthly:${workspaceId}:${mailbox.username}@${order.domain}:first`,
+            byoKeyUsed: usingWorkspaceKey,
           })
         }
       }
 
-      const purchase = await winnrRequest<{ job_id?: string; status?: string }>('/domains/purchase', {
+      const purchase = await winnrRequest<{ job_id?: string; status?: string }>(winnrKey.apiKey, '/domains/purchase', {
         method: 'POST',
         body: {
           async: true,
@@ -264,6 +270,7 @@ serve(async (req) => {
         workspaceId,
         operationType: 'mailbox_domain_purchase',
         usage: {},
+        usedByoKey: usingWorkspaceKey,
         referenceKind: 'mailbox_order',
         referenceId: orderRow.id,
       })
@@ -284,6 +291,7 @@ serve(async (req) => {
       let progress: Record<string, unknown> | null = null
       if (order.status === 'processing' && order.winnr_job_id) {
         const job = await winnrRequest<{ status?: string; progress?: Record<string, unknown>; error?: { message?: string } | null }>(
+          winnrKey.apiKey,
           `/jobs/${encodeURIComponent(order.winnr_job_id)}`,
         )
         progress = job.progress ?? null
@@ -297,14 +305,14 @@ serve(async (req) => {
           const domainNames = (order.domains as Array<{ domain: string }>).map((entry) => entry.domain)
           const userIds: string[] = []
           for (const domainName of domainNames) {
-            const users = await winnrRequest<WinnrEmailUser[] | { data?: WinnrEmailUser[] }>('/email-users', {
+            const users = await winnrRequest<WinnrEmailUser[] | { data?: WinnrEmailUser[] }>(winnrKey.apiKey, '/email-users', {
               query: new URLSearchParams({ domain: domainName, limit: '25' }),
             })
             const rows = Array.isArray(users) ? users : (users as { data?: WinnrEmailUser[] }).data ?? []
             userIds.push(...rows.map((user) => user.id))
           }
           if (userIds.length > 0) {
-            await winnrRequest('/warming/enable-async', {
+            await winnrRequest(winnrKey.apiKey, '/warming/enable-async', {
               method: 'POST',
               body: { user_ids: userIds, settings: { emails_per_day: 20, rampup_speed: 'normal' } },
             }).catch(() => {
@@ -325,7 +333,7 @@ serve(async (req) => {
     if (action === 'infra-overview') {
       requireOnlyKeys(body, ['action', 'workspace_id'])
       const [domains, ordersResult] = await Promise.all([
-        listWorkspaceDomains(workspaceId),
+        listWorkspaceDomains(winnrKey.apiKey, workspaceId, !usingWorkspaceKey),
         authContext.admin
           .from('workspace_mailbox_orders')
           .select('id, status, domains, mailbox_count, credits_charged, warming_enabled_at, error_message, created_at')
@@ -333,7 +341,7 @@ serve(async (req) => {
           .order('created_at', { ascending: false })
           .limit(10),
       ])
-      const warming = await winnrRequest<{ data?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>>('/warming', {
+      const warming = await winnrRequest<{ data?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>>(winnrKey.apiKey, '/warming', {
         query: new URLSearchParams({ per_page: '200' }),
       }).catch(() => [])
       const warmingRows = Array.isArray(warming) ? warming : (warming as { data?: Array<Record<string, unknown>> }).data ?? []
@@ -345,7 +353,7 @@ serve(async (req) => {
       )
 
       const detailed = await Promise.all(domains.slice(0, 6).map(async (domain) => {
-        const users = await winnrRequest<WinnrEmailUser[] | { data?: WinnrEmailUser[] }>('/email-users', {
+        const users = await winnrRequest<WinnrEmailUser[] | { data?: WinnrEmailUser[] }>(winnrKey.apiKey, '/email-users', {
           query: new URLSearchParams({ domain: domain.name, limit: '10' }),
         }).catch(() => [])
         const rows = Array.isArray(users) ? users : (users as { data?: WinnrEmailUser[] }).data ?? []
@@ -380,11 +388,11 @@ serve(async (req) => {
 
     if (action === 'export-instantly') {
       requireOnlyKeys(body, ['action', 'workspace_id'])
-      const domains = await listWorkspaceDomains(workspaceId)
+      const domains = await listWorkspaceDomains(winnrKey.apiKey, workspaceId, !usingWorkspaceKey)
       if (domains.length === 0) {
         throw new HttpError(404, 'NO_INFRA', 'This workspace has no purchased sending domains yet')
       }
-      const result = await winnrRequest<{ download_url?: string; user_count?: number }>('/export', {
+      const result = await winnrRequest<{ download_url?: string; user_count?: number }>(winnrKey.apiKey, '/export', {
         method: 'POST',
         body: { format: 'instantly', domains: domains.map((domain) => domain.name) },
       })

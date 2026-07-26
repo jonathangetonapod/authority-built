@@ -49,6 +49,7 @@ const SQL_INPUTS = [
   'supabase/migrations/20260726000600_email_waterfall.sql',
   'supabase/migrations/20260726000700_client_autopilot.sql',
   'supabase/migrations/20260726000800_mailbox_infra.sql',
+  'supabase/migrations/20260726000900_byo_winnr_keys.sql',
   'supabase/tests/20260720_invite_only_workspace_verification.sql',
   'supabase/tests/20260721_workspace_guest_resources_behavior.sql',
   'supabase/tests/20260722_subagency_workspace_foundation_behavior.sql',

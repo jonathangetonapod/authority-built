@@ -162,6 +162,7 @@ describe('WorkspaceStaff', () => {
     vi.mocked(getWorkspaceAiKeys).mockResolvedValue({
       anthropic: { configured: false, last_four: null, updated_at: null },
       openai: { configured: false, last_four: null, updated_at: null },
+      winnr: { configured: false, last_four: null, updated_at: null },
     })
     vi.mocked(getWorkspaceBillingOverview).mockResolvedValue({
       plan_key: 'founding_member',
