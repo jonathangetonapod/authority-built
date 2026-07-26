@@ -441,7 +441,9 @@ async function runResearchPrompt(
       system: prompt.system,
       messages: [{ role: 'user', content }],
     }),
-    signal: AbortSignal.timeout(28_000),
+    // Research stages legitimately generate ~3k tokens, which takes 30-60s.
+    // The old 28s cap timed out every real run the moment the API key worked.
+    signal: AbortSignal.timeout(90_000),
   })
   if (!response.ok) {
     // Surface the provider's own error type — a hidden status here once let
@@ -1250,13 +1252,16 @@ serve(async (req) => {
           },
         })
       } catch (error) {
+        // The real cause must reach the operator — a generic message here
+        // once hid an invalid platform API key for months.
+        const failureMessage = error instanceof Error && error.name === 'TimeoutError'
+          ? 'A research stage took too long to answer. Run research again to retry.'
+          : `Research failed: ${error instanceof Error ? error.message.slice(0, 240) : 'unknown error'}`
         await writeProgress({
           status: 'failed',
           current_stage: null,
           completed_stages: completedStages,
-          // The real cause must reach the operator — a generic message here
-          // once hid an invalid platform API key for months.
-          message: `Research failed: ${error instanceof Error ? error.message.slice(0, 240) : 'unknown error'}`,
+          message: failureMessage,
         }).catch(() => undefined)
         await logOperationCost(authContext.admin, {
           workspaceId,
@@ -1268,8 +1273,14 @@ serve(async (req) => {
           referenceId: shortlistPodcastId,
         })
         if (error instanceof HttpError) throw error
-        console.error('[Shortlist Research] Pipeline failed')
-        throw new HttpError(503, 'RESEARCH_FAILED', 'The research run could not be completed. Try again shortly')
+        console.error('[Shortlist Research] Pipeline failed', error)
+        // Graceful failure contract: the saved progress carries the cause,
+        // the run is immediately retryable (failed status releases the
+        // lock), and the response tells the operator what actually broke.
+        const reason = error instanceof Error && error.name === 'TimeoutError'
+          ? 'A research stage took too long to answer. Your completed stages are saved — run research again to continue.'
+          : `The research run could not be completed: ${error instanceof Error ? error.message.slice(0, 200) : 'unknown error'}`
+        throw new HttpError(503, 'RESEARCH_FAILED', reason)
       }
     }
 
