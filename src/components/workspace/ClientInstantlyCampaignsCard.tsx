@@ -101,7 +101,7 @@ export const ClientInstantlyCampaignsCard = ({
             onClick={() => saveMutation.mutate()}
           >
             {saveMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save links
+            Save campaigns
           </Button>
         )}
       </CardHeader>
@@ -136,13 +136,15 @@ export const ClientInstantlyCampaignsCard = ({
           </p>
         ) : (() => {
           const query = search.trim().toLowerCase()
-          // Linked campaigns surface first so the client's own list is always
-          // in view; the rest scrolls inside the card.
+          // Saved links surface first so the client's own list is always in
+          // view. Ordering follows what is SAVED, not the in-progress
+          // selection — resorting on every checkbox toggle would make rows
+          // jump around under the cursor.
           const campaigns = [...data.provider_campaigns]
             .filter((campaign) => !query || campaign.name.toLowerCase().includes(query))
             .sort((a, b) => {
-              const aLinked = selection.has(a.id) ? 0 : 1
-              const bLinked = selection.has(b.id) ? 0 : 1
+              const aLinked = savedIds.has(a.id) ? 0 : 1
+              const bLinked = savedIds.has(b.id) ? 0 : 1
               return aLinked - bLinked || a.name.localeCompare(b.name)
             })
           return (
