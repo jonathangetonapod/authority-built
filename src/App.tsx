@@ -43,6 +43,7 @@ const WorkspaceClientDetail = lazy(() => import("./pages/app/WorkspaceClientDeta
 const WorkspaceGuestResources = lazy(() => import("./pages/app/WorkspaceGuestResources"));
 const WorkspaceOnboarding = lazy(() => import("./pages/app/WorkspaceOnboarding"));
 const MyWorkspaceSettings = lazy(() => import("./pages/app/MyWorkspaceSettings"));
+const ManageWorkspaces = lazy(() => import("./pages/app/ManageWorkspaces"));
 const WorkspaceBilling = lazy(() => import("./pages/app/WorkspaceBilling"));
 const WorkspaceCampaignDetail = lazy(() => import("./pages/app/WorkspaceCampaignDetail"));
 const WorkspaceOutreachSuite = lazy(() => import("./pages/app/WorkspaceOutreachSuite"));
@@ -129,7 +130,14 @@ const App = () => (
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/app" element={<Navigate to="/app/clients" replace />} />
             <Route path="/app/workspace-users" element={<Navigate to="/app/settings" replace />} />
-            <Route path="/app/manage-workspaces" element={<Navigate to="/app/settings" replace />} />
+            <Route
+              path="/app/manage-workspaces"
+              element={
+                <ProtectedRoute>
+                  <ManageWorkspaces />
+                </ProtectedRoute>
+              }
+            />
             <Route path="/app/overview" element={<Navigate to="/app/clients" replace />} />
             <Route
               path="/app/settings"

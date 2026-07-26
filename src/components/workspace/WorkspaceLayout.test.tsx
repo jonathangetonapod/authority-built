@@ -238,7 +238,7 @@ describe('WorkspaceLayout', () => {
     expect(within(navigation).getByRole('button', { name: 'Reorder sidebar pages' })).toBeInTheDocument()
     fireEvent.click(within(navigation).getByRole('button', { name: 'Reorder sidebar pages' }))
     expect(within(navigation).getByRole('button', { name: 'Done' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /manage workspaces/i })).toHaveAttribute('href', '/app/settings')
+    expect(screen.getByRole('link', { name: /manage workspaces/i })).toHaveAttribute('href', '/app/manage-workspaces')
     expect(screen.getByRole('button', { name: /sign out/i })).toBeEnabled()
     expect(screen.getByTestId('workspace-logo-sidebar')).toHaveClass('h-24', 'w-full', 'bg-transparent')
     expect(screen.getByTestId('workspace-logo-sidebar')).not.toHaveClass('bg-gradient-to-br')

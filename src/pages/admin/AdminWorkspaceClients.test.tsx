@@ -123,7 +123,7 @@ describe('AdminWorkspaceClients', () => {
       workspaceId,
       expect.objectContaining({ name: 'New Platform Client' }),
     ))
-    expect(screen.getByRole('link', { name: /manage workspaces/i })).toHaveAttribute('href', '/app/settings')
+    expect(screen.getByRole('link', { name: /manage workspaces/i })).toHaveAttribute('href', '/app/manage-workspaces')
     expect(screen.queryByText('Default Workspace')).not.toBeInTheDocument()
     expect(mockedView).toHaveBeenCalledWith(workspaceId, expect.any(AbortSignal))
   })

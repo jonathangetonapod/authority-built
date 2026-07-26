@@ -35,6 +35,17 @@ describe('MyWorkspaceSettings', () => {
     expect(screen.getByText('Platform workspace settings')).toBeInTheDocument()
   })
 
+  it('gives a platform admin who owns a workspace the normal settings', () => {
+    mockedUseAuth.mockReturnValue({
+      isPlatformAdmin: true,
+      canManageWorkspaceStaff: false,
+      membership: { role: 'owner' },
+    } as never)
+    renderPage()
+    expect(screen.getByText('Agency workspace settings')).toBeInTheDocument()
+    expect(screen.queryByText('Platform workspace settings')).not.toBeInTheDocument()
+  })
+
   it('uses the same settings route for an agency workspace manager', () => {
     mockedUseAuth.mockReturnValue({ isPlatformAdmin: false, canManageWorkspaceStaff: true } as never)
     renderPage()

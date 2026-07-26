@@ -587,7 +587,7 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
           <div className="ml-auto flex min-w-0 items-center justify-end gap-2">
             {isPlatformAdmin && (
               <Button variant="outline" size="sm" className="hidden xl:inline-flex" asChild>
-                <Link to="/app/settings">
+                <Link to="/app/manage-workspaces">
                   <Building2 className="mr-2 h-4 w-4" />Manage workspaces
                 </Link>
               </Button>
