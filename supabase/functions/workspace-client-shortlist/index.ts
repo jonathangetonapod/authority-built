@@ -321,6 +321,18 @@ const RESEARCH_STAGE_MAP: Record<string, string[]> = {
   find_topics: ['guest_fit', 'pitch_angles'],
 }
 const RESEARCH_STALE_LOCK_MS = 3 * 60 * 1000
+
+// Podscan payloads carry HTML entities in names and descriptions.
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&amp;/gu, '&')
+    .replace(/&lt;/gu, '<')
+    .replace(/&gt;/gu, '>')
+    .replace(/&quot;/gu, '"')
+    .replace(/&#0?39;/gu, "'")
+    .replace(/&apos;/gu, "'")
+    .replace(/&#(\d+);/gu, (_match, code) => String.fromCharCode(Number(code)))
+}
 const EMAIL_SEARCH_STALE_LOCK_MS = 3 * 60 * 1000
 // Hosted-platform domains never receive host mailboxes — pattern guesses
 // against them are pure noise.
@@ -1466,6 +1478,138 @@ serve(async (req) => {
         metadata: { max_weekly_adds: maxWeeklyAdds, min_score: minScore },
       })
       return jsonResponse(req, METHODS, 200, { autopilot: settings })
+    }
+
+    if (action === 'pitch-generate') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'shortlist_podcast_id', 'angle_index'])
+      const shortlistPodcastId = requireUuid(body.shortlist_podcast_id, 'shortlist_podcast_id')
+      const angleIndex = typeof body.angle_index === 'number' && Number.isInteger(body.angle_index)
+        ? Math.max(0, Math.min(body.angle_index, 4))
+        : 0
+
+      const [{ data: shortlistRow }, { data: clientProfile }, { data: target }] = await Promise.all([
+        authContext.admin
+          .from('client_dashboard_podcasts')
+          .select('id, podcast_id, podcast_name, podcast_description, podcast_url, publisher_name, ai_pitch_angles, research_document')
+          .eq('id', shortlistPodcastId)
+          .eq('client_id', clientId)
+          .maybeSingle(),
+        authContext.admin
+          .from('clients')
+          .select('name, bio, linkedin_url, website')
+          .eq('id', clientId)
+          .eq('workspace_id', workspaceId)
+          .maybeSingle(),
+        authContext.admin
+          .from('workspace_client_campaign_targets')
+          .select('host_name, contact_email')
+          .eq('workspace_id', workspaceId)
+          .eq('shortlist_podcast_id', shortlistPodcastId)
+          .maybeSingle(),
+      ])
+      if (!shortlistRow) throw new HttpError(404, 'PODCAST_NOT_FOUND', 'Shortlist podcast not found for this client')
+      const researchDocument = (shortlistRow.research_document ?? null) as
+        | { podcast_research?: unknown; host_info?: unknown; find_topics?: unknown; episodes_used?: Array<{ title?: string }> }
+        | null
+      if (!researchDocument || typeof researchDocument.podcast_research !== 'string') {
+        throw new HttpError(409, 'RESEARCH_REQUIRED', 'Run research for this podcast before generating the pitch')
+      }
+      const angles = Array.isArray(shortlistRow.ai_pitch_angles) ? shortlistRow.ai_pitch_angles : []
+      const angle = angles[angleIndex] as { title?: string; description?: string } | undefined
+
+      const anthropicKey = await resolveAiKey(authContext.admin, workspaceId, 'anthropic')
+      if (!anthropicKey) throw new HttpError(500, 'SERVER_MISCONFIGURED', 'Pitch writing is not configured')
+      const byoKeyUsed = anthropicKey.source === 'workspace'
+      await chargeCredits(authContext.admin, {
+        workspaceId,
+        operationType: 'query_generation',
+        referenceKind: 'pitch_generate',
+        referenceId: `${shortlistPodcastId}:${angleIndex}`,
+        clientId,
+        actorUserId: authContext.user.id,
+        byoKeyUsed,
+        idempotencyKey: `pitch:${shortlistPodcastId}:${angleIndex}`,
+      })
+
+      const { data: overrideRows } = await authContext.admin
+        .from('workspace_research_prompts')
+        .select('prompt_id, content')
+        .eq('workspace_id', workspaceId)
+        .in('prompt_id', ['write_email', 'clean_email'])
+      const overrides = new Map(
+        (overrideRows ?? []).map((row) => [String(row.prompt_id), String(row.content)]),
+      )
+      const promptContent = (promptId: string): string =>
+        overrides.get(promptId) ?? RESEARCH_PROMPT_DEFAULTS[promptId].content
+
+      // Every template variable is mapped from stored research and catalog
+      // data — nothing raw (like the client bio document) leaks into the email.
+      const researchReport = [
+        String(researchDocument.podcast_research).slice(0, 8_000),
+        typeof researchDocument.host_info === 'string' ? String(researchDocument.host_info).slice(0, 3_000) : '',
+      ].filter(Boolean).join('\n\n')
+      const variables: Record<string, string | null> = {
+        client_name: clientProfile?.name ?? null,
+        client_bio: typeof clientProfile?.bio === 'string' ? clientProfile.bio.slice(0, 1_500) : null,
+        client_linkedin_url: clientProfile?.linkedin_url ?? null,
+        client_website: clientProfile?.website ?? null,
+        podcast_name: decodeHtmlEntities(shortlistRow.podcast_name),
+        podcast_url: shortlistRow.podcast_url,
+        podcast_description: decodeHtmlEntities(shortlistRow.podcast_description ?? ''),
+        host_name: target?.host_name ?? null,
+        verified_email: target?.contact_email ?? null,
+        episode_title: researchDocument.episodes_used?.[0]?.title ?? null,
+        episode_transcript: null,
+        recent_guest_name: null,
+        topic_proposal: [
+          angle?.title && angle?.description ? `SELECTED ANGLE: ${angle.title} — ${angle.description}` : '',
+          typeof researchDocument.find_topics === 'string' ? String(researchDocument.find_topics).slice(0, 4_000) : '',
+        ].filter(Boolean).join('\n\n') || null,
+        research_report: researchReport,
+      }
+
+      const usage = { input: 0, output: 0 }
+      try {
+        const draftEmail = await runResearchPrompt(
+          anthropicKey.apiKey,
+          RESEARCH_PROMPT_DEFAULTS.write_email,
+          fillPromptTemplate(promptContent('write_email'), variables),
+          usage,
+        )
+        const cleaned = await runResearchPrompt(
+          anthropicKey.apiKey,
+          RESEARCH_PROMPT_DEFAULTS.clean_email,
+          fillPromptTemplate(promptContent('clean_email'), { email_draft: draftEmail.slice(0, 6_000) }),
+          usage,
+        )
+
+        // The cleaned output is the email body; lift a Subject: line when the
+        // prompt produced one.
+        let subject = `Guest idea for ${decodeHtmlEntities(shortlistRow.podcast_name)}: ${clientProfile?.name ?? 'a guest'}`
+        let emailBody = cleaned.trim()
+        const subjectMatch = emailBody.match(/^\s*subject\s*:\s*(.{3,200})$/imu)
+        if (subjectMatch) {
+          subject = subjectMatch[1].trim()
+          emailBody = emailBody.replace(subjectMatch[0], '').trim()
+        }
+
+        await logOperationCost(authContext.admin, {
+          workspaceId,
+          operationType: 'query_generation',
+          usage: { anthropicInputTokens: usage.input, anthropicOutputTokens: usage.output },
+          usedByoKey: byoKeyUsed,
+          clientId,
+          referenceKind: 'pitch_generate',
+          referenceId: shortlistPodcastId,
+        })
+        return jsonResponse(req, METHODS, 200, {
+          pitch: { subject: subject.slice(0, 300), body: emailBody.slice(0, 6_000), angle_index: angleIndex },
+        })
+      } catch (error) {
+        if (error instanceof HttpError) throw error
+        console.error('[Client Shortlist] Pitch generation failed')
+        throw new HttpError(503, 'PITCH_FAILED', 'The pitch could not be written. Try again shortly')
+      }
     }
 
     throw new HttpError(400, 'INVALID_ACTION', 'Unknown client shortlist action')

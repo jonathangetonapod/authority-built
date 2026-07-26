@@ -45,6 +45,7 @@ import {
   type ClientShortlistEmailUnlockStageId,
   type ClientShortlistPodcast,
   type ClientShortlistResearchStageId,
+  generateClientShortlistPitch,
   runClientShortlistEmailSearch,
   runClientShortlistResearch,
 } from '@/services/clientShortlist'
@@ -198,6 +199,33 @@ export function ClientCampaignPrepDialog({
       toast.error(error instanceof Error ? error.message : 'The research run could not be completed.')
     },
   })
+  // Real pitch copy comes from the write_email/clean_email prompts running
+  // over the stored research with mapped variables; the local template is
+  // only the placeholder while it loads (or the fallback if it fails).
+  const [aiPitches, setAiPitches] = useState<Record<string, { subject: string; body: string }>>({})
+  const [pitchLoadingKey, setPitchLoadingKey] = useState<string | null>(null)
+  const pitchKey = (podcastId: string, angleIndex: number) => `${podcastId}:${angleIndex}`
+  const loadAiPitch = async (angleIndex: number) => {
+    if (!podcast?.id) return
+    const key = pitchKey(podcast.id, angleIndex)
+    if (aiPitches[key] || pitchLoadingKey === key) return
+    const researched = podcast.research_progress
+      ? podcast.research_progress.status === 'completed'
+      : Boolean(podcast.ai_analyzed_at)
+    if (!researched) return
+    setPitchLoadingKey(key)
+    try {
+      const pitch = await generateClientShortlistPitch(workspaceId, clientId, podcast.id, angleIndex)
+      setAiPitches((current) => ({ ...current, [key]: { subject: pitch.subject, body: pitch.body } }))
+      setDraft((current) => ({ ...current, subject: pitch.subject, pitchBody: pitch.body }))
+      setSavedDraft((current) => ({ ...current, subject: pitch.subject, pitchBody: pitch.body }))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The pitch could not be written from research.')
+    } finally {
+      setPitchLoadingKey((current) => (current === key ? null : current))
+    }
+  }
+
   const emailSearchMutation = useMutation({
     mutationFn: (shortlistPodcastId: string) => runClientShortlistEmailSearch(workspaceId, clientId, shortlistPodcastId),
     onMutate: () => {
@@ -494,12 +522,15 @@ export function ClientCampaignPrepDialog({
     setSelectedAngleIndex(angleIndex)
     if (!podcast) return
     const nextDraft = buildPodcastCampaignSequenceDraft({ podcast, clientName, clientBio, angleIndex })
+    const cached = aiPitches[pitchKey(podcast.id, angleIndex)]
     const selectedDraft = {
       ...nextDraft,
+      ...(cached ? { subject: cached.subject, pitchBody: cached.body } : {}),
       researchNotes: draft.researchNotes || nextDraft.researchNotes,
     }
     setDraft(selectedDraft)
     setSavedDraft(selectedDraft)
+    if (!cached) void loadAiPitch(angleIndex)
   }
   const normalizedEmail = contactEmail.trim().toLowerCase()
   const emailReady = validEmail(normalizedEmail)

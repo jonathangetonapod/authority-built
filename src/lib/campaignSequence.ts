@@ -34,10 +34,11 @@ export function buildPodcastCampaignSequenceDraft({
   clientBio,
   angleIndex = 0,
 }: BuildPodcastCampaignSequenceDraftInput): PodcastCampaignSequenceDraft {
+  void clientBio
   const angle = podcast.ai_pitch_angles?.[angleIndex] || podcast.ai_pitch_angles?.[0] || null
   const fitReason = podcast.ai_fit_reasons?.[0] || null
   const podcastSummary = sentence(podcast.ai_clean_description || podcast.podcast_description, 420)
-  const clientSummary = sentence(clientBio, 420)
+  const secondFitReason = podcast.ai_fit_reasons?.[1] || null
   const contactFirstName = podcast.publisher_name?.trim().split(/\s+/)[0] || ''
   const greeting = contactFirstName ? `Hi ${contactFirstName},` : 'Hi,'
   const subject = `Guest idea for ${podcast.podcast_name}: ${clientName}`
@@ -47,7 +48,7 @@ export function buildPodcastCampaignSequenceDraft({
   const fitLine = fitReason
     ? sentence(fitReason, 500)
     : `${clientName}'s experience creates a natural fit for the show's audience.`
-  const clientLine = clientSummary ? `For context, ${clientSummary}` : ''
+  const clientLine = secondFitReason ? sentence(secondFitReason, 420) : ''
   const researchNotes = [
     podcastSummary ? `Show brief: ${podcastSummary}` : null,
     `Audience fit: ${fitLine}`,

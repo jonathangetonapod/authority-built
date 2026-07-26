@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { toFunctionError } from '@/lib/functionErrors'
+import { decodeHtmlEntities } from '@/lib/htmlEntities'
 
 export type ClientShortlistVisibility = 'visible' | 'archived'
 export type ClientShortlistFeedbackStatus = 'approved' | 'rejected' | null
@@ -129,11 +130,19 @@ export async function getClientShortlist(
   workspaceId: string,
   clientId: string,
 ): Promise<ClientShortlistResponse> {
-  return await invokeClientShortlist<ClientShortlistResponse>({
+  const data = await invokeClientShortlist<ClientShortlistResponse>({
     action: 'list',
     workspace_id: workspaceId,
     client_id: clientId,
   })
+  data.podcasts = (data.podcasts || []).map((podcast) => ({
+    ...podcast,
+    podcast_name: decodeHtmlEntities(podcast.podcast_name),
+    podcast_description: podcast.podcast_description
+      ? decodeHtmlEntities(podcast.podcast_description)
+      : podcast.podcast_description,
+  }))
+  return data
 }
 
 export async function searchClientPodcastCatalog(
@@ -277,4 +286,32 @@ export async function setClientAutopilot(
     ...settings,
   })
   return data.autopilot
+}
+
+export interface ClientShortlistPitch {
+  subject: string
+  body: string
+  angle_index: number
+}
+
+export async function generateClientShortlistPitch(
+  workspaceId: string,
+  clientId: string,
+  shortlistPodcastId: string,
+  angleIndex: number,
+): Promise<ClientShortlistPitch> {
+  const { data, error } = await supabase.functions.invoke('workspace-client-shortlist', {
+    body: {
+      action: 'pitch-generate',
+      workspace_id: workspaceId,
+      client_id: clientId,
+      shortlist_podcast_id: shortlistPodcastId,
+      angle_index: angleIndex,
+    },
+  })
+  if (error) throw await toFunctionError(error, 'The pitch could not be written.')
+  if (!data?.pitch || typeof data.pitch.body !== 'string') {
+    throw new Error('The pitch response was invalid.')
+  }
+  return data.pitch as ClientShortlistPitch
 }
