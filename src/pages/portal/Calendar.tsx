@@ -12,6 +12,9 @@ interface CalendarEvent {
   key: string
   kind: 'recording' | 'release'
   date: string
+  // A date entered while the booking is still a conversation is a target,
+  // not a commitment — the client should be able to tell the difference.
+  planned: boolean
   booking: PortalExperienceBooking
 }
 
@@ -29,13 +32,14 @@ const buildEvents = (bookings: PortalExperienceBooking[]): CalendarEvent[] => {
   const events: CalendarEvent[] = []
   for (const booking of bookings) {
     if (booking.status === 'cancelled') continue
+    const planned = ['conversation_started', 'in_progress'].includes(booking.status)
     const recordingDay = isoDay(booking.recording_date || booking.scheduled_date)
     if (recordingDay) {
-      events.push({ key: `${booking.id}:recording`, kind: 'recording', date: recordingDay, booking })
+      events.push({ key: `${booking.id}:recording`, kind: 'recording', date: recordingDay, planned, booking })
     }
     const releaseDay = isoDay(booking.publish_date)
     if (releaseDay) {
-      events.push({ key: `${booking.id}:release`, kind: 'release', date: releaseDay, booking })
+      events.push({ key: `${booking.id}:release`, kind: 'release', date: releaseDay, planned, booking })
     }
   }
   return events.sort((a, b) => a.date.localeCompare(b.date))
@@ -127,6 +131,7 @@ export default function PortalCalendar() {
                       {meta.label}
                     </span>
                   ))}
+                  <span className="ml-auto text-[11px]">Dashed border = date not confirmed yet</span>
                 </div>
                 <div className="grid grid-cols-7 gap-px overflow-hidden rounded-lg border bg-border text-center text-xs">
                   {WEEKDAYS.map((day) => (
@@ -150,8 +155,8 @@ export default function PortalCalendar() {
                                 key={event.key}
                                 type="button"
                                 onClick={() => setSelectedBooking(event.booking)}
-                                title={`${meta.label} · ${event.booking.podcast_name}`}
-                                className={`block w-full truncate rounded border px-1 py-0.5 text-left text-[10px] font-medium leading-4 ${meta.chipClass}`}
+                                title={`${meta.label}${event.planned ? ' (planned)' : ''} · ${event.booking.podcast_name}`}
+                                className={`block w-full truncate rounded border px-1 py-0.5 text-left text-[10px] font-medium leading-4 ${meta.chipClass} ${event.planned ? 'border-dashed' : ''}`}
                               >
                                 {event.booking.podcast_name}
                               </button>
@@ -192,7 +197,9 @@ export default function PortalCalendar() {
                             <meta.icon className={`mt-0.5 h-4 w-4 shrink-0 ${event.kind === 'recording' ? 'text-violet-600' : 'text-emerald-600'}`} />
                             <span className="min-w-0">
                               <span className="block truncate text-sm font-medium">{event.booking.podcast_name}</span>
-                              <span className="block text-xs text-muted-foreground">{meta.label} · {displayDate(event.date)}</span>
+                              <span className="block text-xs text-muted-foreground">
+                                {meta.label}{event.planned ? ' (planned)' : ''} · {displayDate(event.date)}
+                              </span>
                             </span>
                           </button>
                         </li>

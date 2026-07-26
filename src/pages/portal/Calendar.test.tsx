@@ -81,4 +81,48 @@ describe('PortalCalendar', () => {
     const next = new Date(now.getFullYear(), now.getMonth() + 1, 1)
     expect(screen.getByText(next.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }))).toBeInTheDocument()
   })
+
+  it('shows a recording date and an episode-live date from the same placement', async () => {
+    mockedUseExperience.mockReturnValue({
+      data: {
+        bookings: [
+          booking({
+            id: 'b9',
+            podcast_name: 'Operator Weekly',
+            recording_date: isoInDays(4),
+            publish_date: isoInDays(11),
+            status: 'booked',
+          }),
+        ],
+      },
+      isLoading: false,
+      error: null,
+    } as never)
+
+    render(<PortalCalendar />)
+
+    const next = await screen.findByText('Next up')
+    expect(next).toBeInTheDocument()
+    expect(screen.getByText(/^Recording ·/)).toBeInTheDocument()
+    expect(screen.getByText(/^Episode live ·/)).toBeInTheDocument()
+    // Both events reach Next up; a release that lands in a later month has no
+    // chip in the current grid, so three renders is the floor.
+    expect(screen.getAllByText('Operator Weekly').length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('marks dates entered during a conversation as planned', async () => {
+    mockedUseExperience.mockReturnValue({
+      data: {
+        bookings: [
+          booking({ id: 'b10', podcast_name: 'Early Talks', scheduled_date: isoInDays(6), status: 'conversation_started' }),
+        ],
+      },
+      isLoading: false,
+      error: null,
+    } as never)
+
+    render(<PortalCalendar />)
+
+    expect(await screen.findByText(/Recording \(planned\) ·/)).toBeInTheDocument()
+  })
 })
