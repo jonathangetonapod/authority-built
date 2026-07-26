@@ -209,7 +209,13 @@ export function ClientCampaignPrepDialog({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
       void queryClient.invalidateQueries({ queryKey: ['client-shortlist-research-document', workspaceId, clientId] })
-      toast.success('Research completed with your saved workspace prompts.')
+      toast.success('Research complete — writing the recommended sequence.')
+      // One button, whole pipeline: research finishing rolls straight into
+      // writing the recommended sequence, so the operator clicks once and
+      // ends with finished copy. The prop-driven research check is skipped
+      // because the fresh document is persisted server-side already.
+      setSelectedAngleIndex(0)
+      void loadAiPitch(0, { skipResearchCheck: true })
     },
     onError: (error) => {
       void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
@@ -222,14 +228,14 @@ export function ClientCampaignPrepDialog({
   const [aiPitches, setAiPitches] = useState<Record<string, { subject: string; body: string }>>({})
   const [pitchLoadingKey, setPitchLoadingKey] = useState<string | null>(null)
   const pitchKey = (podcastId: string, angleIndex: number) => `${podcastId}:${angleIndex}`
-  const loadAiPitch = async (angleIndex: number) => {
+  const loadAiPitch = async (angleIndex: number, options?: { skipResearchCheck?: boolean }) => {
     if (!podcast?.id) return
     const key = pitchKey(podcast.id, angleIndex)
     if (aiPitches[key] || pitchLoadingKey === key) return
-    const researched = podcast.research_progress
-      ? podcast.research_progress.status === 'completed'
-      : Boolean(podcast.ai_analyzed_at)
-    if (!researched) return
+    // Only the current prompt pipeline counts — a legacy ai_analyzed_at
+    // stamp does not authorize pitch writing (the server enforces this too).
+    const researched = podcast.research_progress?.status === 'completed'
+    if (!researched && !options?.skipResearchCheck) return
     setPitchLoadingKey(key)
     try {
       const pitch = await generateClientShortlistPitch(workspaceId, clientId, podcast.id, angleIndex)
@@ -373,6 +379,15 @@ export function ClientCampaignPrepDialog({
   const researchComplete = !researchRegenerating
     && researchProgress?.status === 'completed'
   const researchFailed = !researchRegenerating && researchProgress?.status === 'failed'
+  // The synthetic final progress step: the sequence being written by the
+  // write_email/clean_email prompts for the currently selected angle.
+  const sequenceWritingStatus: 'queued' | 'active' | 'complete' = (() => {
+    if (!podcast?.id) return 'queued'
+    const key = pitchKey(podcast.id, selectedAngleIndex)
+    if (aiPitches[key]) return 'complete'
+    if (pitchLoadingKey === key) return 'active'
+    return 'queued'
+  })()
   const researchWorking = researchRegenerating || researchProgress?.status === 'queued' || researchProgress?.status === 'running'
   const researchStepsExpanded = !researchComplete || showResearchSteps
   const researchStatusTitle = researchRegenerating && activeResearchStep
@@ -1119,6 +1134,21 @@ export function ClientCampaignPrepDialog({
                                   </li>
                                 )
                               })}
+                              {/* The pipeline's final visible act: research rolls
+                                  straight into the write_email/clean_email prompts,
+                                  so the operator watches one unbroken chain end in
+                                  finished copy. */}
+                              <li key="sequence_writing" className="bg-background">
+                                <div className="flex h-full w-full gap-3 p-4 text-left">
+                                  {sequenceWritingStatus === 'complete' && <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />}
+                                  {sequenceWritingStatus === 'active' && <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />}
+                                  {sequenceWritingStatus === 'queued' && <span className="mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-muted-foreground/25" />}
+                                  <div>
+                                    <div className="flex flex-wrap items-center gap-1.5"><p className="text-xs font-semibold text-foreground">Writing the sequence</p><span className={`text-[10px] font-semibold ${sequenceWritingStatus === 'complete' ? 'text-emerald-700' : sequenceWritingStatus === 'active' ? 'text-primary' : 'text-muted-foreground'}`}>{sequenceWritingStatus === 'complete' ? 'Done' : sequenceWritingStatus === 'active' ? 'In progress' : 'Waiting'}</span></div>
+                                    <p className="mt-1 text-[11px] leading-4 text-muted-foreground">Pitch email draft and cleanup prompts, written from the research above</p>
+                                  </div>
+                                </div>
+                              </li>
                             </ol>
                             {inspectedStage && inspectedPromptId && (
                               <div id="campaign-research-stage-inspector" className="border-t bg-background px-4 py-4">
