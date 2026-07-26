@@ -110,6 +110,23 @@ const waterfallMigration = readFileSync('supabase/migrations/20260726000600_emai
 assert.match(waterfallMigration, /ADD COLUMN IF NOT EXISTS email_unlock_progress JSONB/u)
 assert.match(waterfallMigration, /\('email_unlock_verify', 1, now\(\)\)/u)
 
+// Autopilot: settings actions are manager-scoped via the shared action gate,
+// and the tick function is secret-gated, claims one client optimistically,
+// respects min_score/max_weekly_adds, and never duplicates shortlist rows.
+assert.match(shortlistEdge, /if \(action === 'autopilot-get'\)[\s\S]*?from\('client_autopilot_settings'\)/u)
+assert.match(shortlistEdge, /if \(action === 'autopilot-set'\)[\s\S]*?maxWeeklyAdds < 1 \|\| maxWeeklyAdds > 15/u)
+const autopilotEdge = readFileSync('supabase/functions/client-autopilot-tick/index.ts', 'utf8')
+assert.match(autopilotEdge, /req\.headers\.get\('x-autopilot-secret'\) !== secret/u)
+assert.match(autopilotEdge, /\.eq\('next_run_at', due\.next_run_at\)/u)
+assert.match(autopilotEdge, /entry\.score >= due\.min_score/u)
+assert.match(autopilotEdge, /\.slice\(0, due\.max_weekly_adds\)/u)
+assert.match(autopilotEdge, /onConflict: 'client_id,podcast_id', ignoreDuplicates: true/u)
+assert.match(autopilotEdge, /merge_global_podcast_catalog_batch_v1/u)
+const autopilotMigration = readFileSync('supabase/migrations/20260726000700_client_autopilot.sql', 'utf8')
+assert.match(autopilotMigration, /REFERENCES public\.clients\(workspace_id, id\) ON DELETE CASCADE/u)
+assert.match(autopilotMigration, /ENABLE ROW LEVEL SECURITY/u)
+assert.match(autopilotMigration, /cron\.schedule\(/u)
+
 // Deno prompt defaults must stay in sync with the canonical docs JSON.
 const denoDefaults = readFileSync('supabase/functions/_shared/researchPromptDefaults.ts', 'utf8')
 const canonicalPrompts = JSON.parse(readFileSync('docs/pitch-research-prompts.json', 'utf8'))

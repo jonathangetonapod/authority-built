@@ -243,3 +243,38 @@ export async function runClientShortlistEmailSearch(
   }
   return data.email_unlock as ClientShortlistEmailUnlock
 }
+
+export interface ClientAutopilotSettings {
+  enabled: boolean
+  max_weekly_adds: number
+  min_score: number
+  last_run_at: string | null
+  last_run_added: number
+  next_run_at: string | null
+}
+
+export async function getClientAutopilot(
+  workspaceId: string,
+  clientId: string,
+): Promise<ClientAutopilotSettings | null> {
+  const data = await invokeClientShortlist<{ autopilot: ClientAutopilotSettings | null }>({
+    action: 'autopilot-get',
+    workspace_id: workspaceId,
+    client_id: clientId,
+  })
+  return data.autopilot
+}
+
+export async function setClientAutopilot(
+  workspaceId: string,
+  clientId: string,
+  settings: { enabled: boolean; max_weekly_adds?: number; min_score?: number },
+): Promise<ClientAutopilotSettings> {
+  const data = await invokeClientShortlist<{ autopilot: ClientAutopilotSettings }>({
+    action: 'autopilot-set',
+    workspace_id: workspaceId,
+    client_id: clientId,
+    ...settings,
+  })
+  return data.autopilot
+}

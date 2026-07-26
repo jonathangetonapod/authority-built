@@ -39,6 +39,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,7 +54,9 @@ import { safeExternalUrl } from '@/lib/externalUrl'
 import { cn } from '@/lib/utils'
 import {
   addClientShortlistPodcasts,
+  getClientAutopilot,
   getClientShortlist,
+  setClientAutopilot,
   runClientShortlistEmailSearch,
   runClientShortlistResearch,
   searchClientPodcastCatalog,
@@ -236,6 +239,35 @@ export function ClientShortlistEditor({
       : !podcast.ai_analyzed_at
     return needsEmail || needsResearch
   }), [podcasts])
+
+  const autopilotQuery = useQuery({
+    queryKey: ['client-autopilot', workspaceId, clientId],
+    queryFn: () => getClientAutopilot(workspaceId, clientId),
+    enabled: viewerRole !== 'member',
+    retry: false,
+    staleTime: 60_000,
+  })
+  const autopilot = autopilotQuery.data ?? null
+  const [autopilotSaving, setAutopilotSaving] = useState(false)
+  const toggleAutopilot = async (enabled: boolean) => {
+    if (autopilotSaving) return
+    setAutopilotSaving(true)
+    try {
+      const saved = await setClientAutopilot(workspaceId, clientId, {
+        enabled,
+        max_weekly_adds: autopilot?.max_weekly_adds,
+        min_score: autopilot?.min_score,
+      })
+      queryClient.setQueryData(['client-autopilot', workspaceId, clientId], saved)
+      toast.success(enabled
+        ? `Weekly autopilot is on — up to ${saved.max_weekly_adds} high-fit podcasts will be added automatically, starting within the next ten minutes.`
+        : 'Weekly autopilot is off for this client.')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Autopilot could not be updated.')
+    } finally {
+      setAutopilotSaving(false)
+    }
+  }
 
   const runPrepareAll = async () => {
     if (prepRun?.active || prepCandidates.length === 0) return
@@ -474,6 +506,29 @@ export function ClientShortlistEditor({
             <div className="rounded-xl border bg-background p-4"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Client decisions</p><p className="mt-2 text-2xl font-bold">{counts.approved + counts.rejected}</p></div>
             <div className="rounded-xl border bg-background p-4"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Archived</p><p className="mt-2 text-2xl font-bold">{counts.archived}</p></div>
           </div>
+          {viewerRole !== 'member' && !autopilotQuery.isError && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-background px-4 py-3">
+              <div className="flex items-center gap-3">
+                <Switch
+                  id="client-autopilot"
+                  checked={Boolean(autopilot?.enabled)}
+                  disabled={autopilotSaving || autopilotQuery.isLoading}
+                  onCheckedChange={(checked) => void toggleAutopilot(checked)}
+                />
+                <div>
+                  <label htmlFor="client-autopilot" className="text-sm font-medium">Weekly autopilot</label>
+                  <p className="text-xs text-muted-foreground">
+                    Scans every week and adds up to {autopilot?.max_weekly_adds ?? 5} podcasts scoring {autopilot?.min_score ?? 70}+ for {clientName} to review.
+                  </p>
+                </div>
+              </div>
+              {autopilot?.enabled && autopilot.last_run_at && (
+                <p className="text-xs text-muted-foreground">
+                  Last run added {autopilot.last_run_added} · next {autopilot.next_run_at ? new Date(autopilot.next_run_at).toLocaleDateString() : 'soon'}
+                </p>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ClientShortlistEditor } from '@/components/workspace/ClientShortlistEditor'
 import {
   addClientShortlistPodcasts,
+  getClientAutopilot,
   getClientShortlist,
   runClientShortlistEmailSearch,
   runClientShortlistResearch,
@@ -16,6 +17,8 @@ import { getWorkspaceCampaign, prepareWorkspaceCampaignPodcast } from '@/service
 
 vi.mock('@/services/clientShortlist', () => ({
   addClientShortlistPodcasts: vi.fn(),
+  getClientAutopilot: vi.fn(),
+  setClientAutopilot: vi.fn(),
   getClientShortlist: vi.fn(),
   runClientShortlistEmailSearch: vi.fn(),
   runClientShortlistResearch: vi.fn(),
@@ -99,6 +102,7 @@ describe('ClientShortlistEditor', () => {
     // Research and email searches stay pending so tests can assert the in-flight UI.
     vi.mocked(runClientShortlistResearch).mockImplementation(() => new Promise(() => {}))
     vi.mocked(runClientShortlistEmailSearch).mockImplementation(() => new Promise(() => {}))
+    vi.mocked(getClientAutopilot).mockResolvedValue(null)
     vi.mocked(getClientShortlist).mockResolvedValue({
       client: { id: clientId, name: 'Taylor Client' },
       podcasts: [

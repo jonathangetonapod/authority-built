@@ -1415,6 +1415,59 @@ serve(async (req) => {
       }
     }
 
+    if (action === 'autopilot-get') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id'])
+      const { data: settings } = await authContext.admin
+        .from('client_autopilot_settings')
+        .select('enabled, max_weekly_adds, min_score, last_run_at, last_run_added, next_run_at')
+        .eq('workspace_id', workspaceId)
+        .eq('client_id', clientId)
+        .maybeSingle()
+      return jsonResponse(req, METHODS, 200, { autopilot: settings ?? null })
+    }
+
+    if (action === 'autopilot-set') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'enabled', 'max_weekly_adds', 'min_score'])
+      if (typeof body.enabled !== 'boolean') {
+        throw new HttpError(400, 'INVALID_FIELD', 'enabled must be a boolean')
+      }
+      const maxWeeklyAdds = body.max_weekly_adds === undefined ? 5 : body.max_weekly_adds
+      const minScore = body.min_score === undefined ? 70 : body.min_score
+      if (typeof maxWeeklyAdds !== 'number' || !Number.isInteger(maxWeeklyAdds) || maxWeeklyAdds < 1 || maxWeeklyAdds > 15) {
+        throw new HttpError(400, 'INVALID_FIELD', 'max_weekly_adds must be between 1 and 15')
+      }
+      if (typeof minScore !== 'number' || !Number.isInteger(minScore) || minScore < 0 || minScore > 100) {
+        throw new HttpError(400, 'INVALID_FIELD', 'min_score must be between 0 and 100')
+      }
+      const { data: settings, error: settingsError } = await authContext.admin
+        .from('client_autopilot_settings')
+        .upsert({
+          workspace_id: workspaceId,
+          client_id: clientId,
+          enabled: body.enabled,
+          max_weekly_adds: maxWeeklyAdds,
+          min_score: minScore,
+          // Enabling schedules the first run immediately; the tick picks it up
+          // within ten minutes.
+          next_run_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'workspace_id,client_id' })
+        .select('enabled, max_weekly_adds, min_score, last_run_at, last_run_added, next_run_at')
+        .maybeSingle()
+      if (settingsError || !settings) {
+        throw new HttpError(500, 'AUTOPILOT_SAVE_FAILED', 'Autopilot settings could not be saved')
+      }
+      await writeAudit(authContext.admin, {
+        workspaceId,
+        actorUserId: authContext.user.id,
+        action: body.enabled ? 'workspace.client.autopilot.enabled' : 'workspace.client.autopilot.disabled',
+        entityType: 'client',
+        entityId: clientId,
+        metadata: { max_weekly_adds: maxWeeklyAdds, min_score: minScore },
+      })
+      return jsonResponse(req, METHODS, 200, { autopilot: settings })
+    }
+
     throw new HttpError(400, 'INVALID_ACTION', 'Unknown client shortlist action')
   } catch (error) {
     return errorResponse(req, METHODS, error)
