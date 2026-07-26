@@ -400,9 +400,6 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const dashboardAdminPreviewHref = dashboardHref
     ? `${dashboardHref}?preview=1`
     : null
-  const portalLoginHref = client.dashboard_slug
-    ? `/portal/login?b=${encodeURIComponent(client.dashboard_slug)}`
-    : '/portal/login'
   const prospectDashboardHref = client.prospect_dashboard_slug
     ? `/prospect/${encodeURIComponent(client.prospect_dashboard_slug)}`
     : null
@@ -1032,22 +1029,6 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
           </TabsContent>
 
           <TabsContent value="portal" className="mt-0 space-y-6">
-            <Card className="overflow-hidden">
-              <div className="flex flex-col gap-5 p-5 sm:p-7 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex items-start gap-4">
-                  <div className="rounded-2xl bg-sky-50 p-3 text-sky-700"><KeyRound className="h-6 w-6" /></div>
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2"><h2 className="text-2xl font-bold">Client portal</h2><Badge variant="outline" className={client.portal_access_enabled ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : undefined}>{client.portal_access_enabled ? 'Enabled' : 'Disabled'}</Badge></div>
-                    <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">The authenticated delivery view for bookings, upcoming recordings, published appearances, and client resources.</p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={() => void copyPublicLink(portalLoginHref, 'Portal login link')}><Copy className="mr-2 h-4 w-4" />Copy login link</Button>
-                  <Button asChild><a href={portalLoginHref} target="_blank" rel="noreferrer"><ExternalLink className="mr-2 h-4 w-4" />Open portal login</a></Button>
-                </div>
-              </div>
-            </Card>
-
             <div className="grid gap-3 sm:grid-cols-3">
               <MetricCard icon={Mic2} label="Total placements" value={bookings.length} iconClassName="bg-slate-100 text-slate-700" />
               <MetricCard icon={CalendarDays} label="Upcoming / active" value={progress.booked + progress.inProgress} iconClassName="bg-amber-50 text-amber-600" />
