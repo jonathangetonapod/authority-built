@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { supabase } from '@/lib/supabase'
 import {
   addClientShortlistPodcasts,
+  ensureClientShortlistEpisodes,
   getClientShortlist,
   getClientShortlistResearchDocument,
   reorderClientShortlistFeatured,
@@ -75,6 +76,33 @@ describe('clientShortlist service', () => {
       },
     })
     expect(result).toEqual(progress)
+  })
+
+  it('ensures stored episode metadata for one shortlisted show', async () => {
+    invoke.mockResolvedValueOnce({
+      data: {
+        episodes: [{ title: 'Episode one', description: 'About storage tech', posted_at: '2026-07-20T00:00:00.000Z' }],
+        last_posted_at: '2026-07-20T00:00:00.000Z',
+        episodes_fetched_at: '2026-07-26T00:00:00.000Z',
+      },
+      error: null,
+    } as never)
+
+    const result = await ensureClientShortlistEpisodes(workspaceId, clientId, 'podcast-one')
+
+    expect(invoke).toHaveBeenCalledWith('workspace-client-shortlist', {
+      body: {
+        action: 'episodes-ensure',
+        workspace_id: workspaceId,
+        client_id: clientId,
+        podcast_id: 'podcast-one',
+      },
+    })
+    expect(result).toEqual({
+      episodes: [{ title: 'Episode one', description: 'About storage tech', posted_at: '2026-07-20T00:00:00.000Z' }],
+      last_posted_at: '2026-07-20T00:00:00.000Z',
+      episodes_fetched_at: '2026-07-26T00:00:00.000Z',
+    })
   })
 
   it('loads the stored research document for one shortlist podcast', async () => {

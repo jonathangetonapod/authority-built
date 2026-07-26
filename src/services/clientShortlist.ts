@@ -59,6 +59,12 @@ export interface ClientShortlistPodcastInput {
   compatibility_reasoning?: string | null
 }
 
+export interface ClientShortlistEpisode {
+  title: string
+  description: string | null
+  posted_at: string | null
+}
+
 export interface ClientShortlistPodcast extends ClientShortlistPodcastInput {
   id: string
   client_id: string
@@ -71,6 +77,8 @@ export interface ClientShortlistPodcast extends ClientShortlistPodcastInput {
   audience_size: number | null
   last_posted_at: string | null
   podcast_categories: ClientShortlistCategory[] | null
+  recent_episodes?: ClientShortlistEpisode[] | null
+  episodes_fetched_at?: string | null
   ai_clean_description: string | null
   ai_fit_reasons: string[] | null
   ai_pitch_angles: Array<{ title: string; description: string }> | null
@@ -276,6 +284,35 @@ export async function getClientShortlistResearchDocument(
     shortlist_podcast_id: shortlistPodcastId,
   })
   return data.document ?? null
+}
+
+export interface ClientShortlistEpisodeMetadata {
+  episodes: ClientShortlistEpisode[]
+  last_posted_at: string | null
+  episodes_fetched_at: string | null
+}
+
+/**
+ * Guarantees the stored episode capture for a shortlisted show exists,
+ * fetching from Podscan only when it is missing or stale. Called by the
+ * pitch dialog on open — never by an operator action.
+ */
+export async function ensureClientShortlistEpisodes(
+  workspaceId: string,
+  clientId: string,
+  podcastId: string,
+): Promise<ClientShortlistEpisodeMetadata> {
+  const data = await invokeClientShortlist<ClientShortlistEpisodeMetadata>({
+    action: 'episodes-ensure',
+    workspace_id: workspaceId,
+    client_id: clientId,
+    podcast_id: podcastId,
+  })
+  return {
+    episodes: Array.isArray(data.episodes) ? data.episodes : [],
+    last_posted_at: data.last_posted_at ?? null,
+    episodes_fetched_at: data.episodes_fetched_at ?? null,
+  }
 }
 
 export interface ClientAutopilotSettings {

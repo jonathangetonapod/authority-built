@@ -1,5 +1,6 @@
-// Best-effort recent-episode fetch from Podscan for the research pipeline.
-// Research must degrade gracefully — every failure path returns [] and the
+// Best-effort recent-episode fetch from Podscan for the research pipeline,
+// plus fetch-once persistence on the global podcast catalog. Research must
+// degrade gracefully — every failure path returns [] / stored data and the
 // prompts are written to handle missing episode data explicitly.
 
 export interface RecentEpisode {
@@ -97,4 +98,91 @@ export async function fetchRecentEpisodes(podscanId: string): Promise<RecentEpis
     console.warn('[Podcast Episodes] Episode fetch was unavailable')
     return []
   }
+}
+
+// ---------------------------------------------------------------------------
+// Fetch-once episode capture on the global catalog.
+//
+// Podscan is only called when the stored capture is missing or older than the
+// freshness window; everything else — reruns, other clients, other
+// workspaces, the pitch dialog — reads the stored copy. A successful fetch
+// also advances last_posted_at from the newest episode, which is how catalog
+// rows that predate the field self-heal without anyone doing anything.
+
+export interface StoredEpisode {
+  title: string
+  description: string
+  posted_at: string | null
+}
+
+export interface CapturedEpisodes {
+  episodes: StoredEpisode[]
+  transcript: string | null
+  last_posted_at: string | null
+  episodes_fetched_at: string | null
+}
+
+const EPISODE_FRESHNESS_MS = 30 * 24 * 60 * 60 * 1000
+
+function newestIso(values: Array<string | null>): string | null {
+  // Podscan posted_at values are ISO-formatted, so lexicographic max works.
+  return values.reduce<string | null>(
+    (max, value) => (value && (!max || value > max) ? value : max),
+    null,
+  )
+}
+
+// deno-lint-ignore no-explicit-any
+export async function ensureEpisodesCaptured(admin: any, podscanId: string): Promise<CapturedEpisodes | null> {
+  if (!/^[a-zA-Z0-9_-]+$/.test(podscanId)) return null
+  const { data: row, error } = await admin
+    .from('podcasts')
+    .select('id, recent_episodes, latest_episode_transcript, episodes_fetched_at, last_posted_at')
+    .eq('podscan_id', podscanId)
+    .maybeSingle()
+  if (error || !row) return null
+
+  const stored: CapturedEpisodes = {
+    episodes: Array.isArray(row.recent_episodes)
+      ? (row.recent_episodes as StoredEpisode[]).filter((episode) => episode && typeof episode.title === 'string')
+      : [],
+    transcript: typeof row.latest_episode_transcript === 'string' && row.latest_episode_transcript
+      ? row.latest_episode_transcript
+      : null,
+    last_posted_at: typeof row.last_posted_at === 'string' ? row.last_posted_at : null,
+    episodes_fetched_at: typeof row.episodes_fetched_at === 'string' ? row.episodes_fetched_at : null,
+  }
+  const fresh = stored.episodes_fetched_at
+    && Date.now() - Date.parse(stored.episodes_fetched_at) < EPISODE_FRESHNESS_MS
+  if (fresh) return stored
+
+  const fetched = await fetchRecentEpisodes(podscanId)
+  if (fetched.length === 0) {
+    // Nothing usable came back. Keep what we had and leave episodes_fetched_at
+    // unstamped so the next flow that needs episodes retries.
+    return stored
+  }
+
+  const episodes: StoredEpisode[] = fetched.map((episode) => ({
+    title: episode.title,
+    description: episode.description,
+    posted_at: episode.posted_at,
+  }))
+  const transcript = fetched[0]?.transcript || null
+  const fetchedAt = new Date().toISOString()
+  const lastPostedAt = newestIso([stored.last_posted_at, ...episodes.map((episode) => episode.posted_at)])
+  // Persistence is best-effort: a failed write still returns the fresh data
+  // to the caller, and the next flow simply fetches again.
+  await admin
+    .from('podcasts')
+    .update({
+      recent_episodes: episodes,
+      latest_episode_transcript: transcript,
+      episodes_fetched_at: fetchedAt,
+      last_posted_at: lastPostedAt,
+      updated_at: fetchedAt,
+    })
+    .eq('id', row.id)
+
+  return { episodes, transcript, last_posted_at: lastPostedAt, episodes_fetched_at: fetchedAt }
 }

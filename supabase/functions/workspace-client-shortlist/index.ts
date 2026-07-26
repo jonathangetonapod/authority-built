@@ -20,7 +20,7 @@ import {
 import { generatePodcastSearchEmbedding } from '../_shared/podcastSearch.ts'
 import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
-import { fetchPodcastHosts, fetchRecentEpisodes } from '../_shared/podcastEpisodes.ts'
+import { ensureEpisodesCaptured, fetchPodcastHosts } from '../_shared/podcastEpisodes.ts'
 import { decryptInstantlyApiKey, instantlyRequest } from '../_shared/instantly.ts'
 import { RESEARCH_PROMPT_DEFAULTS } from '../_shared/researchPromptDefaults.ts'
 import { notifyShortlistReady } from '../_shared/clientNotify.ts'
@@ -73,6 +73,10 @@ const CATALOG_FIELDS = [
   'region',
   'podscan_email',
   'rss_url',
+  // Stored episode capture (ensureEpisodesCaptured). The transcript column
+  // is deliberately excluded — it is heavy and only research reads it.
+  'recent_episodes',
+  'episodes_fetched_at',
 ].join(',')
 
 interface ShortlistPodcastInput {
@@ -118,6 +122,8 @@ interface CatalogPodcastRow extends Record<string, unknown> {
   region: string | null
   podscan_email: string | null
   rss_url: string | null
+  recent_episodes?: unknown
+  episodes_fetched_at?: string | null
   free_podscan_email?: string | null
   direct_email?: string | null
   rss_feed?: string | null
@@ -549,6 +555,8 @@ serve(async (req) => {
           audience_size: catalog?.audience_size ?? podcast.audience_size ?? null,
           last_posted_at: catalog?.last_posted_at ?? podcast.last_posted_at ?? null,
           podcast_categories: catalog?.podcast_categories ?? podcast.podcast_categories ?? null,
+          recent_episodes: catalog?.recent_episodes ?? null,
+          episodes_fetched_at: catalog?.episodes_fetched_at ?? null,
           podcast_email: catalog?.podscan_email || null,
           rss_feed: catalog?.rss_url || null,
           language: catalog?.language || null,
@@ -738,6 +746,18 @@ serve(async (req) => {
           throw new HttpError(500, 'SHORTLIST_ADD_FAILED', 'Podcasts could not be added to the client list')
         }
         addedPodcastIds = (shortlistResult.data || []).map((podcast) => podcast.podcast_id)
+
+        // Capture episode metadata the moment a show becomes a candidate, so
+        // the pitch dialog and research already have it. Best-effort and
+        // capped — anything not captured here self-heals when the dialog
+        // opens or research runs (both call ensureEpisodesCaptured).
+        for (const podcastId of addedPodcastIds.slice(0, 5)) {
+          try {
+            await ensureEpisodesCaptured(authContext.admin, podcastId)
+          } catch (_error) {
+            // A Podscan hiccup never fails the add.
+          }
+        }
       }
 
       await writeAudit(authContext.admin, {
@@ -934,6 +954,40 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, { reordered: Number(data || 0), podcast_ids: podcastIds })
     }
 
+    if (action === 'episodes-ensure') {
+      // Self-heal for the pitch dialog: guarantee the stored episode capture
+      // exists (fetching from Podscan only when missing or stale) and return
+      // the metadata the Podcast context panel shows. No operator action —
+      // the dialog calls this on open.
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'podcast_id'])
+      const podcastId = requireString(body.podcast_id, 'podcast_id', { max: 200 })
+      if (!/^[a-zA-Z0-9_-]+$/.test(podcastId)) {
+        throw new HttpError(400, 'INVALID_FIELD', 'podcast_id is invalid')
+      }
+      const { data: shortlistRow, error: shortlistError } = await authContext.admin
+        .from('client_dashboard_podcasts')
+        .select('id')
+        .eq('client_id', clientId)
+        .eq('podcast_id', podcastId)
+        .maybeSingle()
+      if (shortlistError) {
+        throw new HttpError(500, 'EPISODES_LOOKUP_FAILED', 'The podcast could not be checked')
+      }
+      if (!shortlistRow) {
+        throw new HttpError(404, 'PODCAST_NOT_FOUND', 'Shortlist podcast not found for this client')
+      }
+      const captured = await ensureEpisodesCaptured(authContext.admin, podcastId)
+      return jsonResponse(req, METHODS, 200, {
+        episodes: (captured?.episodes ?? []).map((episode) => ({
+          title: episode.title,
+          description: episode.description.slice(0, 300),
+          posted_at: episode.posted_at,
+        })),
+        last_posted_at: captured?.last_posted_at ?? null,
+        episodes_fetched_at: captured?.episodes_fetched_at ?? null,
+      })
+    }
+
     if (action === 'research-run') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'shortlist_podcast_id'])
       const shortlistPodcastId = requireUuid(body.shortlist_podcast_id, 'shortlist_podcast_id')
@@ -1021,8 +1075,10 @@ serve(async (req) => {
             ?? overrides.get(promptId)
             ?? RESEARCH_PROMPT_DEFAULTS[promptId].content
 
-        const episodes = await fetchRecentEpisodes(shortlistRow.podcast_id)
-        const firstEpisode = episodes[0] ?? null
+        // Stored episode capture: Podscan is only hit when the capture is
+        // missing or stale, so research reruns are free of provider calls.
+        const captured = await ensureEpisodesCaptured(authContext.admin, shortlistRow.podcast_id)
+        const firstEpisode = captured?.episodes[0] ?? null
         const baseVariables: Record<string, string | null> = {
           client_name: clientProfile?.name ?? null,
           client_bio: clientProfile?.bio ?? null,
@@ -1031,10 +1087,10 @@ serve(async (req) => {
           podcast_name: catalogRow?.podcast_name ?? shortlistRow.podcast_name,
           podcast_url: catalogRow?.podcast_url ?? shortlistRow.podcast_url,
           podcast_description: catalogRow?.podcast_description ?? shortlistRow.podcast_description,
-          last_posted_at: catalogRow?.last_posted_at ?? shortlistRow.last_posted_at,
+          last_posted_at: captured?.last_posted_at ?? catalogRow?.last_posted_at ?? shortlistRow.last_posted_at,
           episode_title: firstEpisode?.title ?? null,
           episode_description: firstEpisode?.description ?? null,
-          episode_transcript: firstEpisode?.transcript ?? null,
+          episode_transcript: captured?.transcript ?? null,
         }
 
         const advance = async (promptId: string, nextStage: string | null) => {
@@ -1059,7 +1115,7 @@ serve(async (req) => {
         await advance('host_info', 'guest_patterns')
 
         let guestReport: string | null = null
-        if (firstEpisode?.transcript) {
+        if (captured?.transcript) {
           guestReport = await runResearchPrompt(
             anthropicKey.apiKey,
             RESEARCH_PROMPT_DEFAULTS.guest_info,
@@ -1130,10 +1186,13 @@ serve(async (req) => {
               host_info: hostReport.slice(0, 20_000),
               guest_info: guestReport ? guestReport.slice(0, 20_000) : null,
               find_topics: topicProposal.slice(0, 20_000),
-              episodes_used: episodes.map((episode) => ({ title: episode.title, had_transcript: Boolean(episode.transcript) })),
+              episodes_used: (captured?.episodes ?? []).map((episode, index) => ({
+                title: episode.title,
+                had_transcript: index === 0 && Boolean(captured?.transcript),
+              })),
               // Trimmed so write_email can quote the latest episode without
               // ballooning the stored document (full transcripts run ~60k).
-              episode_transcript_excerpt: firstEpisode?.transcript ? firstEpisode.transcript.slice(0, 2_000) : null,
+              episode_transcript_excerpt: captured?.transcript ? captured.transcript.slice(0, 2_000) : null,
               recent_guest_name: recentGuestName,
               generated_at: completedAt,
             },
@@ -1538,6 +1597,19 @@ serve(async (req) => {
           .maybeSingle(),
       ])
       if (!shortlistRow) throw new HttpError(404, 'PODCAST_NOT_FOUND', 'Shortlist podcast not found for this client')
+      // The catalog row is the fresher copy of show metadata and carries the
+      // stored episode capture; the shortlist copy is only the fallback.
+      const { data: pitchCatalogRow } = await authContext.admin
+        .from('podcasts')
+        .select('podcast_name, podcast_description, podcast_url, recent_episodes')
+        .eq('podscan_id', shortlistRow.podcast_id)
+        .maybeSingle()
+      const storedEpisodes = Array.isArray(pitchCatalogRow?.recent_episodes)
+        ? pitchCatalogRow.recent_episodes as Array<{ title?: unknown }>
+        : []
+      const storedEpisodeTitle = typeof storedEpisodes[0]?.title === 'string'
+        ? storedEpisodes[0].title as string
+        : null
       const researchDocument = (shortlistRow.research_document ?? null) as
         | {
           podcast_research?: unknown
@@ -1602,12 +1674,12 @@ serve(async (req) => {
         client_bio: typeof clientProfile?.bio === 'string' ? clientProfile.bio.slice(0, 1_500) : null,
         client_linkedin_url: clientProfile?.linkedin_url ?? null,
         client_website: clientProfile?.website ?? null,
-        podcast_name: decodeHtmlEntities(shortlistRow.podcast_name),
-        podcast_url: shortlistRow.podcast_url,
-        podcast_description: decodeHtmlEntities(shortlistRow.podcast_description ?? ''),
+        podcast_name: decodeHtmlEntities(pitchCatalogRow?.podcast_name ?? shortlistRow.podcast_name),
+        podcast_url: pitchCatalogRow?.podcast_url ?? shortlistRow.podcast_url,
+        podcast_description: decodeHtmlEntities(pitchCatalogRow?.podcast_description ?? shortlistRow.podcast_description ?? ''),
         host_name: target?.host_name ?? null,
         verified_email: target?.contact_email ?? null,
-        episode_title: researchDocument.episodes_used?.[0]?.title ?? null,
+        episode_title: researchDocument.episodes_used?.[0]?.title ?? storedEpisodeTitle,
         episode_transcript: typeof researchDocument.episode_transcript_excerpt === 'string'
           ? researchDocument.episode_transcript_excerpt.slice(0, 2_000)
           : null,

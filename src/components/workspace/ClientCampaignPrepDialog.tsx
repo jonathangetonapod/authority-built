@@ -45,6 +45,7 @@ import {
   type ClientShortlistEmailUnlockStageId,
   type ClientShortlistPodcast,
   type ClientShortlistResearchStageId,
+  ensureClientShortlistEpisodes,
   generateClientShortlistPitch,
   getClientShortlistResearchDocument,
   runClientShortlistEmailSearch,
@@ -287,6 +288,19 @@ export function ClientCampaignPrepDialog({
     enabled: open && Boolean(podcast),
     retry: false,
   })
+  // Self-healing episode metadata: the server fetches from Podscan only when
+  // the stored capture is missing or stale, so opening the dialog normally
+  // costs one cheap read — and fills "Latest activity" without anyone asking.
+  const episodeMetadataQuery = useQuery({
+    queryKey: ['client-shortlist-episodes', workspaceId, clientId, podcast?.podcast_id || 'none'],
+    queryFn: () => ensureClientShortlistEpisodes(workspaceId, clientId, podcast!.podcast_id),
+    enabled: open && Boolean(podcast?.podcast_id),
+    retry: false,
+    staleTime: 5 * 60_000,
+  })
+  const episodeMetadata = episodeMetadataQuery.data ?? null
+  const latestEpisode = episodeMetadata?.episodes[0] ?? podcast?.recent_episodes?.[0] ?? null
+  const latestActivityAt = episodeMetadata?.last_posted_at ?? podcast?.last_posted_at ?? null
   const campaign = campaignQuery.data?.campaign || null
   const canManageCampaigns = Boolean(campaignQuery.data?.can_manage_campaigns)
   const canCustomizePrompts = viewerRole === 'owner' || viewerRole === 'platform_admin'
@@ -421,9 +435,9 @@ export function ClientCampaignPrepDialog({
       case 'podcast_name': return { source: 'Podcast catalog', value: variablePreview(podcast?.podcast_name) }
       case 'podcast_url': return { source: 'Podcast catalog', value: variablePreview(podcast?.podcast_url) }
       case 'podcast_description': return { source: 'Podcast catalog', value: variablePreview(podcast?.podcast_description) }
-      case 'last_posted_at': return { source: 'Podcast catalog', value: podcast?.last_posted_at ? formatPodcastDate(podcast.last_posted_at) : null }
-      case 'episode_title': return { source: 'Latest episode from Podscan', value: variablePreview(firstEpisode?.title) }
-      case 'episode_description': return { source: 'Latest episode from Podscan', value: firstEpisode ? 'Fetched at run time' : null }
+      case 'last_posted_at': return { source: 'Podcast catalog', value: latestActivityAt ? formatPodcastDate(latestActivityAt) : null }
+      case 'episode_title': return { source: 'Stored episode capture (Podscan)', value: variablePreview(latestEpisode?.title) ?? variablePreview(firstEpisode?.title) }
+      case 'episode_description': return { source: 'Stored episode capture (Podscan)', value: variablePreview(latestEpisode?.description) ?? (firstEpisode ? 'Stored at run time' : null) }
       case 'episode_transcript': return {
         source: 'Latest episode transcript',
         value: variablePreview(researchDocument?.episode_transcript_excerpt)
@@ -732,7 +746,18 @@ export function ClientCampaignPrepDialog({
                           <div className="flex items-center gap-2"><Mic2 className="h-4 w-4 text-primary" /><h4 id="pitch-host-and-show-heading" className="font-semibold">Host and show</h4></div>
                           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-1">
                             <div><dt className="text-xs text-muted-foreground">Host or publisher on record</dt><dd className="mt-1 font-medium">{podcast.publisher_name || 'Not identified yet'}</dd></div>
-                            <div><dt className="text-xs text-muted-foreground">Latest activity</dt><dd className="mt-1 font-medium">{formatPodcastDate(podcast.last_posted_at)}</dd></div>
+                            <div><dt className="text-xs text-muted-foreground">Latest activity</dt><dd className="mt-1 font-medium">{latestActivityAt ? formatPodcastDate(latestActivityAt) : episodeMetadataQuery.isLoading ? 'Checking…' : '—'}</dd></div>
+                            <div className="sm:col-span-2 lg:col-span-1">
+                              <dt className="text-xs text-muted-foreground">Latest episode</dt>
+                              <dd className="mt-1 font-medium">
+                                {latestEpisode
+                                  ? latestEpisode.title
+                                  : episodeMetadataQuery.isLoading ? 'Checking…' : 'Not available yet'}
+                              </dd>
+                              {latestEpisode?.posted_at && (
+                                <p className="mt-0.5 text-xs text-muted-foreground">Released {formatPodcastDate(latestEpisode.posted_at)}</p>
+                              )}
+                            </div>
                           </dl>
                         </section>
 

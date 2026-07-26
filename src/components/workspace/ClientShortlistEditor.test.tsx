@@ -19,6 +19,7 @@ import { getWorkspaceCampaign, prepareWorkspaceCampaignPodcast } from '@/service
 
 vi.mock('@/services/clientShortlist', () => ({
   addClientShortlistPodcasts: vi.fn(),
+  ensureClientShortlistEpisodes: vi.fn().mockResolvedValue({ episodes: [], last_posted_at: null, episodes_fetched_at: null }),
   generateClientShortlistPitch: vi.fn(),
   getClientShortlistResearchDocument: vi.fn(),
   getClientAutopilot: vi.fn(),

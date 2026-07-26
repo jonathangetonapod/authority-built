@@ -9,6 +9,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createAdminClient, writeAudit } from '../_shared/workspaceAuth.ts'
 import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
+import { ensureEpisodesCaptured } from '../_shared/podcastEpisodes.ts'
 
 const PODSCAN_BASE = 'https://podscan.fm/api/v1'
 const QUERY_COUNT = 4
@@ -313,6 +314,17 @@ serve(async (req) => {
         .select('podcast_id')
       if (insertError) throw new Error('autopilot shortlist insert failed')
       added = (inserted ?? []).length
+
+      // Capture episode metadata for each added show while it is fresh, so
+      // the pitch dialog and research never have to. Best-effort: a Podscan
+      // hiccup never fails the tick, and the dialog self-heals later anyway.
+      for (const row of (inserted ?? [])) {
+        try {
+          await ensureEpisodesCaptured(admin, String(row.podcast_id))
+        } catch (_error) {
+          // Ignore — the next flow that needs episodes retries.
+        }
+      }
     }
 
     await admin.from('client_autopilot_settings')
