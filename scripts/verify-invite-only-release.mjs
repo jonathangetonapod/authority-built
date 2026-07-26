@@ -20,12 +20,12 @@ const CONFIG_PATH = path.join(REPOSITORY_ROOT, 'supabase', 'config.toml')
 const FUNCTIONS_ROOT = path.join(REPOSITORY_ROOT, 'supabase', 'functions')
 
 const EXPECTED_COUNTS = Object.freeze({
-  changedFunctions: 103,
-  deployedFunctions: 101,
+  changedFunctions: 105,
+  deployedFunctions: 103,
   excludedFunctions: 2,
   retiredFunctions: 17,
   unauthenticatedTombstones: 5,
-  edgeTypeScriptFiles: 129,
+  edgeTypeScriptFiles: 131,
 })
 
 const EXPECTED_PHASE_KEYS = Object.freeze([
@@ -77,6 +77,7 @@ const EXPECTED_EXCLUDED_FUNCTIONS = Object.freeze([
 
 const EXPECTED_PUBLIC_NON_JWT_FUNCTIONS = Object.freeze([
   'client-autopilot-tick',
+  'stripe-credit-webhook',
   'client-onboarding',
   'get-client-bookings',
   'get-client-podcasts',
@@ -108,6 +109,7 @@ const EXPECTED_EXPLICIT_JWT_FUNCTIONS = Object.freeze([
   'workspace-podcast-catalog',
   'workspace-clients',
   'workspace-guest-resources',
+  'workspace-credit-checkout',
   'workspace-mailbox-infra',
   'workspace-onboarding',
 ])

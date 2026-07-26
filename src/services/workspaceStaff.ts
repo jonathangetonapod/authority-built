@@ -896,3 +896,15 @@ export async function grantWorkspaceCredits(
   }
   return { granted: data.granted, balance: typeof data.balance === 'number' ? data.balance : null }
 }
+
+export async function createWorkspaceCreditCheckout(
+  workspaceId: string,
+  pack: 'starter' | 'growth' | 'scale',
+): Promise<string> {
+  const { data, error } = await supabase.functions.invoke('workspace-credit-checkout', {
+    body: { action: 'checkout-create', workspace_id: canonicalUuid(workspaceId, 'Workspace ID'), pack },
+  })
+  if (error) throw await toFunctionError(error, 'The checkout could not be started.')
+  if (!data || typeof data.url !== 'string') throw new Error('The checkout response was invalid.')
+  return data.url
+}

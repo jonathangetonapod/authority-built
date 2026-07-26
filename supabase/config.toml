@@ -23,6 +23,12 @@ verify_jwt = true
 [functions.workspace-mailbox-infra]
 verify_jwt = true
 
+[functions.workspace-credit-checkout]
+verify_jwt = true
+
+[functions.stripe-credit-webhook]
+verify_jwt = false
+
 [functions.login-with-password]
 verify_jwt = false
 

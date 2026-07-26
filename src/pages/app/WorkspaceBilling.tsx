@@ -1,14 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, ArrowRight, CheckCircle2, Coins, CreditCard, Loader2, Sparkles, Wallet } from 'lucide-react'
 import { Link, Navigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { getWorkspaceBillingOverview } from '@/services/workspaceStaff'
+import { getWorkspaceBillingOverview,
+  createWorkspaceCreditCheckout,
+} from '@/services/workspaceStaff'
 
 const OPERATION_LABELS: Record<string, string> = {
   research_run: 'AI research runs',
@@ -51,6 +54,32 @@ const WorkspaceBilling = () => {
   const { canManageWorkspaceStaff, isPlatformAdmin, user, workspace } = useAuth()
   const [selectedCredits, setSelectedCredits] = useState(500)
   const workspaceId = workspace?.id || ''
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [checkoutPack, setCheckoutPack] = useState<string | null>(null)
+  useEffect(() => {
+    const outcome = searchParams.get('checkout')
+    if (!outcome) return
+    if (outcome === 'success') {
+      toast.success('Payment received — your credits will appear within a minute.')
+    } else if (outcome === 'cancelled') {
+      toast.info('Checkout cancelled. No charge was made.')
+    }
+    const next = new URLSearchParams(searchParams)
+    next.delete('checkout')
+    setSearchParams(next, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+  const buyPack = async (pack: 'starter' | 'growth' | 'scale') => {
+    if (checkoutPack) return
+    setCheckoutPack(pack)
+    try {
+      const url = await createWorkspaceCreditCheckout(workspaceId, pack)
+      window.location.assign(url)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The checkout could not be started.')
+      setCheckoutPack(null)
+    }
+  }
 
   const overviewQuery = useQuery({
     queryKey: ['tenant', user?.id || 'unknown', workspaceId, 'billing-overview'],
@@ -117,6 +146,36 @@ const WorkspaceBilling = () => {
                 </CardContent>
               </Card>
             </div>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Buy credits</CardTitle>
+                <CardDescription>One-time packs. Purchased credits never expire and are used after your monthly allowance.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 sm:grid-cols-3">
+                {([
+                  { key: 'starter' as const, credits: 50, price: 49, note: 'Getting started' },
+                  { key: 'growth' as const, credits: 150, price: 129, note: 'Most popular' },
+                  { key: 'scale' as const, credits: 400, price: 299, note: 'Best value' },
+                ]).map((pack) => (
+                  <div key={pack.key} className="flex flex-col rounded-xl border p-4">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{pack.note}</p>
+                    <p className="mt-2 text-2xl font-bold">{pack.credits} <span className="text-sm font-normal text-muted-foreground">credits</span></p>
+                    <p className="mt-1 text-sm text-muted-foreground">${pack.price} · ${(pack.price / pack.credits).toFixed(2)}/credit</p>
+                    <Button
+                      type="button"
+                      className="mt-4"
+                      variant={pack.key === 'growth' ? 'default' : 'outline'}
+                      disabled={checkoutPack !== null}
+                      onClick={() => void buyPack(pack.key)}
+                    >
+                      {checkoutPack === pack.key ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      {checkoutPack === pack.key ? 'Opening checkout…' : `Buy for $${pack.price}`}
+                    </Button>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
 
             <div className="grid items-start gap-4 lg:grid-cols-2">
               <Card>
