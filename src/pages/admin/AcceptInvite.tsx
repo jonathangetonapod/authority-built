@@ -35,7 +35,7 @@ const AcceptInvite = () => {
       return
     }
     if (accountState === 'active') {
-      navigate('/app/overview', { replace: true })
+      navigate('/app/clients', { replace: true })
     }
   }, [accountState, navigate])
 
@@ -80,7 +80,7 @@ const AcceptInvite = () => {
       const refreshed = await refreshAccount()
       if (!refreshed) throw new Error('Your invitation was accepted. Sign in again to refresh access.')
       toast.success('Invitation accepted.')
-      navigate('/app/overview', { replace: true })
+      navigate('/app/clients', { replace: true })
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to accept this invitation.')
     } finally {

@@ -55,7 +55,6 @@ interface NavItem {
 }
 
 const defaultNavItems: NavItem[] = [
-  { id: 'overview', name: 'Overview', href: '/app/overview', icon: LayoutDashboard },
   { id: 'workspace-users', name: 'Settings', href: '/app/settings', icon: UserPlus },
   { id: 'onboarding', name: 'Onboarding', href: '/app/onboarding', icon: ClipboardList },
   { id: 'podcast-finder', name: 'Podcast Finder', href: '/app/podcast-finder', icon: Search },

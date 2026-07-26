@@ -50,7 +50,7 @@ const Login = () => {
     }
 
     if (accountState === 'active') {
-      const fallback = '/app/overview'
+      const fallback = '/app/clients'
       const destination = attemptedPath && (isPlatformAdmin || !attemptedPath.startsWith('/admin'))
         ? attemptedPath
         : fallback

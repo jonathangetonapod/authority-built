@@ -17,7 +17,6 @@ const mockedUseAuth = vi.mocked(useAuth)
 const signOut = vi.fn()
 const workspaceId = '11111111-1111-4111-8111-111111111111'
 const expectedNavigation = [
-  'Overview',
   'Onboarding',
   'Podcast Finder',
   'Prospect Studio',
@@ -69,14 +68,13 @@ describe('WorkspaceLayout', () => {
     expect(labels).toEqual(expectedNavigation)
 
     const links = within(navigation).getAllByRole('link')
-    expect(links).toHaveLength(12)
+    expect(links).toHaveLength(11)
     expect(within(navigation).getByRole('link', { name: 'Settings' })).toHaveAttribute(
       'href',
       '/app/settings',
     )
     expect(within(navigation).getByRole('link', { name: 'Clients' })).toHaveAttribute('href', '/app/clients')
     expect(within(navigation).getByRole('link', { name: 'Onboarding' })).toHaveAttribute('href', '/app/onboarding')
-    expect(within(navigation).getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/app/overview')
     expect(within(navigation).getByRole('link', { name: 'Podcast Finder' })).toHaveAttribute('href', '/app/podcast-finder')
     expect(within(navigation).getByRole('link', { name: 'Podcast Database' })).toHaveAttribute('href', '/app/podcast-database')
     expect(within(navigation).getByRole('link', { name: 'Client Command Center' })).toHaveAttribute('href', '/app/client-podcast-system')
@@ -95,13 +93,13 @@ describe('WorkspaceLayout', () => {
 
   it('restores and resets a navigation order saved for this owner and workspace', () => {
     const storageKey = `workspace-nav-order-v2:${workspaceId}:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa`
-    window.localStorage.setItem(storageKey, JSON.stringify(['clients', 'podcast-finder', 'overview']))
+    window.localStorage.setItem(storageKey, JSON.stringify(['clients', 'podcast-finder', 'onboarding']))
     renderLayout()
 
     const navigation = screen.getByRole('navigation', { name: 'Workspace navigation' })
     expect(within(navigation).getAllByRole('listitem').slice(0, 3).map((item) => (
       item.querySelector('span')?.textContent
-    ))).toEqual(['Clients', 'Podcast Finder', 'Overview'])
+    ))).toEqual(['Clients', 'Podcast Finder', 'Onboarding'])
 
     fireEvent.click(within(navigation).getByRole('button', { name: 'Reorder sidebar pages' }))
     expect(within(navigation).getAllByRole('button', { name: /^Drag /u })).toHaveLength(expectedNavigation.length)

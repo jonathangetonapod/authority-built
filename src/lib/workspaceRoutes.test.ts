@@ -53,9 +53,9 @@ describe('workspace routes', () => {
     expect(workspaceModuleFromPath('/app/settings/billing')).toBe('settings')
   })
 
-  it('falls back to overview outside a workspace module', () => {
-    expect(workspaceModuleFromPath('/app/manage-workspaces')).toBe('overview')
-    expect(workspaceModuleFromPath('/admin/dashboard')).toBe('overview')
+  it('falls back to clients outside a workspace module', () => {
+    expect(workspaceModuleFromPath('/app/manage-workspaces')).toBe('clients')
+    expect(workspaceModuleFromPath('/admin/dashboard')).toBe('clients')
   })
 
   it('keeps the retired admin prospect address in Prospect Studio', () => {

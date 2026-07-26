@@ -19,7 +19,7 @@ const Location = () => {
 }
 
 function renderSwitcher({
-  initialPath = '/app/overview',
+  initialPath = '/app/clients',
 }: {
   initialPath?: string
 } = {}) {
@@ -55,7 +55,7 @@ describe('WorkspaceSwitcher', () => {
     fireEvent.click(trigger)
     fireEvent.click(await screen.findByText('Acme'))
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(
-      '/app/workspaces/11111111-1111-4111-8111-111111111111/overview',
+      '/app/workspaces/11111111-1111-4111-8111-111111111111/clients',
     ))
   })
 

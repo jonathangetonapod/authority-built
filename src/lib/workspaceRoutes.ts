@@ -1,7 +1,6 @@
 export const MY_WORKSPACE_BASE_HREF = '/app'
 
 export type WorkspaceModule =
-  | 'overview'
   | 'onboarding'
   | 'podcast-finder'
   | 'podcast-database'
@@ -15,7 +14,6 @@ export type WorkspaceModule =
   | 'settings'
 
 const WORKSPACE_MODULES = new Set<WorkspaceModule>([
-  'overview',
   'onboarding',
   'podcast-finder',
   'podcast-database',
@@ -47,5 +45,5 @@ export function workspaceModuleFromPath(pathname: string): WorkspaceModule {
   const candidate = segments.at(-1)
   return candidate && WORKSPACE_MODULES.has(candidate as WorkspaceModule)
     ? candidate as WorkspaceModule
-    : 'overview'
+    : 'clients'
 }

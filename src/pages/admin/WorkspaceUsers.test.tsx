@@ -120,7 +120,7 @@ describe('WorkspaceUsers manual account flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open workspace' }))
     await waitFor(() => expect(screen.queryByText('Save the temporary password')).not.toBeInTheDocument())
     expect(screen.getByTestId('location')).toHaveTextContent(
-      '/app/workspaces/22222222-2222-4222-8222-222222222222/overview',
+      '/app/workspaces/22222222-2222-4222-8222-222222222222/clients',
     )
   })
 

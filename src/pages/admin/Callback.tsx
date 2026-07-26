@@ -14,7 +14,7 @@ const AuthCallback = () => {
     } else if (accountState === 'password_change_required' || accountState === 'reauthentication_required') {
       navigate('/change-password', { replace: true })
     } else if (accountState === 'active') {
-      navigate('/app/overview', { replace: true })
+      navigate('/app/clients', { replace: true })
     } else {
       navigate('/admin/login', { replace: true })
     }

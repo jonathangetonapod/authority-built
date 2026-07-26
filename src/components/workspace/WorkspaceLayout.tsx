@@ -56,7 +56,6 @@ interface WorkspaceNavItem {
 }
 
 const workspaceNavItems: WorkspaceNavItem[] = [
-  { id: 'overview', name: 'Overview', segment: 'overview', icon: LayoutDashboard, enabled: true },
   { id: 'onboarding', name: 'Onboarding', segment: 'onboarding', icon: ClipboardList, enabled: true },
   { id: 'podcast-finder', name: 'Podcast Finder', segment: 'podcast-finder', icon: Search, enabled: true },
   { id: 'prospects', name: 'Prospect Studio', segment: 'prospects', icon: Share2, enabled: true },
