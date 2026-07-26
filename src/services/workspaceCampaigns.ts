@@ -472,6 +472,26 @@ export interface WorkspaceInboxThread {
     opens: number
     replies: number
   } | null
+  thread_key?: string
+  state?: {
+    status: WorkspaceInboxThreadStatus
+    classification: WorkspaceInboxReplyClassification | null
+    draft: {
+      subject: string
+      body: string
+      nudges: WorkspaceInboxNudge[]
+      based_on_email_id: string | null
+      generated_at: string | null
+    } | null
+    draft_stale: boolean
+  } | null
+}
+
+export type WorkspaceInboxThreadStatus = 'needs_reply' | 'review' | 'replied' | 'booked' | 'archived'
+
+export interface WorkspaceInboxNudge {
+  send_after_days: number
+  body: string
 }
 
 export interface WorkspaceInboxReplyClassification {
@@ -545,6 +565,7 @@ export interface WorkspaceInboxDraft {
   subject: string
   body: string
   classification: WorkspaceInboxReplyClassification | null
+  nudges: WorkspaceInboxNudge[]
 }
 
 export async function draftWorkspaceInboxReply(
@@ -552,23 +573,41 @@ export async function draftWorkspaceInboxReply(
   clientId: string,
   subject: string,
   message: string,
+  threadContext?: { thread_key: string; email_id: string },
 ): Promise<WorkspaceInboxDraft> {
   const data = await invokeWorkspaceCampaigns<{
     draft: { subject: string; body: string }
     classification?: WorkspaceInboxReplyClassification | null
+    nudges?: WorkspaceInboxNudge[]
   }>({
     action: 'inbox-draft',
     workspace_id: workspaceId,
     client_id: clientId,
     subject,
     message,
+    ...(threadContext ? { thread_key: threadContext.thread_key, email_id: threadContext.email_id } : {}),
   }, 'The reply draft could not be generated.')
-  return { ...data.draft, classification: data.classification ?? null }
+  return {
+    ...data.draft,
+    classification: data.classification ?? null,
+    nudges: data.nudges ?? [],
+  }
+}
+
+export async function setWorkspaceInboxThreadStatus(
+  workspaceId: string,
+  input: { thread_key: string; client_id: string; status: 'needs_reply' | 'booked' | 'archived' },
+): Promise<void> {
+  await invokeWorkspaceCampaigns<{ success: boolean }>({
+    action: 'inbox-thread-state',
+    workspace_id: workspaceId,
+    ...input,
+  }, 'The conversation state could not be saved.')
 }
 
 export async function sendWorkspaceInboxReply(
   workspaceId: string,
-  input: { reply_to_id: string; eaccount: string; subject: string; message: string },
+  input: { reply_to_id: string; eaccount: string; subject: string; message: string; thread_key?: string },
 ): Promise<void> {
   await invokeWorkspaceCampaigns<{ success: boolean }>({
     action: 'inbox-reply',

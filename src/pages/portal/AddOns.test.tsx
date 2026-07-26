@@ -1,12 +1,19 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import PortalAddOns from '@/pages/portal/AddOns'
+import { useClientPortal } from '@/contexts/ClientPortalContext'
 import { usePortalExperience } from '@/hooks/usePortalExperience'
+import { requestPortalAddon } from '@/services/clientPortal'
 
 vi.mock('@/components/portal/PortalLayout', () => ({ PortalLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('@/hooks/usePortalExperience', () => ({ usePortalExperience: vi.fn() }))
+vi.mock('@/contexts/ClientPortalContext', () => ({ useClientPortal: vi.fn() }))
+vi.mock('@/services/clientPortal', () => ({ requestPortalAddon: vi.fn() }))
 
 const mockedUseExperience = vi.mocked(usePortalExperience)
+const mockedUseClientPortal = vi.mocked(useClientPortal)
+const mockedRequestAddon = vi.mocked(requestPortalAddon)
 
 const publishedBooking = (id: string, name: string) => ({
   id,
@@ -28,6 +35,8 @@ const publishedBooking = (id: string, name: string) => ({
 describe('PortalAddOns', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockedUseClientPortal.mockReturnValue({ client: { id: '11111111-1111-4111-8111-111111111111', name: 'Taylor' } } as never)
+    mockedRequestAddon.mockResolvedValue(undefined as never)
     mockedUseExperience.mockReturnValue({
       data: {
         bookings: [
@@ -41,7 +50,11 @@ describe('PortalAddOns', () => {
   })
 
   it('requires a published episode before a per-episode package can be requested', async () => {
-    render(<PortalAddOns />)
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <PortalAddOns />
+      </QueryClientProvider>,
+    )
 
     const request = await screen.findByRole('button', { name: 'Request this package' })
     expect(request).toBeDisabled()
@@ -57,7 +70,11 @@ describe('PortalAddOns', () => {
   })
 
   it('lets the always-on plan be requested without picking an episode', async () => {
-    render(<PortalAddOns />)
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <PortalAddOns />
+      </QueryClientProvider>,
+    )
 
     fireEvent.click(await screen.findByRole('button', { name: /Authority/ }))
     expect(screen.getByText('Covers every new episode')).toBeInTheDocument()
@@ -74,7 +91,11 @@ describe('PortalAddOns', () => {
       error: null,
     } as never)
 
-    render(<PortalAddOns />)
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <PortalAddOns />
+      </QueryClientProvider>,
+    )
 
     expect(await screen.findByText(/Clips are cut from published episodes/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Request this package' })).toBeDisabled()

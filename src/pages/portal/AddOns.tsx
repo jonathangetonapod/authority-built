@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { Check, CheckCircle2, Clapperboard, Headphones, Loader2, RefreshCw, Scissors, Sparkles } from 'lucide-react'
 
 import { PortalLayout } from '@/components/portal/PortalLayout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { useClientPortal } from '@/contexts/ClientPortalContext'
 import { usePortalExperience } from '@/hooks/usePortalExperience'
-import type { PortalExperienceBooking } from '@/services/clientPortal'
+import { requestPortalAddon, type PortalExperienceBooking } from '@/services/clientPortal'
 
 interface ClippingPackage {
   id: string
@@ -49,6 +52,7 @@ const CLIPPING_PACKAGES: ClippingPackage[] = [
 ]
 
 export default function PortalAddOns() {
+  const { client } = useClientPortal()
   const overviewQuery = usePortalExperience()
   const [selectedPackageId, setSelectedPackageId] = useState<string>('growth')
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(null)
@@ -64,12 +68,21 @@ export default function PortalAddOns() {
     ? publishedEpisodes.find((booking) => booking.id === selectedEpisodeId) ?? null
     : null
 
-  const submitRequest = () => {
-    const summary = needsEpisode && selectedEpisode
-      ? `${selectedPackage.name} · ${selectedEpisode.podcast_name}`
-      : selectedPackage.name
-    setRequestedSummary(summary)
-  }
+  const requestMutation = useMutation({
+    mutationFn: () => requestPortalAddon(
+      client!.id,
+      selectedPackage.name,
+      needsEpisode && selectedEpisode ? selectedEpisode.podcast_name : null,
+    ),
+    onSuccess: () => {
+      setRequestedSummary(needsEpisode && selectedEpisode
+        ? `${selectedPackage.name} · ${selectedEpisode.podcast_name}`
+        : selectedPackage.name)
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Your request could not be sent — try again.')
+    },
+  })
 
   return (
     <PortalLayout>
@@ -212,7 +225,11 @@ export default function PortalAddOns() {
                     {selectedEpisode ? <> for <span className="font-medium text-foreground">{selectedEpisode.podcast_name}</span></> : null}.
                     Your team confirms before anything is billed.
                   </p>
-                  <Button onClick={submitRequest} disabled={needsEpisode && !selectedEpisode}>
+                  <Button
+                    onClick={() => requestMutation.mutate()}
+                    disabled={(needsEpisode && !selectedEpisode) || !client?.id || requestMutation.isPending}
+                  >
+                    {requestMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Request this package
                   </Button>
                 </div>

@@ -59,7 +59,11 @@ const bucketByMonth = (dates: Array<string | null>, months: number): MonthBucket
   const byKey = new Map(buckets.map((bucket) => [bucket.key, bucket]))
   for (const value of dates) {
     if (!value) continue
-    const bucket = byKey.get(value.slice(0, 7))
+    // Bucket in the viewer's local calendar — the bucket keys are local
+    // months, so slicing the UTC ISO string would misplace boundary events.
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) continue
+    const bucket = byKey.get(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`)
     if (bucket) bucket.count += 1
   }
   return buckets

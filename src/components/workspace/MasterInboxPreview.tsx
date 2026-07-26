@@ -30,8 +30,11 @@ import {
   draftWorkspaceInboxReply,
   getWorkspaceInboxThreads,
   sendWorkspaceInboxReply,
+  setWorkspaceInboxThreadStatus,
+  type WorkspaceInboxNudge,
   type WorkspaceInboxReplyClassification,
   type WorkspaceInboxThread,
+  type WorkspaceInboxThreadStatus,
 } from '@/services/workspaceCampaigns'
 import {
   CLIENT_SDR_PROFILE_FIELD_DEFINITIONS,
@@ -44,20 +47,28 @@ import {
 } from '@/services/clients'
 
 type InboxScope = 'all' | 'interested' | 'other'
-type InboxFilter = 'all' | 'attention' | 'needs-reply' | 'review' | 'sent' | 'ai' | 'booked' | 'ended'
+type InboxFilter = 'all' | 'needs_reply' | 'review' | 'replied' | 'booked' | 'archived'
 
 const inboxFilters: Array<{ value: InboxFilter; label: string; title: string }> = [
-  { value: 'all', label: 'All', title: 'Show every conversation in this reply scope' },
-  { value: 'attention', label: 'Attention', title: 'Replies and issues that need immediate attention' },
-  { value: 'needs-reply', label: 'Needs reply', title: 'The host sent the newest message' },
-  { value: 'review', label: 'Review', title: 'A response draft is ready to review' },
-  { value: 'sent', label: 'Replied', title: 'The workspace has replied' },
-  { value: 'ai', label: 'AI handling', title: 'Conversations currently being handled by a client AI SDR' },
-  { value: 'booked', label: 'Booked', title: 'Conversations with a confirmed podcast booking' },
-  { value: 'ended', label: 'Ended', title: 'Conversations that are no longer active' },
+  { value: 'all', label: 'All', title: 'Every open conversation in this reply scope' },
+  { value: 'needs_reply', label: 'Needs reply', title: 'The host sent the newest message and no draft is staged' },
+  { value: 'review', label: 'Review', title: 'An AI reply package is staged and waiting for review' },
+  { value: 'replied', label: 'Replied', title: 'The workspace has replied' },
+  { value: 'booked', label: 'Booked', title: 'Conversations marked as a confirmed booking' },
+  { value: 'archived', label: 'Archived', title: 'Conversations closed out of the inbox — reopen any time' },
 ]
 
-const interestedWorkflowFilters: InboxFilter[] = ['attention', 'needs-reply', 'review', 'sent']
+const threadStatus = (thread: WorkspaceInboxThread, sentThreadIds: Set<string>): WorkspaceInboxThreadStatus => {
+  if (sentThreadIds.has(thread.id)) return 'replied'
+  return thread.state?.status ?? 'needs_reply'
+}
+
+const statusPill: Partial<Record<WorkspaceInboxThreadStatus, { label: string; className: string }>> = {
+  review: { label: 'Review', className: 'border-sky-200 bg-sky-50 text-sky-800' },
+  replied: { label: 'Replied', className: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
+  booked: { label: 'Booked', className: 'border-amber-200 bg-amber-50 text-amber-800' },
+  archived: { label: 'Archived', className: 'bg-muted text-muted-foreground' },
+}
 
 const aiRoutingSteps = [
   {
@@ -205,6 +216,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
   const [draftBody, setDraftBody] = useState('')
   const [draftedForThread, setDraftedForThread] = useState<string | null>(null)
   const [draftClassification, setDraftClassification] = useState<WorkspaceInboxReplyClassification | null>(null)
+  const [draftNudges, setDraftNudges] = useState<WorkspaceInboxNudge[]>([])
   const [sentThreadIds, setSentThreadIds] = useState<Set<string>>(new Set())
 
   const counts = useMemo(() => ({
@@ -212,12 +224,24 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
     interested: threads.filter((thread) => thread.interested).length,
     other: threads.filter((thread) => !thread.interested).length,
   }), [threads])
+  const filterCounts = useMemo(() => {
+    const counts: Record<InboxFilter, number> = { all: 0, needs_reply: 0, review: 0, replied: 0, booked: 0, archived: 0 }
+    for (const thread of threads) {
+      if (selectedClient && thread.campaign?.client?.id !== selectedClient.id) continue
+      const status = threadStatus(thread, sentThreadIds)
+      counts[status] += 1
+      if (status !== 'archived') counts.all += 1
+    }
+    return counts
+  }, [threads, selectedClient, sentThreadIds])
   const visibleThreads = useMemo(() => {
     const query = search.trim().toLowerCase()
     return threads.filter((thread) => {
       if (scope === 'interested' && !thread.interested) return false
       if (scope === 'other' && thread.interested) return false
       if (selectedClient && thread.campaign?.client?.id !== selectedClient.id) return false
+      const status = threadStatus(thread, sentThreadIds)
+      if (filter === 'all' ? status === 'archived' : status !== filter) return false
       if (query) {
         const haystack = [thread.subject, thread.from_email, thread.body_text, thread.campaign?.client?.name ?? '', thread.campaign?.campaign_name ?? '']
           .join(' ')
@@ -226,7 +250,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
       }
       return true
     })
-  }, [threads, scope, search, selectedClient])
+  }, [threads, scope, search, selectedClient, filter, sentThreadIds])
   const selectedThread = visibleThreads.find((thread) => thread.id === selectedThreadId)
     || threads.find((thread) => thread.id === selectedThreadId)
     || null
@@ -235,44 +259,82 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
     : null
 
   const draftMutation = useMutation({
-    mutationFn: () => draftWorkspaceInboxReply(
+    mutationFn: (thread: WorkspaceInboxThread) => draftWorkspaceInboxReply(
       workspaceId,
-      selectedThread!.campaign!.client!.id,
-      selectedThread!.subject || '(no subject)',
-      selectedThread!.body_text,
+      thread.campaign!.client!.id,
+      thread.subject || '(no subject)',
+      thread.body_text,
+      thread.thread_key ? { thread_key: thread.thread_key, email_id: thread.id } : undefined,
     ),
-    onSuccess: (draft) => {
+    onSuccess: (draft, thread) => {
+      // Race guard: only stage the result if the thread it was drafted for is
+      // still the open conversation.
+      if (selectedThreadId !== thread.id) return
       setDraftSubject(draft.subject)
       setDraftBody(draft.body)
-      setDraftedForThread(selectedThread?.id ?? null)
+      setDraftedForThread(thread.id)
       setDraftClassification(draft.classification)
+      setDraftNudges(draft.nudges)
+      void inboxQuery.refetch()
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'The reply draft could not be generated.')
     },
   })
   const sendMutation = useMutation({
-    mutationFn: () => sendWorkspaceInboxReply(workspaceId, {
-      reply_to_id: selectedThread!.id,
-      eaccount: selectedThread!.eaccount!,
-      subject: draftSubject.trim() || `Re: ${selectedThread!.subject}`,
+    mutationFn: (thread: WorkspaceInboxThread) => sendWorkspaceInboxReply(workspaceId, {
+      reply_to_id: thread.id,
+      eaccount: thread.eaccount!,
+      subject: draftSubject.trim() || `Re: ${thread.subject}`,
       message: draftBody.trim(),
+      ...(thread.thread_key ? { thread_key: thread.thread_key } : {}),
     }),
-    onSuccess: () => {
-      const threadId = selectedThread?.id
-      if (threadId) setSentThreadIds((current) => new Set([...current, threadId]))
+    onSuccess: (_result, thread) => {
+      setSentThreadIds((current) => new Set([...current, thread.id]))
       toast.success('Reply sent through Instantly.')
+      void inboxQuery.refetch()
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'The reply could not be sent.')
     },
   })
+  const statusMutation = useMutation({
+    mutationFn: (input: { thread: WorkspaceInboxThread; status: 'needs_reply' | 'booked' | 'archived' }) =>
+      setWorkspaceInboxThreadStatus(workspaceId, {
+        thread_key: input.thread.thread_key || input.thread.id,
+        client_id: input.thread.campaign!.client!.id,
+        status: input.status,
+      }),
+    onSuccess: (_result, input) => {
+      toast.success(input.status === 'archived'
+        ? 'Conversation archived.'
+        : input.status === 'booked'
+          ? 'Marked as booked.'
+          : 'Conversation reopened.')
+      void inboxQuery.refetch()
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'The conversation state could not be saved.')
+    },
+  })
   const openThread = (threadId: string) => {
     setSelectedThreadId(threadId)
-    setDraftSubject('')
-    setDraftBody('')
-    setDraftedForThread(null)
-    setDraftClassification(null)
+    const thread = threads.find((item) => item.id === threadId)
+    const persisted = thread?.state?.draft
+    if (persisted && !thread.state?.draft_stale) {
+      // Restore the staged review package (Reply-style persisted runs).
+      setDraftSubject(persisted.subject)
+      setDraftBody(persisted.body)
+      setDraftedForThread(threadId)
+      setDraftClassification((thread.state?.classification ?? null) as WorkspaceInboxReplyClassification | null)
+      setDraftNudges(persisted.nudges)
+    } else {
+      setDraftSubject('')
+      setDraftBody('')
+      setDraftedForThread(null)
+      setDraftClassification(null)
+      setDraftNudges([])
+    }
   }
 
   const selectClient = (clientId: string) => {
@@ -286,6 +348,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
     setDraftBody('')
     setDraftedForThread(null)
     setDraftClassification(null)
+    setDraftNudges([])
   }
 
   return (
@@ -322,10 +385,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                 type="button"
                 role="radio"
                 aria-checked={scope === 'other'}
-                onClick={() => {
-                  setScope('other')
-                  if (interestedWorkflowFilters.includes(filter)) setFilter('all')
-                }}
+                onClick={() => setScope('other')}
                 className={cn(
                   'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
                   scope === 'other' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
@@ -391,30 +451,23 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
             </SelectContent>
           </Select>
           <span className="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden="true" />
-          {scope === 'other' && (
-            <span className="mr-1 shrink-0 self-center text-[11px] text-muted-foreground">
-              Workflow stages apply to interested replies.
-            </span>
-          )}
-          {inboxFilters
-            .filter((item) => scope !== 'other' || !interestedWorkflowFilters.includes(item.value))
-            .map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                aria-pressed={filter === item.value}
-                title={item.title}
-                onClick={() => setFilter(item.value)}
-                className={cn(
-                  'shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                  filter === item.value
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-border bg-background text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {item.label} <span className="ml-1 opacity-70">0</span>
-              </button>
-            ))}
+          {inboxFilters.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              aria-pressed={filter === item.value}
+              title={item.title}
+              onClick={() => setFilter(item.value)}
+              className={cn(
+                'shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                filter === item.value
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-background text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {item.label} <span className="ml-1 opacity-70">{filterCounts[item.value]}</span>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -483,7 +536,12 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                       {thread.campaign?.client
                         ? <Badge variant="secondary" className="px-1.5 py-0 text-[10px] font-medium">{thread.campaign.client.name}</Badge>
                         : <Badge variant="outline" className="border-amber-200 bg-amber-50 px-1.5 py-0 text-[10px] text-amber-800">Unmapped</Badge>}
-                      {sentThreadIds.has(thread.id) && <Badge variant="outline" className="border-emerald-200 bg-emerald-50 px-1.5 py-0 text-[10px] text-emerald-800">Replied</Badge>}
+                      {(() => {
+                        const pill = statusPill[threadStatus(thread, sentThreadIds)]
+                        return pill
+                          ? <Badge variant="outline" className={cn('px-1.5 py-0 text-[10px]', pill.className)}>{pill.label}</Badge>
+                          : null
+                      })()}
                     </div>
                   </button>
                 </li>
@@ -529,6 +587,11 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                   </div>
                 ) : (
                   <div className="mt-4 space-y-3">
+                    {selectedThread.state?.draft_stale && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs leading-5 text-amber-900">
+                        <span><span className="font-semibold">This draft is no longer based on the latest message.</span> Regenerate before sending so the reply answers what the host actually said.</span>
+                      </div>
+                    )}
                     {draftClassification && draftedForThread === selectedThread.id && (
                       <div className="flex items-start gap-2.5 rounded-xl border bg-muted/10 px-4 py-3">
                         <Bot className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
@@ -548,7 +611,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                         size="sm"
                         variant="outline"
                         disabled={draftMutation.isPending}
-                        onClick={() => draftMutation.mutate()}
+                        onClick={() => draftMutation.mutate(selectedThread)}
                       >
                         {draftMutation.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-2 h-3.5 w-3.5" />}
                         {draftedForThread === selectedThread.id ? 'Redraft with AI' : 'Draft with AI'}
@@ -574,12 +637,42 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                       <Button
                         type="button"
                         size="sm"
-                        disabled={sendMutation.isPending || !draftBody.trim() || !selectedThread.eaccount || sentThreadIds.has(selectedThread.id)}
-                        onClick={() => sendMutation.mutate()}
+                        disabled={sendMutation.isPending || !draftBody.trim() || !selectedThread.eaccount || sentThreadIds.has(selectedThread.id) || Boolean(selectedThread.state?.draft_stale && draftedForThread !== selectedThread.id)}
+                        onClick={() => sendMutation.mutate(selectedThread)}
                       >
                         {sendMutation.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-2 h-3.5 w-3.5" />}
                         {sentThreadIds.has(selectedThread.id) ? 'Replied' : 'Send reply'}
                       </Button>
+                    </div>
+                    {draftNudges.length > 0 && draftedForThread === selectedThread.id && (
+                      <div className="rounded-xl border bg-muted/10 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Follow-up nudge plan</p>
+                        <ol className="mt-2 space-y-2">
+                          {draftNudges.map((nudge, index) => (
+                            <li key={`${index}-${nudge.send_after_days}`} className="text-xs leading-5">
+                              <span className="font-semibold text-foreground">Nudge {index + 1} · after {nudge.send_after_days} day{nudge.send_after_days === 1 ? '' : 's'} of silence</span>
+                              <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">{nudge.body}</p>
+                            </li>
+                          ))}
+                        </ol>
+                        <p className="mt-2 text-[11px] text-muted-foreground">Nudges are staged with the reply — send them from here when the host goes quiet.</p>
+                      </div>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+                      {threadStatus(selectedThread, sentThreadIds) === 'archived' ? (
+                        <Button type="button" size="sm" variant="outline" disabled={statusMutation.isPending} onClick={() => statusMutation.mutate({ thread: selectedThread, status: 'needs_reply' })}>
+                          Reopen conversation
+                        </Button>
+                      ) : (
+                        <>
+                          <Button type="button" size="sm" variant="outline" disabled={statusMutation.isPending} onClick={() => statusMutation.mutate({ thread: selectedThread, status: 'booked' })}>
+                            Mark booked
+                          </Button>
+                          <Button type="button" size="sm" variant="ghost" className="text-muted-foreground" disabled={statusMutation.isPending} onClick={() => statusMutation.mutate({ thread: selectedThread, status: 'archived' })}>
+                            Archive conversation
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}

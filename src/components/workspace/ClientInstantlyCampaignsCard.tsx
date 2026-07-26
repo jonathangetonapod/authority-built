@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, Link2, Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -51,9 +51,17 @@ export const ClientInstantlyCampaignsCard = ({
     () => new Set((data?.links ?? []).map((link) => link.instantly_campaign_id)),
     [data],
   )
+  // Reset the working selection only when the SAVED set actually changes —
+  // a background refetch with reshuffled provider data must not wipe
+  // in-progress checkbox toggles.
+  const savedFingerprint = useMemo(() => [...savedIds].sort().join(','), [savedIds])
+  const lastFingerprint = useRef<string | null>(null)
   useEffect(() => {
-    if (data) setSelectedIds(new Set(savedIds))
-  }, [data, savedIds])
+    if (!data) return
+    if (lastFingerprint.current === savedFingerprint) return
+    lastFingerprint.current = savedFingerprint
+    setSelectedIds(new Set(savedIds))
+  }, [data, savedIds, savedFingerprint])
   const selection = selectedIds ?? savedIds
   const dirty = selection.size !== savedIds.size
     || [...selection].some((id) => !savedIds.has(id))
@@ -140,7 +148,21 @@ export const ClientInstantlyCampaignsCard = ({
           // view. Ordering follows what is SAVED, not the in-progress
           // selection — resorting on every checkbox toggle would make rows
           // jump around under the cursor.
-          const campaigns = [...data.provider_campaigns]
+          const providerIds = new Set(data.provider_campaigns.map((campaign) => campaign.id))
+          // Saved links whose campaign vanished from Instantly still need a
+          // row, or they could never be unlinked.
+          const missingLinks = (data.links ?? [])
+            .filter((link) => !providerIds.has(link.instantly_campaign_id))
+            .map((link) => ({
+              id: link.instantly_campaign_id,
+              name: link.campaign_name || 'Campaign removed from Instantly',
+              status: null as number | null,
+              linked_client_id: clientId,
+              linked_client_name: null,
+              managed_client_id: null,
+              missing_from_provider: true,
+            }))
+          const campaigns = [...data.provider_campaigns.map((campaign) => ({ ...campaign, missing_from_provider: false })), ...missingLinks]
             .filter((campaign) => !query || campaign.name.toLowerCase().includes(query))
             .sort((a, b) => {
               const aLinked = savedIds.has(a.id) ? 0 : 1
@@ -186,7 +208,7 @@ export const ClientInstantlyCampaignsCard = ({
                   >
                     <span className="block truncate text-sm font-medium">{campaign.name}</span>
                     <span className="block text-xs text-muted-foreground">
-                      {campaignStatusLabel(campaign.status)}
+                      {campaign.missing_from_provider ? 'No longer in Instantly — uncheck to remove' : campaignStatusLabel(campaign.status)}
                       {campaign.managed_client_id === clientId ? ' · Managed by this client’s app campaign' : ''}
                     </span>
                   </label>

@@ -8,7 +8,10 @@ const manifest = readFileSync('docs/invite-only-edge-manifest.json', 'utf8')
 // Auth: a valid client-scoped portal session, or the explicit
 // platform-admin impersonation path — never workspace auth.
 assert.match(edge, /if \(req\.method === 'OPTIONS'\) return optionsResponse\(req, METHODS\)/u)
-assert.match(edge, /requireOnlyKeys\(body, \['clientId', 'sessionToken'\]\)/u)
+assert.match(edge, /requireOnlyKeys\(body, \['clientId', 'sessionToken', 'addon_request'\]\)/u)
+// Add-on requests are recorded before any notification is attempted, and the
+// notification failure never fails the request.
+assert.match(edge, /from\('client_portal_activity_log'\)[\s\S]*?action: 'addon_request'/u)
 assert.match(edge, /hashPortalSessionToken\(sessionToken\)/u)
 assert.match(edge, /\.from\('client_portal_sessions'\)[\s\S]*?\.eq\('session_token', sessionTokenHash\)[\s\S]*?\.eq\('client_id', clientId\)[\s\S]*?\.gt\('expires_at', new Date\(\)\.toISOString\(\)\)/u)
 assert.match(edge, /client\?\.portal_access_enabled[\s\S]*?workspace\?\.status !== 'active'[\s\S]*?INVALID_PORTAL_SESSION/u)

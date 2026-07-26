@@ -281,9 +281,10 @@ describe('WorkspaceOutreachSuite', () => {
 
     fireEvent.click(within(scope).getByRole('radio', { name: /other replies/i }))
     expect(within(scope).getByRole('radio', { name: /other replies/i })).toHaveAttribute('aria-checked', 'true')
-    expect(screen.getByLabelText('Conversation filters')).not.toHaveTextContent('Needs reply')
+    // Workflow chips are lifecycle queues and stay available in every scope.
+    expect(screen.getByLabelText('Conversation filters')).toHaveTextContent('Needs reply')
     expect(screen.getByLabelText('Conversation filters')).toHaveTextContent('Booked')
-    expect(screen.getByLabelText('Conversation filters')).toHaveTextContent('Ended')
+    expect(screen.getByLabelText('Conversation filters')).toHaveTextContent('Archived')
   })
 
   it('loads the selected client AI SDR context inside Master Inbox without send authority', async () => {

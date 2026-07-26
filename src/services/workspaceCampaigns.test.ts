@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import {
   addWorkspaceCampaignPodcasts,
   connectWorkspaceInstantly,
+  draftWorkspaceInboxReply,
   getClientInstantlyCampaignLinks,
   setClientInstantlyCampaignLinks,
   getWorkspaceCampaignOverview,
@@ -308,5 +309,56 @@ describe('client instantly campaign links', () => {
       },
     })
     expect(result).toEqual(links)
+  })
+})
+
+describe('inbox draft package', () => {
+  const workspaceId = '11111111-1111-4111-8111-111111111111'
+  const clientId = '22222222-2222-4222-8222-222222222222'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('carries the classification and nudges through with the draft', async () => {
+    invoke.mockResolvedValueOnce({
+      data: {
+        draft: { subject: 'Re: Loved this', body: 'Thanks for the note.' },
+        classification: { label: 'interested', confidence: 92, reasoning: 'Asks for available dates.' },
+        nudges: [{ send_after_days: 3, body: 'Just floating this back up.' }],
+      },
+      error: null,
+    } as never)
+
+    const result = await draftWorkspaceInboxReply(workspaceId, clientId, 'Loved this', 'Great pitch, when is he free?', {
+      thread_key: 'thread-1',
+      email_id: 'email-1',
+    })
+
+    expect(invoke).toHaveBeenCalledWith('workspace-client-campaigns', {
+      body: {
+        action: 'inbox-draft',
+        workspace_id: workspaceId,
+        client_id: clientId,
+        subject: 'Loved this',
+        message: 'Great pitch, when is he free?',
+        thread_key: 'thread-1',
+        email_id: 'email-1',
+      },
+    })
+    expect(result.classification?.label).toBe('interested')
+    expect(result.nudges).toHaveLength(1)
+  })
+
+  it('defaults classification to null and nudges to empty when absent', async () => {
+    invoke.mockResolvedValueOnce({
+      data: { draft: { subject: 'Re: hi', body: 'Hello.' } },
+      error: null,
+    } as never)
+
+    const result = await draftWorkspaceInboxReply(workspaceId, clientId, 'hi', 'hello there')
+
+    expect(result.classification).toBeNull()
+    expect(result.nudges).toEqual([])
   })
 })

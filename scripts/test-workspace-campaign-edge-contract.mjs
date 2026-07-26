@@ -41,11 +41,23 @@ assert.match(edge, /from\("client_instantly_campaign_links"\)[\s\S]*?\.eq\("work
 assert.match(edge, /const linkRows = linksResult\.error \? \[\] : linksResult\.data \?\? \[\]/u)
 // Only client-attributable replies reach the Master Inbox.
 assert.match(edge, /const mapped = providerCampaignId \? campaignByProviderId\.get\(providerCampaignId\) \?\? null : null;[\s\S]*?if \(!mapped\) return \[\];/u)
-// The inbox list needs no client id and must run before the client parse.
-assert.ok(
-  edge.indexOf('if (action === "inbox-list")') < edge.indexOf('const clientId = requireUuid(body.client_id, "client_id")'),
-  'inbox-list must be handled before the generic client_id requirement',
-)
+// Actions that carry no client_id must run before the generic client parse.
+const genericParseIndex = edge.indexOf('const clientId = requireUuid(body.client_id, "client_id");\n    const client = await requireWorkspaceClient(')
+assert.ok(genericParseIndex > 0, 'generic client_id parse must exist')
+for (const handler of ['if (action === "inbox-list")', 'if (action === "inbox-reply")', 'if (action === "inbox-draft")', 'if (action === "inbox-thread-state")']) {
+  const handlerIndex = edge.indexOf(handler)
+  assert.ok(
+    handlerIndex > 0 && handlerIndex < genericParseIndex,
+    `${handler} must exist and be handled before the generic client_id requirement`,
+  )
+}
+// The persisted review package survives navigation and marks replies.
+assert.match(edge, /from\("workspace_inbox_thread_state"\)[\s\S]*?onConflict: "workspace_id,thread_key"/u)
+assert.match(edge, /action === "inbox-thread-state"[\s\S]*?\["needs_reply", "booked", "archived"\]/u)
+// Links replace-set safety: conflict-check errors fail closed, deletes only
+// remove deselected rows, and inserts never steal a concurrent link.
+assert.match(edge, /if \(conflictLinks\.error \|\| conflictCampaigns\.error\) \{/u)
+assert.match(edge, /ignoreDuplicates: true/u)
 assert.match(edge, /action === "prepare-podcast"[\s\S]*?requireCampaignManager\(access\)/u)
 assert.match(edge, /action === "prepare-podcast"[\s\S]*?CAMPAIGN_NOT_ASSIGNED[\s\S]*?requireApproved: true/u)
 assert.match(edge, /action === "update-contact"[\s\S]*?requireCampaignManager\(access\)/u)

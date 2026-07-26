@@ -61,8 +61,8 @@ serve(async (req) => {
       throw new HttpError(405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed')
     }
 
-    const body = await parseJsonObject(req, 2_048)
-    requireOnlyKeys(body, ['clientId', 'sessionToken'])
+    const body = await parseJsonObject(req, 4_096)
+    requireOnlyKeys(body, ['clientId', 'sessionToken', 'addon_request'])
     const clientId = requireUuid(body.clientId, 'clientId')
     const sessionToken = body.sessionToken === undefined
       ? null
@@ -94,6 +94,77 @@ serve(async (req) => {
     } else {
       // No portal token means this is the explicit operator impersonation path.
       await requirePlatformAdmin(req)
+    }
+
+    if (body.addon_request !== undefined) {
+      // The client asked for an add-on (e.g. the clipping service): record it
+      // and notify the workspace owner. No payment is involved.
+      const raw = body.addon_request
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new HttpError(400, 'INVALID_FIELD', 'addon_request must be an object')
+      }
+      const request = raw as Record<string, unknown>
+      const packageName = clampText(request.package_name, 100)
+      if (!packageName) {
+        throw new HttpError(400, 'INVALID_FIELD', 'addon_request.package_name is required')
+      }
+      const episodeName = clampText(request.episode_name, 300)
+
+      const { data: clientRecord, error: clientLookupError } = await admin
+        .from('clients')
+        .select('id,name,workspace_id')
+        .eq('id', clientId)
+        .maybeSingle()
+      if (clientLookupError || !clientRecord) {
+        throw new HttpError(404, 'CLIENT_NOT_FOUND', 'Client not found')
+      }
+      const { error: logError } = await admin
+        .from('client_portal_activity_log')
+        .insert({
+          client_id: clientId,
+          action: 'addon_request',
+          metadata: {
+            package_name: packageName,
+            episode_name: episodeName,
+          },
+        })
+      if (logError) {
+        throw new HttpError(503, 'ADDON_REQUEST_FAILED', 'Your request could not be recorded — try again')
+      }
+
+      // Best-effort owner notification; the recorded request is the source
+      // of truth even when email is not configured.
+      const resendKey = Deno.env.get('RESEND_API_KEY')
+      const fromEmail = Deno.env.get('RESEND_FROM_EMAIL')
+      if (resendKey && fromEmail && clientRecord.workspace_id) {
+        const { data: owner } = await admin
+          .from('workspace_memberships')
+          .select('email_normalized')
+          .eq('workspace_id', clientRecord.workspace_id)
+          .eq('role', 'owner')
+          .eq('status', 'active')
+          .limit(1)
+          .maybeSingle()
+        if (owner?.email_normalized) {
+          await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${resendKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              from: fromEmail,
+              to: owner.email_normalized,
+              subject: `Add-on request from ${clientRecord.name}: ${packageName}`,
+              text: `${clientRecord.name} requested the ${packageName} clipping package`
+                + `${episodeName ? ` for the episode on ${episodeName}` : ''} from their client portal.\n\n`
+                + 'Follow up with them to confirm details. No payment has been collected.',
+            }),
+            signal: AbortSignal.timeout(10_000),
+          }).catch(() => null)
+        }
+      }
+      return jsonResponse(req, METHODS, 200, { success: true })
     }
 
     const [
@@ -150,6 +221,11 @@ serve(async (req) => {
     if (bookingsResult.error) {
       throw new HttpError(500, 'BOOKINGS_LOOKUP_FAILED', 'Bookings could not be loaded')
     }
+    // A failed section query must fail the request — returning zeros would
+    // show the client a confidently wrong dashboard.
+    if (shortlistResult.error || feedbackResult.error || targetsResult.error || campaignResult.error) {
+      throw new HttpError(500, 'OVERVIEW_LOOKUP_FAILED', 'Your overview could not be loaded')
+    }
 
     const clientRow = clientResult.data as Record<string, unknown>
 
@@ -164,7 +240,7 @@ serve(async (req) => {
     let approvedCount = 0
     let rejectedCount = 0
     let awaitingCount = 0
-    const visibleRows = (shortlistResult.error ? [] : shortlistResult.data ?? []) as Array<Record<string, unknown>>
+    const visibleRows = (shortlistResult.data ?? []) as Array<Record<string, unknown>>
     for (const row of visibleRows) {
       const status = typeof row.podcast_id === 'string' ? feedbackByPodcast.get(row.podcast_id) : undefined
       if (status === 'approved') approvedCount += 1
@@ -175,9 +251,9 @@ serve(async (req) => {
     // Outreach summary: high-level journey numbers only — no pitch copy,
     // contact emails, or failure diagnostics.
     let outreach: Record<string, number> | null = null
-    if (!campaignResult.error && campaignResult.data) {
+    if (campaignResult.data) {
       const analytics = (campaignResult.data.analytics ?? {}) as Record<string, unknown>
-      const targetRows = (targetsResult.error ? [] : targetsResult.data ?? []) as Array<Record<string, unknown>>
+      const targetRows = (targetsResult.data ?? []) as Array<Record<string, unknown>>
       const countByStatus = (status: string): number =>
         targetRows.filter((row) => row.status === status).length
       outreach = {
@@ -207,7 +283,7 @@ serve(async (req) => {
       if (status === 'failed') return null
       return 'preparing'
     }
-    const outreachTargets = ((targetsResult.error ? [] : targetsResult.data ?? []) as Array<Record<string, unknown>>)
+    const outreachTargets = ((targetsResult.data ?? []) as Array<Record<string, unknown>>)
       .flatMap((row) => {
         const stage = targetStage(row.status)
         if (!stage || typeof row.podcast_name !== 'string' || !row.podcast_name) return []

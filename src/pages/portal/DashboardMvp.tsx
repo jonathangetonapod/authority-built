@@ -89,6 +89,7 @@ export default function PortalDashboardMvp() {
     .slice(0, 4)
   const upcomingReleases = activeBookings
     .filter((booking) => booking.status === 'recorded')
+    .filter((booking) => !booking.publish_date || isUpcoming(booking.publish_date))
     .sort((a, b) => String(a.publish_date || '9999').localeCompare(String(b.publish_date || '9999')))
     .slice(0, 4)
 
@@ -331,8 +332,8 @@ export default function PortalDashboardMvp() {
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Key messages</p>
                   <ul className="mt-2 flex flex-wrap gap-1.5">
-                    {pitchProfile.key_messages.map((message) => (
-                      <li key={message} className="rounded-full border bg-muted/20 px-3 py-1 text-xs">{message}</li>
+                    {pitchProfile.key_messages.map((message, index) => (
+                      <li key={`${index}-${message.slice(0, 40)}`} className="rounded-full border bg-muted/20 px-3 py-1 text-xs">{message}</li>
                     ))}
                   </ul>
                 </div>
@@ -341,7 +342,7 @@ export default function PortalDashboardMvp() {
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Talking points</p>
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-foreground/90">
-                    {pitchProfile.talking_points.map((point) => <li key={point}>{point}</li>)}
+                    {pitchProfile.talking_points.map((point, index) => <li key={`${index}-${point.slice(0, 40)}`}>{point}</li>)}
                   </ul>
                 </div>
               )}
