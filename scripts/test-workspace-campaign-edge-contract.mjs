@@ -13,6 +13,8 @@ const sequenceMigration = readFileSync(
 )
 const config = readFileSync('supabase/config.toml', 'utf8')
 const nudgeTick = readFileSync('supabase/functions/inbox-nudge-tick/index.ts', 'utf8')
+const enrollTick = readFileSync('supabase/functions/inbox-enroll-tick/index.ts', 'utf8')
+const sdrShared = readFileSync('supabase/functions/_shared/inboxSdr.ts', 'utf8')
 
 assert.match(edge, /if \(req\.method === "OPTIONS"\) return optionsResponse\(req, METHODS\)/u)
 assert.match(edge, /const context = await requireAuthenticatedUser\(req\)/u)
@@ -172,6 +174,41 @@ assert.match(nudgeTick, /Deno\.env\.get\('NUDGE_TICK_SECRET'\)/u)
 assert.match(nudgeTick, /x-nudge-secret/u)
 assert.match(nudgeTick, /const MAX_SENDS_PER_TICK = 15/u)
 assert.match(nudgeTick, /const MAX_SENDS_PER_WORKSPACE = 5/u)
-assert.match(nudgeTick, /latest\.ue_type === 2[\s\S]*?status: 'needs_reply'/u)
+assert.match(nudgeTick, /latestHuman\.ue_type === 2[\s\S]*?status: 'needs_reply'/u)
 assert.match(nudgeTick, /\.eq\('nudges_sent', raw\.nudges_sent\)/u)
 assert.match(config, /\[functions\.inbox-nudge-tick\]\nverify_jwt = false/u)
+
+
+// Nudge tick claim-before-send: the step is consumed under a guard that
+// re-checks status and pause, sends only on a confirmed claim, refunds only
+// definite pre-dispatch rejections, and keeps ambiguous outcomes consumed.
+assert.match(nudgeTick, /const \{ data: claimed \}[\s\S]*?\.eq\('nudges_sent', raw\.nudges_sent\)[\s\S]*?\.eq\('status', 'replied'\)[\s\S]*?\.eq\('nudges_paused', false\)/u)
+assert.ok(
+  nudgeTick.indexOf("const { data: claimed }") < nudgeTick.indexOf("'/emails/reply'"),
+  'the nudge step must be claimed before the provider send',
+)
+assert.match(nudgeTick, /delivery_unknown[\s\S]*?stays consumed/u)
+assert.match(nudgeTick, /latestHuman\.ue_type !== 1 && latestHuman\.ue_type !== 3/u)
+assert.match(nudgeTick, /is_auto_reply !== 1/u)
+assert.match(nudgeTick, /MAX_FAILURES_BEFORE_PAUSE/u)
+assert.match(nudgeTick, /withinSendWindow/u)
+// Auto-enrollment: opt-in per client, deterministic pre-filter before any
+// model call, claim before billing, and review-only output.
+assert.match(enrollTick, /Deno\.env\.get\('ENROLL_TICK_SECRET'\)/u)
+assert.match(enrollTick, /x-enroll-secret/u)
+assert.match(enrollTick, /\.eq\('ai_sdr_mode', 'auto_draft'\)/u)
+assert.match(enrollTick, /detectDeterministicReply/u)
+assert.match(enrollTick, /draft_claim_email_id/u)
+assert.ok(
+  enrollTick.indexOf('draft_claim_email_id') < enrollTick.indexOf('generateReplyPackage({'),
+  'the enrollment claim must precede the model call',
+)
+assert.match(enrollTick, /status: 'review'/u)
+assert.doesNotMatch(enrollTick, /\/emails\/reply/u)
+// Shared generator: deterministic filters exist and the profile gate holds.
+assert.match(sdrShared, /SDR_PROFILE_NOT_READY/u)
+assert.match(sdrShared, /OPT_OUT_PATTERNS/u)
+// inbox-reply server gates: thread-advanced refusal and the status contract.
+assert.match(edge, /THREAD_ADVANCED/u)
+assert.match(edge, /\.in\("status", \["needs_reply", "review", "replied"\]\)/u)
+assert.match(config, /\[functions\.inbox-enroll-tick\]\nverify_jwt = false/u)

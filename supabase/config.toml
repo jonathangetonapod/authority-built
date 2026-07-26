@@ -163,6 +163,9 @@ verify_jwt = false
 [functions.inbox-nudge-tick]
 verify_jwt = false
 
+[functions.inbox-enroll-tick]
+verify_jwt = false
+
 [functions.get-prospect-dashboard]
 verify_jwt = false
 

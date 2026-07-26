@@ -62,6 +62,7 @@ import {
   setWorkspaceClientPassword,
   updateWorkspaceClient,
   updateWorkspaceClientProfile,
+  setWorkspaceClientSdrMode,
   updateWorkspaceClientSdrProfile,
   type WorkspaceClientBooking,
   type WorkspaceClientOnboardingSummary,
@@ -285,6 +286,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const { user, workspace } = useAuth()
   const [portalPasswordOpen, setPortalPasswordOpen] = useState(false)
   const [portalPassword, setPortalPassword] = useState('')
+  const [sdrModeBusy, setSdrModeBusy] = useState(false)
   const [portalPasswordConfirm, setPortalPasswordConfirm] = useState('')
   const [portalPasswordVisible, setPortalPasswordVisible] = useState(false)
   const [portalPasswordCommitted, setPortalPasswordCommitted] = useState(false)
@@ -563,6 +565,21 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
     }
   }
 
+  const changeSdrMode = async (mode: 'manual' | 'auto_draft') => {
+    if (!client || client.ai_sdr_mode === mode || sdrModeBusy) return
+    setSdrModeBusy(true)
+    try {
+      await setWorkspaceClientSdrMode(workspaceId, client.id, mode)
+      toast.success(mode === 'auto_draft'
+        ? 'Auto-draft is on — every new reply gets a staged review package.'
+        : 'Auto-draft is off — drafts run when you ask for them.')
+      await detailQuery.refetch()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The AI SDR mode could not be saved.')
+    } finally {
+      setSdrModeBusy(false)
+    }
+  }
   const copyPublicLink = async (path: string, label: string) => {
     try {
       if (!navigator.clipboard) throw new Error('Clipboard is unavailable')
@@ -927,6 +944,51 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                   </div>
                 </div>
               </div>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">SDR mode</CardTitle>
+                <CardDescription>
+                  Choose how replies for {client.name} are handled. Auto-draft never sends —
+                  every package waits for review in the Master Inbox.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 sm:grid-cols-2">
+                {([
+                  {
+                    id: 'manual' as const,
+                    title: 'Manual',
+                    detail: 'The team classifies and drafts on demand with Draft with AI.',
+                  },
+                  {
+                    id: 'auto_draft' as const,
+                    title: 'Auto-draft',
+                    detail: 'Every new reply is classified and a reply + nudge package is staged for review automatically.',
+                  },
+                ]).map((option) => {
+                  const selected = (client.ai_sdr_mode ?? 'manual') === option.id
+                  const autoBlocked = option.id === 'auto_draft' && !sdrReadiness.ready
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      aria-pressed={selected}
+                      disabled={!canManage || sdrModeBusy || autoBlocked}
+                      title={autoBlocked ? 'Complete the core AI SDR profile first' : undefined}
+                      onClick={() => void changeSdrMode(option.id)}
+                      className={`rounded-xl border p-4 text-left transition-colors ${selected ? 'border-primary ring-1 ring-primary' : 'hover:bg-muted/20'} ${autoBlocked ? 'opacity-60' : ''}`}
+                    >
+                      <p className="flex items-center gap-2 text-sm font-semibold">
+                        {option.title}
+                        {selected && <CheckCircle2 className="h-4 w-4 text-primary" />}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{option.detail}</p>
+                      {autoBlocked && <p className="mt-1.5 text-[11px] font-medium text-amber-700">Requires a complete core AI SDR profile.</p>}
+                    </button>
+                  )
+                })}
+              </CardContent>
             </Card>
 
             <section aria-labelledby="ai-sdr-context-heading">

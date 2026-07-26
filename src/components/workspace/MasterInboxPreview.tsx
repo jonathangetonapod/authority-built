@@ -264,7 +264,9 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
       thread.campaign!.client!.id,
       thread.subject || '(no subject)',
       thread.body_text,
-      thread.thread_key ? { thread_key: thread.thread_key, email_id: thread.id } : undefined,
+      thread.thread_key
+        ? { thread_key: thread.thread_key, email_id: thread.id, force: draftedForThread === thread.id }
+        : undefined,
     ),
     onSuccess: (draft, thread) => {
       // Race guard: only stage the result if the thread it was drafted for is
@@ -288,6 +290,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
       subject: draftSubject.trim() || `Re: ${thread.subject}`,
       message: draftBody.trim(),
       ...(thread.thread_key ? { thread_key: thread.thread_key } : {}),
+      ...(thread.campaign?.client ? { client_id: thread.campaign.client.id } : {}),
     }),
     onSuccess: (_result, thread) => {
       setSentThreadIds((current) => new Set([...current, thread.id]))

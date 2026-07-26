@@ -202,6 +202,9 @@ serve(async (req) => {
     } else if (action === 'sdr-profile-draft') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'client_id'])
       clientId = requireUuid(body.client_id, 'client_id')
+    } else if (action === 'sdr-mode-set') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'mode'])
+      clientId = requireUuid(body.client_id, 'client_id')
     } else if (action === 'list') {
       requireOnlyKeys(body, ['action', 'workspace_id'])
     } else if (action === 'create') {
@@ -389,11 +392,41 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, { client: data })
     }
 
+    if (action === 'sdr-mode-set') {
+      const access = await requireWorkspaceFeatureAccess(authContext, workspaceId)
+      if (!['owner', 'admin', 'platform_admin'].includes(access.role)) {
+        throw new HttpError(403, 'WORKSPACE_ACCESS_REQUIRED', 'Workspace manager access is required')
+      }
+      const mode = requireString(body.mode, 'mode', { max: 20 })
+      if (!['manual', 'auto_draft'].includes(mode)) {
+        throw new HttpError(400, 'INVALID_FIELD', 'mode must be manual or auto_draft')
+      }
+      const { data: updated, error: modeError } = await admin
+        .from('clients')
+        .update({ ai_sdr_mode: mode, updated_at: new Date().toISOString() })
+        .eq('id', clientId!)
+        .eq('workspace_id', workspaceId)
+        .select('id, ai_sdr_mode')
+        .maybeSingle()
+      if (modeError || !updated) {
+        throw new HttpError(500, 'CLIENT_OPERATION_FAILED', 'The AI SDR mode could not be saved')
+      }
+      await writeAudit(admin, {
+        workspaceId,
+        actorUserId: authContext.user.id,
+        action: 'client.ai_sdr_mode.set',
+        entityType: 'client',
+        entityId: clientId,
+        metadata: { mode },
+      })
+      return jsonResponse(req, METHODS, 200, { ai_sdr_mode: updated.ai_sdr_mode })
+    }
+
     if (action === 'sdr-context-get') {
       await requireWorkspaceFeatureAccess(authContext, workspaceId)
       const { data: client, error: clientError } = await admin
         .from('clients')
-        .select('id,workspace_id,name,status,bio,calendar_link,ai_sdr_profile,ai_sdr_profile_updated_at')
+        .select('id,workspace_id,name,status,bio,calendar_link,ai_sdr_profile,ai_sdr_profile_updated_at,ai_sdr_mode')
         .eq('id', clientId!)
         .eq('workspace_id', workspaceId)
         .maybeSingle()
@@ -416,6 +449,7 @@ serve(async (req) => {
           calendar_link: client.calendar_link,
           ai_sdr_profile: client.ai_sdr_profile || {},
           ai_sdr_profile_updated_at: client.ai_sdr_profile_updated_at,
+          ai_sdr_mode: typeof client.ai_sdr_mode === 'string' ? client.ai_sdr_mode : 'manual',
           readiness,
           safe_to_draft: client.status === 'active' && readiness.ready,
           delivery_authorized: false,
@@ -427,7 +461,7 @@ serve(async (req) => {
       const access = await requireWorkspaceFeatureAccess(authContext, workspaceId)
       const { data: client, error: clientError } = await admin
         .from('clients')
-        .select('id,workspace_id,name,email,contact_person,linkedin_url,website,calendar_link,status,notes,bio,photo_url,media_kit_url,prospect_dashboard_slug,dashboard_slug,dashboard_tagline,dashboard_enabled,dashboard_view_count,dashboard_last_viewed_at,portal_access_enabled,portal_last_login_at,password_set_at,ai_sdr_profile,ai_sdr_profile_updated_at,created_at,updated_at')
+        .select('id,workspace_id,name,email,contact_person,linkedin_url,website,calendar_link,status,notes,bio,photo_url,media_kit_url,prospect_dashboard_slug,dashboard_slug,dashboard_tagline,dashboard_enabled,dashboard_view_count,dashboard_last_viewed_at,portal_access_enabled,portal_last_login_at,password_set_at,ai_sdr_profile,ai_sdr_profile_updated_at,ai_sdr_mode,created_at,updated_at')
         .eq('id', clientId!)
         .eq('workspace_id', workspaceId)
         .maybeSingle()

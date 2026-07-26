@@ -576,7 +576,7 @@ export async function draftWorkspaceInboxReply(
   clientId: string,
   subject: string,
   message: string,
-  threadContext?: { thread_key: string; email_id: string },
+  threadContext?: { thread_key: string; email_id: string; force?: boolean },
 ): Promise<WorkspaceInboxDraft> {
   const data = await invokeWorkspaceCampaigns<{
     draft: { subject: string; body: string }
@@ -588,7 +588,7 @@ export async function draftWorkspaceInboxReply(
     client_id: clientId,
     subject,
     message,
-    ...(threadContext ? { thread_key: threadContext.thread_key, email_id: threadContext.email_id } : {}),
+    ...(threadContext ? { thread_key: threadContext.thread_key, email_id: threadContext.email_id, ...(threadContext.force ? { force: true } : {}) } : {}),
   }, 'The reply draft could not be generated.')
   return {
     ...data.draft,
@@ -615,7 +615,7 @@ export async function setWorkspaceInboxThreadStatus(
 
 export async function sendWorkspaceInboxReply(
   workspaceId: string,
-  input: { reply_to_id: string; eaccount: string; subject: string; message: string; thread_key?: string },
+  input: { reply_to_id: string; eaccount: string; subject: string; message: string; thread_key?: string; client_id?: string },
 ): Promise<void> {
   await invokeWorkspaceCampaigns<{ success: boolean }>({
     action: 'inbox-reply',
