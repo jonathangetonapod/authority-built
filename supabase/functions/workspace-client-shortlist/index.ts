@@ -415,6 +415,10 @@ async function verifyEmailWithInstantly(apiKey: string, email: string): Promise<
   return { email, status }
 }
 
+function present(value: string | null | undefined): string {
+  return typeof value === 'string' && value.trim() ? value : 'Not available'
+}
+
 function fillPromptTemplate(template: string, variables: Record<string, string | null | undefined>): string {
   return template.replace(/\{\{\s*([a-z_]+)\s*\}\}/gu, (_match, key: string) => {
     const value = variables[key]
@@ -422,12 +426,45 @@ function fillPromptTemplate(template: string, variables: Record<string, string |
   })
 }
 
+// Prompt caching is a byte-exact prefix match rendered as tools -> system ->
+// messages, so every stage that wants to share the cache must send the SAME
+// system string; the stage's own system line moves into the instruction
+// block instead. Caches are also model-scoped — only same-model stages share.
+const RESEARCH_SHARED_SYSTEM =
+  'You are an expert podcast outreach specialist working for a podcast booking agency. '
+  + 'A CONTEXT section opens the message; the stage instructions follow it. '
+  + 'Follow the instructions precisely and ground every claim in the provided context.'
+
+interface ResearchPromptParts {
+  /** Shared cacheable context — byte-identical across the run's stages. */
+  context?: string | null
+  /** Second cached block: the stage-one report reused by later stages. */
+  report?: string | null
+  /** Stage-specific text: the filled prompt template. */
+  instruction: string
+}
+
 async function runResearchPrompt(
   apiKey: string,
   prompt: { model: string; maxTokens: number; system: string },
-  content: string,
+  parts: string | ResearchPromptParts,
   usage: { input: number; output: number },
 ): Promise<string> {
+  const resolved: ResearchPromptParts = typeof parts === 'string' ? { instruction: parts } : parts
+  const cached = Boolean(resolved.context)
+  const blocks: Array<Record<string, unknown>> = []
+  if (resolved.context) {
+    blocks.push({ type: 'text', text: resolved.context, cache_control: { type: 'ephemeral' } })
+  }
+  if (resolved.report) {
+    blocks.push({ type: 'text', text: resolved.report, cache_control: { type: 'ephemeral' } })
+  }
+  blocks.push({
+    type: 'text',
+    // In cached mode the shared system replaces the per-stage one, so the
+    // stage's own system line leads the instruction block instead.
+    text: cached ? `${prompt.system}\n\n${resolved.instruction}` : resolved.instruction,
+  })
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -438,8 +475,8 @@ async function runResearchPrompt(
     body: JSON.stringify({
       model: prompt.model,
       max_tokens: prompt.maxTokens,
-      system: prompt.system,
-      messages: [{ role: 'user', content }],
+      system: cached ? RESEARCH_SHARED_SYSTEM : prompt.system,
+      messages: [{ role: 'user', content: blocks }],
     }),
     // Research stages legitimately generate ~3k tokens, which takes 30-60s.
     // The old 28s cap timed out every real run the moment the API key worked.
@@ -453,9 +490,18 @@ async function runResearchPrompt(
   }
   const payload = await response.json() as {
     content?: Array<{ type?: string; text?: string }>
-    usage?: { input_tokens?: number; output_tokens?: number }
+    usage?: {
+      input_tokens?: number
+      output_tokens?: number
+      cache_creation_input_tokens?: number
+      cache_read_input_tokens?: number
+    }
   }
-  usage.input += Number(payload.usage?.input_tokens) || 0
+  // input_tokens is only the UNCACHED remainder; the ledger should record
+  // total prompt volume, so cache writes and reads are counted in as well.
+  usage.input += (Number(payload.usage?.input_tokens) || 0)
+    + (Number(payload.usage?.cache_creation_input_tokens) || 0)
+    + (Number(payload.usage?.cache_read_input_tokens) || 0)
   usage.output += Number(payload.usage?.output_tokens) || 0
   const text = payload.content?.find((block) => block.type === 'text' && typeof block.text === 'string')?.text
   if (typeof text !== 'string' || !text.trim()) throw new Error('research prompt returned no text')
@@ -1101,6 +1147,46 @@ serve(async (req) => {
           episode_transcript: captured?.transcript ?? null,
         }
 
+        // One byte-identical CONTEXT block opens every Sonnet stage of this
+        // run, marked for prompt caching: stage one pays the cache write,
+        // later stages read the same ~15-20k tokens at a tenth of the price.
+        // Longform data up front also measurably improves long-context
+        // quality, so this is a quality change as much as a cost one.
+        const sharedContext = [
+          '<context>',
+          '<client>',
+          `Name: ${present(baseVariables.client_name)}`,
+          `LinkedIn: ${present(baseVariables.client_linkedin_url)}`,
+          `Website: ${present(baseVariables.client_website)}`,
+          `Bio and positioning:\n${present(baseVariables.client_bio)}`,
+          '</client>',
+          '<podcast>',
+          `Name: ${present(baseVariables.podcast_name)}`,
+          `URL: ${present(baseVariables.podcast_url)}`,
+          `Last episode posted: ${present(baseVariables.last_posted_at)}`,
+          `Description:\n${present(baseVariables.podcast_description)}`,
+          '</podcast>',
+          '<latest_episode>',
+          `Title: ${present(baseVariables.episode_title)}`,
+          `Summary:\n${present(baseVariables.episode_description)}`,
+          `<transcript>\n${present(baseVariables.episode_transcript)}\n</transcript>`,
+          '</latest_episode>',
+          '</context>',
+        ].join('\n')
+        // Templates keep their {{variables}}, but the heavy values now live
+        // once in the cached context; the fill substitutes a pointer so the
+        // instruction block stays small and stage-specific.
+        const pointer = (tag: string, value: string | null | undefined): string | null =>
+          typeof value === 'string' && value.trim() ? `(provided in ${tag} within the CONTEXT section above)` : null
+        const stageVariables: Record<string, string | null> = {
+          ...baseVariables,
+          client_bio: pointer('<client>', baseVariables.client_bio),
+          podcast_description: pointer('<podcast>', baseVariables.podcast_description),
+          episode_description: pointer('<latest_episode>', baseVariables.episode_description),
+          episode_transcript: pointer('<transcript>', baseVariables.episode_transcript),
+          research_report: '(provided in the research report section above)',
+        }
+
         const advance = async (promptId: string, nextStage: string | null) => {
           completedStages.push(...RESEARCH_STAGE_MAP[promptId])
           await writeProgress({ status: 'running', current_stage: nextStage, completed_stages: [...completedStages] })
@@ -1109,15 +1195,18 @@ serve(async (req) => {
         const researchReport = await runResearchPrompt(
           anthropicKey.apiKey,
           RESEARCH_PROMPT_DEFAULTS.podcast_research,
-          fillPromptTemplate(promptContent('podcast_research'), baseVariables),
+          { context: sharedContext, instruction: fillPromptTemplate(promptContent('podcast_research'), stageVariables) },
           usage,
         )
         await advance('podcast_research', 'host_profile')
 
+        // Stages two through four reuse two cached blocks: the shared context
+        // written by stage one, and the research report written here.
+        const reportBlock = `<research_report>\n${researchReport}\n</research_report>`
         const hostReport = await runResearchPrompt(
           anthropicKey.apiKey,
           RESEARCH_PROMPT_DEFAULTS.host_info,
-          fillPromptTemplate(promptContent('host_info'), { ...baseVariables, research_report: researchReport }),
+          { context: sharedContext, report: reportBlock, instruction: fillPromptTemplate(promptContent('host_info'), stageVariables) },
           usage,
         )
         await advance('host_info', 'guest_patterns')
@@ -1127,7 +1216,7 @@ serve(async (req) => {
           guestReport = await runResearchPrompt(
             anthropicKey.apiKey,
             RESEARCH_PROMPT_DEFAULTS.guest_info,
-            fillPromptTemplate(promptContent('guest_info'), { ...baseVariables, research_report: researchReport }),
+            { context: sharedContext, report: reportBlock, instruction: fillPromptTemplate(promptContent('guest_info'), stageVariables) },
             usage,
           ).catch(() => null)
         }
@@ -1136,7 +1225,7 @@ serve(async (req) => {
         const topicProposal = await runResearchPrompt(
           anthropicKey.apiKey,
           RESEARCH_PROMPT_DEFAULTS.find_topics,
-          fillPromptTemplate(promptContent('find_topics'), { ...baseVariables, research_report: researchReport }),
+          { context: sharedContext, report: reportBlock, instruction: fillPromptTemplate(promptContent('find_topics'), stageVariables) },
           usage,
         )
         await advance('find_topics', null)
@@ -1711,11 +1800,49 @@ serve(async (req) => {
         recent_guest_name: typeof researchDocument.recent_guest_name === 'string'
           ? researchDocument.recent_guest_name.slice(0, 200)
           : storedGuestName,
+        topic_proposal: null,
+        research_report: researchReport,
+      }
+      const topicResearch = typeof researchDocument.find_topics === 'string'
+        ? String(researchDocument.find_topics).slice(0, 4_000)
+        : ''
+
+      // The three sequence options are near-identical requests differing only
+      // in the selected angle. Everything angle-independent lives in one
+      // cached CONTEXT block, so option one pays the cache write and options
+      // two and three read the same prefix at a tenth of the input price.
+      const pitchContext = [
+        '<context>',
+        '<client>',
+        `Name: ${present(variables.client_name)}`,
+        `LinkedIn: ${present(variables.client_linkedin_url)}`,
+        `Website: ${present(variables.client_website)}`,
+        `Bio:\n${present(variables.client_bio)}`,
+        '</client>',
+        '<podcast>',
+        `Name: ${present(variables.podcast_name)}`,
+        `URL: ${present(variables.podcast_url)}`,
+        `Host: ${present(variables.host_name)}`,
+        `Verified email: ${present(variables.verified_email)}`,
+        `Latest episode: ${present(variables.episode_title)}`,
+        `Recent guest on that episode: ${present(variables.recent_guest_name)}`,
+        `Description:\n${present(variables.podcast_description)}`,
+        `<transcript_excerpt>\n${present(variables.episode_transcript)}\n</transcript_excerpt>`,
+        '</podcast>',
+        `<research_report>\n${present(variables.research_report)}\n</research_report>`,
+        `<topic_research>\n${present(topicResearch)}\n</topic_research>`,
+        '</context>',
+      ].join('\n')
+      const pitchVariables: Record<string, string | null> = {
+        ...variables,
+        client_bio: variables.client_bio ? '(provided in <client> within the CONTEXT section above)' : null,
+        podcast_description: variables.podcast_description ? '(provided in <podcast> within the CONTEXT section above)' : null,
+        episode_transcript: variables.episode_transcript ? '(provided in <transcript_excerpt> within the CONTEXT section above)' : null,
+        research_report: '(provided in <research_report> within the CONTEXT section above)',
         topic_proposal: [
           angle?.title && angle?.description ? `SELECTED ANGLE: ${angle.title} — ${angle.description}` : '',
-          typeof researchDocument.find_topics === 'string' ? String(researchDocument.find_topics).slice(0, 4_000) : '',
+          topicResearch ? '(full topic research provided in <topic_research> within the CONTEXT section above)' : '',
         ].filter(Boolean).join('\n\n') || null,
-        research_report: researchReport,
       }
 
       const usage = { input: 0, output: 0 }
@@ -1723,7 +1850,7 @@ serve(async (req) => {
         const draftEmail = await runResearchPrompt(
           anthropicKey.apiKey,
           RESEARCH_PROMPT_DEFAULTS.write_email,
-          fillPromptTemplate(promptContent('write_email'), variables),
+          { context: pitchContext, instruction: fillPromptTemplate(promptContent('write_email'), pitchVariables) },
           usage,
         )
         const cleaned = await runResearchPrompt(
