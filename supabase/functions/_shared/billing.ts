@@ -16,6 +16,8 @@ export type MeteredOperation =
   | 'podscan_lookup'
   | 'semantic_search'
   | 'pitch_profile'
+  | 'mailbox_domain_purchase'
+  | 'mailbox_monthly'
   | 'other'
 
 export interface TokenUsage {

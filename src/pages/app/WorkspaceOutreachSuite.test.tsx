@@ -16,6 +16,13 @@ vi.mock('@/services/clients', () => ({
   getWorkspaceClientSdrContext: vi.fn(),
 }))
 vi.mock('@/services/clientShortlist', () => ({ getClientShortlist: vi.fn() }))
+vi.mock('@/services/mailboxInfra', () => ({
+  getMailboxInfraOverview: vi.fn().mockResolvedValue({ domains: [], orders: [] }),
+  getMailboxOrderStatus: vi.fn(),
+  searchMailboxDomains: vi.fn(),
+  createMailboxOrder: vi.fn(),
+  exportMailboxesForInstantly: vi.fn(),
+}))
 vi.mock('@/services/workspaceCampaigns', () => ({
   connectWorkspaceInstantly: vi.fn(),
   disconnectWorkspaceInstantly: vi.fn(),

@@ -6,14 +6,10 @@ import { useAuth } from '@/contexts/AuthContext'
 import WorkspaceOverview from '@/pages/app/WorkspaceOverview'
 import { getAdminWorkspaceView } from '@/services/adminWorkspaces'
 import { getWorkspaceClientPodcastSystem } from '@/services/clientPodcastSystem'
-import { getWorkspaceCampaignOverview } from '@/services/workspaceCampaigns'
-import { getWorkspaceBillingOverview } from '@/services/workspaceStaff'
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('@/services/adminWorkspaces', () => ({ getAdminWorkspaceView: vi.fn() }))
 vi.mock('@/services/clientPodcastSystem', () => ({ getWorkspaceClientPodcastSystem: vi.fn() }))
-vi.mock('@/services/workspaceCampaigns', () => ({ getWorkspaceCampaignOverview: vi.fn().mockRejectedValue(new Error('not mocked')) }))
-vi.mock('@/services/workspaceStaff', () => ({ getWorkspaceBillingOverview: vi.fn().mockRejectedValue(new Error('not mocked')) }))
 vi.mock('@/components/workspace/WorkspaceLayout', () => ({
   WorkspaceLayout: ({ children, platformWorkspace }: {
     children: React.ReactNode
@@ -156,17 +152,6 @@ describe('WorkspaceOverview', () => {
     expect(screen.getByRole('link', { name: /Podcast Finder/ })).toHaveAttribute('href', `${baseHref}/podcast-finder`)
     expect(screen.getByRole('link', { name: /Settings/ })).toHaveAttribute('href', `${baseHref}/settings`)
     expect(mockedView).toHaveBeenCalledWith(selectedWorkspaceId, expect.any(AbortSignal))
-  })
-
-  it('surfaces setup cliffs before the owner hits them mid-flow', async () => {
-    vi.mocked(getWorkspaceCampaignOverview).mockResolvedValue({ integration: { connected: false } } as never)
-    vi.mocked(getWorkspaceBillingOverview).mockResolvedValue({ enforcement_enabled: true, balance: 2 } as never)
-    renderPage()
-
-    expect(await screen.findByText('Finish setting up')).toBeInTheDocument()
-    expect(screen.getByText('Connect Instantly')).toBeInTheDocument()
-    expect(screen.getByText('Only 2 credits left')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Top up/ })).toHaveAttribute('href', '/app/settings/billing')
   })
 
   it('invites the first client when the workspace is empty', async () => {

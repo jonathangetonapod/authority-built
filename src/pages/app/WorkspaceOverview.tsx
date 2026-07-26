@@ -34,8 +34,6 @@ import {
   type WorkspaceModule,
 } from '@/lib/workspaceRoutes'
 import { getAdminWorkspaceView } from '@/services/adminWorkspaces'
-import { getWorkspaceCampaignOverview } from '@/services/workspaceCampaigns'
-import { getWorkspaceBillingOverview } from '@/services/workspaceStaff'
 import {
   getWorkspaceClientPodcastSystem,
   type ClientPodcastSystemItem,
@@ -147,42 +145,6 @@ const WorkspaceOverview = ({ platformWorkspaceId }: WorkspaceOverviewProps) => {
     staleTime: 30_000,
   })
   const system = systemQuery.data
-
-  // Setup cliffs surfaced before the owner hits them mid-flow. Both queries
-  // fail quietly for viewers who lack access to them.
-  const integrationQuery = useQuery({
-    queryKey: ['overview-setup-instantly', effectiveWorkspaceId],
-    queryFn: () => getWorkspaceCampaignOverview(effectiveWorkspaceId),
-    enabled: UUID_PATTERN.test(effectiveWorkspaceId),
-    retry: false,
-    staleTime: 60_000,
-  })
-  const billingQuery = useQuery({
-    queryKey: ['overview-setup-billing', effectiveWorkspaceId],
-    queryFn: () => getWorkspaceBillingOverview(effectiveWorkspaceId),
-    enabled: UUID_PATTERN.test(effectiveWorkspaceId),
-    retry: false,
-    staleTime: 60_000,
-  })
-  const setupItems: Array<{ id: string; title: string; detail: string; href: string; cta: string }> = []
-  if (integrationQuery.data && !integrationQuery.data.integration?.connected) {
-    setupItems.push({
-      id: 'instantly',
-      title: 'Connect Instantly',
-      detail: 'Outreach sending and the direct-email waterfall both need your Instantly account.',
-      href: workspaceModuleHref(baseHref, 'client-campaigns'),
-      cta: 'Connect',
-    })
-  }
-  if (billingQuery.data?.enforcement_enabled && billingQuery.data.balance < 5) {
-    setupItems.push({
-      id: 'credits',
-      title: billingQuery.data.balance <= 0 ? 'Out of credits' : `Only ${billingQuery.data.balance} credits left`,
-      detail: 'Research runs, email unlocks, and scans stop when the balance hits zero.',
-      href: `${baseHref}/settings/billing`,
-      cta: 'Top up',
-    })
-  }
 
   const today = localDate()
   const weekEnd = localDate(7)
@@ -311,29 +273,6 @@ const WorkspaceOverview = ({ platformWorkspaceId }: WorkspaceOverviewProps) => {
           </Card>
         ) : system ? (
           <>
-            {setupItems.length > 0 && (
-              <Card className="border-amber-200 bg-amber-50/60">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base text-amber-950">Finish setting up</CardTitle>
-                  <CardDescription className="text-amber-900/75">These will block the pitch flow if left for later.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-2.5">
-                    {setupItems.map((item) => (
-                      <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200/80 bg-background px-3 py-2.5">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium">{item.title}</p>
-                          <p className="text-xs text-muted-foreground">{item.detail}</p>
-                        </div>
-                        <Button asChild size="sm" variant="outline" className="shrink-0 border-amber-300">
-                          <Link to={item.href}>{item.cta}<ArrowRight className="ml-2 h-3.5 w-3.5" /></Link>
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-            )}
             <section aria-label="Today at a glance" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <StatCard icon={AlertCircle} label="Need attention" value={summary?.needs_attention ?? 0} tone="alert" href={commandCenterHref} />
               <StatCard icon={ListChecks} label="Awaiting client review" value={summary?.stage_counts.awaiting_review ?? 0} tone="work" href={commandCenterHref} />

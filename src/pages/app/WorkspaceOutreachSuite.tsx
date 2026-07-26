@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { WorkspaceLayout, type PlatformWorkspaceConfig } from '@/components/workspace/WorkspaceLayout'
 import MasterInboxPreview from '@/components/workspace/MasterInboxPreview'
+import { MailboxInfraCard } from '@/components/workspace/MailboxInfraCard'
 import WorkspaceCampaigns from '@/pages/app/WorkspaceCampaigns'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -398,12 +399,15 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
           />
         )}
         {module === 'mailboxes' && (
-          <MailboxesContent
-            data={mailboxesQuery.data}
-            loading={mailboxesQuery.isLoading}
-            error={mailboxesQuery.error instanceof Error ? mailboxesQuery.error : null}
-            onRetry={() => void mailboxesQuery.refetch()}
-          />
+          <>
+            <MailboxesContent
+              data={mailboxesQuery.data}
+              loading={mailboxesQuery.isLoading}
+              error={mailboxesQuery.error instanceof Error ? mailboxesQuery.error : null}
+              onRetry={() => void mailboxesQuery.refetch()}
+            />
+            <MailboxInfraCard workspaceId={effectiveWorkspace.id} />
+          </>
         )}
 
         {module === 'master-inbox' && (

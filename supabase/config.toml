@@ -20,6 +20,9 @@ verify_jwt = false
 [functions.create-checkout-session]
 verify_jwt = true
 
+[functions.workspace-mailbox-infra]
+verify_jwt = true
+
 [functions.login-with-password]
 verify_jwt = false
 
