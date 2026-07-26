@@ -588,8 +588,10 @@ serve(async (req) => {
         throw new HttpError(403, 'WORKSPACE_ACCESS_REQUIRED', 'Workspace manager access is required')
       }
       const mode = requireString(body.mode, 'mode', { max: 20 })
-      if (!['manual', 'auto_draft', 'auto_send'].includes(mode)) {
-        throw new HttpError(400, 'INVALID_FIELD', 'mode must be manual, auto_draft, or auto_send')
+      // auto_send was removed on 2026-07-26: no email leaves the platform
+      // without a person sending it, so the mode cannot be selected anymore.
+      if (!['manual', 'auto_draft'].includes(mode)) {
+        throw new HttpError(400, 'INVALID_FIELD', 'mode must be manual or auto_draft')
       }
       const { data: updated, error: modeError } = await admin
         .from('clients')
@@ -639,7 +641,11 @@ serve(async (req) => {
           calendar_link: client.calendar_link,
           ai_sdr_profile: client.ai_sdr_profile || {},
           ai_sdr_profile_updated_at: client.ai_sdr_profile_updated_at,
-          ai_sdr_mode: typeof client.ai_sdr_mode === 'string' ? client.ai_sdr_mode : 'manual',
+          // A legacy auto_send row reads as auto_draft: drafting still runs
+          // for it, but nothing sends and the mode can no longer be chosen.
+          ai_sdr_mode: client.ai_sdr_mode === 'auto_send'
+            ? 'auto_draft'
+            : typeof client.ai_sdr_mode === 'string' ? client.ai_sdr_mode : 'manual',
           readiness,
           safe_to_draft: client.status === 'active' && readiness.ready,
           delivery_authorized: false,

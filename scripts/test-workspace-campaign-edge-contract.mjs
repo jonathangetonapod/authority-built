@@ -168,6 +168,16 @@ for (const [promptId, prompt] of Object.entries(canonicalPrompts.prompts)) {
 
 process.stdout.write('Workspace Client Campaign Edge contract checks passed\n')
 
+// Automated sending is switched off platform-wide (2026-07-26): the nudge
+// tick must bail out right after auth, before it can reach a thread or the
+// provider. Removing this gate is an explicit product decision, not cleanup.
+assert.match(nudgeTick, /const NUDGE_SENDING_DISABLED: boolean = true/u)
+assert.match(nudgeTick, /if \(NUDGE_SENDING_DISABLED\) \{\s*\n\s*return json\(200, \{ sent: 0, host_replies: 0, skipped: 0, sending_disabled: true \}\)/u)
+assert.ok(
+  nudgeTick.indexOf('NUDGE_SENDING_DISABLED) {') < nudgeTick.indexOf('createAdminClient()'),
+  'the sending-disabled gate must precede any database or provider access',
+)
+
 // Nudge tick safety gates: shared-secret auth, never send on an inbound or
 // missing latest message, per-tick caps, and a concurrency-safe step claim.
 assert.match(nudgeTick, /Deno\.env\.get\('NUDGE_TICK_SECRET'\)/u)
@@ -204,35 +214,23 @@ assert.ok(
   'the enrollment claim must precede the model call',
 )
 assert.match(enrollTick, /status: 'review'/u)
-// Auto-send: every package still lands in review. Dispatch is a separate
-// phase that may only act on a package whose client opted into auto_send AND
-// whose classification cleared the shared gate.
-assert.match(enrollTick, /const autoSendable = autoSendClientIds\.has\(clientId\)\s*\n\s*&& packageIsAutoSendable\(pkg\.classification\)/u)
-assert.match(enrollTick, /auto_send_eligible_at: autoSendable/u)
-assert.match(enrollTick, /AUTO_SEND_HOLD_MS/u)
-// The hold is real time, not a formality.
+// Automated sending was removed on 2026-07-26: the drafting tick must never
+// call the provider send endpoint, and no package may ever become eligible.
+// Every generated package stops in review, where a person sends it.
 assert.ok(
-  /const AUTO_SEND_HOLD_MS = (\d+) \* 60 \* 1000/u.exec(enrollTick)?.[1] >= 10,
-  'the auto-send hold window must be at least ten minutes',
+  !enrollTick.includes('/emails/reply'),
+  'the enrollment tick must never call the provider send endpoint',
 )
-// Dispatch re-checks the mode, refuses a superseded draft, respects business
-// hours, and claims the row before the send so it can never double-fire.
-assert.match(enrollTick, /clientRow\?\.ai_sdr_mode !== 'auto_send'/u)
-assert.match(enrollTick, /latestHuman\.id !== draft\?\.based_on_email_id/u)
-assert.match(enrollTick, /withinSendWindow/u)
+assert.match(enrollTick, /auto_send_eligible_at: null/u)
 assert.ok(
-  enrollTick.indexOf('auto_sent_at: new Date().toISOString()') < enrollTick.indexOf("'/emails/reply'"),
-  'the auto-send claim must precede dispatch',
+  !enrollTick.includes('dispatchDueAutoSends'),
+  'the auto-send dispatch phase must stay removed',
 )
-// A generated package is never sent by the phase that writes it.
+// The shared module no longer defines send authority for anyone.
 assert.ok(
-  enrollTick.indexOf("'/emails/reply'") > enrollTick.indexOf('async function dispatchDueAutoSends'),
-  'sending must live in the dispatch phase, not the drafting loop',
+  !sdrShared.includes('AUTO_SEND_LABELS') && !sdrShared.includes('packageIsAutoSendable'),
+  'inboxSdr must not export an auto-send gate',
 )
-// The shared gate itself: two labels, a confidence floor, fail closed.
-assert.match(sdrShared, /export const AUTO_SEND_LABELS = \['interested', 'question'\]/u)
-assert.match(sdrShared, /if \(!classification\) return false/u)
-assert.match(sdrShared, /classification\.confidence >= AUTO_SEND_MIN_CONFIDENCE/u)
 // Shared generator: deterministic filters exist and the profile gate holds.
 assert.match(sdrShared, /SDR_PROFILE_NOT_READY/u)
 assert.match(sdrShared, /OPT_OUT_PATTERNS/u)

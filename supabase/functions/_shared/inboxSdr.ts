@@ -55,22 +55,6 @@ export function withinSendWindow(timezone: string): boolean {
   }
 }
 
-/**
- * Classifications the AI is allowed to answer without a human. Both are
- * "keep the conversation moving" cases. Everything else — a decline, a
- * not-now, a referral to someone else, an autoresponder, or anything the
- * model could not place — stops in review, where a person decides.
- */
-export const AUTO_SEND_LABELS = ['interested', 'question']
-export const AUTO_SEND_MIN_CONFIDENCE = 70
-
-/** Whether a generated package cleared the bar for sending itself. */
-export function packageIsAutoSendable(classification: SdrClassification | null): boolean {
-  if (!classification) return false
-  return AUTO_SEND_LABELS.includes(classification.label)
-    && classification.confidence >= AUTO_SEND_MIN_CONFIDENCE
-}
-
 const CLASSIFICATION_LABELS = [
   'interested',
   'not_interested',

@@ -20,6 +20,12 @@ import {
   instantlyRequest,
 } from '../_shared/instantly.ts'
 
+// Automated sending is switched off platform-wide (operator decision,
+// 2026-07-26): no email leaves the platform without a person sending it.
+// The tick acknowledges the cron and exits before touching any thread or
+// calling Instantly. Set to false to restore nudge sending.
+const NUDGE_SENDING_DISABLED: boolean = true
+
 const MAX_SENDS_PER_TICK = 15
 const MAX_SENDS_PER_WORKSPACE = 5
 const MAX_THREAD_LOOKUPS_PER_TICK = 15
@@ -74,6 +80,9 @@ serve(async (req) => {
   const secret = Deno.env.get('NUDGE_TICK_SECRET')?.trim()
   if (!secret || req.headers.get('x-nudge-secret') !== secret) {
     return json(401, { error: 'unauthorized' })
+  }
+  if (NUDGE_SENDING_DISABLED) {
+    return json(200, { sent: 0, host_replies: 0, skipped: 0, sending_disabled: true })
   }
 
   const admin = createAdminClient()

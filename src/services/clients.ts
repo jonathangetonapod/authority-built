@@ -633,9 +633,9 @@ export async function getWorkspaceClientSdrContext(
 /**
  * manual     — nothing happens without a person.
  * auto_draft — replies are written and staged for review, never sent.
- * auto_send  — staged replies dispatch themselves after a hold window.
+ * Nothing the platform stages is ever sent without a person sending it.
  */
-export type WorkspaceClientSdrMode = 'manual' | 'auto_draft' | 'auto_send'
+export type WorkspaceClientSdrMode = 'manual' | 'auto_draft'
 
 export async function setWorkspaceClientSdrMode(
   workspaceId: string,
@@ -651,9 +651,7 @@ export async function setWorkspaceClientSdrMode(
     },
   })
   if (error) throw await toFunctionError(error, 'The AI SDR mode could not be saved.')
-  return data?.ai_sdr_mode === 'auto_draft' || data?.ai_sdr_mode === 'auto_send'
-    ? data.ai_sdr_mode
-    : 'manual'
+  return data?.ai_sdr_mode === 'auto_draft' ? 'auto_draft' : 'manual'
 }
 
 export async function updateWorkspaceClientSdrProfile(

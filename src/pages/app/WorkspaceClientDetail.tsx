@@ -576,11 +576,9 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
     setSdrModeBusy(true)
     try {
       await setWorkspaceClientSdrMode(workspaceId, client.id, mode)
-      toast.success(mode === 'auto_send'
-        ? 'Auto-send is on — confident replies go out on their own after a 15 minute hold.'
-        : mode === 'auto_draft'
-          ? 'Auto-draft is on — every new reply gets a staged review package.'
-          : 'Automation is off — drafts run when you ask for them.')
+      toast.success(mode === 'auto_draft'
+        ? 'Auto-draft is on — every new reply gets a staged review package. Nothing sends.'
+        : 'Automation is off — drafts run when you ask for them.')
       await detailQuery.refetch()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'The AI SDR mode could not be saved.')
@@ -958,11 +956,11 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">SDR mode</CardTitle>
                 <CardDescription>
-                  Choose how replies for {client.name} are handled. Only auto-send emails a host
-                  without a person reading it first.
+                  Choose how replies for {client.name} are handled. Every reply is sent by a
+                  person — the AI only classifies and drafts.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-3 sm:grid-cols-3">
+              <CardContent className="grid gap-3 sm:grid-cols-2">
                 {([
                   {
                     id: 'manual' as const,
@@ -973,11 +971,6 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                     id: 'auto_draft' as const,
                     title: 'Auto-draft',
                     detail: 'Replies marked Interested in Instantly are classified and a reply + nudge package is staged for review automatically. Nothing sends.',
-                  },
-                  {
-                    id: 'auto_send' as const,
-                    title: 'Auto-send',
-                    detail: 'Everything auto-draft does, then sends it — but only a confidently interested or question reply, after a 15 minute hold you can cancel, inside business hours.',
                   },
                 ]).map((option) => {
                   const selected = (client.ai_sdr_mode ?? 'manual') === option.id
