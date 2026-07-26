@@ -464,6 +464,20 @@ export interface WorkspaceInboxThread {
     campaign_name: string | null
     client: { id: string; name: string } | null
   } | null
+  lead_context?: {
+    podcast_name: string | null
+    host_name: string | null
+    stage: string | null
+    first_message_at: string | null
+    opens: number
+    replies: number
+  } | null
+}
+
+export interface WorkspaceInboxReplyClassification {
+  label: 'interested' | 'not_interested' | 'not_now' | 'question' | 'referral' | 'auto_reply' | 'other'
+  confidence: number
+  reasoning: string
 }
 
 export interface WorkspaceInboxThreadsResponse {
@@ -527,20 +541,29 @@ export async function getWorkspaceInboxThreads(
   }, 'Inbox replies could not be loaded.')
 }
 
+export interface WorkspaceInboxDraft {
+  subject: string
+  body: string
+  classification: WorkspaceInboxReplyClassification | null
+}
+
 export async function draftWorkspaceInboxReply(
   workspaceId: string,
   clientId: string,
   subject: string,
   message: string,
-): Promise<{ subject: string; body: string }> {
-  const data = await invokeWorkspaceCampaigns<{ draft: { subject: string; body: string } }>({
+): Promise<WorkspaceInboxDraft> {
+  const data = await invokeWorkspaceCampaigns<{
+    draft: { subject: string; body: string }
+    classification?: WorkspaceInboxReplyClassification | null
+  }>({
     action: 'inbox-draft',
     workspace_id: workspaceId,
     client_id: clientId,
     subject,
     message,
   }, 'The reply draft could not be generated.')
-  return data.draft
+  return { ...data.draft, classification: data.classification ?? null }
 }
 
 export async function sendWorkspaceInboxReply(

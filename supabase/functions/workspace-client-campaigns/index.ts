@@ -2366,7 +2366,7 @@ serve(async (req) => {
       }
       const apiKey = await integrationApiKey(connection, false);
 
-      const [{ data: campaignRows }, linksResult] = await Promise.all([
+      const [{ data: campaignRows }, linksResult, targetsRows] = await Promise.all([
         context.admin
           .from("workspace_client_campaigns")
           .select("id, client_id, instantly_campaign_id, name, client:clients(id, name)")
@@ -2378,7 +2378,20 @@ serve(async (req) => {
           .select("instantly_campaign_id, campaign_name, client:clients!client_instantly_campaign_links_client_fk(id, name)")
           .eq("workspace_id", workspaceId)
           .limit(1_000),
+        context.admin
+          .from("workspace_client_campaign_targets")
+          .select("client_id, contact_email, podcast_name, host_name, status, launched_at, email_open_count, email_reply_count")
+          .eq("workspace_id", workspaceId)
+          .not("contact_email", "is", null)
+          .limit(5_000),
       ]);
+      // Lead context: which podcast/host a reply address belongs to, keyed by
+      // client so one address never leaks another client's outreach.
+      const targetByClientEmail = new Map<string, Record<string, unknown>>();
+      for (const row of ((targetsRows.error ? [] : targetsRows.data ?? []) as Array<Record<string, unknown>>)) {
+        if (typeof row.contact_email !== "string" || typeof row.client_id !== "string") continue;
+        targetByClientEmail.set(`${row.client_id}:${row.contact_email.toLowerCase()}`, row);
+      }
       const campaignByProviderId = new Map(
         ((campaignRows ?? []) as Array<Record<string, unknown>>).flatMap((row) => {
           const providerId = row.instantly_campaign_id;
@@ -2484,6 +2497,10 @@ serve(async (req) => {
         const bodyText = text(bodyRecord.text, 2_000)
           || text(bodyRecord.html, 4_000).replace(/<[^>]+>/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 2_000);
         const interestValue = typeof email.i_status === "number" ? email.i_status : null;
+        const leadEmail = (text(email.lead, 320) || text(email.from_address_email, 320)).toLowerCase();
+        const target = mapped.client && leadEmail
+          ? targetByClientEmail.get(`${mapped.client.id}:${leadEmail}`) ?? null
+          : null;
         return [{
           id: String(email.id ?? crypto.randomUUID()),
           thread_id: typeof email.thread_id === "string" ? email.thread_id : null,
@@ -2502,6 +2519,22 @@ serve(async (req) => {
           interested: interestValue === 1,
           lead_email: text(email.lead, 320) || text(email.from_address_email, 320),
           campaign: mapped,
+          lead_context: target
+            ? {
+              podcast_name: typeof target.podcast_name === "string" ? target.podcast_name.slice(0, 300) : null,
+              host_name: typeof target.host_name === "string" ? target.host_name.slice(0, 300) : null,
+              stage: target.status === "in_outreach" || target.status === "launching"
+                ? "contacted"
+                : target.status === "replied"
+                  ? "replied"
+                  : target.status === "completed"
+                    ? "completed"
+                    : "preparing",
+              first_message_at: typeof target.launched_at === "string" ? target.launched_at : null,
+              opens: typeof target.email_open_count === "number" ? target.email_open_count : 0,
+              replies: typeof target.email_reply_count === "number" ? target.email_reply_count : 0,
+            }
+            : null,
         }];
       });
 
@@ -3617,7 +3650,7 @@ serve(async (req) => {
           model: "claude-sonnet-4-6",
           max_tokens: 1_200,
           system:
-            "You are a booking agency's SDR replying to a podcast host on behalf of a client. Professional, warm, concise (under 150 words), no hype, no exclamation marks. Move toward a concrete booking step. Return ONLY JSON: {\"subject\": string, \"body\": string} — body is plain text with paragraph breaks.",
+            "You are a booking agency's SDR handling a podcast host's reply on behalf of a client. First classify the host's reply, then draft a response. Professional, warm, concise (under 150 words), no hype, no exclamation marks. Move toward a concrete booking step; for a not_now or not_interested reply, close graciously and leave the door open. Return ONLY JSON: {\"classification\": {\"label\": \"interested\"|\"not_interested\"|\"not_now\"|\"question\"|\"referral\"|\"auto_reply\"|\"other\", \"confidence\": number 0-100, \"reasoning\": string under 200 chars}, \"subject\": string, \"body\": string} — body is plain text with paragraph breaks.",
           messages: [{
             role: "user",
             content:
@@ -3652,7 +3685,23 @@ serve(async (req) => {
         referenceKind: "inbox_draft",
         referenceId: clientId,
       });
+      const rawClassification = (draft as Record<string, unknown>).classification;
+      const CLASSIFICATION_LABELS = ["interested", "not_interested", "not_now", "question", "referral", "auto_reply", "other"];
+      let classification: { label: string; confidence: number; reasoning: string } | null = null;
+      if (rawClassification && typeof rawClassification === "object" && !Array.isArray(rawClassification)) {
+        const record = rawClassification as Record<string, unknown>;
+        if (typeof record.label === "string" && CLASSIFICATION_LABELS.includes(record.label)) {
+          classification = {
+            label: record.label,
+            confidence: typeof record.confidence === "number"
+              ? Math.max(0, Math.min(100, Math.round(record.confidence)))
+              : 0,
+            reasoning: typeof record.reasoning === "string" ? record.reasoning.slice(0, 300) : "",
+          };
+        }
+      }
       return jsonResponse(req, METHODS, 200, {
+        classification,
         draft: {
           subject: typeof draft.subject === "string" && draft.subject.trim()
             ? draft.subject.trim().slice(0, 300)
