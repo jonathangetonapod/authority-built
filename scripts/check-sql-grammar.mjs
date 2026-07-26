@@ -58,6 +58,7 @@ const SQL_INPUTS = [
   'supabase/migrations/20260726001500_client_added_calendar_events.sql',
   'supabase/migrations/20260727000100_booking_journey_links.sql',
   'supabase/migrations/20260727000200_campaign_sync_schedule.sql',
+  'supabase/migrations/20260727000300_retire_legacy_reply_cron.sql',
   'supabase/tests/20260720_invite_only_workspace_verification.sql',
   'supabase/tests/20260721_workspace_guest_resources_behavior.sql',
   'supabase/tests/20260722_subagency_workspace_foundation_behavior.sql',
