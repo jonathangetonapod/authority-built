@@ -516,9 +516,12 @@ export function ClientShortlistEditor({
                   onCheckedChange={(checked) => void toggleAutopilot(checked)}
                 />
                 <div>
-                  <label htmlFor="client-autopilot" className="text-sm font-medium">Weekly autopilot</label>
+                  <span className="flex items-center gap-2">
+                    <label htmlFor="client-autopilot" className="text-sm font-medium">Weekly autopilot</label>
+                    <Badge variant="outline" className="border-violet-200 bg-violet-50 text-violet-800">Beta</Badge>
+                  </span>
                   <p className="text-xs text-muted-foreground">
-                    Scans every week and adds up to {autopilot?.max_weekly_adds ?? 5} podcasts scoring {autopilot?.min_score ?? 70}+ for {clientName} to review.
+                    Automatically finds and adds high-fit podcasts for {clientName} every week.
                   </p>
                 </div>
               </div>
