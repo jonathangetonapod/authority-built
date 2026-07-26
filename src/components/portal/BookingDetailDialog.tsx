@@ -33,7 +33,14 @@ interface TimelineStep {
 
 const timelineSteps = (booking: PortalExperienceBooking): TimelineStep[] => {
   const reached = (statuses: string[]) => statuses.includes(booking.status)
+  // The journey starts when the host replies, not when a date is set — a
+  // conversation in progress should read as real progress, not an empty row.
   return [
+    {
+      label: 'Conversation started',
+      date: null,
+      done: reached(['conversation_started', 'in_progress', 'booked', 'recorded', 'published']),
+    },
     { label: 'Booked', date: booking.scheduled_date, done: reached(['booked', 'recorded', 'published']) },
     { label: 'Recording', date: booking.recording_date, done: reached(['recorded', 'published']) },
     { label: 'Episode live', date: booking.publish_date, done: reached(['published']) },
@@ -96,7 +103,10 @@ export function BookingDetailDialog({ booking, onOpenChange }: BookingDetailDial
                     <div>
                       <p className={`text-sm font-medium ${step.done ? '' : 'text-muted-foreground'}`}>{step.label}</p>
                       <p className="text-xs text-muted-foreground">
-                        {displayDate(step.date) ?? (step.done ? 'Date not recorded' : 'Date coming soon')}
+                        {displayDate(step.date)
+                          ?? (step.label === 'Conversation started'
+                            ? (step.done ? 'Your team is talking with this show' : 'Not started yet')
+                            : step.done ? 'Date not recorded' : 'Date coming soon')}
                       </p>
                     </div>
                   </li>

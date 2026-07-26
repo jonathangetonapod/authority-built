@@ -107,7 +107,8 @@ export default function PortalOutreach() {
       { label: 'Preparing outreach', count: stageCount('preparing') },
       { label: 'Message sent', count: stageCount('contacted') },
       { label: 'Host replied', count: stageCount('replied') + stageCount('completed') },
-      { label: 'Booked', count: bookingCount(['booked', 'conversation_started', 'in_progress']) },
+      { label: 'In conversation', count: bookingCount(['conversation_started', 'in_progress']) },
+      { label: 'Booked', count: bookingCount(['booked']) },
       { label: 'Recorded', count: bookingCount(['recorded']) },
       { label: 'Published', count: bookingCount(['published']) },
     ]
