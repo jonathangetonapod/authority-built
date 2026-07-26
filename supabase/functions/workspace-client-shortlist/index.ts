@@ -1764,7 +1764,7 @@ serve(async (req) => {
       // stored episode capture; the shortlist copy is only the fallback.
       const { data: pitchCatalogRow } = await authContext.admin
         .from('podcasts')
-        .select('podcast_name, podcast_description, podcast_url, recent_episodes')
+        .select('podcast_name, podcast_description, podcast_url, host_name, publisher_name, recent_episodes')
         .eq('podscan_id', shortlistRow.podcast_id)
         .maybeSingle()
       const storedEpisodes = Array.isArray(pitchCatalogRow?.recent_episodes)
@@ -1843,7 +1843,12 @@ serve(async (req) => {
         podcast_name: decodeHtmlEntities(pitchCatalogRow?.podcast_name ?? shortlistRow.podcast_name),
         podcast_url: pitchCatalogRow?.podcast_url ?? shortlistRow.podcast_url,
         podcast_description: decodeHtmlEntities(pitchCatalogRow?.podcast_description ?? shortlistRow.podcast_description ?? ''),
-        host_name: target?.host_name ?? null,
+        // The campaign target only exists after prep, but pitch generation
+        // runs right after research — fall back to Podscan's analyzed host
+        // so "Hey [first name]" is grounded instead of guessed.
+        host_name: target?.host_name
+          ?? (typeof pitchCatalogRow?.host_name === 'string' ? pitchCatalogRow.host_name : null)
+          ?? (typeof pitchCatalogRow?.publisher_name === 'string' ? pitchCatalogRow.publisher_name : null),
         verified_email: target?.contact_email ?? null,
         episode_title: researchDocument.episodes_used?.[0]?.title ?? storedEpisodeTitle,
         episode_transcript: typeof researchDocument.episode_transcript_excerpt === 'string'
@@ -1905,6 +1910,16 @@ serve(async (req) => {
           { context: pitchContext, instruction: fillPromptTemplate(promptContent('write_email'), pitchVariables) },
           usage,
         )
+        // Legacy or workspace-customized prompts may still carry the old
+        // "no email" refusal conditional; surface it as a clear, actionable
+        // error instead of shipping the refusal text as a pitch.
+        if (/^\s*NO EMAIL AVAILABLE/iu.test(draftRaw)) {
+          throw new HttpError(
+            409,
+            'PITCH_NO_EMAIL',
+            'The pitch prompt refused to write without a verified email. Find or enter the host email first.',
+          )
+        }
         const fallbackSubject = `Guest idea for ${decodeHtmlEntities(shortlistRow.podcast_name)}`
         // write_email returns a three-touch sequence as JSON; a malformed
         // response degrades to the raw text as the opener, never a failure.

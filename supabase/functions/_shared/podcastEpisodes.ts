@@ -65,9 +65,14 @@ export async function fetchPodcastHosts(podscanId: string): Promise<string[]> {
   }
 }
 
-export async function fetchRecentEpisodes(podscanId: string): Promise<RecentEpisode[]> {
+/**
+ * null means "could not determine" (no key, provider error, timeout) — the
+ * caller should retry later. An empty array is a REAL answer: Podscan
+ * responded and the show has no processable episodes.
+ */
+export async function fetchRecentEpisodes(podscanId: string): Promise<RecentEpisode[] | null> {
   const apiKey = podscanKey()
-  if (!apiKey || !/^[a-zA-Z0-9_-]+$/.test(podscanId)) return []
+  if (!apiKey || !/^[a-zA-Z0-9_-]+$/.test(podscanId)) return null
 
   try {
     const url = new URL(`${PODSCAN_BASE}/podcasts/${encodeURIComponent(podscanId)}/episodes`)
@@ -83,7 +88,7 @@ export async function fetchRecentEpisodes(podscanId: string): Promise<RecentEpis
     })
     if (!response.ok) {
       console.warn('[Podcast Episodes] Podscan returned a non-success status', response.status)
-      return []
+      return null
     }
     const payload = await response.json().catch(() => null) as
       | { episodes?: unknown[]; data?: unknown[] }
@@ -150,7 +155,7 @@ export async function fetchRecentEpisodes(podscanId: string): Promise<RecentEpis
     })
   } catch (_error) {
     console.warn('[Podcast Episodes] Episode fetch was unavailable')
-    return []
+    return null
   }
 }
 
@@ -206,19 +211,27 @@ export async function ensureEpisodesCaptured(admin: any, podscanId: string): Pro
     episodes_fetched_at: typeof row.episodes_fetched_at === 'string' ? row.episodes_fetched_at : null,
   }
   // A capture from before the metadata expansion (no episode_id key) is
-  // treated as stale so rows silently upgrade to the full shape.
-  const shapeCurrent = stored.episodes.length > 0
-    && stored.episodes.every((episode) => 'episode_id' in episode)
+  // treated as stale so rows silently upgrade to the full shape. An empty
+  // capture with a fetch stamp is current: Podscan answered "no episodes",
+  // and re-asking on every dialog open would burn API calls for nothing.
+  const shapeCurrent = stored.episodes.every((episode) => 'episode_id' in episode)
   const fresh = shapeCurrent
     && stored.episodes_fetched_at
     && Date.now() - Date.parse(stored.episodes_fetched_at) < EPISODE_FRESHNESS_MS
   if (fresh) return stored
 
   const fetched = await fetchRecentEpisodes(podscanId)
-  if (fetched.length === 0) {
-    // Nothing usable came back. Keep what we had and leave episodes_fetched_at
-    // unstamped so the next flow that needs episodes retries.
+  if (fetched === null) {
+    // Provider unavailable — keep what we had, leave episodes_fetched_at
+    // unstamped, and let the next flow that needs episodes retry.
     return stored
+  }
+  if (fetched.length === 0 && stored.episodes.length > 0) {
+    // Podscan answered "no episodes" for a show we already captured — keep
+    // the better data we have, but stamp the check so we stop re-asking.
+    const checkedAt = new Date().toISOString()
+    await admin.from('podcasts').update({ episodes_fetched_at: checkedAt, updated_at: checkedAt }).eq('id', row.id)
+    return { ...stored, episodes_fetched_at: checkedAt }
   }
 
   const episodes: StoredEpisode[] = fetched.map(({ transcript: _transcript, ...episode }) => episode)
