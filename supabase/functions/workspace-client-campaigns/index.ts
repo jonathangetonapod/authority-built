@@ -2366,7 +2366,7 @@ serve(async (req) => {
       }
       const apiKey = await integrationApiKey(connection, false);
 
-      const [{ data: campaignRows }, linksResult, emailsPayload] = await Promise.all([
+      const [{ data: campaignRows }, linksResult] = await Promise.all([
         context.admin
           .from("workspace_client_campaigns")
           .select("id, client_id, instantly_campaign_id, name, client:clients(id, name)")
@@ -2378,33 +2378,7 @@ serve(async (req) => {
           .select("instantly_campaign_id, campaign_name, client:clients!client_instantly_campaign_links_client_fk(id, name)")
           .eq("workspace_id", workspaceId)
           .limit(1_000),
-        instantlyRequest<{ items?: Array<Record<string, unknown>> }>(
-          apiKey,
-          "/emails",
-          {
-            query: new URLSearchParams({
-              limit: "50",
-              email_type: "received",
-            }),
-          },
-        ).catch((error) => {
-          if (error instanceof InstantlyApiError) {
-            // A rejected or under-scoped key is a connection state, not a
-            // request failure — the inbox renders it as "reconnect Instantly".
-            if (error.status === 401) return { auth_failure: "key_rejected" as const };
-            if (error.status === 403) return { auth_failure: "scope_missing" as const };
-            throw providerHttpError(error);
-          }
-          throw error;
-        }),
       ]);
-      if (emailsPayload && "auth_failure" in emailsPayload) {
-        return jsonResponse(req, METHODS, 200, {
-          connected: false,
-          reason: emailsPayload.auth_failure,
-          threads: [],
-        });
-      }
       const campaignByProviderId = new Map(
         ((campaignRows ?? []) as Array<Record<string, unknown>>).flatMap((row) => {
           const providerId = row.instantly_campaign_id;
@@ -2443,10 +2417,62 @@ serve(async (req) => {
             : null,
         });
       }
+      if (campaignByProviderId.size === 0) {
+        // Nothing is attributed to a client yet — skip the provider call.
+        return jsonResponse(req, METHODS, 200, { connected: true, threads: [] });
+      }
+
+      // Replies for attributed campaigns can sit deeper than the newest
+      // page when other campaigns are busier, so paginate the unibox.
+      // Three pages of 100 stay well inside the endpoint's 20 req/min
+      // budget while widening the window sixfold over a single page.
+      const items: Array<Record<string, unknown>> = [];
+      let startingAfter: string | null = null;
+      let authFailure: "key_rejected" | "scope_missing" | null = null;
+      for (let page = 0; page < 3; page += 1) {
+        const query = new URLSearchParams({ limit: "100", email_type: "received" });
+        if (startingAfter) query.set("starting_after", startingAfter);
+        let payload: { items?: Array<Record<string, unknown>>; next_starting_after?: unknown };
+        try {
+          payload = await instantlyRequest<{
+            items?: Array<Record<string, unknown>>;
+            next_starting_after?: unknown;
+          }>(apiKey, "/emails", { query });
+        } catch (error) {
+          if (error instanceof InstantlyApiError) {
+            // A rejected or under-scoped key is a connection state, not a
+            // request failure — the inbox renders it as "reconnect Instantly".
+            if (error.status === 401) {
+              authFailure = "key_rejected";
+              break;
+            }
+            if (error.status === 403) {
+              authFailure = "scope_missing";
+              break;
+            }
+            // Rate-limited mid-pagination: keep the pages we already have.
+            if (page > 0 && error.status === 429) break;
+            throw providerHttpError(error);
+          }
+          throw error;
+        }
+        const pageItems = payload.items ?? [];
+        items.push(...pageItems);
+        const next = typeof payload.next_starting_after === "string" ? payload.next_starting_after : null;
+        if (!next || pageItems.length === 0) break;
+        startingAfter = next;
+      }
+      if (authFailure) {
+        return jsonResponse(req, METHODS, 200, {
+          connected: false,
+          reason: authFailure,
+          threads: [],
+        });
+      }
 
       const text = (value: unknown, max: number): string =>
         typeof value === "string" ? value.slice(0, max) : "";
-      const threads = (emailsPayload.items ?? []).flatMap((raw) => {
+      const threads = items.flatMap((raw) => {
         if (!raw || typeof raw !== "object") return [];
         const email = raw as Record<string, unknown>;
         const providerCampaignId = typeof email.campaign_id === "string" ? email.campaign_id : null;
