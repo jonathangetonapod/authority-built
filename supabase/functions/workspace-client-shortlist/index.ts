@@ -443,7 +443,12 @@ async function runResearchPrompt(
     }),
     signal: AbortSignal.timeout(28_000),
   })
-  if (!response.ok) throw new Error(`research prompt failed with ${response.status}`)
+  if (!response.ok) {
+    // Surface the provider's own error type — a hidden status here once let
+    // an invalid platform API key masquerade as "research was interrupted".
+    const body = await response.text().catch(() => '')
+    throw new Error(`the AI provider returned ${response.status}: ${body.slice(0, 200)}`)
+  }
   const payload = await response.json() as {
     content?: Array<{ type?: string; text?: string }>
     usage?: { input_tokens?: number; output_tokens?: number }
@@ -1249,7 +1254,9 @@ serve(async (req) => {
           status: 'failed',
           current_stage: null,
           completed_stages: completedStages,
-          message: 'Research was interrupted. Try again in a moment.',
+          // The real cause must reach the operator — a generic message here
+          // once hid an invalid platform API key for months.
+          message: `Research failed: ${error instanceof Error ? error.message.slice(0, 240) : 'unknown error'}`,
         }).catch(() => undefined)
         await logOperationCost(authContext.admin, {
           workspaceId,

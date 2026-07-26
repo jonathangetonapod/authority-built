@@ -398,7 +398,9 @@ export function ClientCampaignPrepDialog({
       ? `Research paused · ${completedResearchStepCount} of ${researchProgressSteps.length} steps complete`
       : activeResearchStep
         ? `${activeResearchStep.title} · ${completedResearchStepCount} of ${researchProgressSteps.length} steps complete`
-        : `Research queued · ${completedResearchStepCount} of ${researchProgressSteps.length} steps complete`
+        : researchProgress || researchRegenerating
+          ? `Research queued · ${completedResearchStepCount} of ${researchProgressSteps.length} steps complete`
+          : 'Research has not run yet'
   const researchStatusDetail = researchRegenerating && activeResearchStep
     ? `Running your saved workspace prompts against live podcast data. ${activeResearchStep.detail}.`
     : researchComplete
@@ -407,7 +409,9 @@ export function ClientCampaignPrepDialog({
       ? researchProgress?.message || `We could not finish ${failedResearchStep?.title.toLowerCase() || 'this research stage'}. Your completed work is saved.`
       : activeResearchStep
         ? activeResearchStep.detail
-        : 'Your research will begin as soon as the workspace is ready.'
+        : researchProgress || researchRegenerating
+          ? 'Your research will begin as soon as the workspace is ready.'
+          : 'Nothing runs until you click Run research — it executes every saved prompt in order and ends with the written sequence.'
   const [inspectedStageId, setInspectedStageId] = useState<ClientShortlistResearchStageId | null>(null)
   const researchDocumentQueryKey = ['client-shortlist-research-document', workspaceId, clientId, podcast?.id || 'none'] as const
   const researchDocumentQuery = useQuery({
@@ -1053,15 +1057,19 @@ export function ClientCampaignPrepDialog({
                             {canManageCampaigns && (
                               <Button
                                 type="button"
-                                variant="outline"
+                                variant={researchProgress || researchRegenerating ? 'outline' : 'default'}
                                 size="sm"
-                                className="bg-background"
+                                className={researchProgress || researchRegenerating ? 'bg-background' : undefined}
                                 disabled={researchWorking}
-                                title="Reruns all six research stages using the saved prompt for each stage"
+                                title="Runs every research stage using the saved prompt for each stage, then writes the sequence"
                                 onClick={beginResearchRegeneration}
                               >
                                 {researchRegenerating ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-2 h-3.5 w-3.5" />}
-                                {researchRegenerating ? 'Regenerating' : researchWorking ? 'Research running' : 'Regenerate'}
+                                {researchRegenerating
+                                  ? 'Regenerating'
+                                  : researchWorking
+                                    ? 'Research running'
+                                    : researchProgress ? 'Regenerate' : 'Run research'}
                               </Button>
                             )}
                             {canCustomizePrompts && (
@@ -1278,15 +1286,15 @@ export function ClientCampaignPrepDialog({
                       <section className="rounded-2xl border p-5">
                         <div className="flex items-center gap-2"><Lightbulb className="h-4 w-4 text-primary" /><h4 className="font-semibold">Recommended pitch angles</h4></div>
                         <p className="mt-1 text-xs leading-5 text-muted-foreground">Each direction creates its own opening pitch and two follow-ups. Select an option to compare the complete sequence below.</p>
-                        {researchRegenerating && (
-                          <div className="mt-4 flex gap-2 rounded-xl border border-sky-200 bg-sky-50/70 p-3 text-xs leading-5 text-sky-950">
-                            <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-sky-700" />
-                            <p>Previous options remain visible for reference. Three refreshed sequences will replace them after every saved stage prompt has finished.</p>
-                          </div>
-                        )}
-                        {pitchAngles.length > 0
-                          ? <div className="mt-4 grid gap-3 lg:grid-cols-3">{pitchAngles.slice(0, 3).map((angle, index) => <button key={`${angle.title}-${index}`} type="button" aria-label={`Select sequence ${index + 1}: ${angle.title}`} aria-pressed={selectedAngleIndex === index} disabled={researchWorking} className={`relative flex min-h-48 flex-col rounded-xl border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${selectedAngleIndex === index ? 'border-primary bg-primary/5 shadow-sm ring-1 ring-primary/15' : 'bg-background hover:border-primary/40'}`} onClick={() => choosePitchAngle(index)}><div className="flex items-center justify-between gap-2"><Badge variant="secondary">Option {index + 1}</Badge>{selectedAngleIndex === index && <Badge className="bg-primary text-primary-foreground hover:bg-primary">Selected</Badge>}</div><span className="mt-4 block text-sm font-semibold leading-5">{angle.title}</span><span className="mt-2 block text-xs leading-5 text-muted-foreground">{angle.description}</span><span className="mt-auto pt-4 text-xs font-semibold text-primary">{researchWorking ? 'Refreshing this sequence' : selectedAngleIndex === index ? 'Previewing this sequence' : 'View this sequence'}</span></button>)}</div>
-                          : <p className="mt-3 text-sm leading-6 text-muted-foreground">Three complete sequence options will appear here once the podcast research is ready.</p>}
+                        {researchComplete && pitchAngles.length > 0
+                          ? <div className="mt-4 grid gap-3 lg:grid-cols-3">{pitchAngles.slice(0, 3).map((angle, index) => <button key={`${angle.title}-${index}`} type="button" aria-label={`Select sequence ${index + 1}: ${angle.title}`} aria-pressed={selectedAngleIndex === index} disabled={researchWorking} className={`relative flex min-h-48 flex-col rounded-xl border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${selectedAngleIndex === index ? 'border-primary bg-primary/5 shadow-sm ring-1 ring-primary/15' : 'bg-background hover:border-primary/40'}`} onClick={() => choosePitchAngle(index)}><div className="flex items-center justify-between gap-2"><Badge variant="secondary">Option {index + 1}</Badge>{selectedAngleIndex === index && <Badge className="bg-primary text-primary-foreground hover:bg-primary">Selected</Badge>}</div><span className="mt-4 block text-sm font-semibold leading-5">{angle.title}</span><span className="mt-2 block text-xs leading-5 text-muted-foreground">{angle.description}</span><span className="mt-auto pt-4 text-xs font-semibold text-primary">{selectedAngleIndex === index ? 'Previewing this sequence' : 'View this sequence'}</span></button>)}</div>
+                          : (
+                            <p className="mt-3 rounded-xl border border-dashed p-3 text-sm leading-6 text-muted-foreground">
+                              {researchWorking
+                                ? 'The prompt pipeline is running — three sequence directions appear here when every stage above completes.'
+                                : 'Pitch angles are written by the research pipeline. Run research above and the three options appear here when it finishes.'}
+                            </p>
+                          )}
                       </section>
 
                       {researchComplete && (
