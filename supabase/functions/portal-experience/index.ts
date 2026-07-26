@@ -33,6 +33,7 @@ const PORTAL_BOOKING_FIELDS = [
   'audience_size',
   'itunes_rating',
   'episode_count',
+  'created_by_client',
 ].join(',')
 
 function clampText(value: unknown, max: number): string | null {
@@ -62,7 +63,7 @@ serve(async (req) => {
     }
 
     const body = await parseJsonObject(req, 4_096)
-    requireOnlyKeys(body, ['clientId', 'sessionToken', 'addon_request'])
+    requireOnlyKeys(body, ['clientId', 'sessionToken', 'addon_request', 'calendar_event', 'delete_event_id'])
     const clientId = requireUuid(body.clientId, 'clientId')
     const sessionToken = body.sessionToken === undefined
       ? null
@@ -94,6 +95,71 @@ serve(async (req) => {
     } else {
       // No portal token means this is the explicit operator impersonation path.
       await requirePlatformAdmin(req)
+    }
+
+    if (body.delete_event_id !== undefined) {
+      // Clients can only remove entries they added themselves.
+      const eventId = requireUuid(body.delete_event_id, 'delete_event_id')
+      const { error: removeError } = await admin
+        .from('bookings')
+        .delete()
+        .eq('id', eventId)
+        .eq('client_id', clientId)
+        .eq('created_by_client', true)
+      if (removeError) {
+        throw new HttpError(503, 'EVENT_REMOVE_FAILED', 'That event could not be removed — try again')
+      }
+      return jsonResponse(req, METHODS, 200, { success: true })
+    }
+
+    if (body.calendar_event !== undefined) {
+      const raw = body.calendar_event
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new HttpError(400, 'INVALID_FIELD', 'calendar_event must be an object')
+      }
+      const event = raw as Record<string, unknown>
+      const podcastName = clampText(event.podcast_name, 300)
+      if (!podcastName) {
+        throw new HttpError(400, 'INVALID_FIELD', 'A podcast name is required')
+      }
+      const kind = event.kind === 'release' ? 'release' : 'recording'
+      const date = clampText(event.date, 10)
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/u.test(date) || Number.isNaN(Date.parse(date))) {
+        throw new HttpError(400, 'INVALID_FIELD', 'A valid date is required')
+      }
+      // A self-managed calendar should not become an unbounded write surface.
+      const { count } = await admin
+        .from('bookings')
+        .select('id', { count: 'exact', head: true })
+        .eq('client_id', clientId)
+        .eq('created_by_client', true)
+      if ((count ?? 0) >= 200) {
+        throw new HttpError(409, 'EVENT_LIMIT_REACHED', 'You have reached the limit for events you can add')
+      }
+
+      const { data: created, error: createError } = await admin
+        .from('bookings')
+        .insert({
+          client_id: clientId,
+          podcast_name: podcastName,
+          host_name: clampText(event.host_name, 200),
+          podcast_url: clampText(event.podcast_url, 2_000),
+          episode_url: kind === 'release' ? clampText(event.episode_url, 2_000) : null,
+          notes: clampText(event.notes, 2_000),
+          // A recording the client arranged is a confirmed booking; an
+          // episode they know is going live is a scheduled release.
+          status: kind === 'release' ? 'recorded' : 'booked',
+          scheduled_date: kind === 'recording' ? date : null,
+          recording_date: kind === 'recording' ? date : null,
+          publish_date: kind === 'release' ? date : null,
+          created_by_client: true,
+        })
+        .select(PORTAL_BOOKING_FIELDS)
+        .maybeSingle()
+      if (createError || !created) {
+        throw new HttpError(503, 'EVENT_CREATE_FAILED', 'That event could not be added — try again')
+      }
+      return jsonResponse(req, METHODS, 200, { booking: created })
     }
 
     if (body.addon_request !== undefined) {

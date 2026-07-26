@@ -1,4 +1,7 @@
-import { CheckCircle2, Circle, ExternalLink, Headphones, Star } from 'lucide-react'
+import { useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { CheckCircle2, Circle, ExternalLink, Headphones, Loader2, Star, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -9,8 +12,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { useClientPortal } from '@/contexts/ClientPortalContext'
 import { safeExternalUrl } from '@/lib/externalUrl'
-import type { PortalExperienceBooking } from '@/services/clientPortal'
+import { removePortalCalendarEvent, type PortalExperienceBooking } from '@/services/clientPortal'
 
 const displayDate = (value: string | null | undefined) => {
   if (!value) return null
@@ -50,9 +54,24 @@ const timelineSteps = (booking: PortalExperienceBooking): TimelineStep[] => {
 interface BookingDetailDialogProps {
   booking: PortalExperienceBooking | null
   onOpenChange: (open: boolean) => void
+  onRemoved?: () => void
 }
 
-export function BookingDetailDialog({ booking, onOpenChange }: BookingDetailDialogProps) {
+export function BookingDetailDialog({ booking, onOpenChange, onRemoved }: BookingDetailDialogProps) {
+  const { client } = useClientPortal()
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
+  const removeMutation = useMutation({
+    mutationFn: () => removePortalCalendarEvent(client!.id, booking!.id),
+    onSuccess: () => {
+      toast.success('Removed from your calendar.')
+      setConfirmingRemove(false)
+      onRemoved?.()
+      onOpenChange(false)
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'That event could not be removed.')
+    },
+  })
   const podcastUrl = booking?.podcast_url ? safeExternalUrl(booking.podcast_url) : null
   const episodeUrl = booking?.episode_url ? safeExternalUrl(booking.episode_url) : null
   const audience = booking ? compactNumber(booking.audience_size) : null
@@ -116,6 +135,22 @@ export function BookingDetailDialog({ booking, onOpenChange }: BookingDetailDial
 
             {booking.podcast_description && (
               <p className="max-h-32 overflow-y-auto text-sm leading-6 text-muted-foreground">{booking.podcast_description}</p>
+            )}
+
+            {booking.created_by_client && client?.id && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/10 px-3 py-2">
+                <p className="text-xs text-muted-foreground">You added this event.</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={confirmingRemove ? 'destructive' : 'ghost'}
+                  disabled={removeMutation.isPending}
+                  onClick={() => (confirmingRemove ? removeMutation.mutate() : setConfirmingRemove(true))}
+                >
+                  {removeMutation.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-2 h-3.5 w-3.5" />}
+                  {confirmingRemove ? 'Confirm remove' : 'Remove'}
+                </Button>
+              </div>
             )}
 
             {(episodeUrl || podcastUrl) && (

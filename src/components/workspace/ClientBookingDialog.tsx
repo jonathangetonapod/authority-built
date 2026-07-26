@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
-import { Loader2, Trash2 } from 'lucide-react'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { Check, ChevronDown, ChevronUp, Loader2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -14,29 +14,64 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import {
   deleteWorkspaceClientBooking,
   saveWorkspaceClientBooking,
   type WorkspaceClientBooking,
 } from '@/services/clients'
+import { getClientShortlist } from '@/services/clientShortlist'
 
-// The placement lifecycle, in the order a conversation actually moves.
-const STATUS_OPTIONS: Array<{ value: WorkspaceClientBooking['status']; label: string; hint: string }> = [
-  { value: 'conversation_started', label: 'Conversation started', hint: 'The host replied and you are talking' },
-  { value: 'in_progress', label: 'In progress', hint: 'Working out details or scheduling' },
-  { value: 'booked', label: 'Booked', hint: 'A recording date is confirmed' },
-  { value: 'recorded', label: 'Recorded', hint: 'The interview happened' },
-  { value: 'published', label: 'Published', hint: 'The episode is live' },
-  { value: 'cancelled', label: 'Cancelled', hint: 'It is not happening' },
+type Status = WorkspaceClientBooking['status']
+type DateField = 'scheduled_date' | 'recording_date' | 'publish_date'
+
+// One entry per real stage of a placement. `dates` lists only the dates that
+// mean something at that stage — everything else stays out of the way.
+const STAGES: Array<{ value: Status; label: string; hint: string; dates: DateField[] }> = [
+  {
+    value: 'conversation_started',
+    label: 'Conversation',
+    hint: 'The host replied and you are talking. No dates needed yet.',
+    dates: [],
+  },
+  {
+    value: 'in_progress',
+    label: 'Scheduling',
+    hint: 'Working out a date — add a target if you have one.',
+    dates: ['scheduled_date'],
+  },
+  {
+    value: 'booked',
+    label: 'Booked',
+    hint: 'The recording is confirmed. This date shows on the client’s calendar.',
+    dates: ['recording_date'],
+  },
+  {
+    value: 'recorded',
+    label: 'Recorded',
+    hint: 'The interview happened. Add the release date once the host shares it.',
+    dates: ['recording_date', 'publish_date'],
+  },
+  {
+    value: 'published',
+    label: 'Published',
+    hint: 'The episode is live — add the link so the client can listen and share it.',
+    dates: ['recording_date', 'publish_date'],
+  },
+  { value: 'cancelled', label: 'Cancelled', hint: 'It is not happening.', dates: [] },
 ]
+
+const DATE_LABELS: Record<DateField, string> = {
+  scheduled_date: 'Target date',
+  recording_date: 'Recording date',
+  publish_date: 'Episode goes live',
+}
 
 interface BookingForm {
   podcast_name: string
   host_name: string
   podcast_url: string
-  status: WorkspaceClientBooking['status']
+  status: Status
   scheduled_date: string
   recording_date: string
   publish_date: string
@@ -79,10 +114,30 @@ export const ClientBookingDialog = ({
 }: ClientBookingDialogProps) => {
   const [form, setForm] = useState<BookingForm>(emptyForm)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [showMore, setShowMore] = useState(false)
+  const [podcastQuery, setPodcastQuery] = useState('')
+
+  // Picking a show the client already approved beats retyping its name, and
+  // keeps the booking spelled the same as the shortlist row it came from.
+  const shortlistQuery = useQuery({
+    queryKey: ['client-shortlist', workspaceId, clientId],
+    queryFn: () => getClientShortlist(workspaceId, clientId),
+    enabled: open && !booking,
+    retry: false,
+    staleTime: 5 * 60_000,
+  })
+  const query = podcastQuery.trim().toLowerCase()
+  const suggestions = (shortlistQuery.data?.podcasts ?? [])
+    .filter((podcast) => query
+      && podcast.podcast_name.toLowerCase().includes(query)
+      && podcast.podcast_name.toLowerCase() !== query)
+    .slice(0, 5)
 
   useEffect(() => {
     if (!open) return
     setConfirmingDelete(false)
+    setPodcastQuery('')
+    setShowMore(false)
     setForm(booking
       ? {
         podcast_name: booking.podcast_name,
@@ -140,131 +195,181 @@ export const ClientBookingDialog = ({
   })
 
   const busy = saveMutation.isPending || deleteMutation.isPending
-  const activeStatus = STATUS_OPTIONS.find((option) => option.value === form.status)
+  const stage = STAGES.find((option) => option.value === form.status) ?? STAGES[0]
+  const stageIndex = STAGES.findIndex((option) => option.value === form.status)
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!busy) onOpenChange(next) }}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{booking ? 'Edit placement' : `Log a podcast conversation for ${clientName}`}</DialogTitle>
+          <DialogTitle>
+            {booking ? form.podcast_name || 'Edit placement' : `Log a podcast for ${clientName}`}
+          </DialogTitle>
           <DialogDescription>
-            Track a show from the first reply through to a published episode. Dates are optional
-            until they are known.
+            Dates you add appear on {clientName}’s calendar, so leave one blank until it is real.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="booking-podcast">Podcast<span className="text-destructive"> *</span></Label>
-              <Input
-                id="booking-podcast"
-                value={form.podcast_name}
-                onChange={(event) => setForm((current) => ({ ...current, podcast_name: event.target.value }))}
-                placeholder="Founder Stories"
-                maxLength={300}
-              />
+        <div className="space-y-5">
+          <div className="space-y-2">
+            <Label htmlFor="booking-podcast">Which podcast?</Label>
+            <Input
+              id="booking-podcast"
+              value={form.podcast_name}
+              onChange={(event) => {
+                setForm((current) => ({ ...current, podcast_name: event.target.value }))
+                setPodcastQuery(event.target.value)
+              }}
+              placeholder="Start typing — shows on this client’s list appear"
+              autoComplete="off"
+              maxLength={300}
+            />
+            {suggestions.length > 0 && (
+              <ul className="rounded-lg border bg-popover p-1 shadow-sm" aria-label="Shows on this client’s list">
+                {suggestions.map((podcast) => (
+                  <li key={podcast.id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+                      onClick={() => {
+                        setForm((current) => ({
+                          ...current,
+                          podcast_name: podcast.podcast_name,
+                          podcast_url: podcast.podcast_url || current.podcast_url,
+                        }))
+                        setPodcastQuery('')
+                      }}
+                    >
+                      <Check className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 truncate">{podcast.podcast_name}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label>Where is it now?</Label>
+            <div role="radiogroup" aria-label="Placement stage" className="flex flex-wrap gap-1.5">
+              {STAGES.map((option, index) => {
+                const selected = form.status === option.value
+                const passed = stageIndex >= 0
+                  && index < stageIndex
+                  && option.value !== 'cancelled'
+                  && form.status !== 'cancelled'
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setForm((current) => ({ ...current, status: option.value }))}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                      selected
+                        ? option.value === 'cancelled'
+                          ? 'border-destructive bg-destructive text-destructive-foreground'
+                          : 'border-primary bg-primary text-primary-foreground'
+                        : passed
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                          : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="booking-host">Host</Label>
-              <Input
-                id="booking-host"
-                value={form.host_name}
-                onChange={(event) => setForm((current) => ({ ...current, host_name: event.target.value }))}
-                placeholder="Jamie Rivera"
-                maxLength={200}
-              />
+            <p className="text-xs text-muted-foreground">{stage.hint}</p>
+          </div>
+
+          {stage.dates.length > 0 && (
+            <div className={`grid gap-4 ${stage.dates.length > 1 ? 'sm:grid-cols-2' : ''}`}>
+              {stage.dates.map((field) => (
+                <div key={field} className="space-y-2">
+                  <Label htmlFor={`booking-${field}`}>{DATE_LABELS[field]}</Label>
+                  <Input
+                    id={`booking-${field}`}
+                    type="date"
+                    value={form[field]}
+                    onChange={(event) => setForm((current) => ({ ...current, [field]: event.target.value }))}
+                  />
+                </div>
+              ))}
             </div>
+          )}
+
+          {form.status === 'published' && (
             <div className="space-y-2">
-              <Label htmlFor="booking-url">Podcast link</Label>
+              <Label htmlFor="booking-episode">Episode link</Label>
               <Input
-                id="booking-url"
-                value={form.podcast_url}
-                onChange={(event) => setForm((current) => ({ ...current, podcast_url: event.target.value }))}
-                placeholder="https://…"
+                id="booking-episode"
+                value={form.episode_url}
+                onChange={(event) => setForm((current) => ({ ...current, episode_url: event.target.value }))}
+                placeholder="https://… — the client listens and shares from here"
                 maxLength={2048}
               />
             </div>
-          </div>
+          )}
 
-          <div className="space-y-2">
-            <Label htmlFor="booking-status">Stage</Label>
-            <Select
-              value={form.status}
-              onValueChange={(value) => setForm((current) => ({ ...current, status: value as BookingForm['status'] }))}
+          <div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="-ml-2 h-8 text-muted-foreground"
+              aria-expanded={showMore}
+              onClick={() => setShowMore((current) => !current)}
             >
-              <SelectTrigger id="booking-status"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {STATUS_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {activeStatus && <p className="text-xs text-muted-foreground">{activeStatus.hint}</p>}
+              {showMore ? <ChevronUp className="mr-1.5 h-4 w-4" /> : <ChevronDown className="mr-1.5 h-4 w-4" />}
+              {showMore ? 'Fewer details' : 'Host, link, notes'}
+            </Button>
+            {showMore && (
+              <div className="mt-3 space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="booking-host">Host</Label>
+                    <Input
+                      id="booking-host"
+                      value={form.host_name}
+                      onChange={(event) => setForm((current) => ({ ...current, host_name: event.target.value }))}
+                      maxLength={200}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="booking-url">Podcast link</Label>
+                    <Input
+                      id="booking-url"
+                      value={form.podcast_url}
+                      onChange={(event) => setForm((current) => ({ ...current, podcast_url: event.target.value }))}
+                      placeholder="https://…"
+                      maxLength={2048}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="booking-notes">Notes</Label>
+                  <Textarea
+                    id="booking-notes"
+                    value={form.notes}
+                    onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+                    placeholder="Internal only — not shown to the client."
+                    className="min-h-20"
+                    maxLength={10_000}
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-input"
+                    checked={form.prep_sent}
+                    onChange={(event) => setForm((current) => ({ ...current, prep_sent: event.target.checked }))}
+                  />
+                  Prep sent to {clientName}
+                </label>
+              </div>
+            )}
           </div>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="booking-scheduled">Scheduled</Label>
-              <Input
-                id="booking-scheduled"
-                type="date"
-                value={form.scheduled_date}
-                onChange={(event) => setForm((current) => ({ ...current, scheduled_date: event.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="booking-recording">Recording</Label>
-              <Input
-                id="booking-recording"
-                type="date"
-                value={form.recording_date}
-                onChange={(event) => setForm((current) => ({ ...current, recording_date: event.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="booking-publish">Episode live</Label>
-              <Input
-                id="booking-publish"
-                type="date"
-                value={form.publish_date}
-                onChange={(event) => setForm((current) => ({ ...current, publish_date: event.target.value }))}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="booking-episode">Episode link</Label>
-            <Input
-              id="booking-episode"
-              value={form.episode_url}
-              onChange={(event) => setForm((current) => ({ ...current, episode_url: event.target.value }))}
-              placeholder="https://… (once the episode is live)"
-              maxLength={2048}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="booking-notes">Notes</Label>
-            <Textarea
-              id="booking-notes"
-              value={form.notes}
-              onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
-              placeholder="What the host asked for, scheduling constraints, anything the client should know."
-              className="min-h-24"
-              maxLength={10_000}
-            />
-          </div>
-
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-input"
-              checked={form.prep_sent}
-              onChange={(event) => setForm((current) => ({ ...current, prep_sent: event.target.checked }))}
-            />
-            Prep sent to {clientName}
-          </label>
         </div>
 
         <DialogFooter className="gap-2 sm:justify-between">
@@ -282,13 +387,9 @@ export const ClientBookingDialog = ({
           ) : <span />}
           <div className="flex gap-2">
             <Button type="button" variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button
-              type="button"
-              disabled={busy || !form.podcast_name.trim()}
-              onClick={() => saveMutation.mutate()}
-            >
+            <Button type="button" disabled={busy || !form.podcast_name.trim()} onClick={() => saveMutation.mutate()}>
               {saveMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {booking ? 'Save changes' : 'Log placement'}
+              {booking ? 'Save' : 'Log it'}
             </Button>
           </div>
         </DialogFooter>

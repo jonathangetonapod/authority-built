@@ -7,7 +7,7 @@ import { getPortalExperience, type PortalExperienceOverview } from '@/services/c
 
 vi.mock('@/components/portal/PortalLayout', () => ({ PortalLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('@/contexts/ClientPortalContext', () => ({ useClientPortal: vi.fn() }))
-vi.mock('@/services/clientPortal', () => ({ getPortalExperience: vi.fn() }))
+vi.mock('@/services/clientPortal', () => ({ getPortalExperience: vi.fn(), removePortalCalendarEvent: vi.fn() }))
 
 const mockedUseClientPortal = vi.mocked(useClientPortal)
 const mockedGetExperience = vi.mocked(getPortalExperience)

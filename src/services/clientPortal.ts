@@ -193,6 +193,7 @@ export interface PortalExperienceBooking {
   audience_size: number | null
   itunes_rating: number | null
   episode_count: number | null
+  created_by_client?: boolean
 }
 
 export interface PortalOutreachTarget {
@@ -265,6 +266,50 @@ export async function getPortalExperience(clientId: string): Promise<PortalExper
   if (error) throw await toFunctionError(error, 'Your portal overview could not be loaded.')
 
   return data as PortalExperienceOverview
+}
+
+export interface PortalCalendarEventInput {
+  podcast_name: string
+  kind: 'recording' | 'release'
+  date: string
+  host_name?: string | null
+  podcast_url?: string | null
+  episode_url?: string | null
+  notes?: string | null
+}
+
+function portalRequestBody(clientId: string, extra: Record<string, unknown>): Record<string, unknown> {
+  const { session } = sessionStorage.get()
+  if (session && session.client_id !== clientId) {
+    throw new Error('Portal session does not match the requested client.')
+  }
+  return {
+    clientId,
+    ...(session?.session_token ? { sessionToken: session.session_token } : {}),
+    ...extra,
+  }
+}
+
+/** Add a recording or episode-release date the client arranged themselves. */
+export async function addPortalCalendarEvent(
+  clientId: string,
+  event: PortalCalendarEventInput,
+): Promise<PortalExperienceBooking> {
+  const { data, error } = await supabase.functions.invoke('portal-experience', {
+    body: portalRequestBody(clientId, { calendar_event: event }),
+  })
+  if (error) throw await toFunctionError(error, 'That event could not be added — try again.')
+  if (!data?.booking) throw new Error('That event could not be added — try again.')
+  return data.booking as PortalExperienceBooking
+}
+
+/** Remove an event the client added. Team-created placements are untouched. */
+export async function removePortalCalendarEvent(clientId: string, eventId: string): Promise<void> {
+  const { data, error } = await supabase.functions.invoke('portal-experience', {
+    body: portalRequestBody(clientId, { delete_event_id: eventId }),
+  })
+  if (error) throw await toFunctionError(error, 'That event could not be removed — try again.')
+  if (!data?.success) throw new Error('That event could not be removed — try again.')
 }
 
 /**

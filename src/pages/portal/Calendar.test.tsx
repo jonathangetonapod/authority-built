@@ -1,11 +1,20 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { fireEvent, render as rtlRender, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PortalCalendar from '@/pages/portal/Calendar'
+
+const render = (ui: React.ReactElement) => rtlRender(
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    {ui}
+  </QueryClientProvider>,
+)
 import { usePortalExperience } from '@/hooks/usePortalExperience'
 import type { PortalExperienceBooking } from '@/services/clientPortal'
 
 vi.mock('@/components/portal/PortalLayout', () => ({ PortalLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('@/hooks/usePortalExperience', () => ({ usePortalExperience: vi.fn() }))
+vi.mock('@/contexts/ClientPortalContext', () => ({ useClientPortal: () => ({ client: { id: 'client-1', name: 'Taylor' } }) }))
+vi.mock('@/services/clientPortal', () => ({ addPortalCalendarEvent: vi.fn(), removePortalCalendarEvent: vi.fn() }))
 
 const mockedUseExperience = vi.mocked(usePortalExperience)
 

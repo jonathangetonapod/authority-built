@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Loader2, Mic2, Radio, RefreshCw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, Mic2, Plus, Radio, RefreshCw } from 'lucide-react'
 
+import { AddCalendarEventDialog } from '@/components/portal/AddCalendarEventDialog'
 import { BookingDetailDialog } from '@/components/portal/BookingDetailDialog'
 import { PortalLayout } from '@/components/portal/PortalLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { useClientPortal } from '@/contexts/ClientPortalContext'
 import { usePortalExperience } from '@/hooks/usePortalExperience'
 import type { PortalExperienceBooking } from '@/services/clientPortal'
 
@@ -56,7 +58,9 @@ const displayDate = (value: string) => {
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 export default function PortalCalendar() {
+  const { client } = useClientPortal()
   const overviewQuery = usePortalExperience()
+  const [addOpen, setAddOpen] = useState(false)
   const today = new Date()
   const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
   const [year, setYear] = useState(today.getFullYear())
@@ -93,9 +97,16 @@ export default function PortalCalendar() {
   return (
     <PortalLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Calendar</h1>
-          <p className="mt-1 text-muted-foreground">Your recordings and episode release dates in one place.</p>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Calendar</h1>
+            <p className="mt-1 text-muted-foreground">Your recordings and episode release dates in one place.</p>
+          </div>
+          {client?.id && (
+            <Button onClick={() => setAddOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />Add event
+            </Button>
+          )}
         </div>
 
         {overviewQuery.isLoading ? (
@@ -212,7 +223,19 @@ export default function PortalCalendar() {
           </div>
         )}
       </div>
-      <BookingDetailDialog booking={selectedBooking} onOpenChange={(open) => { if (!open) setSelectedBooking(null) }} />
+      <BookingDetailDialog
+        booking={selectedBooking}
+        onOpenChange={(open) => { if (!open) setSelectedBooking(null) }}
+        onRemoved={() => void overviewQuery.refetch()}
+      />
+      {client?.id && (
+        <AddCalendarEventDialog
+          open={addOpen}
+          onOpenChange={setAddOpen}
+          clientId={client.id}
+          onAdded={() => void overviewQuery.refetch()}
+        />
+      )}
     </PortalLayout>
   )
 }

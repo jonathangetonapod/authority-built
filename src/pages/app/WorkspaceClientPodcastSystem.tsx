@@ -5,6 +5,7 @@ import {
   Activity,
   AlertCircle,
   ArrowRight,
+  CalendarPlus,
   Bot,
   CalendarDays,
   CheckCircle2,
@@ -40,6 +41,7 @@ import { Separator } from '@/components/ui/separator'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ClientBookingDialog } from '@/components/workspace/ClientBookingDialog'
 import { safeExternalUrl } from '@/lib/externalUrl'
 import { MY_WORKSPACE_BASE_HREF, selectedWorkspaceBaseHref } from '@/lib/workspaceRoutes'
 import {
@@ -821,10 +823,12 @@ function OpportunityDetail({
   item,
   baseHref,
   canManage,
+  onLogPlacement,
 }: {
   item: ClientPodcastSystemItem
   baseHref: string
   canManage: boolean
+  onLogPlacement: () => void
 }) {
   return (
     <>
@@ -844,7 +848,7 @@ function OpportunityDetail({
         <section><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">Host-ready research</h2><Badge variant="outline">{item.analysis.source === 'normalized' ? 'Current analysis' : item.analysis.source === 'legacy_cache' ? 'Legacy analysis' : 'Not researched'}</Badge></div>{item.analysis.clean_description ? <p className="mt-3 rounded-xl border bg-muted/15 p-4 text-sm leading-6 text-muted-foreground">{item.analysis.clean_description}</p> : <div className="mt-3 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No client-specific research is available yet.</div>}{item.analysis.fit_reasons.length > 0 && <div className="mt-4"><h3 className="text-sm font-semibold">Why the guest fits</h3><ul className="mt-2 space-y-2">{item.analysis.fit_reasons.map((reason, index) => <li key={`${reason}-${index}`} className="flex gap-2 text-sm leading-6 text-muted-foreground"><CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-emerald-600" /><span>{reason}</span></li>)}</ul></div>}</section>
         {item.booking && <section><h2 className="text-lg font-semibold">Booking milestones</h2><div className="mt-3 grid gap-3 sm:grid-cols-3"><div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Scheduled</p><p className="mt-1 text-sm font-semibold">{formattedDate(item.booking.scheduled_date)}</p></div><div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Recording</p><p className="mt-1 text-sm font-semibold">{formattedDate(item.booking.recording_date)}</p></div><div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Publication</p><p className="mt-1 text-sm font-semibold">{formattedDate(item.booking.publish_date)}</p></div></div></section>}
         <Separator />
-        <div className="flex flex-wrap gap-2"><Button asChild variant="outline"><Link to={`${baseHref}/clients/${encodeURIComponent(item.client.id)}?tab=approval`}><UserRound className="mr-2 h-4 w-4" />Client shortlist</Link></Button><Button asChild variant="outline"><Link to={`${baseHref}/client-campaigns/${encodeURIComponent(item.client.id)}`}><Megaphone className="mr-2 h-4 w-4" />Client campaign</Link></Button><Button asChild variant="outline"><Link to={`${baseHref}/master-inbox?client=${encodeURIComponent(item.client.id)}`}><Inbox className="mr-2 h-4 w-4" />Master Inbox</Link></Button>{safeExternalUrl(item.podcast.url) && <Button asChild variant="ghost"><a href={safeExternalUrl(item.podcast.url) || undefined} target="_blank" rel="noreferrer">Podcast page<ExternalLink className="ml-2 h-4 w-4" /></a></Button>}{safeExternalUrl(item.booking?.episode_url) && <Button asChild><a href={safeExternalUrl(item.booking?.episode_url) || undefined} target="_blank" rel="noreferrer">Listen to episode<ExternalLink className="ml-2 h-4 w-4" /></a></Button>}</div>
+        <div className="flex flex-wrap gap-2"><Button asChild variant="outline"><Link to={`${baseHref}/clients/${encodeURIComponent(item.client.id)}?tab=approval`}><UserRound className="mr-2 h-4 w-4" />Client shortlist</Link></Button><Button asChild variant="outline"><Link to={`${baseHref}/client-campaigns/${encodeURIComponent(item.client.id)}`}><Megaphone className="mr-2 h-4 w-4" />Client campaign</Link></Button><Button asChild variant="outline"><Link to={`${baseHref}/master-inbox?client=${encodeURIComponent(item.client.id)}`}><Inbox className="mr-2 h-4 w-4" />Master Inbox</Link></Button>{canManage && <Button type="button" onClick={onLogPlacement}><CalendarPlus className="mr-2 h-4 w-4" />{item.booking ? 'Update placement' : 'Log placement'}</Button>}{safeExternalUrl(item.podcast.url) && <Button asChild variant="ghost"><a href={safeExternalUrl(item.podcast.url) || undefined} target="_blank" rel="noreferrer">Podcast page<ExternalLink className="ml-2 h-4 w-4" /></a></Button>}{safeExternalUrl(item.booking?.episode_url) && <Button asChild><a href={safeExternalUrl(item.booking?.episode_url) || undefined} target="_blank" rel="noreferrer">Listen to episode<ExternalLink className="ml-2 h-4 w-4" /></a></Button>}</div>
         {!canManage && <div className="flex gap-3 rounded-xl border border-dashed p-4 text-sm text-muted-foreground"><XCircle className="mt-0.5 h-4 w-4 shrink-0" /><p>You can view this client overview. Owners and admins manage client decisions, campaign preparation, and delivery actions.</p></div>}
       </div>
     </>
@@ -861,6 +865,9 @@ const WorkspaceClientPodcastSystem = ({ platformWorkspaceId }: WorkspaceClientPo
   const baseHref = isPlatformWorkspace ? selectedWorkspaceBaseHref(selectedWorkspaceId) : MY_WORKSPACE_BASE_HREF
   const requestedClientId = (searchParams.get('client') || '').toLowerCase()
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  // Logging a placement from an opportunity carries the podcast across, so
+  // the same show never has to be retyped to become a booking.
+  const [placementItem, setPlacementItem] = useState<ClientPodcastSystemItem | null>(null)
   const today = localToday()
 
   const systemQuery = useQuery({
@@ -956,9 +963,63 @@ const WorkspaceClientPodcastSystem = ({ platformWorkspaceId }: WorkspaceClientPo
 
       <Sheet open={Boolean(selectedItem)} onOpenChange={(open) => { if (!open) setSelectedItemId(null) }}>
         <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:max-w-2xl lg:max-w-3xl">
-          {selectedItem && <OpportunityDetail item={selectedItem} baseHref={baseHref} canManage={canManage} />}
+          {selectedItem && (
+            <OpportunityDetail
+              item={selectedItem}
+              baseHref={baseHref}
+              canManage={canManage}
+              onLogPlacement={() => setPlacementItem(selectedItem)}
+            />
+          )}
         </SheetContent>
       </Sheet>
+      {placementItem && (
+        <ClientBookingDialog
+          open={Boolean(placementItem)}
+          onOpenChange={(open) => { if (!open) setPlacementItem(null) }}
+          workspaceId={workspaceId}
+          clientId={placementItem.client.id}
+          clientName={placementItem.client.name}
+          booking={placementItem.booking
+            ? {
+              id: placementItem.booking.id,
+              client_id: placementItem.client.id,
+              podcast_id: placementItem.podcast.id ?? null,
+              podcast_name: placementItem.podcast.name,
+              podcast_url: placementItem.podcast.url ?? null,
+              host_name: placementItem.booking.host_name,
+              scheduled_date: placementItem.booking.scheduled_date,
+              recording_date: placementItem.booking.recording_date,
+              publish_date: placementItem.booking.publish_date,
+              status: placementItem.booking.status,
+              episode_url: placementItem.booking.episode_url,
+              prep_sent: placementItem.booking.prep_sent,
+              notes: placementItem.booking.notes,
+              created_at: placementItem.booking.created_at,
+              updated_at: placementItem.booking.updated_at,
+            }
+            : {
+              // Not yet a booking: seed the form from the opportunity so the
+              // operator only chooses a stage and a date.
+              id: '',
+              client_id: placementItem.client.id,
+              podcast_id: placementItem.podcast.id ?? null,
+              podcast_name: placementItem.podcast.name,
+              podcast_url: placementItem.podcast.url ?? null,
+              host_name: null,
+              scheduled_date: null,
+              recording_date: null,
+              publish_date: null,
+              status: 'conversation_started',
+              episode_url: null,
+              prep_sent: false,
+              notes: null,
+              created_at: '',
+              updated_at: '',
+            }}
+          onSaved={() => { setPlacementItem(null); void systemQuery.refetch() }}
+        />
+      )}
     </WorkspaceLayout>
   )
 }
