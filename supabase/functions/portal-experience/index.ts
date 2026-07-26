@@ -118,7 +118,7 @@ serve(async (req) => {
         .limit(500),
       admin
         .from('client_dashboard_podcasts')
-        .select('podcast_id')
+        .select('id,podcast_id,podcast_image_url')
         .eq('client_id', clientId)
         .eq('visibility', 'visible')
         .limit(2_000),
@@ -134,7 +134,7 @@ serve(async (req) => {
         .maybeSingle(),
       admin
         .from('workspace_client_campaign_targets')
-        .select('status')
+        .select('id,shortlist_podcast_id,podcast_name,status,launched_at,last_activity_at,email_open_count,email_reply_count')
         .eq('client_id', clientId)
         .limit(5_000),
       admin
@@ -191,6 +191,42 @@ serve(async (req) => {
       }
     }
 
+    // Per-podcast outreach activity, client-safe: which shows were messaged
+    // and how the conversation is going. Internal failures stay hidden — the
+    // workspace resolves those, the client just sees the show as preparing.
+    const imageByShortlistId = new Map<string, string>()
+    for (const row of visibleRows) {
+      if (typeof row.id === 'string' && typeof row.podcast_image_url === 'string' && row.podcast_image_url) {
+        imageByShortlistId.set(row.id, row.podcast_image_url.slice(0, 2_000))
+      }
+    }
+    const targetStage = (status: unknown): string | null => {
+      if (status === 'in_outreach') return 'contacted'
+      if (status === 'replied') return 'replied'
+      if (status === 'completed') return 'completed'
+      if (status === 'failed') return null
+      return 'preparing'
+    }
+    const outreachTargets = ((targetsResult.error ? [] : targetsResult.data ?? []) as Array<Record<string, unknown>>)
+      .flatMap((row) => {
+        const stage = targetStage(row.status)
+        if (!stage || typeof row.podcast_name !== 'string' || !row.podcast_name) return []
+        return [{
+          id: typeof row.id === 'string' ? row.id : '',
+          podcast_name: row.podcast_name.slice(0, 300),
+          podcast_image_url: typeof row.shortlist_podcast_id === 'string'
+            ? imageByShortlistId.get(row.shortlist_podcast_id) ?? null
+            : null,
+          stage,
+          first_message_at: typeof row.launched_at === 'string' ? row.launched_at : null,
+          last_activity_at: typeof row.last_activity_at === 'string' ? row.last_activity_at : null,
+          opens: clampCount(row.email_open_count),
+          replies: clampCount(row.email_reply_count),
+        }]
+      })
+      .sort((a, b) => String(b.first_message_at ?? '').localeCompare(String(a.first_message_at ?? '')))
+      .slice(0, 200)
+
     // The guest profile is only shared once the workspace approved it.
     let pitchProfile: Record<string, unknown> | null = null
     if (!pitchProfileResult.error && pitchProfileResult.data?.approved_at) {
@@ -222,6 +258,7 @@ serve(async (req) => {
         rejected_count: rejectedCount,
       },
       outreach,
+      outreach_targets: outreachTargets,
       pitch_profile: pitchProfile,
       bookings: bookingsResult.data ?? [],
     })

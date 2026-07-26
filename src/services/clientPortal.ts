@@ -195,6 +195,17 @@ export interface PortalExperienceBooking {
   episode_count: number | null
 }
 
+export interface PortalOutreachTarget {
+  id: string
+  podcast_name: string
+  podcast_image_url: string | null
+  stage: 'preparing' | 'contacted' | 'replied' | 'completed'
+  first_message_at: string | null
+  last_activity_at: string | null
+  opens: number
+  replies: number
+}
+
 export interface PortalExperienceOverview {
   profile: {
     name: string
@@ -220,6 +231,7 @@ export interface PortalExperienceOverview {
     replied_count: number
     completed_count: number
   } | null
+  outreach_targets?: PortalOutreachTarget[]
   pitch_profile: {
     professional_bio: string | null
     positioning_summary: string | null

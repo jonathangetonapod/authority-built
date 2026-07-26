@@ -37,6 +37,11 @@ assert.match(edge, /pitchProfileResult\.data\?\.approved_at/u)
 // Review counts only consider shortlist podcasts visible to the client.
 assert.match(edge, /\.eq\('visibility', 'visible'\)/u)
 
+// Outreach activity: internal failures never reach the client, and only
+// aggregate engagement counts are exposed — never message content.
+assert.match(edge, /if \(status === 'failed'\) return null/u)
+assert.match(edge, /select\('id,shortlist_podcast_id,podcast_name,status,launched_at,last_activity_at,email_open_count,email_reply_count'\)/u)
+
 // Release plumbing.
 assert.match(config, /\[functions\.portal-experience\]\nverify_jwt = false/u)
 assert.ok(manifest.includes('"portal-experience"'), 'portal-experience must be in the release manifest')

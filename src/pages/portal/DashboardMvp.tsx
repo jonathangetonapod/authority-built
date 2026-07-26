@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import {
   ArrowRight,
   CalendarDays,
@@ -16,13 +16,15 @@ import {
   Star,
 } from 'lucide-react'
 
+import { BookingDetailDialog } from '@/components/portal/BookingDetailDialog'
 import { PortalLayout } from '@/components/portal/PortalLayout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useClientPortal } from '@/contexts/ClientPortalContext'
+import { usePortalExperience } from '@/hooks/usePortalExperience'
 import { safeExternalUrl } from '@/lib/externalUrl'
-import { getPortalExperience, type PortalExperienceBooking } from '@/services/clientPortal'
+import { type PortalExperienceBooking } from '@/services/clientPortal'
 
 const statusPresentation: Record<string, { label: string; className: string }> = {
   conversation_started: { label: 'In conversation', className: 'bg-sky-50 text-sky-700 border-sky-200' },
@@ -73,13 +75,8 @@ interface JourneyStat {
 
 export default function PortalDashboardMvp() {
   const { client } = useClientPortal()
-  const overviewQuery = useQuery({
-    queryKey: ['portal-experience', client?.id],
-    queryFn: () => getPortalExperience(client!.id),
-    enabled: Boolean(client?.id),
-    retry: 1,
-    staleTime: 60_000,
-  })
+  const overviewQuery = usePortalExperience()
+  const [detailBooking, setDetailBooking] = useState<PortalExperienceBooking | null>(null)
 
   const overview = overviewQuery.data ?? null
   const bookings = overview?.bookings ?? []
@@ -300,13 +297,18 @@ export default function PortalDashboardMvp() {
                           </p>
                         )}
                       </div>
-                      {episodeUrl && (
-                        <Button asChild variant="outline" size="sm" className="shrink-0 self-center">
-                          <a href={episodeUrl} target="_blank" rel="noreferrer">
-                            Listen<ExternalLink className="ml-2 h-3.5 w-3.5" />
-                          </a>
+                      <div className="flex shrink-0 items-center gap-2 self-center">
+                        {episodeUrl && (
+                          <Button asChild variant="outline" size="sm">
+                            <a href={episodeUrl} target="_blank" rel="noreferrer">
+                              Listen<ExternalLink className="ml-2 h-3.5 w-3.5" />
+                            </a>
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => setDetailBooking(booking)}>
+                          Details
                         </Button>
-                      )}
+                      </div>
                     </div>
                   )
                 })}
@@ -347,6 +349,7 @@ export default function PortalDashboardMvp() {
           </Card>
         )}
       </div>
+      <BookingDetailDialog booking={detailBooking} onOpenChange={(open) => { if (!open) setDetailBooking(null) }} />
     </PortalLayout>
   )
 }

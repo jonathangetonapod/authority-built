@@ -31,6 +31,9 @@ const GuestResourcesManagement = lazy(() => import("./pages/admin/GuestResources
 const PortalPreviewHandoff = lazy(() => import("./pages/portal/PreviewHandoff"));
 const PortalLogin = lazy(() => import("./pages/portal/Login"));
 const PortalDashboard = lazy(() => import("./pages/portal/DashboardMvp"));
+const PortalCalendar = lazy(() => import("./pages/portal/Calendar"));
+const PortalOutreach = lazy(() => import("./pages/portal/Outreach"));
+const PortalAddOns = lazy(() => import("./pages/portal/AddOns"));
 const PortalResources = lazy(() => import("./pages/portal/Resources"));
 const ProspectView = lazy(() => import("./pages/prospect/ProspectView"));
 const ClientApprovalView = lazy(() => import("./pages/client/ClientApprovalView"));
@@ -41,7 +44,6 @@ const WorkspaceGuestResources = lazy(() => import("./pages/app/WorkspaceGuestRes
 const WorkspaceOnboarding = lazy(() => import("./pages/app/WorkspaceOnboarding"));
 const MyWorkspaceSettings = lazy(() => import("./pages/app/MyWorkspaceSettings"));
 const WorkspaceBilling = lazy(() => import("./pages/app/WorkspaceBilling"));
-const WorkspaceOverview = lazy(() => import("./pages/app/WorkspaceOverview"));
 const WorkspaceCampaignDetail = lazy(() => import("./pages/app/WorkspaceCampaignDetail"));
 const WorkspaceOutreachSuite = lazy(() => import("./pages/app/WorkspaceOutreachSuite"));
 const WorkspacePodcastFinderHome = lazy(() => import("./pages/app/WorkspacePodcastFinderHome"));
@@ -50,7 +52,6 @@ const WorkspacePodcastFinder = lazy(() => import("./pages/app/WorkspacePodcastFi
 const WorkspacePodcastDatabase = lazy(() => import("./pages/app/WorkspacePodcastDatabase"));
 const WorkspaceClientPodcastSystem = lazy(() => import("./pages/app/WorkspaceClientPodcastSystem"));
 const WorkspaceProspectDashboards = lazy(() => import("./pages/app/WorkspaceProspectDashboards"));
-const AdminWorkspaceOverview = lazy(() => import("./pages/admin/AdminWorkspaceOverview"));
 const AdminWorkspaceCampaignDetail = lazy(() => import("./pages/admin/AdminWorkspaceCampaignDetail"));
 const AdminWorkspaceOutreachSuite = lazy(() => import("./pages/admin/AdminWorkspaceOutreachSuite"));
 const AdminWorkspaceClients = lazy(() => import("./pages/admin/AdminWorkspaceClients"));
@@ -92,7 +93,7 @@ const LegacyAdminWorkspaceRedirect = ({ module }: { module: WorkspaceModule }) =
 
 const SelectedWorkspaceRootRedirect = () => {
   const { workspaceId = '' } = useParams()
-  return <Navigate to={workspaceModuleHref(selectedWorkspaceBaseHref(workspaceId), 'overview')} replace />
+  return <Navigate to={workspaceModuleHref(selectedWorkspaceBaseHref(workspaceId), 'clients')} replace />
 }
 
 const LegacyAdminWorkspacePodcastFinderRedirect = () => {
@@ -126,17 +127,10 @@ const App = () => (
             <Route path="/accept-invite" element={<AcceptInvite />} />
             <Route path="/change-password" element={<ChangeInitialPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/app" element={<Navigate to="/app/overview" replace />} />
+            <Route path="/app" element={<Navigate to="/app/clients" replace />} />
             <Route path="/app/workspace-users" element={<Navigate to="/app/settings" replace />} />
             <Route path="/app/manage-workspaces" element={<Navigate to="/app/settings" replace />} />
-            <Route
-              path="/app/overview"
-              element={
-                <ProtectedRoute>
-                  <WorkspaceOverview />
-                </ProtectedRoute>
-              }
-            />
+            <Route path="/app/overview" element={<Navigate to="/app/clients" replace />} />
             <Route
               path="/app/settings"
               element={
@@ -280,11 +274,7 @@ const App = () => (
             />
             <Route
               path="/app/workspaces/:workspaceId/overview"
-              element={
-                <PlatformAdminRoute>
-                  <AdminWorkspaceOverview />
-                </PlatformAdminRoute>
-              }
+              element={<LegacyAdminWorkspaceRedirect module="clients" />}
             />
             <Route
               path="/app/workspaces/:workspaceId/onboarding"
@@ -437,6 +427,30 @@ const App = () => (
               }
             />
             <Route
+              path="/portal/calendar"
+              element={
+                <ClientProtectedRoute>
+                  <PortalCalendar />
+                </ClientProtectedRoute>
+              }
+            />
+            <Route
+              path="/portal/outreach"
+              element={
+                <ClientProtectedRoute>
+                  <PortalOutreach />
+                </ClientProtectedRoute>
+              }
+            />
+            <Route
+              path="/portal/addons"
+              element={
+                <ClientProtectedRoute>
+                  <PortalAddOns />
+                </ClientProtectedRoute>
+              }
+            />
+            <Route
               path="/portal/resources"
               element={
                 <ClientProtectedRoute>
@@ -446,18 +460,18 @@ const App = () => (
             />
 
             {/* Admin routes */}
-            <Route path="/admin" element={<Navigate to="/app/overview" replace />} />
+            <Route path="/admin" element={<Navigate to="/app/clients" replace />} />
             <Route path="/admin/login" element={<AdminLogin />} />
             <Route path="/admin/callback" element={<AuthCallback />} />
 
             {/* Retired admin surfaces redirect to the supported admin landing page. */}
-            <Route path="/admin/ai-sales-director/*" element={<Navigate to="/app/overview" replace />} />
-            <Route path="/admin/videos/*" element={<Navigate to="/app/overview" replace />} />
-            <Route path="/admin/blog/*" element={<Navigate to="/app/overview" replace />} />
-            <Route path="/admin/premium-placements/*" element={<Navigate to="/app/overview" replace />} />
-            <Route path="/admin/customers/*" element={<Navigate to="/app/overview" replace />} />
-            <Route path="/admin/orders/*" element={<Navigate to="/app/overview" replace />} />
-            <Route path="/admin/analytics/*" element={<Navigate to="/app/overview" replace />} />
+            <Route path="/admin/ai-sales-director/*" element={<Navigate to="/app/clients" replace />} />
+            <Route path="/admin/videos/*" element={<Navigate to="/app/clients" replace />} />
+            <Route path="/admin/blog/*" element={<Navigate to="/app/clients" replace />} />
+            <Route path="/admin/premium-placements/*" element={<Navigate to="/app/clients" replace />} />
+            <Route path="/admin/customers/*" element={<Navigate to="/app/clients" replace />} />
+            <Route path="/admin/orders/*" element={<Navigate to="/app/clients" replace />} />
+            <Route path="/admin/analytics/*" element={<Navigate to="/app/clients" replace />} />
             <Route path="/admin/settings/*" element={<Navigate to="/app/settings" replace />} />
 
             <Route
@@ -466,7 +480,7 @@ const App = () => (
             />
             <Route
               path="/admin/dashboard"
-              element={<Navigate to="/app/overview" replace />}
+              element={<Navigate to="/app/clients" replace />}
             />
             <Route path="/admin/onboarding" element={<Navigate to="/app/onboarding" replace />} />
             <Route
