@@ -46,6 +46,7 @@ import {
   type ClientShortlistPodcast,
   type ClientShortlistResearchStageId,
   generateClientShortlistPitch,
+  getClientShortlistResearchDocument,
   runClientShortlistEmailSearch,
   runClientShortlistResearch,
 } from '@/services/clientShortlist'
@@ -115,6 +116,20 @@ const researchProgressSteps: ResearchProgressStep[] = [
   { id: 'guest_fit', title: 'Matching guest expertise', detail: 'Audience needs and credible fit' },
   { id: 'pitch_angles', title: 'Preparing pitch angles', detail: 'Primary topic and useful alternatives' },
 ]
+
+// Which canonical prompt produced each UI stage — the inverse of the
+// executor's RESEARCH_STAGE_MAP, so the inspector can open the stored output.
+const RESEARCH_STAGE_TO_PROMPT: Record<
+  ClientShortlistResearchStageId,
+  'podcast_research' | 'host_info' | 'guest_info' | 'find_topics'
+> = {
+  podcast_profile: 'podcast_research',
+  recent_episodes: 'podcast_research',
+  host_profile: 'host_info',
+  guest_patterns: 'guest_info',
+  guest_fit: 'find_topics',
+  pitch_angles: 'find_topics',
+}
 
 const emailUnlockSteps: EmailUnlockStep[] = [
   { id: 'identify_contact', title: 'Confirming the right contact' },
@@ -192,6 +207,7 @@ export function ClientCampaignPrepDialog({
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
+      void queryClient.invalidateQueries({ queryKey: ['client-shortlist-research-document', workspaceId, clientId] })
       toast.success('Research completed with your saved workspace prompts.')
     },
     onError: (error) => {
@@ -358,6 +374,16 @@ export function ClientCampaignPrepDialog({
       : activeResearchStep
         ? activeResearchStep.detail
         : 'Your research will begin as soon as the workspace is ready.'
+  const [inspectedStageId, setInspectedStageId] = useState<ClientShortlistResearchStageId | null>(null)
+  const researchDocumentQueryKey = ['client-shortlist-research-document', workspaceId, clientId, podcast?.id || 'none'] as const
+  const researchDocumentQuery = useQuery({
+    queryKey: researchDocumentQueryKey,
+    queryFn: () => getClientShortlistResearchDocument(workspaceId, clientId, podcast!.id),
+    enabled: open && Boolean(podcast?.id) && researchComplete && researchStepsExpanded,
+    retry: false,
+    staleTime: 60_000,
+  })
+  const researchDocument = researchDocumentQuery.data ?? null
   const promptOverridesQuery = useQuery({
     queryKey: ['workspace-research-prompts', workspaceId],
     queryFn: () => getWorkspaceResearchPromptOverrides(workspaceId),
@@ -366,6 +392,45 @@ export function ClientCampaignPrepDialog({
     staleTime: 60_000,
   })
   const promptOverrides = promptOverridesQuery.data ?? {}
+
+  const inspectedStage = inspectedStageId
+    ? researchProgressSteps.find((step) => step.id === inspectedStageId) ?? null
+    : null
+  const inspectedPromptId = inspectedStageId ? RESEARCH_STAGE_TO_PROMPT[inspectedStageId] : null
+  const inspectedPromptContent = inspectedPromptId
+    ? promptOverrides[inspectedPromptId]?.content ?? RESEARCH_PROMPT_DEFAULTS_BY_ID[inspectedPromptId].content
+    : ''
+  const inspectedOutput = inspectedPromptId && researchDocument ? researchDocument[inspectedPromptId] : null
+  const variablePreview = (value: string | null | undefined, max = 120): string | null => {
+    if (typeof value !== 'string' || !value.trim()) return null
+    const text = value.trim().replace(/\s+/gu, ' ')
+    return text.length > max ? `${text.slice(0, max)}…` : text
+  }
+  // Mirrors the executor's variable mapping so the inspector can show where
+  // each prompt input came from and what was actually available.
+  const describeResearchVariable = (name: string): { source: string; value: string | null } => {
+    const firstEpisode = researchDocument?.episodes_used?.[0] ?? null
+    switch (name) {
+      case 'client_name': return { source: 'Client profile', value: variablePreview(clientName) }
+      case 'client_bio': return { source: 'Client profile', value: variablePreview(clientBio) }
+      case 'client_linkedin_url': return { source: 'Client profile', value: 'Mapped at run time' }
+      case 'client_website': return { source: 'Client profile', value: 'Mapped at run time' }
+      case 'podcast_name': return { source: 'Podcast catalog', value: variablePreview(podcast?.podcast_name) }
+      case 'podcast_url': return { source: 'Podcast catalog', value: variablePreview(podcast?.podcast_url) }
+      case 'podcast_description': return { source: 'Podcast catalog', value: variablePreview(podcast?.podcast_description) }
+      case 'last_posted_at': return { source: 'Podcast catalog', value: podcast?.last_posted_at ? formatPodcastDate(podcast.last_posted_at) : null }
+      case 'episode_title': return { source: 'Latest episode from Podscan', value: variablePreview(firstEpisode?.title) }
+      case 'episode_description': return { source: 'Latest episode from Podscan', value: firstEpisode ? 'Fetched at run time' : null }
+      case 'episode_transcript': return {
+        source: 'Latest episode transcript',
+        value: variablePreview(researchDocument?.episode_transcript_excerpt)
+          ?? (firstEpisode?.had_transcript ? 'Full transcript at run time' : null),
+      }
+      case 'research_report': return { source: 'Output of “Reading the podcast profile”', value: variablePreview(researchDocument?.podcast_research) }
+      case 'recent_guest_name': return { source: 'Guest verification stage', value: variablePreview(researchDocument?.recent_guest_name) }
+      default: return { source: 'Mapped at run time', value: 'Mapped at run time' }
+    }
+  }
   const effectivePromptContent = (promptId: ResearchPromptId): string =>
     promptOverrides[promptId]?.content ?? RESEARCH_PROMPT_DEFAULTS_BY_ID[promptId].content
   const selectedPromptDefault = RESEARCH_PROMPT_DEFAULTS_BY_ID[selectedPromptId]
@@ -412,6 +477,7 @@ export function ClientCampaignPrepDialog({
       setEmailRoute('podcast')
       setShowPodcastDetails(false)
       setShowResearchSteps(false)
+      setInspectedStageId(null)
       setShowPromptSettings(false)
       setSelectedAngleIndex(0)
       setActiveSequenceEmail('opening')
@@ -979,19 +1045,86 @@ export function ClientCampaignPrepDialog({
                         {researchStepsExpanded && (
                           <div id="campaign-research-progress-steps" className="border-t bg-background/80">
                             <ol aria-label="Podcast research progress" className="grid gap-px bg-border sm:grid-cols-2 lg:grid-cols-3">
-                              {visibleResearchSteps.map((step) => (
-                                <li key={step.id} className="flex gap-3 bg-background p-4">
-                                  {step.status === 'complete' && <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />}
-                                  {step.status === 'active' && <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />}
-                                  {step.status === 'queued' && <span className="mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-muted-foreground/25" />}
-                                  {step.status === 'failed' && <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />}
-                                  <div>
-                                    <div className="flex flex-wrap items-center gap-1.5"><p className="text-xs font-semibold text-foreground">{step.title}</p><span className={`text-[10px] font-semibold ${step.status === 'complete' ? 'text-emerald-700' : step.status === 'active' ? 'text-primary' : step.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`}>{step.status === 'complete' ? 'Done' : step.status === 'active' ? 'In progress' : step.status === 'failed' ? 'Needs attention' : 'Waiting'}</span></div>
-                                    <p className="mt-1 text-[11px] leading-4 text-muted-foreground">{step.detail}</p>
-                                  </div>
-                                </li>
-                              ))}
+                              {visibleResearchSteps.map((step) => {
+                                const inspectable = researchComplete && step.status === 'complete'
+                                const inspected = inspectedStageId === step.id
+                                return (
+                                  <li key={step.id} className="bg-background">
+                                    <button
+                                      type="button"
+                                      disabled={!inspectable}
+                                      aria-expanded={inspectable ? inspected : undefined}
+                                      aria-controls={inspectable ? 'campaign-research-stage-inspector' : undefined}
+                                      title={inspectable ? 'Open the stored output of this stage' : undefined}
+                                      className={`flex h-full w-full gap-3 p-4 text-left transition-colors ${inspectable ? 'cursor-pointer hover:bg-muted/30' : 'cursor-default'} ${inspected ? 'bg-primary/5' : ''}`}
+                                      onClick={() => {
+                                        if (!inspectable) return
+                                        setInspectedStageId((current) => (current === step.id ? null : step.id))
+                                      }}
+                                    >
+                                      {step.status === 'complete' && <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />}
+                                      {step.status === 'active' && <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />}
+                                      {step.status === 'queued' && <span className="mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-muted-foreground/25" />}
+                                      {step.status === 'failed' && <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />}
+                                      <div>
+                                        <div className="flex flex-wrap items-center gap-1.5"><p className="text-xs font-semibold text-foreground">{step.title}</p><span className={`text-[10px] font-semibold ${step.status === 'complete' ? 'text-emerald-700' : step.status === 'active' ? 'text-primary' : step.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`}>{step.status === 'complete' ? 'Done' : step.status === 'active' ? 'In progress' : step.status === 'failed' ? 'Needs attention' : 'Waiting'}</span></div>
+                                        <p className="mt-1 text-[11px] leading-4 text-muted-foreground">{step.detail}</p>
+                                        {inspectable && (
+                                          <p className={`mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold ${inspected ? 'text-primary' : 'text-muted-foreground'}`}>
+                                            <FileSearch className="h-3 w-3" />
+                                            {inspected ? 'Hide output' : 'Inspect output'}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </button>
+                                  </li>
+                                )
+                              })}
                             </ol>
+                            {inspectedStage && inspectedPromptId && (
+                              <div id="campaign-research-stage-inspector" className="border-t bg-background px-4 py-4">
+                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                  <div>
+                                    <p className="text-xs font-semibold text-foreground">{inspectedStage.title} · stored output</p>
+                                    <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
+                                      Written by the “{RESEARCH_PROMPT_DEFAULTS_BY_ID[inspectedPromptId].label}” prompt
+                                      {researchDocument?.generated_at ? ` on ${formatPodcastDate(researchDocument.generated_at)}` : ''}. Exactly what later stages received.
+                                    </p>
+                                  </div>
+                                  <Button type="button" variant="ghost" size="sm" onClick={() => setInspectedStageId(null)}>Close</Button>
+                                </div>
+                                <p className="mt-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Variables this prompt received</p>
+                                <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label="Prompt input variables">
+                                  {promptVariables(inspectedPromptContent).map((name) => {
+                                    const variable = describeResearchVariable(name)
+                                    return (
+                                      <li key={name} className="max-w-full rounded-md border bg-muted/10 px-2 py-1 text-[11px] leading-4">
+                                        <code className="font-semibold text-foreground">{`{{${name}}}`}</code>
+                                        <span className="text-muted-foreground">{' ← '}{variable.source}</span>
+                                        <span className={`block truncate ${variable.value ? 'text-foreground/70' : 'italic text-muted-foreground'}`}>
+                                          {variable.value || 'Not available for this run'}
+                                        </span>
+                                      </li>
+                                    )
+                                  })}
+                                </ul>
+                                {researchDocumentQuery.isLoading ? (
+                                  <div className="mt-3 flex items-center gap-2 rounded-lg border bg-muted/10 p-3 text-xs text-muted-foreground">
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />Loading the stored research…
+                                  </div>
+                                ) : inspectedOutput ? (
+                                  <pre className="mt-3 max-h-72 overflow-y-auto whitespace-pre-wrap rounded-lg border bg-muted/10 p-3 font-sans text-xs leading-5 text-foreground/90">{inspectedOutput}</pre>
+                                ) : (
+                                  <p className="mt-3 rounded-lg border border-dashed bg-muted/10 p-3 text-xs leading-5 text-muted-foreground">
+                                    {researchDocumentQuery.isError
+                                      ? 'The stored research could not be loaded. Close and reopen the steps to try again.'
+                                      : researchDocument && inspectedPromptId === 'guest_info'
+                                        ? 'Guest analysis was skipped for this run — the latest episode had no transcript to verify a guest against.'
+                                        : 'No stored output for this stage. It ran before research documents were saved — regenerate research to capture every stage.'}
+                                  </p>
+                                )}
+                              </div>
+                            )}
                             <div className="flex gap-2 border-t px-4 py-3 text-[11px] leading-4 text-muted-foreground">
                               {researchWorking ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" /> : researchFailed ? <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" /> : <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
                               <p>{researchWorking

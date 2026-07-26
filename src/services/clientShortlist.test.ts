@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import {
   addClientShortlistPodcasts,
   getClientShortlist,
+  getClientShortlistResearchDocument,
   reorderClientShortlistFeatured,
   runClientShortlistResearch,
   searchClientPodcastCatalog,
@@ -74,6 +75,32 @@ describe('clientShortlist service', () => {
       },
     })
     expect(result).toEqual(progress)
+  })
+
+  it('loads the stored research document for one shortlist podcast', async () => {
+    const document = {
+      podcast_research: 'Research report',
+      host_info: 'Host report',
+      guest_info: null,
+      find_topics: 'Topic proposal',
+      episode_transcript_excerpt: 'Welcome back to the show…',
+      recent_guest_name: 'Jamie Rivera',
+      episodes_used: [{ title: 'Episode one', had_transcript: true }],
+      generated_at: '2026-07-26T00:00:00.000Z',
+    }
+    invoke.mockResolvedValueOnce({ data: { document }, error: null } as never)
+
+    const result = await getClientShortlistResearchDocument(workspaceId, clientId, '33333333-3333-4333-8333-333333333333')
+
+    expect(invoke).toHaveBeenCalledWith('workspace-client-shortlist', {
+      body: {
+        action: 'research-inspect',
+        workspace_id: workspaceId,
+        client_id: clientId,
+        shortlist_podcast_id: '33333333-3333-4333-8333-333333333333',
+      },
+    })
+    expect(result).toEqual(document)
   })
 
   it('chunks large weekly additions and combines dedupe totals', async () => {

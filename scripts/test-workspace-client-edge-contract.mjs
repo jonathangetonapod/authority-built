@@ -115,6 +115,13 @@ assert.match(waterfallMigration, /\('email_unlock_verify', 1, now\(\)\)/u)
 // respects min_score/max_weekly_adds, and never duplicates shortlist rows.
 assert.match(shortlistEdge, /if \(action === 'autopilot-get'\)[\s\S]*?from\('client_autopilot_settings'\)/u)
 assert.match(shortlistEdge, /if \(action === 'autopilot-set'\)[\s\S]*?maxWeeklyAdds < 1 \|\| maxWeeklyAdds > 15/u)
+
+// Research inspector: read-only, scoped to one shortlist podcast, and pitch
+// generation maps the stored transcript excerpt and recent guest name.
+assert.match(shortlistEdge, /if \(action === 'research-inspect'\)[\s\S]*?requireOnlyKeys\(body, \['action', 'workspace_id', 'client_id', 'shortlist_podcast_id'\]\)/u)
+assert.match(shortlistEdge, /episode_transcript_excerpt: firstEpisode\?\.transcript \? firstEpisode\.transcript\.slice\(0, 2_000\) : null/u)
+assert.match(shortlistEdge, /recent_guest_name: recentGuestName,/u)
+assert.match(shortlistEdge, /episode_transcript: typeof researchDocument\.episode_transcript_excerpt === 'string'/u)
 const autopilotEdge = readFileSync('supabase/functions/client-autopilot-tick/index.ts', 'utf8')
 assert.match(autopilotEdge, /req\.headers\.get\('x-autopilot-secret'\) !== secret/u)
 assert.match(autopilotEdge, /\.eq\('next_run_at', due\.next_run_at\)/u)

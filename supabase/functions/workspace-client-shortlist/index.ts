@@ -1631,6 +1631,47 @@ serve(async (req) => {
       }
     }
 
+    if (action === 'research-inspect') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'shortlist_podcast_id'])
+      const shortlistPodcastId = requireUuid(body.shortlist_podcast_id, 'shortlist_podcast_id')
+      const { data: row, error } = await authContext.admin
+        .from('client_dashboard_podcasts')
+        .select('id, research_document')
+        .eq('id', shortlistPodcastId)
+        .eq('client_id', clientId)
+        .maybeSingle()
+      if (error) throw new HttpError(500, 'RESEARCH_LOOKUP_FAILED', 'The stored research could not be loaded')
+      if (!row) throw new HttpError(404, 'PODCAST_NOT_FOUND', 'Shortlist podcast not found for this client')
+      const document = (row.research_document ?? null) as Record<string, unknown> | null
+      const section = (key: string, max: number): string | null => {
+        const value = document?.[key]
+        return typeof value === 'string' && value.trim() ? value.slice(0, max) : null
+      }
+      const episodesUsed = Array.isArray(document?.episodes_used)
+        ? (document.episodes_used as unknown[]).flatMap((raw) => {
+          if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return []
+          const episode = raw as Record<string, unknown>
+          return typeof episode.title === 'string'
+            ? [{ title: episode.title.slice(0, 300), had_transcript: Boolean(episode.had_transcript) }]
+            : []
+        }).slice(0, 5)
+        : []
+      return jsonResponse(req, METHODS, 200, {
+        document: document
+          ? {
+            podcast_research: section('podcast_research', 20_000),
+            host_info: section('host_info', 20_000),
+            guest_info: section('guest_info', 20_000),
+            find_topics: section('find_topics', 20_000),
+            episode_transcript_excerpt: section('episode_transcript_excerpt', 2_000),
+            recent_guest_name: section('recent_guest_name', 200),
+            episodes_used: episodesUsed,
+            generated_at: typeof document.generated_at === 'string' ? document.generated_at : null,
+          }
+          : null,
+      })
+    }
+
     throw new HttpError(400, 'INVALID_ACTION', 'Unknown client shortlist action')
   } catch (error) {
     return errorResponse(req, METHODS, error)

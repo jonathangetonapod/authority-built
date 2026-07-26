@@ -253,6 +253,31 @@ export async function runClientShortlistEmailSearch(
   return data.email_unlock as ClientShortlistEmailUnlock
 }
 
+export interface ClientShortlistResearchDocument {
+  podcast_research: string | null
+  host_info: string | null
+  guest_info: string | null
+  find_topics: string | null
+  episode_transcript_excerpt: string | null
+  recent_guest_name: string | null
+  episodes_used: Array<{ title: string; had_transcript: boolean }>
+  generated_at: string | null
+}
+
+export async function getClientShortlistResearchDocument(
+  workspaceId: string,
+  clientId: string,
+  shortlistPodcastId: string,
+): Promise<ClientShortlistResearchDocument | null> {
+  const data = await invokeClientShortlist<{ document: ClientShortlistResearchDocument | null }>({
+    action: 'research-inspect',
+    workspace_id: workspaceId,
+    client_id: clientId,
+    shortlist_podcast_id: shortlistPodcastId,
+  })
+  return data.document ?? null
+}
+
 export interface ClientAutopilotSettings {
   enabled: boolean
   max_weekly_adds: number
