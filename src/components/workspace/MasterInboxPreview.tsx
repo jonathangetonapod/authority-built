@@ -10,7 +10,9 @@ import {
   Loader2,
   MailOpen,
   Megaphone,
+  Globe,
   MessageSquare,
+  Phone,
   Search,
   Send,
   ShieldCheck,
@@ -26,8 +28,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { safeExternalUrl } from '@/lib/externalUrl'
 import {
   draftWorkspaceInboxReply,
+  getWorkspaceInboxLeadDetail,
   getWorkspaceInboxThreads,
   sendWorkspaceInboxReply,
   setWorkspaceInboxThreadStatus,
@@ -57,6 +61,12 @@ const inboxFilters: Array<{ value: InboxFilter; label: string; title: string }> 
   { value: 'booked', label: 'Booked', title: 'Conversations marked as a confirmed booking' },
   { value: 'archived', label: 'Archived', title: 'Conversations closed out of the inbox — reopen any time' },
 ]
+
+const leadInitials = (name: string): string => {
+  const parts = name.trim().split(/\s+/u).filter(Boolean)
+  if (parts.length === 0) return '?'
+  return (parts.length === 1 ? parts[0].slice(0, 2) : `${parts[0][0]}${parts[parts.length - 1][0]}`).toUpperCase()
+}
 
 const threadStatus = (thread: WorkspaceInboxThread, sentThreadIds: Set<string>): WorkspaceInboxThreadStatus => {
   if (sentThreadIds.has(thread.id)) return 'replied'
@@ -257,6 +267,33 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
   const threadClient = selectedThread?.campaign?.client
     ? clients.find((client) => client.id === selectedThread.campaign?.client?.id) ?? null
     : null
+  // Lead identity is fetched lazily for the open conversation only: campaigns
+  // built directly in Instantly have no local target row, so this is the only
+  // place a host's real name, company, and engagement can come from.
+  const leadDetailQuery = useQuery({
+    queryKey: ['workspace-inbox-lead', workspaceId, selectedThread?.lead_id || 'none'],
+    queryFn: () => getWorkspaceInboxLeadDetail(workspaceId, selectedThread!.lead_id!),
+    enabled: Boolean(workspaceId && selectedThread?.lead_id),
+    retry: false,
+    staleTime: 5 * 60_000,
+  })
+  const leadDetail = leadDetailQuery.data ?? null
+  const leadFullName = [leadDetail?.first_name, leadDetail?.last_name].filter(Boolean).join(' ').trim()
+  const leadName = leadFullName
+    || selectedThread?.lead_context?.host_name
+    || selectedThread?.from_email
+    || selectedThread?.lead_email
+    || 'Unknown lead'
+  const leadSubtitle = [leadDetail?.job_title, leadDetail?.company_name].filter(Boolean).join(' · ')
+  const leadWebsite = leadDetail?.website ? safeExternalUrl(leadDetail.website) : null
+  const engagement = leadDetail
+    ? { opens: leadDetail.opens, replies: leadDetail.replies, clicks: leadDetail.clicks }
+    : selectedThread?.lead_context
+      ? { opens: selectedThread.lead_context.opens, replies: selectedThread.lead_context.replies, clicks: 0 }
+      : null
+  const firstContactedAt = leadDetail?.first_contacted_at
+    || selectedThread?.lead_context?.first_message_at
+    || null
 
   const draftMutation = useMutation({
     mutationFn: (thread: WorkspaceInboxThread) => draftWorkspaceInboxReply(
@@ -717,60 +754,111 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                 )}
               </div>
 
-              <aside className="hidden w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l bg-muted/5 p-4 xl:flex" aria-label="Lead details">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Lead</p>
-                  <p className="mt-1.5 text-sm font-semibold">
-                    {selectedThread.lead_context?.host_name || selectedThread.from_email || selectedThread.lead_email}
-                  </p>
-                  <p className="break-all text-xs text-muted-foreground">{selectedThread.lead_email || selectedThread.from_email}</p>
-                </div>
-                {selectedThread.lead_context?.podcast_name && (
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Podcast</p>
-                    <p className="mt-1.5 text-sm">{selectedThread.lead_context.podcast_name}</p>
+              <aside className="hidden w-80 shrink-0 flex-col overflow-y-auto border-l bg-muted/5 xl:flex" aria-label="Lead details">
+                <div className="border-b bg-background/60 p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                      {leadInitials(leadName)}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold" title={leadName}>{leadName}</p>
+                      {leadSubtitle && <p className="truncate text-xs text-muted-foreground" title={leadSubtitle}>{leadSubtitle}</p>}
+                      <p className="mt-0.5 break-all text-xs text-muted-foreground">
+                        {leadDetail?.email || selectedThread.lead_email || selectedThread.from_email}
+                      </p>
+                    </div>
                   </div>
-                )}
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Outreach</p>
-                  <dl className="mt-1.5 space-y-1.5 text-xs">
-                    {selectedThread.campaign?.client && (
-                      <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Client</dt><dd className="text-right font-medium">{selectedThread.campaign.client.name}</dd></div>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {selectedThread.interested && (
+                      <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">Interested</Badge>
                     )}
-                    {selectedThread.campaign?.campaign_name && (
-                      <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Campaign</dt><dd className="min-w-0 truncate text-right font-medium" title={selectedThread.campaign.campaign_name}>{selectedThread.campaign.campaign_name}</dd></div>
+                    {(() => {
+                      const pill = statusPill[threadStatus(selectedThread, sentThreadIds)]
+                      return pill ? <Badge variant="outline" className={pill.className}>{pill.label}</Badge> : null
+                    })()}
+                    {selectedThread.state?.suppressed_at && (
+                      <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">Opted out</Badge>
                     )}
-                    {selectedThread.lead_context?.first_message_at && (
-                      <div className="flex justify-between gap-2"><dt className="text-muted-foreground">First message</dt><dd className="text-right">{new Date(selectedThread.lead_context.first_message_at).toLocaleDateString()}</dd></div>
-                    )}
-                    {selectedThread.lead_context && (
-                      <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Engagement</dt><dd className="text-right">{selectedThread.lead_context.opens} opens · {selectedThread.lead_context.replies} repl{selectedThread.lead_context.replies === 1 ? 'y' : 'ies'}</dd></div>
-                    )}
-                    {selectedThread.received_at && (
-                      <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Last reply</dt><dd className="text-right">{new Date(selectedThread.received_at).toLocaleDateString()}</dd></div>
-                    )}
-                    {selectedThread.eaccount && (
-                      <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Mailbox</dt><dd className="min-w-0 truncate text-right" title={selectedThread.eaccount}>{selectedThread.eaccount}</dd></div>
-                    )}
-                  </dl>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedThread.interested && (
-                    <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">Interested</Badge>
-                  )}
-                  {selectedThread.lead_context?.stage && (
-                    <Badge variant="outline" className="bg-muted/40 capitalize text-muted-foreground">{selectedThread.lead_context.stage}</Badge>
-                  )}
-                  {sentThreadIds.has(selectedThread.id) && (
-                    <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">Replied</Badge>
+                  </div>
+                  {(leadWebsite || leadDetail?.phone) && (
+                    <div className="mt-3 flex flex-wrap gap-3 text-xs">
+                      {leadWebsite && (
+                        <a href={leadWebsite} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                          <Globe className="h-3.5 w-3.5" />Website
+                        </a>
+                      )}
+                      {leadDetail?.phone && (
+                        <span className="inline-flex items-center gap-1 text-muted-foreground"><Phone className="h-3.5 w-3.5" />{leadDetail.phone}</span>
+                      )}
+                    </div>
                   )}
                 </div>
+
+                {leadDetailQuery.isLoading ? (
+                  <div className="flex items-center gap-2 border-b p-4 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />Loading lead details…
+                  </div>
+                ) : engagement ? (
+                  <div className="grid grid-cols-3 divide-x border-b text-center">
+                    {[
+                      { label: 'Opens', value: engagement.opens },
+                      { label: 'Replies', value: engagement.replies },
+                      { label: 'Clicks', value: engagement.clicks },
+                    ].map((stat) => (
+                      <div key={stat.label} className="p-3">
+                        <p className="text-lg font-semibold tabular-nums">{stat.value}</p>
+                        <p className="text-[11px] text-muted-foreground">{stat.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="flex-1 space-y-4 p-4">
+                  {selectedThread.lead_context?.podcast_name && (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Podcast</p>
+                      <p className="mt-1.5 text-sm">{selectedThread.lead_context.podcast_name}</p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Outreach</p>
+                    <dl className="mt-1.5 space-y-1.5 text-xs">
+                      {selectedThread.campaign?.client && (
+                        <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Client</dt><dd className="text-right font-medium">{selectedThread.campaign.client.name}</dd></div>
+                      )}
+                      {selectedThread.campaign?.campaign_name && (
+                        <div className="flex justify-between gap-2"><dt className="shrink-0 text-muted-foreground">Campaign</dt><dd className="min-w-0 truncate text-right font-medium" title={selectedThread.campaign.campaign_name}>{selectedThread.campaign.campaign_name}</dd></div>
+                      )}
+                      {firstContactedAt && (
+                        <div className="flex justify-between gap-2"><dt className="text-muted-foreground">First contacted</dt><dd className="text-right">{new Date(firstContactedAt).toLocaleDateString()}</dd></div>
+                      )}
+                      {selectedThread.received_at && (
+                        <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Last reply</dt><dd className="text-right">{new Date(selectedThread.received_at).toLocaleDateString()}</dd></div>
+                      )}
+                      {selectedThread.state?.last_nudge_at && (
+                        <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Last nudge</dt><dd className="text-right">{new Date(selectedThread.state.last_nudge_at).toLocaleDateString()}</dd></div>
+                      )}
+                      {selectedThread.eaccount && (
+                        <div className="flex flex-col gap-0.5"><dt className="text-muted-foreground">Sending mailbox</dt><dd className="break-all font-medium" title={selectedThread.eaccount}>{selectedThread.eaccount}</dd></div>
+                      )}
+                    </dl>
+                  </div>
+                  {selectedThread.state?.last_nudge_error && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs leading-5 text-amber-900">
+                      <p className="font-semibold">Nudges stalled</p>
+                      <p className="mt-0.5">{selectedThread.state.last_nudge_error}</p>
+                    </div>
+                  )}
+                </div>
+
                 {selectedThread.campaign?.client && (
-                  <Button asChild variant="outline" size="sm" className="mt-auto">
-                    <Link to={`${baseHref}/clients/${encodeURIComponent(selectedThread.campaign.client.id)}`}>
-                      Open {selectedThread.campaign.client.name.split(' ')[0]}&rsquo;s page
-                    </Link>
-                  </Button>
+                  <div className="border-t p-4">
+                    <Button asChild variant="outline" size="sm" className="w-full">
+                      <Link to={`${baseHref}/clients/${encodeURIComponent(selectedThread.campaign.client.id)}`}>
+                        Open {selectedThread.campaign.client.name.split(' ')[0]}&rsquo;s page
+                      </Link>
+                    </Button>
+                  </div>
                 )}
               </aside>
               </div>

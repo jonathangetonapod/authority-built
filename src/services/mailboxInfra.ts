@@ -84,7 +84,7 @@ export async function getMailboxOrderStatus(
 
 export async function getMailboxInfraOverview(
   workspaceId: string,
-): Promise<{ domains: InfraDomain[]; orders: MailboxOrder[] }> {
+): Promise<{ domains: InfraDomain[]; orders: MailboxOrder[]; winnr_connected?: boolean }> {
   return await invokeMailboxInfra({
     action: 'infra-overview',
     workspace_id: workspaceId,

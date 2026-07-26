@@ -459,6 +459,7 @@ export interface WorkspaceInboxThread {
   is_unread: boolean
   interested: boolean
   lead_email: string
+  lead_id?: string | null
   campaign: {
     campaign_id: string
     campaign_name: string | null
@@ -479,6 +480,8 @@ export interface WorkspaceInboxThread {
     nudges_sent: number
     nudges_paused: boolean
     last_nudge_at: string | null
+    last_nudge_error?: string | null
+    suppressed_at?: string | null
     draft: {
       subject: string
       body: string
@@ -595,6 +598,34 @@ export async function draftWorkspaceInboxReply(
     classification: data.classification ?? null,
     nudges: data.nudges ?? [],
   }
+}
+
+export interface WorkspaceInboxLeadDetail {
+  first_name: string | null
+  last_name: string | null
+  company_name: string | null
+  job_title: string | null
+  website: string | null
+  phone: string | null
+  email: string | null
+  opens: number
+  replies: number
+  clicks: number
+  first_contacted_at: string | null
+  last_contacted_at: string | null
+  last_reply_at: string | null
+}
+
+export async function getWorkspaceInboxLeadDetail(
+  workspaceId: string,
+  leadId: string,
+): Promise<WorkspaceInboxLeadDetail | null> {
+  const data = await invokeWorkspaceCampaigns<{ lead: WorkspaceInboxLeadDetail | null }>({
+    action: 'inbox-lead-detail',
+    workspace_id: workspaceId,
+    lead_id: leadId,
+  }, 'The lead details could not be loaded.')
+  return data.lead ?? null
 }
 
 export async function setWorkspaceInboxThreadStatus(

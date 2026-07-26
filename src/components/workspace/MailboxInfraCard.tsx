@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { CheckCircle2, Download, Flame, Globe, Loader2, Plus, Search, X } from 'lucide-react'
@@ -53,6 +54,9 @@ export const MailboxInfraCard = ({ workspaceId }: MailboxInfraCardProps) => {
   })
   const domains = overviewQuery.data?.domains ?? []
   const orders = overviewQuery.data?.orders ?? []
+  // undefined while loading or on an older function build — only an explicit
+  // false means "no Winnr account connected".
+  const winnrConnected = overviewQuery.data?.winnr_connected
   const processingOrder = orders.find((order) => order.status === 'processing') ?? null
 
   useQuery({
@@ -171,7 +175,7 @@ export const MailboxInfraCard = ({ workspaceId }: MailboxInfraCardProps) => {
         <div>
           <CardTitle className="flex items-center gap-2 text-lg"><Globe className="h-5 w-5 text-primary" />Sending infrastructure</CardTitle>
           <CardDescription className="mt-1 max-w-2xl">
-            No mailboxes yet? Buy dedicated sending domains with warmed mailboxes here — provisioning, DNS, and warmup are handled for you. Warm for 2–3 weeks, then export to Instantly.
+            No mailboxes yet? Buy dedicated sending domains with warmed mailboxes through your connected Winnr account — provisioning, DNS, and warmup are handled for you. Warm for 2–3 weeks, then export to Instantly.
           </CardDescription>
         </div>
         {domains.length > 0 && (
@@ -226,6 +230,18 @@ export const MailboxInfraCard = ({ workspaceId }: MailboxInfraCardProps) => {
         )}
 
         <div className="rounded-xl border border-dashed p-4">
+          {winnrConnected === false && (
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs leading-5 text-amber-900">
+              <span>
+                <span className="font-semibold">A Winnr account is required to buy domains.</span>{' '}
+                Winnr provisions the domains, DNS, and warmed mailboxes. Connect your Winnr API key in
+                workspace settings, then come back to run this wizard.
+              </span>
+              <Button asChild size="sm" variant="outline" className="border-amber-300 bg-background">
+                <Link to="/app/settings">Connect Winnr</Link>
+              </Button>
+            </div>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-semibold">Buy new sending domains</p>
             <ol className="flex items-center gap-1" aria-label="Purchase steps">

@@ -2391,7 +2391,7 @@ serve(async (req) => {
           .limit(5_000),
         context.admin
           .from("workspace_inbox_thread_state")
-          .select("thread_key, client_id, status, classification, draft, nudges_sent, nudges_paused, last_nudge_at")
+          .select("thread_key, client_id, status, classification, draft, nudges_sent, nudges_paused, last_nudge_at, last_nudge_error, suppressed_at")
           .eq("workspace_id", workspaceId)
           .limit(5_000),
       ]);
@@ -2540,6 +2540,7 @@ serve(async (req) => {
           is_unread: email.is_unread === true || email.is_unread === 1,
           interested: interestValue === 1,
           lead_email: text(email.lead, 320) || text(email.from_address_email, 320),
+          lead_id: typeof email.lead_id === "string" ? email.lead_id : null,
           campaign: mapped,
           thread_key: threadKey,
           state: stateRow
@@ -2549,6 +2550,8 @@ serve(async (req) => {
               nudges_sent: typeof stateRow.nudges_sent === "number" ? stateRow.nudges_sent : 0,
               nudges_paused: stateRow.nudges_paused === true,
               last_nudge_at: typeof stateRow.last_nudge_at === "string" ? stateRow.last_nudge_at : null,
+              last_nudge_error: typeof stateRow.last_nudge_error === "string" ? stateRow.last_nudge_error : null,
+              suppressed_at: typeof stateRow.suppressed_at === "string" ? stateRow.suppressed_at : null,
               draft: draftRecord
                 ? {
                   subject: typeof draftRecord.subject === "string" ? draftRecord.subject : "",
@@ -2829,6 +2832,55 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, { success: true, state_recorded: stateRecorded });
     }
 
+
+    if (action === "inbox-lead-detail") {
+      requireOnlyKeys(body, ["action", "workspace_id", "lead_id"]);
+      if (!["owner", "admin", "platform_admin"].includes(access.role)) {
+        throw new HttpError(403, "WORKSPACE_ACCESS_REQUIRED", "Workspace manager access is required");
+      }
+      const leadId = requireUuid(body.lead_id, "lead_id");
+      const connection = await readConnection(context.admin, workspaceId);
+      if (
+        !connection || connection.status !== "connected" ||
+        !connection.api_key_ciphertext || !connection.api_key_iv
+      ) {
+        return jsonResponse(req, METHODS, 200, { lead: null });
+      }
+      const apiKey = await integrationApiKey(connection, false);
+      let lead: Record<string, unknown> | null = null;
+      try {
+        lead = await instantlyRequest<Record<string, unknown>>(apiKey, `/leads/${leadId}`);
+      } catch (error) {
+        // A missing or unreadable lead is an empty panel, never an error page.
+        if (error instanceof InstantlyApiError) {
+          return jsonResponse(req, METHODS, 200, { lead: null });
+        }
+        throw error;
+      }
+      const leadText = (value: unknown, max: number): string | null =>
+        typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null;
+      const leadCount = (value: unknown): number =>
+        typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+      return jsonResponse(req, METHODS, 200, {
+        lead: lead
+          ? {
+            first_name: leadText(lead.first_name, 120),
+            last_name: leadText(lead.last_name, 120),
+            company_name: leadText(lead.company_name, 200),
+            job_title: leadText(lead.job_title, 200),
+            website: leadText(lead.website, 500),
+            phone: leadText(lead.phone, 60),
+            email: leadText(lead.email, 320),
+            opens: leadCount(lead.email_open_count),
+            replies: leadCount(lead.email_reply_count),
+            clicks: leadCount(lead.email_click_count),
+            first_contacted_at: leadText(lead.timestamp_created, 40),
+            last_contacted_at: leadText(lead.timestamp_last_contact, 40),
+            last_reply_at: leadText(lead.timestamp_last_reply, 40),
+          }
+          : null,
+      });
+    }
 
     if (action === "inbox-thread-state") {
       requireOnlyKeys(body, ["action", "workspace_id", "thread_key", "client_id", "status", "nudges_paused"]);

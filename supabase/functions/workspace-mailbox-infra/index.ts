@@ -143,7 +143,20 @@ serve(async (req) => {
     // a workspace key skip platform credits — that workspace pays Winnr.
     const winnrKey = await resolveAiKey(authContext.admin, workspaceId, 'winnr')
     if (!winnrKey) {
-      throw new HttpError(500, 'SERVER_MISCONFIGURED', 'Mailbox infrastructure is not configured')
+      // Purchasing needs a Winnr account; the overview still renders so the
+      // card can explain exactly what to connect.
+      if (action === 'infra-overview') {
+        return jsonResponse(req, METHODS, 200, {
+          winnr_connected: false,
+          domains: [],
+          orders: [],
+        })
+      }
+      throw new HttpError(
+        409,
+        'WINNR_NOT_CONNECTED',
+        'Connect a Winnr account in workspace settings before buying sending domains',
+      )
     }
     const usingWorkspaceKey = winnrKey.source === 'workspace'
 
@@ -381,6 +394,7 @@ serve(async (req) => {
         }
       }))
       return jsonResponse(req, METHODS, 200, {
+        winnr_connected: true,
         domains: detailed,
         orders: ordersResult.data ?? [],
       })
