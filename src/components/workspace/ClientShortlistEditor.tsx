@@ -17,6 +17,7 @@ import {
   Radio,
   RotateCcw,
   Search,
+  Sparkles,
   Star,
   ThumbsDown,
   ThumbsUp,
@@ -53,6 +54,8 @@ import { cn } from '@/lib/utils'
 import {
   addClientShortlistPodcasts,
   getClientShortlist,
+  runClientShortlistEmailSearch,
+  runClientShortlistResearch,
   searchClientPodcastCatalog,
   updateClientShortlistPodcast,
   type ClientShortlistCatalogPodcast,
@@ -173,6 +176,14 @@ export function ClientShortlistEditor({
   const [campaignPrepPodcast, setCampaignPrepPodcast] = useState<ClientShortlistPodcast | null>(null)
   const [operatorNotes, setOperatorNotes] = useState('')
   const [isSavingNotes, setIsSavingNotes] = useState(false)
+  const [prepRun, setPrepRun] = useState<{
+    active: boolean
+    total: number
+    index: number
+    currentName: string | null
+    results: Array<{ id: string; name: string; email: string; research: string }>
+    abortedReason: string | null
+  } | null>(null)
 
   const shortlistQueryKey = ['client-shortlist', workspaceId, clientId] as const
   const shortlistQuery = useQuery({
@@ -217,6 +228,80 @@ export function ClientShortlistEditor({
     rejected: podcasts.filter((podcast) => podcast.visibility === 'visible' && podcast.feedback_status === 'rejected').length,
     notReviewed: podcasts.filter((podcast) => podcast.visibility === 'visible' && !podcast.feedback_status).length,
   }), [podcasts])
+  const prepCandidates = useMemo(() => podcasts.filter((podcast) => {
+    if (podcast.visibility !== 'visible' || podcast.feedback_status !== 'approved' || podcast.prior_outreach_at) return false
+    const needsEmail = podcast.email_unlock?.status !== 'unlocked'
+    const needsResearch = podcast.research_progress
+      ? podcast.research_progress.status !== 'completed' && podcast.research_progress.status !== 'running'
+      : !podcast.ai_analyzed_at
+    return needsEmail || needsResearch
+  }), [podcasts])
+
+  const runPrepareAll = async () => {
+    if (prepRun?.active || prepCandidates.length === 0) return
+    const queue = [...prepCandidates]
+    const results: Array<{ id: string; name: string; email: string; research: string }> = []
+    setPrepRun({ active: true, total: queue.length, index: 0, currentName: queue[0].podcast_name, results: [], abortedReason: null })
+    let abortedReason: string | null = null
+
+    for (let index = 0; index < queue.length; index += 1) {
+      const podcast = queue[index]
+      setPrepRun((current) => current ? { ...current, index, currentName: podcast.podcast_name } : current)
+      let emailOutcome = 'Skipped'
+      let researchOutcome = 'Skipped'
+
+      if (podcast.email_unlock?.status !== 'unlocked') {
+        try {
+          const unlock = await runClientShortlistEmailSearch(workspaceId, clientId, podcast.id)
+          emailOutcome = unlock.status === 'unlocked' ? 'Direct email' : 'No direct email'
+        } catch (error) {
+          const code = error instanceof Error ? error.name : ''
+          if (code === 'INSTANTLY_NOT_CONNECTED') {
+            abortedReason = 'Connect Instantly in Client Campaigns to run the direct-email waterfall, then prepare again.'
+            break
+          }
+          emailOutcome = code === 'EMAIL_SEARCH_ALREADY_RUNNING' ? 'Already running' : 'Search failed'
+        }
+      } else {
+        emailOutcome = 'Already unlocked'
+      }
+
+      const researchDone = podcast.research_progress
+        ? podcast.research_progress.status === 'completed'
+        : Boolean(podcast.ai_analyzed_at)
+      if (!researchDone) {
+        try {
+          await runClientShortlistResearch(workspaceId, clientId, podcast.id)
+          researchOutcome = 'Researched'
+        } catch (error) {
+          const code = error instanceof Error ? error.name : ''
+          if (code === 'INSUFFICIENT_CREDITS') {
+            abortedReason = 'The workspace ran out of credits. Top up in Billing, then prepare again.'
+            results.push({ id: podcast.id, name: podcast.podcast_name, email: emailOutcome, research: 'Needs credits' })
+            break
+          }
+          researchOutcome = code === 'RESEARCH_ALREADY_RUNNING' ? 'Already running' : 'Research failed'
+        }
+      } else {
+        researchOutcome = 'Already researched'
+      }
+
+      results.push({ id: podcast.id, name: podcast.podcast_name, email: emailOutcome, research: researchOutcome })
+      setPrepRun((current) => current ? { ...current, results: [...results] } : current)
+      void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
+    }
+
+    setPrepRun((current) => current
+      ? { ...current, active: false, currentName: null, results: [...results], abortedReason }
+      : current)
+    void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
+    if (abortedReason) {
+      toast.error(abortedReason)
+    } else {
+      toast.success(`Prepared ${results.length} podcast${results.length === 1 ? '' : 's'} for ${clientName}.`)
+    }
+    onChanged?.()
+  }
   const filtered = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
     const matching = podcasts.filter((podcast) => {
@@ -372,7 +457,13 @@ export function ClientShortlistEditor({
             </div>
             <div className="flex flex-wrap gap-2">
               <Button asChild variant="outline"><Link to={databaseHref}><Database className="mr-2 h-4 w-4" />Browse database</Link></Button>
-              <Button onClick={() => setAddOpen(true)}><ListPlus className="mr-2 h-4 w-4" />Quick add</Button>
+              <Button onClick={() => setAddOpen(true)} variant="outline"><ListPlus className="mr-2 h-4 w-4" />Quick add</Button>
+              {viewerRole !== 'member' && prepCandidates.length > 0 && (
+                <Button onClick={() => void runPrepareAll()} disabled={Boolean(prepRun?.active)}>
+                  {prepRun?.active ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                  {prepRun?.active ? 'Preparing…' : `Prepare ${prepCandidates.length} approved`}
+                </Button>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -385,6 +476,46 @@ export function ClientShortlistEditor({
           </div>
         </CardContent>
       </Card>
+
+      {prepRun && (
+        <Card role="status" aria-label="Preparation progress" className={prepRun.abortedReason ? 'border-amber-200' : undefined}>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              {prepRun.active
+                ? <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                : <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
+              {prepRun.active
+                ? `Preparing ${Math.min(prepRun.index + 1, prepRun.total)} of ${prepRun.total} — ${prepRun.currentName}`
+                : prepRun.abortedReason
+                  ? `Preparation stopped after ${prepRun.results.length} of ${prepRun.total}`
+                  : `Prepared ${prepRun.results.length} podcast${prepRun.results.length === 1 ? '' : 's'}`}
+            </CardTitle>
+            <CardDescription>
+              {prepRun.active
+                ? 'Each show gets the direct-email waterfall and the full research pipeline. Leave this page open until it finishes.'
+                : prepRun.abortedReason || 'Every prepared show is ready for its pitch review in Write Pitch.'}
+            </CardDescription>
+          </CardHeader>
+          {prepRun.results.length > 0 && (
+            <CardContent>
+              <ul className="divide-y divide-border/60 text-sm">
+                {prepRun.results.map((result) => (
+                  <li key={result.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                    <span className="min-w-0 flex-1 truncate font-medium">{result.name}</span>
+                    <span className="flex shrink-0 gap-1.5">
+                      <Badge variant="outline" className="font-normal">{result.email}</Badge>
+                      <Badge variant="outline" className="font-normal">{result.research}</Badge>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {!prepRun.active && (
+                <Button variant="ghost" size="sm" className="mt-3 text-muted-foreground" onClick={() => setPrepRun(null)}>Dismiss</Button>
+              )}
+            </CardContent>
+          )}
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="space-y-4">
