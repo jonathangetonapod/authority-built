@@ -2451,6 +2451,9 @@ serve(async (req) => {
         const email = raw as Record<string, unknown>;
         const providerCampaignId = typeof email.campaign_id === "string" ? email.campaign_id : null;
         const mapped = providerCampaignId ? campaignByProviderId.get(providerCampaignId) ?? null : null;
+        // Only replies attributable to a client belong in the Master Inbox —
+        // manual emails and campaigns nobody has claimed stay in Instantly.
+        if (!mapped) return [];
         const bodyRecord = (email.body ?? {}) as Record<string, unknown>;
         const bodyText = text(bodyRecord.text, 2_000)
           || text(bodyRecord.html, 4_000).replace(/<[^>]+>/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 2_000);

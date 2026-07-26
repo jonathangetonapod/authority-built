@@ -406,7 +406,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
         </div>
       </div>
 
-      <div className="grid min-h-[620px] md:grid-cols-[21rem_minmax(0,1fr)]">
+      <div className="grid h-[max(520px,calc(100vh-260px))] md:grid-cols-[21rem_minmax(0,1fr)]">
         <aside className={cn('min-h-0 flex-col border-r bg-muted/10', selectedClient ? 'hidden md:flex' : 'flex')}>
           <div className="flex items-center justify-between border-b px-4 py-3">
             <div>

@@ -39,6 +39,8 @@ assert.match(edge, /action === "client-links-set"[\s\S]*?CAMPAIGN_ALREADY_LINKED
 assert.match(edge, /action === "client-links-set"[\s\S]*?CAMPAIGN_NOT_FOUND/u)
 assert.match(edge, /from\("client_instantly_campaign_links"\)[\s\S]*?\.eq\("workspace_id", workspaceId\)/u)
 assert.match(edge, /const linkRows = linksResult\.error \? \[\] : linksResult\.data \?\? \[\]/u)
+// Only client-attributable replies reach the Master Inbox.
+assert.match(edge, /const mapped = providerCampaignId \? campaignByProviderId\.get\(providerCampaignId\) \?\? null : null;[\s\S]*?if \(!mapped\) return \[\];/u)
 // The inbox list needs no client id and must run before the client parse.
 assert.ok(
   edge.indexOf('if (action === "inbox-list")') < edge.indexOf('const clientId = requireUuid(body.client_id, "client_id")'),

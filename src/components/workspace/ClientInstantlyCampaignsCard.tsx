@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
 import {
   getClientInstantlyCampaignLinks,
   setClientInstantlyCampaignLinks,
@@ -36,6 +37,7 @@ export const ClientInstantlyCampaignsCard = ({
 }: ClientInstantlyCampaignsCardProps) => {
   const queryClient = useQueryClient()
   const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null)
+  const [search, setSearch] = useState('')
 
   const linksQueryKey = ['client-instantly-campaign-links', workspaceId, clientId] as const
   const linksQuery = useQuery({
@@ -132,16 +134,43 @@ export const ClientInstantlyCampaignsCard = ({
           <p className="text-sm text-muted-foreground">
             No campaigns exist in this Instantly workspace yet.
           </p>
-        ) : (
-          <ul className="divide-y" aria-label="Instantly campaigns">
-            {data.provider_campaigns.map((campaign) => {
+        ) : (() => {
+          const query = search.trim().toLowerCase()
+          // Linked campaigns surface first so the client's own list is always
+          // in view; the rest scrolls inside the card.
+          const campaigns = [...data.provider_campaigns]
+            .filter((campaign) => !query || campaign.name.toLowerCase().includes(query))
+            .sort((a, b) => {
+              const aLinked = selection.has(a.id) ? 0 : 1
+              const bLinked = selection.has(b.id) ? 0 : 1
+              return aLinked - bLinked || a.name.localeCompare(b.name)
+            })
+          return (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search campaigns…"
+                  aria-label="Search Instantly campaigns"
+                  className="h-8 w-full sm:w-64"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {selection.size} linked · {data.provider_campaigns.length} campaign{data.provider_campaigns.length === 1 ? '' : 's'} in Instantly
+                </p>
+              </div>
+              {campaigns.length === 0 ? (
+                <p className="py-4 text-center text-sm text-muted-foreground">No campaigns match “{search.trim()}”.</p>
+              ) : (
+                <ul className="max-h-80 divide-y overflow-y-auto rounded-lg border px-3" aria-label="Instantly campaigns">
+                  {campaigns.map((campaign) => {
               const linkedElsewhere = Boolean(
                 (campaign.linked_client_id && campaign.linked_client_id !== clientId)
                 || (campaign.managed_client_id && campaign.managed_client_id !== clientId),
               )
               const checked = selection.has(campaign.id)
               return (
-                <li key={campaign.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                <li key={campaign.id} className="flex items-center gap-3 py-2.5">
                   <Checkbox
                     id={`instantly-campaign-${campaign.id}`}
                     checked={checked}
@@ -169,8 +198,11 @@ export const ClientInstantlyCampaignsCard = ({
                 </li>
               )
             })}
-          </ul>
-        )}
+                </ul>
+              )}
+            </div>
+          )
+        })()}
       </CardContent>
     </Card>
   )
