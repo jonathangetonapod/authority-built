@@ -85,3 +85,60 @@ Deno.test('opt-out detection leaves ordinary replies alone', () => {
     assertEquals(verdict === 'opt_out', false, `${message} -> ${verdict}`)
   }
 })
+
+Deno.test('the send window follows the campaign schedule when one is known', () => {
+  const RealDate = Date
+  const at = (iso: string) => {
+    const fixed = function () { return new RealDate(iso) }
+    fixed.now = () => RealDate.parse(iso)
+    // deno-lint-ignore no-explicit-any
+    ;(globalThis as any).Date = fixed
+  }
+  // Sunday through Thursday, 09:00-17:00 — what the campaign body actually
+  // configures under a Sunday-first reading.
+  const sundayFirst = {
+    from: '09:00',
+    to: '17:00',
+    timezone: 'America/New_York',
+    days: [true, true, true, true, true, false, false],
+  }
+  try {
+    // Sunday 14:00 New York. The old fixed weekday guard refused this outright,
+    // while the campaign itself would have been sending.
+    at('2026-08-02T18:00:00.000Z')
+    assertEquals(withinSendWindow('America/New_York'), false)
+    assertEquals(withinSendWindow('America/New_York', sundayFirst), true)
+
+    // Friday 14:00 New York. The old guard allowed it; this schedule does not.
+    at('2026-07-31T18:00:00.000Z')
+    assertEquals(withinSendWindow('America/New_York'), true)
+    assertEquals(withinSendWindow('America/New_York', sundayFirst), false)
+
+    // Wednesday 08:30 New York sits inside the old 08:00 default but outside a
+    // 09:00 campaign window.
+    at('2026-07-29T12:30:00.000Z')
+    assertEquals(withinSendWindow('America/New_York'), true)
+    assertEquals(withinSendWindow('America/New_York', sundayFirst), false)
+
+    // The schedule's own timezone wins over the campaign column.
+    at('2026-07-29T18:00:00.000Z')
+    assertEquals(
+      withinSendWindow('Asia/Tokyo', { ...sundayFirst, timezone: 'America/New_York' }),
+      true,
+    )
+
+    // Nonsense from the provider must not stop sending forever.
+    assertEquals(
+      withinSendWindow('America/New_York', { ...sundayFirst, from: '17:00', to: '09:00' }),
+      true,
+    )
+    // A partial schedule falls back to the default hours rather than refusing.
+    assertEquals(
+      withinSendWindow('America/New_York', { from: null, to: null, timezone: null, days: [] }),
+      true,
+    )
+  } finally {
+    // deno-lint-ignore no-explicit-any
+    ;(globalThis as any).Date = RealDate
+  }
+})

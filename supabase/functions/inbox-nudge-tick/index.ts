@@ -13,7 +13,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 import { createAdminClient, writeAudit } from '../_shared/workspaceAuth.ts'
-import { withinSendWindow } from '../_shared/inboxSdr.ts'
+import { withinSendWindow, type CampaignSendWindow } from '../_shared/inboxSdr.ts'
 import {
   decryptInstantlyApiKey,
   InstantlyApiError,
@@ -108,6 +108,7 @@ serve(async (req) => {
   let skipped = 0
 
   const timezoneByClient = new Map<string, string>()
+  const windowByClient = new Map<string, CampaignSendWindow | null>()
   let lookups = 0
   for (const raw of (candidates ?? []) as CandidateRow[]) {
     if (totalSent >= MAX_SENDS_PER_TICK) break
@@ -181,15 +182,42 @@ serve(async (req) => {
       if (!timezoneByClient.has(raw.client_id)) {
         const { data: campaignRow } = await admin
           .from('workspace_client_campaigns')
-          .select('timezone')
+          .select('timezone, provider_schedule')
           .eq('workspace_id', raw.workspace_id)
           .eq('client_id', raw.client_id)
           .maybeSingle()
         timezoneByClient.set(raw.client_id, typeof campaignRow?.timezone === 'string' && campaignRow.timezone
           ? campaignRow.timezone
           : 'America/New_York')
+        // The window Instantly actually holds, so a nudge never goes out at a
+        // time the campaign itself would not send.
+        const schedule = campaignRow?.provider_schedule
+        windowByClient.set(
+          raw.client_id,
+          schedule && typeof schedule === 'object' && !Array.isArray(schedule)
+            ? {
+              from: typeof (schedule as Record<string, unknown>).from === 'string'
+                ? (schedule as Record<string, unknown>).from as string
+                : null,
+              to: typeof (schedule as Record<string, unknown>).to === 'string'
+                ? (schedule as Record<string, unknown>).to as string
+                : null,
+              timezone: typeof (schedule as Record<string, unknown>).timezone === 'string'
+                ? (schedule as Record<string, unknown>).timezone as string
+                : null,
+              days: Array.isArray((schedule as Record<string, unknown>).days)
+                ? ((schedule as Record<string, unknown>).days as unknown[]).map((value) => value === true)
+                : [],
+            }
+            : null,
+        )
       }
-      if (!withinSendWindow(timezoneByClient.get(raw.client_id)!)) continue
+      if (
+        !withinSendWindow(
+          timezoneByClient.get(raw.client_id)!,
+          windowByClient.get(raw.client_id) ?? null,
+        )
+      ) continue
 
       // The live thread is the source of truth: the newest message decides
       // whether the host is quiet, and anchors the nudge timing. Fetch a

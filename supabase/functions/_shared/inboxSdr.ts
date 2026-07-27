@@ -33,23 +33,65 @@ export interface SdrReplyPackage {
   body: string
 }
 
+/** The sending window Instantly holds for a campaign, as observed on sync. */
+export interface CampaignSendWindow {
+  from: string | null
+  to: string | null
+  timezone: string | null
+  /** Seven booleans in provider key order; index 0 is treated as Sunday. */
+  days: boolean[]
+}
+
+// Used only when the provider has told us nothing. Deliberately wider than a
+// typical campaign schedule: guessing narrow would silently hold nudges back on
+// a campaign that is in fact sending.
+const DEFAULT_WINDOW = { fromHour: 8, toHour: 18 }
+const WEEKDAY_INDEX: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+}
+
 /**
- * Business-hours guard for anything the platform sends on its own. Mon-Fri,
- * 08:00-17:59 in the campaign's timezone. An unparseable timezone returns
- * true rather than stranding a thread forever — the caller's other gates
- * still apply.
+ * Whether a nudge may go out right now.
+ *
+ * Prefers the campaign's real schedule so this agrees with what Instantly will
+ * actually do. It used to assert weekdays 08:00-18:00 regardless, which could
+ * disagree with the campaign in both directions — holding a nudge during a
+ * window the campaign was sending in, or releasing one outside it.
  */
-export function withinSendWindow(timezone: string): boolean {
+export function withinSendWindow(timezone: string, window?: CampaignSendWindow | null): boolean {
+  const zone = window?.timezone || timezone
   try {
     const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
+      timeZone: zone,
       hour: 'numeric',
+      minute: 'numeric',
       hour12: false,
       weekday: 'short',
     }).formatToParts(new Date())
     const weekday = parts.find((part) => part.type === 'weekday')?.value ?? ''
     const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '-1')
-    return !['Sat', 'Sun'].includes(weekday) && hour >= 8 && hour < 18
+    const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0')
+    if (!Number.isFinite(hour) || hour < 0) return true
+    const minutesNow = hour * 60 + minute
+
+    const dayIndex = WEEKDAY_INDEX[weekday]
+    if (window && window.days.length === 7 && dayIndex !== undefined) {
+      if (!window.days[dayIndex]) return false
+    } else if (['Sat', 'Sun'].includes(weekday)) {
+      return false
+    }
+
+    const parseTime = (value: string | null | undefined): number | null => {
+      if (typeof value !== 'string') return null
+      const match = /^([01][0-9]|2[0-3]):([0-5][0-9])$/.exec(value)
+      return match ? Number(match[1]) * 60 + Number(match[2]) : null
+    }
+    const from = parseTime(window?.from) ?? DEFAULT_WINDOW.fromHour * 60
+    const to = parseTime(window?.to) ?? DEFAULT_WINDOW.toHour * 60
+    // A window that ends before it starts is nonsense; treat it as always open
+    // rather than never, so bad provider data cannot silently stop sending.
+    if (to <= from) return true
+    return minutesNow >= from && minutesNow < to
   } catch (_error) {
     return true
   }

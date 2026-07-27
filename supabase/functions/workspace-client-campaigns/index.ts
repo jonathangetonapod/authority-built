@@ -2787,7 +2787,7 @@ serve(async (req) => {
           .limit(5_000),
         context.admin
           .from("workspace_inbox_thread_state")
-          .select("thread_key, client_id, status, classification, draft, nudges_sent, nudges_paused, last_nudge_at, last_nudge_error, suppressed_at, auto_send_eligible_at, auto_sent_at, auto_send_error")
+          .select("thread_key, client_id, lead_email, podcast_id, status, classification, draft, nudges_sent, nudges_paused, last_nudge_at, last_nudge_error, suppressed_at, auto_send_eligible_at, auto_sent_at, auto_send_error")
           .eq("workspace_id", workspaceId)
           .limit(5_000),
         context.admin
@@ -3106,12 +3106,26 @@ serve(async (req) => {
           podcast_id: typeof target?.podcast_id === "string" ? target.podcast_id : null,
         }];
       });
-      if (relationshipRows.length > 0) {
+      // Only write rows that would actually change. Re-upserting every thread
+      // on every page load is churn against a table the nudge tick reads, and
+      // buys nothing once the identity is recorded.
+      const changedRelationshipRows = relationshipRows.filter((row) => {
+        const existing = stateByThreadKey.get(row.thread_key);
+        if (!existing) return true;
+        return existing.lead_email !== row.lead_email
+          || existing.client_id !== row.client_id
+          || (existing.podcast_id ?? null) !== row.podcast_id;
+      });
+      if (changedRelationshipRows.length > 0) {
         const { error: relationshipStateError } = await context.admin
           .from("workspace_inbox_thread_state")
-          .upsert(relationshipRows, { onConflict: "workspace_id,thread_key" });
+          .upsert(changedRelationshipRows, { onConflict: "workspace_id,thread_key" });
         if (relationshipStateError) {
-          throw new HttpError(503, "THREAD_STATE_UNAVAILABLE", "Reply relationships could not be recorded");
+          // Reading the inbox is the product; recording reply identity is a
+          // side effect of it. Failing the whole list because the side effect
+          // failed takes away the operator's only view of their replies, and
+          // the next load retries it anyway.
+          console.error("[Client Campaigns] Reply relationship capture failed", relationshipStateError.message);
         }
       }
       return jsonResponse(req, METHODS, 200, {
@@ -3256,6 +3270,21 @@ serve(async (req) => {
       }
       const apiKey = await integrationApiKey(connection, false);
 
+      // The sending mailbox arrives from the browser. Bound it to the accounts
+      // this workspace has actually connected, so a crafted request cannot send
+      // from a mailbox the workspace does not own. The snapshot is the same
+      // allowlist campaign launches verify against.
+      const connectedAccounts = new Set(
+        accountsFromSnapshot(connection.accounts_snapshot).map((account) => account.email.toLowerCase()),
+      );
+      if (connectedAccounts.size > 0 && !connectedAccounts.has(eaccount.toLowerCase())) {
+        throw new HttpError(
+          403,
+          "INBOX_SENDER_NOT_CONNECTED",
+          "That sending mailbox is not connected to this workspace",
+        );
+      }
+
       // Do-not-contact is checked on the way out, not only where a pitch is
       // written. The inbox is the one place someone can email a suppressed
       // address by hand — often the very reply that asked us to stop.
@@ -3276,6 +3305,57 @@ serve(async (req) => {
             "This address is on the workspace do-not-contact list. Remove it in Relationships before replying.",
           );
         }
+      }
+
+      // The message being answered also arrives from the browser. Confirm it
+      // belongs to a campaign this workspace has claimed before replying to it,
+      // so the inbox cannot be used to answer arbitrary mail in the connected
+      // Instantly workspace.
+      const [managedCampaignRows, linkedCampaignRows] = await Promise.all([
+        context.admin
+          .from("workspace_client_campaigns")
+          .select("instantly_campaign_id")
+          .eq("workspace_id", workspaceId)
+          .not("instantly_campaign_id", "is", null)
+          .limit(1_000),
+        context.admin
+          .from("client_instantly_campaign_links")
+          .select("instantly_campaign_id")
+          .eq("workspace_id", workspaceId)
+          .limit(1_000),
+      ]);
+      const claimedCampaignIds = new Set<string>();
+      for (
+        const row of [
+          ...((managedCampaignRows.error ? [] : managedCampaignRows.data ?? []) as Array<Record<string, unknown>>),
+          ...((linkedCampaignRows.error ? [] : linkedCampaignRows.data ?? []) as Array<Record<string, unknown>>),
+        ]
+      ) {
+        if (typeof row.instantly_campaign_id === "string" && row.instantly_campaign_id) {
+          claimedCampaignIds.add(row.instantly_campaign_id);
+        }
+      }
+      try {
+        const answering = await instantlyRequest<Record<string, unknown>>(
+          apiKey,
+          `/emails/${encodeURIComponent(replyToId)}`,
+        );
+        const answeringCampaignId = typeof answering?.campaign_id === "string"
+          ? answering.campaign_id
+          : null;
+        if (!answeringCampaignId || !claimedCampaignIds.has(answeringCampaignId)) {
+          throw new HttpError(
+            403,
+            "INBOX_MESSAGE_NOT_ATTRIBUTED",
+            "That message does not belong to a campaign this workspace manages",
+          );
+        }
+      } catch (error) {
+        if (error instanceof HttpError) throw error;
+        // A provider hiccup reading one email must not strand an operator who
+        // is answering a reply the inbox already showed them. The mailbox
+        // allowlist above still bounds what can be sent from.
+        if (!(error instanceof InstantlyApiError)) throw error;
       }
 
       // Send-time gate (server-owned): if the host has said something newer

@@ -221,7 +221,15 @@ assert.match(campaignEdge, /targetByClientEmail = new Map<string, Record<string,
 assert.match(campaignEdge, /if \(current\?\.podcast_id !== row\.podcast_id\) targetByClientEmail\.set\(key, null\)/u)
 assert.match(campaignEdge, /const relationshipRows = dedupedThreads\.flatMap/u)
 assert.match(campaignEdge, /podcast_id: typeof target\?\.podcast_id === "string" \? target\.podcast_id : null/u)
-assert.match(campaignEdge, /\.upsert\(relationshipRows, \{ onConflict: "workspace_id,thread_key" \}\)/u)
+// Only rows whose identity actually changed are written, and a failure to
+// record one never costs the operator their view of the replies themselves.
+assert.match(campaignEdge, /const changedRelationshipRows = relationshipRows\.filter/u)
+assert.match(campaignEdge, /\.upsert\(changedRelationshipRows, \{ onConflict: "workspace_id,thread_key" \}\)/u)
+assert.doesNotMatch(
+  campaignEdge.match(/const changedRelationshipRows[\s\S]*?\n      \}/u)[0],
+  /THREAD_STATE_UNAVAILABLE/u,
+  'reading the inbox must not fail because a side-effect write failed',
+)
 
 // Curated context reaches both the operator and the pitch writer. A manual
 // do-not-contact decision remains a hard gate even if a stale RPC omits it,

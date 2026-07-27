@@ -490,3 +490,21 @@ assert.match(edge, /let truncated = false;/u)
 assert.match(edge, /if \(page === 2\) truncated = true;/u)
 assert.match(edge, /if \(page > 0 && error\.status === 429\) \{\s+truncated = true;/u)
 assert.match(masterInbox, /Showing the most recent replies only/u)
+
+// Inbox replies: both provider-facing inputs arrive from the browser, so both
+// are bounded before anything is sent.
+assert.match(edge, /INBOX_SENDER_NOT_CONNECTED/u)
+assert.match(edge, /connectedAccounts\.size > 0 && !connectedAccounts\.has\(eaccount\.toLowerCase\(\)\)/u)
+assert.match(edge, /INBOX_MESSAGE_NOT_ATTRIBUTED/u)
+assert.ok(
+  replyAction[0].indexOf('INBOX_SENDER_NOT_CONNECTED') < replyAction[0].indexOf('"/emails/reply"')
+    && replyAction[0].indexOf('INBOX_MESSAGE_NOT_ATTRIBUTED') < replyAction[0].indexOf('"/emails/reply"'),
+  'both gates must precede the provider send',
+)
+
+// Nudges follow the campaign's real window, not a fixed weekday assumption
+// that could disagree with it in either direction.
+assert.match(sdrShared, /export function withinSendWindow\(timezone: string, window\?: CampaignSendWindow \| null\)/u)
+assert.match(sdrShared, /if \(to <= from\) return true/u)
+assert.match(nudgeTick, /\.select\('timezone, provider_schedule'\)/u)
+assert.match(nudgeTick, /withinSendWindow\(\s*timezoneByClient\.get\(raw\.client_id\)!,\s*windowByClient\.get\(raw\.client_id\) \?\? null,/u)
