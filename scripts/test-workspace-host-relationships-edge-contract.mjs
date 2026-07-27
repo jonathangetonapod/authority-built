@@ -89,9 +89,14 @@ for (const table of [
 }
 
 // A manual do-not-contact decision participates in the same relationship
-// state read by both the writer and launch gates.
+// state read by both the writer and launch gates. Preparing a campaign target
+// alone is not a relationship: automatic rows begin only after launch, a
+// provider lead exists, an inbox thread is linked, or a booking is recorded.
 assert.match(hardeningMigration, /curated\.manual_stage = 'do_not_contact' THEN 'suppressed'/u)
-assert.match(hardeningMigration, /launched_at IS NOT NULL OR instantly_lead_id IS NOT NULL/u)
+assert.match(
+  hardeningMigration,
+  /FROM public\.workspace_client_campaign_targets[\s\S]*?workspace_id = p_workspace_id[\s\S]*?launched_at IS NOT NULL OR instantly_lead_id IS NOT NULL/u,
+)
 assert.match(hardeningMigration, /FROM public\.bookings b[\s\S]*?b\.status <> 'cancelled'/u)
 assert.match(hardeningMigration, /booking_record\.podcast_name[\s\S]*?booking_record\.host_name/u)
 
@@ -120,6 +125,8 @@ assert.match(pitchSignals, /Relationship note:/u)
 assert.match(masterInbox, /captureHostRelationshipThread/u)
 assert.match(masterInbox, /Save to relationships/u)
 assert.match(page, /Search podcasts, hosts, or emails/u)
+assert.match(page, /RELATIONSHIPS_PER_PAGE = 10/u)
+assert.match(page, /aria-label="Relationship pagination"/u)
 assert.match(page, /value="notes"[\s\S]*?value="threads"[\s\S]*?value="activity"/u)
 assert.match(page, /PodcastArtwork/u)
 assert.match(workspaceNavigation, /name: 'Relationships', segment: 'relationships'/u)

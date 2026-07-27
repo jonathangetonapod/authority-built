@@ -62,6 +62,7 @@ Workspace branding controls the agency name, logo, primary color, and accent col
 | Clients | Available | Client records, command centers, and compact per-client AI SDR Profiles |
 | Client Campaigns | Available with Instantly V2 | Encrypted workspace connection, campaign index, AI research and three-touch sequence generation, explicit launch, activity, analytics sync, and settings |
 | Master Inbox | Available for review and drafting; sending is human-only | Classifies interested replies, stages AI reply-and-nudge packages per the client's SDR mode, and routes them to a person; nothing dispatches automatically |
+| Relationships | Available | Workspace host CRM built from real outreach, replies, bookings, and deliberately curated host context |
 | Mailboxes | Layout preview | Future sending-account health, capacity, and assignment surface |
 | Guest Resources | Available | Workspace-authored resources for all clients or selected clients |
 | Settings | Available to owners/admins | Team access, credentials, branding, agency name, and sidebar order |
@@ -104,6 +105,12 @@ Conversations carry their full context rather than a flattened list. Each thread
 Drafting is governed by the client's SDR mode. Under `auto_draft`, a scheduled tick classifies each new reply that Instantly flagged interested and stages a reply-plus-nudge package for review. Deterministic pre-filters catch opt-outs and autoresponders before any model call, so the cheapest cases cost nothing and an unsubscribe request suppresses the thread rather than drafting at it.
 
 **Sending is human-only.** Automated dispatch was built and then deliberately removed: no mode, tick, or scheduler sends a message on its own, and the nudge scheduler is gated off behind a single named constant. A staged package waits for a person, which means the failure mode of the whole subsystem is "a human does it", never an unexpected email to a host.
+
+### Relationships
+
+Relationships is the workspace's durable host CRM. A show appears automatically only when outreach has actually launched (or a provider lead exists), a Master Inbox thread has been linked, or a non-cancelled booking exists. Merely preparing or saving a podcast inside a draft client campaign does **not** create a relationship. Owners and admins can also add a host deliberately before outreach, record a stage and summary, link clients, log notes, calls, or meetings, and save a useful inbox thread to the same history.
+
+The CRM derives conversation and placement state from recorded activity while preserving manual context such as nurturing, warm, and do-not-contact decisions. Search covers show names, hosts, and contact emails; filters narrow the operational state; and the result list is paginated at ten relationships per page so the workspace remains usable as the book grows. Workspace members can read the context, while relationship curation remains restricted to owners and admins.
 
 ### Mailboxes
 
@@ -173,6 +180,7 @@ See [`docs/subagency-saas-architecture.md`](docs/subagency-saas-architecture.md)
 | `/app/client-campaigns` | Client campaign operations index |
 | `/app/client-campaigns/:clientId` | Client podcast outreach and campaign workspace |
 | `/app/master-inbox` | Future Instantly inbox preview |
+| `/app/relationships` | Workspace host relationship CRM |
 | `/app/mailboxes` | Future Instantly mailbox preview |
 | `/app/guest-resources` | Workspace guest resources |
 | `/app/settings` | Workspace settings, team, branding, and navigation order |
@@ -190,6 +198,7 @@ The same modules are reused under:
 /app/workspaces/:workspaceId/client-campaigns
 /app/workspaces/:workspaceId/client-campaigns/:clientId
 /app/workspaces/:workspaceId/master-inbox
+/app/workspaces/:workspaceId/relationships
 /app/workspaces/:workspaceId/mailboxes
 /app/workspaces/:workspaceId/guest-resources
 /app/workspaces/:workspaceId/settings

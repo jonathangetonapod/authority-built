@@ -253,6 +253,33 @@ describe('WorkspaceRelationships', () => {
     }))
   })
 
+  it('keeps a growing relationship book to ten rows per page and resets pagination for search', async () => {
+    mockedList.mockResolvedValue(Array.from({ length: 13 }, (_, index) => ({
+      ...relationship,
+      podcast_id: `show-${index + 1}`,
+      podcast_name: `Relationship Show ${String(index + 1).padStart(2, '0')}`,
+      host_name: `Host ${index + 1}`,
+      contact_email: `host-${index + 1}@example.com`,
+    })))
+
+    renderPage()
+
+    expect(await screen.findByText('Relationship Show 01')).toBeInTheDocument()
+    expect(screen.getByText('Relationship Show 10')).toBeInTheDocument()
+    expect(screen.queryByText('Relationship Show 11')).not.toBeInTheDocument()
+    expect(screen.getByText('Showing 1–10 of 13 relationships')).toBeInTheDocument()
+    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    expect(screen.getByText('Relationship Show 11')).toBeInTheDocument()
+    expect(screen.queryByText('Relationship Show 01')).not.toBeInTheDocument()
+    expect(screen.getByText('Showing 11–13 of 13 relationships')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Search relationships'), { target: { value: 'Show 01' } })
+    expect(screen.getByText('Relationship Show 01')).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Relationship pagination' })).not.toBeInTheDocument()
+  })
+
   it('gives ordinary members relationship context without mutation controls', async () => {
     mockedUseAuth.mockReturnValue({
       user: { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },

@@ -6,6 +6,7 @@ import {
   Ban,
   BookUser,
   CalendarDays,
+  ChevronLeft,
   ChevronRight,
   Clock3,
   Handshake,
@@ -60,6 +61,7 @@ import {
 } from '@/services/hostRelationships'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const RELATIONSHIPS_PER_PAGE = 10
 
 /** How each derived state reads to an operator scanning the book. */
 const STATE_VIEW: Record<HostRelationshipDerivedState, { label: string; className: string }> = {
@@ -204,6 +206,7 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [relationshipFilter, setRelationshipFilter] = useState<RelationshipFilter>('all')
+  const [relationshipPage, setRelationshipPage] = useState(1)
   const [openPodcastId, setOpenPodcastId] = useState<string | null>(null)
   const [activeView, setActiveView] = useState<RelationshipView>('overview')
   const [threadSearch, setThreadSearch] = useState('')
@@ -251,7 +254,7 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
   const relationships = useMemo(() => bookQuery.data ?? [], [bookQuery.data])
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
-    const matches = relationships.filter((row) => (
+    return relationships.filter((row) => (
       (
         relationshipFilter === 'all'
         || (relationshipFilter === 'active' && ['in_conversation', 'replied'].includes(row.derived_state))
@@ -266,11 +269,14 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
         || (row.contact_email ?? '').toLowerCase().includes(term)
       )
     ))
-    if (!openPodcastId) return matches
-    return matches.sort((left, right) => (
-      Number(right.podcast_id === openPodcastId) - Number(left.podcast_id === openPodcastId)
-    ))
-  }, [openPodcastId, relationshipFilter, relationships, search])
+  }, [relationshipFilter, relationships, search])
+  const relationshipPageCount = Math.max(1, Math.ceil(filtered.length / RELATIONSHIPS_PER_PAGE))
+  const currentRelationshipPage = Math.min(relationshipPage, relationshipPageCount)
+  const relationshipPageStart = (currentRelationshipPage - 1) * RELATIONSHIPS_PER_PAGE
+  const visibleRelationships = filtered.slice(
+    relationshipPageStart,
+    relationshipPageStart + RELATIONSHIPS_PER_PAGE,
+  )
 
   // Live and warm relationships are the ones worth acting on; count them so
   // the header answers "what do we have" before any scrolling.
@@ -481,10 +487,21 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
               placeholder="Search podcasts, hosts, or emails"
               className="pl-9"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => {
+                setSearch(event.target.value)
+                setRelationshipPage(1)
+                setOpenPodcastId(null)
+              }}
             />
           </div>
-          <Select value={relationshipFilter} onValueChange={(value) => setRelationshipFilter(value as RelationshipFilter)}>
+          <Select
+            value={relationshipFilter}
+            onValueChange={(value) => {
+              setRelationshipFilter(value as RelationshipFilter)
+              setRelationshipPage(1)
+              setOpenPodcastId(null)
+            }}
+          >
             <SelectTrigger aria-label="Filter relationships" className="w-full sm:w-48"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All relationships</SelectItem>
@@ -525,7 +542,7 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
         )}
 
         <div className="grid items-start gap-3 xl:grid-cols-[22rem_minmax(0,1fr)]">
-          {filtered.map((row: HostRelationshipSummary) => {
+          {visibleRelationships.map((row: HostRelationshipSummary) => {
             const view = STATE_VIEW[row.derived_state] ?? STATE_VIEW.none
             const manualView = row.manual_stage ? MANUAL_STAGE_VIEW[row.manual_stage] : null
             const open = row.podcast_id === openPodcastId
@@ -935,6 +952,46 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
             )
           })}
         </div>
+
+        {filtered.length > RELATIONSHIPS_PER_PAGE && (
+          <nav
+            aria-label="Relationship pagination"
+            className="flex flex-col gap-3 rounded-xl border bg-muted/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <p className="text-sm text-muted-foreground">
+              Showing {relationshipPageStart + 1}–{Math.min(relationshipPageStart + RELATIONSHIPS_PER_PAGE, filtered.length)} of {filtered.length} relationships
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={currentRelationshipPage === 1}
+                onClick={() => {
+                  setRelationshipPage(currentRelationshipPage - 1)
+                  setOpenPodcastId(null)
+                }}
+              >
+                <ChevronLeft className="mr-1 h-4 w-4" />Previous
+              </Button>
+              <span className="min-w-20 text-center text-sm text-muted-foreground">
+                Page {currentRelationshipPage} of {relationshipPageCount}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={currentRelationshipPage === relationshipPageCount}
+                onClick={() => {
+                  setRelationshipPage(currentRelationshipPage + 1)
+                  setOpenPodcastId(null)
+                }}
+              >
+                Next<ChevronRight className="ml-1 h-4 w-4" />
+              </Button>
+            </div>
+          </nav>
+        )}
 
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
           <DialogContent className="sm:max-w-xl">
