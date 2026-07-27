@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { CheckCircle2, Circle, ExternalLink, Headphones, Loader2, Star, Trash2 } from 'lucide-react'
+import { CalendarPlus, CheckCircle2, Circle, ExternalLink, Headphones, Loader2, Star, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useClientPortal } from '@/contexts/ClientPortalContext'
+import { googleCalendarUrl } from '@/lib/calendarLinks'
 import { safeExternalUrl } from '@/lib/externalUrl'
 import { removePortalCalendarEvent, type PortalExperienceBooking } from '@/services/clientPortal'
 
@@ -49,6 +50,23 @@ const timelineSteps = (booking: PortalExperienceBooking): TimelineStep[] => {
     { label: 'Recording', date: booking.recording_date, done: reached(['recorded', 'published']) },
     { label: 'Episode live', date: booking.publish_date, done: reached(['published']) },
   ]
+}
+
+// Only real, still-relevant dates are worth offering: a cancelled placement or
+// an unset date would export an event the client then has to delete by hand.
+const calendarTargets = (booking: PortalExperienceBooking): Array<{ key: string; label: string; day: string }> => {
+  if (booking.status === 'cancelled') return []
+  const recording = isoDay(booking.recording_date || booking.scheduled_date)
+  const release = isoDay(booking.publish_date)
+  return [
+    ...(recording ? [{ key: 'recording', label: 'Recording', day: recording }] : []),
+    ...(release ? [{ key: 'release', label: 'Episode live', day: release }] : []),
+  ]
+}
+
+const isoDay = (value: string | null | undefined): string | null => {
+  if (!value) return null
+  return /^\d{4}-\d{2}-\d{2}/u.test(value) ? value.slice(0, 10) : null
 }
 
 interface BookingDetailDialogProps {
@@ -150,6 +168,37 @@ export function BookingDetailDialog({ booking, onOpenChange, onRemoved }: Bookin
                   {removeMutation.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-2 h-3.5 w-3.5" />}
                   {confirmingRemove ? 'Confirm remove' : 'Remove'}
                 </Button>
+              </div>
+            )}
+
+            {calendarTargets(booking).length > 0 && (
+              <div className="rounded-lg border bg-muted/10 p-3">
+                <p className="text-xs font-medium text-muted-foreground">Add to your calendar</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {calendarTargets(booking).map((target) => {
+                    const url = googleCalendarUrl({
+                      title: `${target.label}: ${booking.podcast_name}`,
+                      day: target.day,
+                      details: [
+                        booking.host_name ? `Hosted by ${booking.host_name}` : '',
+                        podcastUrl ? `Podcast: ${podcastUrl}` : '',
+                      ].filter(Boolean).join('\n') || null,
+                    })
+                    if (!url) return null
+                    return (
+                      <Button key={target.key} asChild variant="outline" size="sm">
+                        <a href={url} target="_blank" rel="noreferrer">
+                          <CalendarPlus className="mr-2 h-3.5 w-3.5" />
+                          {target.label}
+                          <span className="ml-1.5 text-muted-foreground">{displayDate(target.day)}</span>
+                        </a>
+                      </Button>
+                    )
+                  })}
+                </div>
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Opens Google Calendar with the details filled in — it is saved once you confirm there.
+                </p>
               </div>
             )}
 

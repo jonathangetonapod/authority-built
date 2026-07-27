@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render as rtlRender, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PortalCalendar from '@/pages/portal/Calendar'
+import { BookingDetailDialog } from '@/components/portal/BookingDetailDialog'
 
 const render = (ui: React.ReactElement) => rtlRender(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -92,6 +93,41 @@ describe('PortalCalendar', () => {
 
     expect(await screen.findByText('Hosted by Jamie Rivera')).toBeInTheDocument()
     expect(screen.getByLabelText('Placement timeline')).toBeInTheDocument()
+  })
+
+  it('offers a Google Calendar link for the dates on a placement', async () => {
+    render(<PortalCalendar />)
+
+    const items = await screen.findAllByText('Founder Stories')
+    fireEvent.click(items[items.length - 1])
+
+    const link = (await screen.findByText('Add to your calendar'))
+      .closest('div')!
+      .querySelector('a') as HTMLAnchorElement
+    const url = new URL(link.href)
+
+    expect(url.origin + url.pathname).toBe('https://calendar.google.com/calendar/render')
+    expect(url.searchParams.get('text')).toBe('Recording: Founder Stories')
+    expect(url.searchParams.get('details')).toContain('Jamie Rivera')
+    // The client leaves the portal to confirm the save on Google's side.
+    expect(link.target).toBe('_blank')
+  })
+
+  // Driven through the dialog rather than the page: a cancelled placement is
+  // filtered out of the grid entirely, so there is no chip left to open it
+  // with, and the guard would go untested from here.
+  it('offers no calendar link for a cancelled placement', () => {
+    const cancelled = booking({
+      id: 'b11',
+      podcast_name: 'Dropped Show',
+      recording_date: isoInDays(2),
+      status: 'cancelled',
+    })
+
+    render(<BookingDetailDialog booking={cancelled} onOpenChange={() => {}} />)
+
+    expect(screen.getByText('Dropped Show')).toBeInTheDocument()
+    expect(screen.queryByText('Add to your calendar')).not.toBeInTheDocument()
   })
 
   it('navigates between months', async () => {
