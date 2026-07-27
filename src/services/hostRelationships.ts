@@ -249,3 +249,58 @@ export async function unlinkHostRelationshipClient(
     client_id: input.clientId,
   }, 'The client could not be removed from this host.')
 }
+
+/** Why an address is silenced. An opt-out is the host's decision, not ours. */
+export type OutreachSuppressionReason = 'opted_out' | 'bounced' | 'manual'
+
+export interface OutreachSuppression {
+  contact_email: string
+  reason: OutreachSuppressionReason
+  /** 'inbox_auto' came from the reply prefilter; 'manual' from an operator. */
+  source: 'inbox_auto' | 'manual'
+  note: string | null
+  created_at: string
+  created_by_email: string | null
+  host_name: string | null
+  podcast_name: string | null
+  podcast_id: string | null
+  touch_count: number
+}
+
+export async function listOutreachSuppressions(workspaceId: string): Promise<OutreachSuppression[]> {
+  const data = await invokeHostRelationships<{ suppressions: OutreachSuppression[] }>(
+    { action: 'suppression-list', workspace_id: workspaceId.toLowerCase() },
+    'The do-not-contact list could not be loaded.',
+  )
+  return Array.isArray(data.suppressions) ? data.suppressions : []
+}
+
+export async function addOutreachSuppression(
+  workspaceId: string,
+  input: { contactEmail: string; reason?: OutreachSuppressionReason; note?: string | null },
+): Promise<void> {
+  await invokeHostRelationships({
+    action: 'suppression-add',
+    workspace_id: workspaceId.toLowerCase(),
+    contact_email: input.contactEmail,
+    reason: input.reason ?? 'manual',
+    note: input.note ?? null,
+  }, 'The address could not be added to the do-not-contact list.')
+}
+
+/**
+ * Reinstating means this platform will email someone recorded as not wanting
+ * to hear from us, so the note is required rather than optional — it is what
+ * the audit log carries alongside the deleted row's original evidence.
+ */
+export async function removeOutreachSuppression(
+  workspaceId: string,
+  input: { contactEmail: string; note: string },
+): Promise<void> {
+  await invokeHostRelationships({
+    action: 'suppression-remove',
+    workspace_id: workspaceId.toLowerCase(),
+    contact_email: input.contactEmail,
+    note: input.note,
+  }, 'The address could not be removed from the do-not-contact list.')
+}

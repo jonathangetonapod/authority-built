@@ -2,11 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { supabase } from '@/lib/supabase'
 import {
   addHostRelationshipNote,
+  addOutreachSuppression,
   captureHostRelationshipThread,
   createHostRelationship,
   getHostRelationship,
   linkHostRelationshipClient,
   listHostRelationships,
+  listOutreachSuppressions,
+  removeOutreachSuppression,
   saveHostRelationship,
   unlinkHostRelationshipClient,
 } from '@/services/hostRelationships'
@@ -198,6 +201,66 @@ describe('hostRelationships service', () => {
         contact_email: 'unknown-host@example.com',
         thread_key: 'thread-two',
       }),
+    })
+  })
+
+  it('reads the do-not-contact list and adds an address workspace-wide', async () => {
+    const suppression = {
+      contact_email: 'host@example.com',
+      reason: 'opted_out',
+      source: 'inbox_auto',
+      note: 'Detected in a reply',
+      created_at: '2026-07-20T12:00:00.000Z',
+      created_by_email: null,
+      host_name: 'Morgan Host',
+      podcast_name: 'Founder & Operator',
+      podcast_id: 'show-one',
+      touch_count: 3,
+    }
+    invoke
+      .mockResolvedValueOnce({ data: { suppressions: [suppression] }, error: null } as never)
+      .mockResolvedValueOnce({ data: { suppressed: true }, error: null } as never)
+
+    await expect(listOutreachSuppressions(workspaceId)).resolves.toEqual([suppression])
+    await addOutreachSuppression(workspaceId, {
+      contactEmail: 'other@example.com',
+      reason: 'bounced',
+    })
+
+    expect(invoke).toHaveBeenNthCalledWith(1, 'workspace-host-relationships', {
+      body: { action: 'suppression-list', workspace_id: canonicalWorkspaceId },
+    })
+    expect(invoke).toHaveBeenNthCalledWith(2, 'workspace-host-relationships', {
+      body: {
+        action: 'suppression-add',
+        workspace_id: canonicalWorkspaceId,
+        contact_email: 'other@example.com',
+        reason: 'bounced',
+        note: null,
+      },
+    })
+  })
+
+  it('treats a missing suppressions array as an empty list rather than a crash', async () => {
+    invoke.mockResolvedValueOnce({ data: {}, error: null } as never)
+    await expect(listOutreachSuppressions(workspaceId)).resolves.toEqual([])
+  })
+
+  it('sends the required reason when reinstating a suppressed address', async () => {
+    invoke.mockResolvedValue({ data: { removed: true }, error: null } as never)
+
+    await removeOutreachSuppression(workspaceId, {
+      contactEmail: 'host@example.com',
+      note: 'The reply unsubscribed from their newsletter, not from us.',
+    })
+
+    expect(invoke).toHaveBeenCalledWith('workspace-host-relationships', {
+      body: {
+        action: 'suppression-remove',
+        workspace_id: canonicalWorkspaceId,
+        contact_email: 'host@example.com',
+        note: 'The reply unsubscribed from their newsletter, not from us.',
+      },
     })
   })
 })

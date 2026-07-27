@@ -32,6 +32,9 @@ const MANAGER_ROLES = new Set(['owner', 'admin', 'platform_admin'])
 const MANUAL_STAGES = new Set(['nurturing', 'warm', 'do_not_contact'])
 const EVENT_KINDS = new Set(['note', 'call', 'meeting'])
 const CLIENT_INTENTS = new Set(['considering', 'pitched', 'placed', 'declined', 'ruled_out'])
+// An operator may record any of these; only the inbox prefilter writes
+// 'inbox_auto' as a source, so a manual add can never impersonate one.
+const SUPPRESSION_REASONS = new Set(['opted_out', 'bounced', 'manual'])
 
 function podcastId(value: unknown): string {
   const id = requireString(value, 'podcast_id', { max: 200 })
@@ -856,6 +859,111 @@ serve(async (req) => {
         entityType: 'podcast',
         entityId: null,
         metadata: { podcast_id: showId, client_id: clientId },
+      })
+      return jsonResponse(req, METHODS, 200, { removed: true })
+    }
+
+    // The do-not-contact list. An opt-out is directed at the sender, so a
+    // single entry silences the address for every client in the workspace. Any
+    // member may read it — knowing not to pitch someone is part of the job —
+    // while adding and, above all, removing are manager decisions.
+    if (action === 'suppression-list') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'limit'])
+      const limit = typeof body.limit === 'number' && Number.isInteger(body.limit)
+        ? Math.max(1, Math.min(body.limit, 1_000))
+        : 500
+      const { data, error } = await admin.rpc('workspace_outreach_suppression_list_v1', {
+        p_workspace_id: workspaceId,
+        p_limit: limit,
+      })
+      if (error) {
+        throw new HttpError(500, 'SUPPRESSION_LIST_FAILED', 'The do-not-contact list could not be loaded')
+      }
+      return jsonResponse(req, METHODS, 200, { suppressions: data ?? [] })
+    }
+
+    if (action === 'suppression-add') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'contact_email', 'reason', 'note'])
+      requireManager()
+      const contactEmail = requireEmail(body.contact_email)
+      const reason = body.reason === undefined || body.reason === null || body.reason === ''
+        ? 'manual'
+        : requireString(body.reason, 'reason', { max: 20 })
+      if (!SUPPRESSION_REASONS.has(reason)) {
+        throw new HttpError(400, 'INVALID_FIELD', 'reason must be opted_out, bounced, or manual')
+      }
+      // Adding is idempotent and never overwrites an existing entry: the
+      // original row dates the opt-out, which is the fact that matters if it is
+      // ever questioned, and the inbox prefilter's evidence outranks a later
+      // manual note.
+      const { error } = await admin
+        .from('workspace_outreach_suppressions')
+        .upsert({
+          workspace_id: workspaceId,
+          contact_email: contactEmail,
+          reason,
+          source: 'manual',
+          note: optionalString(body.note, 'note', 1_000),
+          created_by: authContext.user.id,
+        }, { onConflict: 'workspace_id,contact_email', ignoreDuplicates: true })
+      if (error) {
+        throw new HttpError(500, 'SUPPRESSION_ADD_FAILED', 'The address could not be added to the do-not-contact list')
+      }
+      await writeAudit(admin, {
+        workspaceId,
+        actorUserId: authContext.user.id,
+        action: 'workspace.outreach_suppression.added',
+        entityType: 'outreach_suppression',
+        entityId: null,
+        metadata: { contact_email: contactEmail, reason },
+      })
+      return jsonResponse(req, METHODS, 200, { suppressed: true })
+    }
+
+    if (action === 'suppression-remove') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'contact_email', 'note'])
+      requireManager()
+      const contactEmail = requireEmail(body.contact_email)
+      // Reinstating an address means this platform will email someone it has
+      // recorded as not wanting to hear from us. That is the one action here
+      // worth making a person write down a reason for, and the deleted row's
+      // own evidence is preserved in the audit metadata so the original
+      // decision survives the row that carried it.
+      const note = requireString(body.note, 'note', { min: 4, max: 1_000 })
+      const { data: existing, error: readError } = await admin
+        .from('workspace_outreach_suppressions')
+        .select('contact_email, reason, source, note, created_at')
+        .eq('workspace_id', workspaceId)
+        .eq('contact_email', contactEmail)
+        .maybeSingle()
+      if (readError) {
+        throw new HttpError(500, 'SUPPRESSION_REMOVE_FAILED', 'The do-not-contact entry could not be read')
+      }
+      if (!existing) {
+        throw new HttpError(404, 'SUPPRESSION_NOT_FOUND', 'That address is not on the do-not-contact list')
+      }
+      const { error } = await admin
+        .from('workspace_outreach_suppressions')
+        .delete()
+        .eq('workspace_id', workspaceId)
+        .eq('contact_email', contactEmail)
+      if (error) {
+        throw new HttpError(500, 'SUPPRESSION_REMOVE_FAILED', 'The address could not be removed from the do-not-contact list')
+      }
+      await writeAudit(admin, {
+        workspaceId,
+        actorUserId: authContext.user.id,
+        action: 'workspace.outreach_suppression.removed',
+        entityType: 'outreach_suppression',
+        entityId: null,
+        metadata: {
+          contact_email: contactEmail,
+          removal_note: note,
+          original_reason: existing.reason,
+          original_source: existing.source,
+          original_note: existing.note,
+          suppressed_at: existing.created_at,
+        },
       })
       return jsonResponse(req, METHODS, 200, { removed: true })
     }

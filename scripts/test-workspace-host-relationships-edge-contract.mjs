@@ -26,6 +26,14 @@ const legacyOutreachMigration = readFileSync(
   'supabase/migrations/20260728001100_relationship_legacy_outreach.sql',
   'utf8',
 )
+const suppressionMigration = readFileSync(
+  'supabase/migrations/20260728001200_outreach_suppression_management.sql',
+  'utf8',
+)
+const suppressionDialog = readFileSync(
+  'src/components/workspace/OutreachSuppressionsDialog.tsx',
+  'utf8',
+)
 const enrollTick = readFileSync('supabase/functions/inbox-enroll-tick/index.ts', 'utf8')
 const campaignEdge = readFileSync('supabase/functions/workspace-client-campaigns/index.ts', 'utf8')
 const shortlistEdge = readFileSync('supabase/functions/workspace-client-shortlist/index.ts', 'utf8')
@@ -265,6 +273,57 @@ assert.match(page, /value="notes"[\s\S]*?value="threads"[\s\S]*?value="activity"
 assert.match(page, /PodcastArtwork/u)
 assert.match(workspaceNavigation, /name: 'Relationships', segment: 'relationships'/u)
 assert.match(adminNavigation, /name: 'Relationships', href: '\/app\/relationships'/u)
+
+// The do-not-contact list. Every lookup compares a lower(btrim(...)) address,
+// so a free-form column would let a hand-typed entry suppress nothing at all
+// and say nothing about it. The constraint is what makes that unrepresentable.
+assert.match(
+  suppressionMigration,
+  /ADD CONSTRAINT workspace_outreach_suppressions_email_normalized_check\s+CHECK \(contact_email = lower\(btrim\(contact_email\)\) AND contact_email <> ''\)/u,
+)
+// Case-variant rows are folded into the earliest entry before the constraint
+// can collide them: the earliest is the one that dates the opt-out.
+assert.match(suppressionMigration, /DELETE FROM public\.workspace_outreach_suppressions doomed[\s\S]*?\(doomed\.created_at, doomed\.contact_email\) > \(kept\.created_at, kept\.contact_email\)/u)
+for (const [column, allowed] of [['reason', "'opted_out', 'bounced', 'manual'"], ['source', "'inbox_auto', 'manual'"]]) {
+  // Normalized first so the constraint cannot fail on existing data.
+  assert.match(suppressionMigration, new RegExp(`SET ${column} = 'manual'\\s+WHERE ${column} NOT IN \\(${allowed}\\)`, 'u'))
+  assert.match(suppressionMigration, new RegExp(`CHECK \\(${column} IN \\(${allowed}\\)\\)`, 'u'))
+}
+assert.match(suppressionMigration, /CREATE OR REPLACE FUNCTION public\.workspace_outreach_suppression_list_v1/u)
+assert.match(suppressionMigration, /GRANT EXECUTE ON FUNCTION public\.workspace_outreach_suppression_list_v1\(UUID, INTEGER\) TO service_role/u)
+
+// Reading is a member action; changing the list is not.
+assert.match(edge, /if \(action === 'suppression-list'\)[\s\S]*?workspace_outreach_suppression_list_v1/u)
+for (const action of ['suppression-add', 'suppression-remove']) {
+  assert.match(
+    edge,
+    new RegExp(`if \\(action === '${action}'\\)[\\s\\S]*?requireManager\\(\\)`, 'u'),
+    `${action} must require workspace manager access`,
+  )
+}
+assert.doesNotMatch(
+  edge.match(/if \(action === 'suppression-list'\)[\s\S]*?\n    \}/u)[0],
+  /requireManager\(\)/u,
+  'every member may read who must not be contacted',
+)
+// A manual add can never claim the inbox prefilter's authority, and it never
+// overwrites an existing row: the original entry dates the opt-out.
+assert.match(edge, /if \(action === 'suppression-add'\)[\s\S]*?source: 'manual',[\s\S]*?ignoreDuplicates: true/u)
+assert.match(edge, /const SUPPRESSION_REASONS = new Set\(\['opted_out', 'bounced', 'manual'\]\)/u)
+// Reinstating means emailing someone recorded as not wanting to hear from us.
+// The reason is mandatory, and the deleted row's evidence outlives the row.
+assert.match(
+  edge,
+  /if \(action === 'suppression-remove'\)[\s\S]*?requireString\(body\.note, 'note', \{ min: 4, max: 1_000 \}\)/u,
+)
+assert.match(
+  edge,
+  /action: 'workspace\.outreach_suppression\.removed'[\s\S]*?original_reason: existing\.reason,[\s\S]*?original_note: existing\.note,[\s\S]*?suppressed_at: existing\.created_at/u,
+)
+assert.match(service, /export async function removeOutreachSuppression[\s\S]*?input: \{ contactEmail: string; note: string \}/u)
+assert.match(suppressionDialog, /disabled=\{reinstateNote\.trim\(\)\.length < 4 \|\| removeMutation\.isPending\}/u)
+assert.match(suppressionDialog, /An opt-out is directed at your agency, not at one campaign/u)
+assert.match(page, /Do not contact<\/Button>|<MailX className="mr-2 h-4 w-4" \/>Do not contact/u)
 
 assert.match(config, /\[functions\.workspace-host-relationships\]\s+verify_jwt = true/u)
 assert.match(service, /functions\.invoke\('workspace-host-relationships'/u)

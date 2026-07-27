@@ -12,6 +12,7 @@ import {
   Handshake,
   Loader2,
   Mail,
+  MailX,
   MessageSquare,
   Mic,
   NotebookPen,
@@ -22,6 +23,7 @@ import {
   UserRoundPlus,
   Users,
 } from 'lucide-react'
+import { OutreachSuppressionsDialog } from '@/components/workspace/OutreachSuppressionsDialog'
 import {
   WorkspaceLayout,
   type PlatformWorkspaceConfig,
@@ -245,6 +247,7 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
   const [selectedClientId, setSelectedClientId] = useState('')
   const [clientIntent, setClientIntent] = useState<HostRelationshipClientIntent>('considering')
   const [addOpen, setAddOpen] = useState(false)
+  const [suppressionsOpen, setSuppressionsOpen] = useState(false)
   const [newShowName, setNewShowName] = useState('')
   const [newHostName, setNewHostName] = useState('')
   const [newContactEmail, setNewContactEmail] = useState('')
@@ -492,11 +495,16 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
               <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-900">{counts.placed} placed</Badge>
               <Badge variant="outline" className="border-violet-200 bg-violet-50 text-violet-900">{counts.engaged} engaged</Badge>
             </div>
-            {canManage && (
-              <Button type="button" size="sm" onClick={() => setAddOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />Add relationship
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" size="sm" variant="outline" onClick={() => setSuppressionsOpen(true)}>
+                <MailX className="mr-2 h-4 w-4" />Do not contact
               </Button>
-            )}
+              {canManage && (
+                <Button type="button" size="sm" onClick={() => setAddOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />Add relationship
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1029,6 +1037,13 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
             </div>
           </nav>
         )}
+
+        <OutreachSuppressionsDialog
+          workspaceId={workspaceId}
+          canManage={canManage}
+          open={suppressionsOpen}
+          onOpenChange={setSuppressionsOpen}
+        />
 
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
           <DialogContent className="sm:max-w-xl">
