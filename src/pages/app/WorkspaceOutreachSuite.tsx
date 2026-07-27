@@ -489,14 +489,6 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
           </>
         )}
 
-        {module === 'master-inbox' && (
-          <div className="flex items-start gap-3 rounded-2xl border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
-            <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-            <p className="leading-6">
-              Client AI SDR profiles are live and workspace-scoped. Conversation syncing, drafting, and sending remain disabled here until the workspace-safe Instantly inbox boundary is released.
-            </p>
-          </div>
-        )}
       </div>
     </WorkspaceLayout>
   )

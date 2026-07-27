@@ -832,7 +832,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                   {captureRelationshipMutation.isPending
                     ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
                     : <BookUser className="mr-2 h-3.5 w-3.5" />}
-                  {selectedThread.relationship ? 'Update saved conversation' : 'Save to relationships'}
+                  {selectedThread.relationship ? 'Update relationship' : 'Save to relationships'}
                 </Button>
               )}
               <Badge variant="outline" className="text-muted-foreground">{selectedThread ? (selectedThread.campaign?.client?.name || 'Unmapped reply') : selectedClient?.name || 'No conversation selected'}</Badge>
@@ -963,6 +963,17 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                         {draftedForThread === selectedThread.id ? 'Redraft with AI' : 'Draft with AI'}
                       </Button>
                     </div>
+                    {/* A disabled control has to say why where it sits. The
+                        banner above explains it, but a greyed button with the
+                        reason somewhere else reads as broken, not as blocked. */}
+                    {threadClient && !threadClient.ai_sdr_profile_ready && (
+                      <p className="-mt-1 text-xs leading-5 text-muted-foreground">
+                        <span className="font-medium text-foreground">Drafting is off</span> because{' '}
+                        {threadClient.name}&rsquo;s AI SDR profile is incomplete
+                        {missingSdrFields.length > 0 ? ` (${missingSdrFields.join(', ')})` : ''}. Writing a reply
+                        yourself still works.
+                      </p>
+                    )}
                     {/* Shown, not editable: the subject is what keeps this
                         reply in the host's existing thread. */}
                     <div

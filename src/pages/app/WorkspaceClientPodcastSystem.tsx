@@ -34,6 +34,7 @@ import { WorkspaceLayout, type PlatformWorkspaceConfig } from '@/components/work
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ClientActivityCalendar } from '@/components/workspace/ClientActivityCalendar'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -405,13 +406,16 @@ function ProfileProgress({ client }: { client: ClientPodcastSystemClient }) {
 
 function AllClientsView({
   rollups,
+  items,
   baseHref,
   onChooseClient,
 }: {
   rollups: ClientRollup[]
+  items: ClientPodcastSystemItem[]
   baseHref: string
   onChooseClient: (clientId: string) => void
 }) {
+  const [portfolioView, setPortfolioView] = useState<'clients' | 'calendar'>('clients')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<ClientStatusFilter>('all')
   const normalizedSearch = search.trim().toLowerCase()
@@ -438,6 +442,17 @@ function AllClientsView({
         <PortfolioMetric icon={Radio} label="Published episodes" value={rollups.reduce((sum, rollup) => sum + rollup.published, 0)} detail="Recorded client outcomes" className="bg-violet-50 text-violet-700" />
       </section>
 
+      <Tabs value={portfolioView} onValueChange={(value) => setPortfolioView(value as 'clients' | 'calendar')}>
+        <TabsList className="h-auto justify-start">
+          <TabsTrigger value="clients">Clients</TabsTrigger>
+          <TabsTrigger value="calendar">Calendar</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="calendar" className="mt-5">
+          <ClientActivityCalendar items={items} />
+        </TabsContent>
+
+        <TabsContent value="clients" className="mt-5">
       <Card>
         <CardHeader className="gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -520,6 +535,8 @@ function AllClientsView({
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
@@ -955,7 +972,7 @@ const WorkspaceClientPodcastSystem = ({ platformWorkspaceId }: WorkspaceClientPo
             {selectedRollup ? (
               <SelectedClientView rollup={selectedRollup} baseHref={baseHref} canManage={canManage} onOpenItem={setSelectedItemId} />
             ) : (
-              <AllClientsView rollups={rollups} baseHref={baseHref} onChooseClient={chooseClient} />
+              <AllClientsView rollups={rollups} items={system?.items || []} baseHref={baseHref} onChooseClient={chooseClient} />
             )}
           </>
         )}
