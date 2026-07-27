@@ -22,6 +22,10 @@ const emailLookupMigration = readFileSync(
   'supabase/migrations/20260728000900_relationship_email_show_lookup.sql',
   'utf8',
 )
+const legacyOutreachMigration = readFileSync(
+  'supabase/migrations/20260728001100_relationship_legacy_outreach.sql',
+  'utf8',
+)
 const enrollTick = readFileSync('supabase/functions/inbox-enroll-tick/index.ts', 'utf8')
 const campaignEdge = readFileSync('supabase/functions/workspace-client-campaigns/index.ts', 'utf8')
 const shortlistEdge = readFileSync('supabase/functions/workspace-client-shortlist/index.ts', 'utf8')
@@ -165,6 +169,39 @@ assert.match(
 )
 assert.match(hardeningMigration, /FROM public\.bookings b[\s\S]*?b\.status <> 'cancelled'/u)
 assert.match(hardeningMigration, /booking_record\.podcast_name[\s\S]*?booking_record\.host_name/u)
+
+// Pitches delivered by the pre-campaign admin tool are real contact, so they
+// establish 'pitched' and put the host in the book. Only a 2xx webhook counts —
+// a row whose send never landed reached nobody — and a legacy row is dropped
+// when the same client already has a launched campaign target for the show, so
+// one relationship carried across the migration is not counted twice.
+assert.match(
+  legacyOutreachMigration,
+  /legacy AS \([\s\S]*?FROM public\.podcast_outreach_actions action_row[\s\S]*?action_row\.action = 'sent'[\s\S]*?webhook_response_status >= 200[\s\S]*?webhook_response_status < 300[\s\S]*?NOT EXISTS \([\s\S]*?FROM touches t[\s\S]*?t\.client_id = action_row\.client_id[\s\S]*?t\.contacted/u,
+)
+assert.match(
+  legacyOutreachMigration,
+  /EXISTS \(SELECT 1 FROM legacy l WHERE l\.podcast_id = r\.podcast_id\)\s+THEN 'pitched'/u,
+)
+// Legacy history can never claim a reply, a decline, or a booking: that table
+// records the send and nothing that came back.
+for (const state of ['replied', 'declined', 'booked', 'in_conversation', 'suppressed']) {
+  assert.doesNotMatch(
+    legacyOutreachMigration,
+    new RegExp(`FROM legacy l[\\s\\S]{0,120}THEN '${state}'`, 'u'),
+    `legacy sends carry no reply data and must not establish '${state}'`,
+  )
+}
+assert.match(
+  legacyOutreachMigration,
+  /COUNT\(DISTINCT l\.client_id\)::INTEGER FROM legacy l/u,
+)
+assert.match(
+  legacyOutreachMigration,
+  /WITH known AS \([\s\S]*?FROM public\.podcast_outreach_actions action_row[\s\S]*?action_row\.action = 'sent'/u,
+)
+assert.match(legacyOutreachMigration, /legacy_record\.podcast_name\) AS podcast_name/u)
+assert.match(legacyOutreachMigration, /CREATE INDEX IF NOT EXISTS podcast_outreach_actions_delivered_idx/u)
 
 // Reply attribution is client + email scoped and refuses to guess when one
 // address maps to several shows. Manual inbox reads persist the same identity.
