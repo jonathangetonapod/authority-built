@@ -85,8 +85,9 @@ The campaign experience is organized around one ongoing podcast-booking campaign
 - client-positive podcasts are selected automatically, while an owner can deliberately include another shortlisted show;
 - the campaign workspace keeps every eligible show in one Podcasts view with focused status filters;
 - an approved podcast's Approval Dashboard action opens a preparation modal with the show brief, latest-episode context, fit evidence, three AI-written sequence options, workspace-only research notes, host contact, and the editable opening pitch and two follow-ups;
-- **Push to client campaign** saves that complete package but does not send it, while selecting the podcast later in Client Campaigns reopens the same contact, research, and three-email sequence;
-- saving a draft does not contact anyone; the explicit **Approve & start outreach** action creates or recovers the mapped provider campaign, adds that podcast contact, and activates sending;
+- **Send to Client Campaign** saves that complete package and creates the Instantly lead in the client's campaign, carrying the host name, show, site, opening pitch, and the whole sequence across as custom variables; selecting the podcast later in Client Campaigns reopens the same contact, research, and three-email sequence;
+- **whether that contacts the host depends on the campaign.** A paused campaign holds the lead and nothing goes out. A live one starts the sequence on its next send window with no further approval, so the dialog says which case applies before you click, the button reads *Send to Client Campaign (goes live)*, and the confirmation warns rather than reporting a save. The same relationship gate the launch path uses runs here too, so an opt-out or a live conversation stops it;
+- the explicit **Approve & start outreach** action creates or recovers the mapped provider campaign, adds that podcast contact if it is not already staged, and activates sending;
 - activity and performance use sanitized workspace-scoped campaign and lead data returned by Instantly; and
 - settings update the campaign name, IANA timezone, daily limit, and active sending accounts.
 
@@ -106,7 +107,9 @@ Conversations carry their full context rather than a flattened list. Each thread
 
 Drafting is governed by the client's SDR mode. Under `auto_draft`, a scheduled tick classifies each new reply that Instantly flagged interested and stages a reply-plus-nudge package for review. Deterministic pre-filters catch opt-outs and autoresponders before any model call, so the cheapest cases cost nothing and an unsubscribe request suppresses the thread rather than drafting at it.
 
-**Sending is human-only.** Automated dispatch was built and then deliberately removed: no mode, tick, or scheduler sends a message on its own, and the nudge scheduler is gated off behind a single named constant. A staged package waits for a person, which means the failure mode of the whole subsystem is "a human does it", never an unexpected email to a host.
+**Sending is human-only.** Automated dispatch was built and then deliberately removed: no mode, tick, or scheduler sends a message on its own, and the nudge scheduler is gated off behind a single named constant. A staged package waits for a person, which means the failure mode of the whole subsystem is "a human does it".
+
+That is a claim about automation, not about how few clicks it takes. Sending a pitch to a live client campaign puts the host into the sequence immediately, by design — see [Client Campaigns](#implemented-client-campaigns-boundary). Every path to a host's inbox still begins with someone choosing it.
 
 ### Relationships
 

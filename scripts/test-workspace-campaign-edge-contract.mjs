@@ -15,6 +15,11 @@ const config = readFileSync('supabase/config.toml', 'utf8')
 const nudgeTick = readFileSync('supabase/functions/inbox-nudge-tick/index.ts', 'utf8')
 const enrollTick = readFileSync('supabase/functions/inbox-enroll-tick/index.ts', 'utf8')
 const sdrShared = readFileSync('supabase/functions/_shared/inboxSdr.ts', 'utf8')
+const prepDialog = readFileSync('src/components/workspace/ClientCampaignPrepDialog.tsx', 'utf8')
+const stagingMigration = readFileSync(
+  'supabase/migrations/20260728001400_campaign_target_lead_staging.sql',
+  'utf8',
+)
 
 assert.match(edge, /if \(req\.method === "OPTIONS"\) return optionsResponse\(req, METHODS\)/u)
 assert.match(edge, /const context = await requireAuthenticatedUser\(req\)/u)
@@ -268,3 +273,52 @@ assert.match(edge, /x-campaign-sync-secret/u)
 assert.match(sdrShared, /pitch_sent: pitchSent/u)
 assert.match(sdrShared, /podcast_research: podcastResearch/u)
 assert.match(sdrShared, /from\('workspace_client_campaign_targets'\)[\s\S]*?pitch_subject, pitch_body/u)
+
+// Send to Client Campaign creates the Instantly lead in the campaign itself
+// (Jonathan's decision, 2026-07-27), which means preparing contacts the host
+// whenever that campaign is live. Everything below exists because of that.
+
+// The same relationship gate the launch path runs. Without it the faster path
+// would be the unguarded one, and an opt-out would be reachable by preparing.
+assert.match(
+  edge,
+  /async function stageCampaignLead\([\s\S]*?workspace_podcast_relationships_v1[\s\S]*?CAMPAIGN_CONTACT_SUPPRESSED[\s\S]*?CAMPAIGN_CONTACT_IN_CONVERSATION/u,
+)
+// Staging must never activate the campaign — that stays an explicit decision.
+const stageBody = edge.match(/async function stageCampaignLead\([\s\S]*?\n\}\n/u)
+assert.ok(stageBody, 'stageCampaignLead must exist')
+assert.doesNotMatch(
+  stageBody[0],
+  /\/activate/u,
+  'preparing a pitch must not activate the provider campaign',
+)
+// Copy a host has already received cannot be rewritten underneath them.
+assert.match(stageBody[0], /CAMPAIGN_PITCH_LOCKED[\s\S]*?already moved through the sequence/u)
+assert.match(stageBody[0], /email_reply_count > 0[\s\S]*?CAMPAIGN_PITCH_LOCKED/u)
+// The pasted v2 create-lead endpoint, with the campaign attached.
+assert.match(stageBody[0], /instantlyRequest<unknown>\(apiKey, "\/leads", \{[\s\S]*?campaign: providerCampaignValue\.id/u)
+assert.match(stageBody[0], /skip_if_in_campaign: true/u)
+// Whether the host is now in a sending sequence travels back to the caller, so
+// the dialog can never report "saved" when the truth is "sent".
+assert.match(stageBody[0], /willSend: providerCampaignValue\.status === 1/u)
+assert.match(edge, /will_send: staged\?\.willSend \?\? false/u)
+assert.match(edge, /action: "workspace\.client_campaign\.podcast_prepared"[\s\S]*?will_send: staged\?\.willSend \?\? false/u)
+// The provider call happens before the local write, so a refusal never leaves a
+// row claiming a lead that does not exist.
+const prepareAction = edge.match(/action === "prepare-podcast"[\s\S]*?action === "upsert"/u)
+assert.ok(prepareAction, 'prepare-podcast action must exist')
+assert.ok(
+  prepareAction[0].indexOf('await stageCampaignLead(')
+    < prepareAction[0].indexOf('.from("workspace_client_campaign_targets")\n        .update({\n          research_notes'),
+  'the lead must be created before the target row records it',
+)
+// Editing stays open until launch: a staged lead is no longer the lock.
+assert.match(prepareAction[0], /target\.launched_at \|\|\s+\["launching", "in_outreach", "replied", "completed"\]/u)
+assert.doesNotMatch(prepareAction[0], /target\.instantly_lead_id \|\|/u)
+
+// The dialog must state which of the two things the button does.
+assert.match(prepDialog, /const submitWillSend = campaignIsLive && validEmail\(normalizedEmail\)/u)
+assert.match(prepDialog, /submitWillSend \? 'Send to Client Campaign \(goes live\)' : 'Send to Client Campaign'/u)
+assert.match(prepDialog, /result\.will_send[\s\S]*?toast\.warning/u)
+assert.match(stagingMigration, /ADD COLUMN IF NOT EXISTS lead_staged_at TIMESTAMPTZ/u)
+assert.match(stagingMigration, /ADD COLUMN IF NOT EXISTS lead_staged_campaign_status INTEGER/u)

@@ -135,6 +135,10 @@ export interface WorkspaceCampaignTarget {
   email_reply_count: number
   approved_at: string | null
   launched_at: string | null
+  /** The Instantly lead exists. Set by Send to Client Campaign, before launch. */
+  lead_staged_at: string | null
+  /** Provider campaign status when the lead was staged: 1 means it began sending. */
+  lead_staged_campaign_status: number | null
   last_activity_at: string | null
   last_error: string | null
   prior_outreach_at: string | null
@@ -271,7 +275,16 @@ export async function prepareWorkspaceCampaignPodcast(input: {
   followUpTwoSubject: string
   followUpTwoBody: string
   pitchChainVersion?: string | null
-}): Promise<{ added: boolean; campaign: WorkspaceClientCampaign; target: WorkspaceCampaignTarget }> {
+}): Promise<{
+  added: boolean
+  campaign: WorkspaceClientCampaign
+  target: WorkspaceCampaignTarget
+  /** The Instantly lead was created. */
+  lead_staged: boolean
+  /** The lead entered a live campaign, so this host will be emailed. */
+  will_send: boolean
+  provider_campaign_status: number | null
+}> {
   return await invokeWorkspaceCampaigns({
     action: 'prepare-podcast',
     workspace_id: input.workspaceId,

@@ -170,6 +170,11 @@ describe('ClientShortlistEditor', () => {
       added: true,
       campaign: { name: 'Taylor Client Podcast Outreach' } as never,
       target: {} as never,
+      lead_staged: true,
+      // The default fixture campaign is paused, so preparing stages the lead
+      // without contacting anyone.
+      will_send: false,
+      provider_campaign_status: 2,
     })
   })
 
@@ -743,6 +748,55 @@ describe('ClientShortlistEditor', () => {
       followUpTwoSubject: 'Re: A tailored Founder Stories idea',
     })))
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'Write a pitch for Founder Stories' })).not.toBeInTheDocument())
+  })
+
+  it('warns before sending into a live campaign, because the lead starts the sequence', async () => {
+    vi.mocked(getWorkspaceCampaign).mockResolvedValue({
+      integration: {} as never,
+      can_manage_campaigns: true,
+      campaign: {
+        id: 'campaign-one',
+        name: 'Taylor Client Podcast Outreach',
+        instantly_campaign_id: '77777777-7777-4777-8777-777777777777',
+        instantly_campaign_status: 1,
+      } as never,
+      targets: [],
+    })
+    vi.mocked(prepareWorkspaceCampaignPodcast).mockResolvedValue({
+      added: true,
+      campaign: { name: 'Taylor Client Podcast Outreach' } as never,
+      target: {} as never,
+      lead_staged: true,
+      will_send: true,
+      provider_campaign_status: 1,
+    })
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize selected pitch' }))
+
+    // The modal no longer claims nothing sends, because now it does.
+    expect(screen.queryByText(/Nothing sends from this modal/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/is live, so sending this to Client Campaign puts the host into the sequence/i)).toBeInTheDocument()
+    expect(screen.getByText(/the opening email goes out on its next send window/i)).toBeInTheDocument()
+
+    const sendToCampaign = screen.getByRole('button', { name: 'Send to Client Campaign (goes live)' })
+    await waitFor(() => expect(sendToCampaign).toBeEnabled())
+    fireEvent.click(sendToCampaign)
+
+    await waitFor(() => expect(prepareWorkspaceCampaignPodcast).toHaveBeenCalled())
+  })
+
+  it('says nothing sends when the campaign is paused', async () => {
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize selected pitch' }))
+
+    expect(screen.getByText(/Nothing sends from this modal/i)).toBeInTheDocument()
+    expect(screen.getByText(/The campaign is paused, so nothing goes out until you start outreach/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send to Client Campaign' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /goes live/i })).not.toBeInTheDocument()
   })
 
   it('shows live backend research progress and holds the pitch until every stage finishes', async () => {

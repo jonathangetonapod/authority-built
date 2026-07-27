@@ -113,6 +113,8 @@ const TARGET_COLUMNS = [
   "email_reply_count",
   "approved_at",
   "launched_at",
+  "lead_staged_at",
+  "lead_staged_campaign_status",
   "last_activity_at",
   "last_error",
   "created_at",
@@ -211,6 +213,8 @@ interface TargetRow {
   email_reply_count: number;
   approved_at: string | null;
   launched_at: string | null;
+  lead_staged_at: string | null;
+  lead_staged_campaign_status: number | null;
   last_activity_at: string | null;
   last_error: string | null;
   prior_outreach_at?: string | null;
@@ -492,6 +496,11 @@ function targetDto(target: TargetRow) {
     email_reply_count: target.email_reply_count,
     approved_at: target.approved_at,
     launched_at: target.launched_at,
+    // A staged lead exists in Instantly but outreach was not launched from
+    // here. Distinct from launched_at because staging into an active campaign
+    // sends and staging into a paused one does not.
+    lead_staged_at: target.lead_staged_at || null,
+    lead_staged_campaign_status: target.lead_staged_campaign_status ?? null,
     last_activity_at: target.last_activity_at,
     last_error: target.last_error,
     prior_outreach_at: target.prior_outreach_at || null,
@@ -1528,6 +1537,228 @@ async function listProviderLeads(
   return leads;
 }
 
+/** The variables the Instantly sequence renders. One shape, two callers. */
+function outreachCustomVariables(
+  client: WorkspaceClientRow,
+  target: TargetRow,
+  sequence: OutreachSequence,
+): Record<string, unknown> {
+  return {
+    goapPitchSubject: sequence.subject,
+    goapPitchBody: sequence.body,
+    goapFollowUpOneSubject: sequence.followUpOneSubject,
+    goapFollowUpOneBody: sequence.followUpOneBody,
+    goapFollowUpTwoSubject: sequence.followUpTwoSubject,
+    goapFollowUpTwoBody: sequence.followUpTwoBody,
+    clientName: client.name,
+    podcastName: target.podcast_name,
+    goapTargetId: target.id,
+  };
+}
+
+export interface StagedLeadResult {
+  leadId: string;
+  leadStatus: number | null;
+  /** Provider campaign status when the lead landed. 1 means it began sending. */
+  campaignStatus: number | null;
+  /** True when the lead entered a live sequence, so the host will be emailed. */
+  willSend: boolean;
+}
+
+/**
+ * Create the Instantly lead at "Send to Client Campaign" time.
+ *
+ * Jonathan chose this on 2026-07-27 over staging into a list, with the
+ * consequence stated: a lead added to an ACTIVE campaign is emailed on the next
+ * send window with no further approval. Preparing is therefore a contacting
+ * action whenever the campaign is live, and everything below exists because of
+ * that — this runs the same relationship gate the launch path runs, refuses to
+ * rewrite copy a host has already received, and reports back whether the host
+ * is now in a sending sequence so the operator is never told "saved" when the
+ * truth is "sent".
+ *
+ * It deliberately does NOT activate the campaign. Activation stays with the
+ * explicit launch action.
+ */
+async function stageCampaignLead(
+  context: AuthContext,
+  // Nullable on purpose: integrationApiKey turns a missing or disconnected
+  // integration into INSTANTLY_NOT_CONNECTED, which is the honest error here.
+  connection: ConnectionRow | null,
+  client: WorkspaceClientRow,
+  campaign: CampaignRow,
+  target: TargetRow,
+  sequence: OutreachSequence,
+): Promise<StagedLeadResult> {
+  if (!target.contact_email) {
+    throw new HttpError(
+      409,
+      "CAMPAIGN_CONTACT_REQUIRED",
+      "Add a podcast contact email before sending this to the client campaign",
+    );
+  }
+
+  // Same gate as launch. A staged lead in a live campaign reaches the host, so
+  // an opt-out or a live conversation has to stop it here too — checking only
+  // at launch would leave the faster path unguarded.
+  const { data: relationshipRows, error: relationshipError } = await context.admin.rpc(
+    "workspace_podcast_relationships_v1",
+    { p_workspace_id: campaign.workspace_id, p_podcast_ids: [target.podcast_id] },
+  );
+  if (relationshipError) {
+    throw new HttpError(
+      503,
+      "CAMPAIGN_RELATIONSHIP_CHECK_FAILED",
+      "The outreach history for this podcast could not be checked. Try again shortly",
+    );
+  }
+  const relationship = (relationshipRows ?? [])[0] as
+    | { state?: string; last_client_name?: string | null }
+    | undefined;
+  if (relationship?.state === "suppressed") {
+    throw new HttpError(
+      409,
+      "CAMPAIGN_CONTACT_SUPPRESSED",
+      "This host asked to stop being contacted by this workspace. The pitch cannot be added to the campaign for any client.",
+    );
+  }
+  if (relationship?.state === "in_conversation") {
+    throw new HttpError(
+      409,
+      "CAMPAIGN_CONTACT_IN_CONVERSATION",
+      `A conversation with this host is already live${
+        relationship.last_client_name ? ` for ${relationship.last_client_name}` : ""
+      }. Continue that thread instead of adding cold outreach to the campaign.`,
+    );
+  }
+
+  const apiKey = await integrationApiKey(connection);
+  const providerCampaignValue = await ensureProviderCampaign(
+    context,
+    campaign,
+    apiKey,
+  );
+
+  // One contact cannot be in the campaign twice under two shows: the host
+  // experiences both, whatever we call them locally.
+  const { data: matchingContacts, error: matchingContactError } = await context.admin
+    .from("workspace_client_campaign_targets")
+    .select("id,podcast_name,status,instantly_lead_id")
+    .eq("workspace_id", campaign.workspace_id)
+    .eq("campaign_id", campaign.id)
+    .eq("contact_email", target.contact_email)
+    .neq("id", target.id)
+    .limit(25);
+  if (matchingContactError) {
+    throw new HttpError(
+      500,
+      "CAMPAIGN_CONTACT_DEDUPE_FAILED",
+      "The podcast contact could not be checked for duplicate outreach",
+    );
+  }
+  const duplicateContact = (matchingContacts || []).find((candidate) =>
+    candidate.instantly_lead_id ||
+    ["launching", "in_outreach", "replied", "completed"].includes(
+      String(candidate.status),
+    )
+  );
+  if (duplicateContact) {
+    throw new HttpError(
+      409,
+      "CAMPAIGN_CONTACT_ALREADY_IN_OUTREACH",
+      `This contact is already in outreach for ${
+        String(duplicateContact.podcast_name || "another podcast")
+      }`,
+    );
+  }
+
+  const customVariables = outreachCustomVariables(client, target, sequence);
+  const existingLeads = await listProviderLeads(
+    apiKey,
+    providerCampaignValue.id,
+    target.contact_email,
+  );
+  const existing = existingLeads.find((candidate) =>
+    candidate.email === target.contact_email
+  ) || null;
+
+  let lead: ProviderLead | null = existing;
+  if (existing) {
+    // Re-sending an edited sequence updates the lead in place. But if the host
+    // has already had a step, the copy they read cannot be unsent, and quietly
+    // swapping it underneath them would leave our record disagreeing with their
+    // inbox.
+    if (existing.status !== null && existing.status !== 1) {
+      throw new HttpError(
+        409,
+        "CAMPAIGN_PITCH_LOCKED",
+        "This contact has already moved through the sequence in Instantly. The pitch can no longer be edited from here.",
+      );
+    }
+    if (existing.email_reply_count > 0) {
+      throw new HttpError(
+        409,
+        "CAMPAIGN_PITCH_LOCKED",
+        "This host has already replied. Continue the conversation in the Master Inbox instead of editing the pitch.",
+      );
+    }
+    const patched = await instantlyRequest<unknown>(
+      apiKey,
+      `/leads/${encodeURIComponent(existing.id)}`,
+      { method: "PATCH", body: { custom_variables: customVariables } },
+    );
+    lead = providerLead(patched) || existing;
+  } else {
+    const created = await instantlyRequest<unknown>(apiKey, "/leads", {
+      method: "POST",
+      body: {
+        campaign: providerCampaignValue.id,
+        email: target.contact_email,
+        first_name: target.host_name?.split(/\s+/)[0] || undefined,
+        last_name: target.host_name?.split(/\s+/).slice(1).join(" ") || undefined,
+        company_name: target.podcast_name,
+        website: target.podcast_url || undefined,
+        personalization: sequence.body,
+        custom_variables: customVariables,
+        // The workspace pitches one show for many clients over time, so a
+        // contact known elsewhere is not a reason to skip this one. Duplicates
+        // within THIS campaign are already refused above, on our own records.
+        skip_if_in_workspace: false,
+        skip_if_in_campaign: true,
+        skip_if_in_list: false,
+        verify_leads_on_import: false,
+      },
+    });
+    lead = providerLead(created);
+    if (!lead) {
+      // skip_if_in_campaign returns no lead when one already existed; recover it
+      // rather than reporting a failure that did not happen.
+      const recovered = await listProviderLeads(
+        apiKey,
+        providerCampaignValue.id,
+        target.contact_email,
+      );
+      lead = recovered.find((candidate) =>
+        candidate.email === target.contact_email
+      ) || null;
+    }
+    if (!lead) {
+      throw new InstantlyApiError(
+        409,
+        "INSTANTLY_LEAD_NOT_CREATED",
+        "Instantly did not add this podcast contact",
+      );
+    }
+  }
+
+  return {
+    leadId: lead.id,
+    leadStatus: lead.status,
+    campaignStatus: providerCampaignValue.status,
+    willSend: providerCampaignValue.status === 1,
+  };
+}
+
 async function launchTarget(
   context: AuthContext,
   connection: ConnectionRow,
@@ -1708,17 +1939,7 @@ async function launchTarget(
         );
       }
     }
-    const customVariables = {
-      goapPitchSubject: sequence.subject,
-      goapPitchBody: sequence.body,
-      goapFollowUpOneSubject: sequence.followUpOneSubject,
-      goapFollowUpOneBody: sequence.followUpOneBody,
-      goapFollowUpTwoSubject: sequence.followUpTwoSubject,
-      goapFollowUpTwoBody: sequence.followUpTwoBody,
-      clientName: client.name,
-      podcastName: target.podcast_name,
-      goapTargetId: target.id,
-    };
+    const customVariables = outreachCustomVariables(client, target, sequence);
     if (lead) {
       const patched = await instantlyRequest<unknown>(
         apiKey,
@@ -3664,8 +3885,12 @@ serve(async (req) => {
           "Campaign podcast not found",
         );
       }
+      // A staged lead no longer means outreach started — preparing creates one.
+      // Editing stays open until an operator launches, and stageCampaignLead
+      // refuses separately once the host has actually moved through the
+      // sequence, which is the point past which copy cannot be taken back.
       if (
-        target.instantly_lead_id ||
+        target.launched_at ||
         ["launching", "in_outreach", "replied", "completed"].includes(
           target.status,
         )
@@ -3676,6 +3901,28 @@ serve(async (req) => {
           "The outreach sequence cannot be edited after outreach starts",
         );
       }
+      // Push the lead to Instantly before recording anything locally. If the
+      // provider refuses — an opt-out, a duplicate contact, a rejected key —
+      // the operator gets that error instead of a row claiming a lead exists.
+      let staged: StagedLeadResult | null = null;
+      if (contactEmail) {
+        const connection = await readConnection(context.admin, workspaceId);
+        const client = await requireWorkspaceClient(
+          context.admin,
+          workspaceId,
+          clientId,
+        );
+        staged = await stageCampaignLead(
+          context,
+          connection,
+          client,
+          campaign,
+          { ...target, contact_email: contactEmail, host_name: hostName } as TargetRow,
+          sequence,
+        );
+      }
+
+      const stagedAt = staged ? new Date().toISOString() : null;
       const { data, error } = await context.admin
         .from("workspace_client_campaign_targets")
         .update({
@@ -3690,6 +3937,14 @@ serve(async (req) => {
           follow_up_2_body: sequence.followUpTwoBody,
           pitch_chain_version: pitchChainVersion,
           status: contactEmail ? "ready" : "draft",
+          ...(staged
+            ? {
+              instantly_lead_id: staged.leadId,
+              instantly_lead_status: staged.leadStatus,
+              lead_staged_at: stagedAt,
+              lead_staged_campaign_status: staged.campaignStatus,
+            }
+            : {}),
           last_error: null,
           updated_by: context.user.id,
         })
@@ -3719,12 +3974,23 @@ serve(async (req) => {
           podcast_id: target.podcast_id,
           added,
           contact_present: Boolean(contactEmail),
+          lead_staged: Boolean(staged),
+          instantly_lead_id: staged?.leadId ?? null,
+          // Whether this preparation put the host into a live sequence. The
+          // one fact worth being able to answer later without inference.
+          provider_campaign_status: staged?.campaignStatus ?? null,
+          will_send: staged?.willSend ?? false,
         },
       });
       return jsonResponse(req, METHODS, 200, {
         added,
         campaign: campaignDto(campaign, refreshedTargets),
         target: targetDto(prepared),
+        lead_staged: Boolean(staged),
+        // The dialog must be able to say "this host will be emailed" rather
+        // than "saved", so the truth travels with the response.
+        will_send: staged?.willSend ?? false,
+        provider_campaign_status: staged?.campaignStatus ?? null,
       });
     }
 

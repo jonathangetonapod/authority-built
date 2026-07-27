@@ -743,6 +743,14 @@ export function ClientCampaignPrepDialog({
     if (!cached) void loadAiPitch(angleIndex)
   }
   const normalizedEmail = contactEmail.trim().toLowerCase()
+
+  // Sending to Client Campaign creates the Instantly lead in the campaign
+  // itself. A paused campaign holds it; a live one starts the sequence on its
+  // next send window with no further approval. The operator has to be able to
+  // see which of those they are about to do, before they do it.
+  const campaignIsLive = campaign?.instantly_campaign_status === 1
+  const submitWillSend = campaignIsLive && validEmail(normalizedEmail)
+
   const emailReady = validEmail(normalizedEmail)
   const sequenceComplete = [
     draft.subject,
@@ -787,9 +795,14 @@ export function ClientCampaignPrepDialog({
         queryClient.invalidateQueries({ queryKey: campaignQueryKey }),
         queryClient.invalidateQueries({ queryKey: ['workspace-client-campaigns', workspaceId] }),
       ])
-      toast.success(result.added
-        ? `${podcast?.podcast_name || 'Podcast'} was sent to Client Campaign.`
-        : `${podcast?.podcast_name || 'Podcast'} was updated in Client Campaign.`)
+      // Never report "saved" when the truth is "this host is being emailed".
+      if (result.will_send) {
+        toast.warning(`${podcast?.podcast_name || 'Podcast'} is now a lead in a live campaign. The opening email sends on the next send window.`)
+      } else {
+        toast.success(result.added
+          ? `${podcast?.podcast_name || 'Podcast'} was sent to Client Campaign.`
+          : `${podcast?.podcast_name || 'Podcast'} was updated in Client Campaign.`)
+      }
       onPrepared?.()
       onOpenChange(false)
     },
@@ -814,7 +827,7 @@ export function ClientCampaignPrepDialog({
             {campaign && <Badge variant="outline">{campaign.name}</Badge>}
           </div>
           <DialogTitle className="text-2xl">Write a pitch for {podcast?.podcast_name || 'this podcast'}</DialogTitle>
-          <DialogDescription>Find the right contact, research the show, and then write a thoughtful outreach sequence for {clientName}. Nothing sends from this modal.</DialogDescription>
+          <DialogDescription>Find the right contact, research the show, and then write a thoughtful outreach sequence for {clientName}.{' '}{submitWillSend ? `${campaign?.name || 'This campaign'} is live, so sending this to Client Campaign puts the host into the sequence.` : 'Nothing sends from this modal.'}</DialogDescription>
         </DialogHeader>
 
         <div className="min-h-0 overflow-y-auto overscroll-contain">
@@ -1654,14 +1667,16 @@ export function ClientCampaignPrepDialog({
                     : 'Research is included with your plan, saved to this podcast, and used to shape the pitch.')}
                 {activeStep === 'pitch' && (draftHasUnsavedEdits
                   ? 'You have unsaved edits. Save them before sending this sequence to Client Campaign.'
-                  : 'All edits are saved. Nothing moves to Client Campaign until you choose Send to Client Campaign.')}
+                  : submitWillSend
+                    ? `All edits are saved. Sending adds ${hostName.trim() || 'this host'} to ${campaign?.name || 'the campaign'} as a lead, and that campaign is live, so the opening email goes out on its next send window.`
+                    : 'All edits are saved. Sending adds this host to the campaign as a lead. The campaign is paused, so nothing goes out until you start outreach.')}
               </p>
               <div className="grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
                 {activeStep !== 'email' && <Button type="button" variant="outline" onClick={() => setActiveStep(activeStep === 'pitch' ? 'research' : 'email')}><ArrowLeft className="mr-2 h-4 w-4" />Back</Button>}
                 {activeStep === 'email' && <Button type="button" disabled={!emailReady || !relationshipCanProceed} onClick={() => setActiveStep('research')}>Continue to research<ArrowRight className="ml-2 h-4 w-4" /></Button>}
                 {activeStep === 'research' && <Button type="button" disabled={!researchComplete} onClick={() => { setActiveSequenceEmail('opening'); setActiveStep('pitch') }}>Finalize selected pitch<ArrowRight className="ml-2 h-4 w-4" /></Button>}
-                {activeStep === 'pitch' && <Button type="button" disabled={submitDisabled} onClick={() => prepareMutation.mutate()}>{prepareMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Send to Client Campaign</Button>}
+                {activeStep === 'pitch' && <Button type="button" variant={submitWillSend ? 'destructive' : 'default'} disabled={submitDisabled} onClick={() => prepareMutation.mutate()}>{prepareMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}{submitWillSend ? 'Send to Client Campaign (goes live)' : 'Send to Client Campaign'}</Button>}
               </div>
             </div>
           </footer>
