@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Handshake, MessageSquare, ShieldCheck, Ban } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Clock, Handshake, MessageSquare, ShieldCheck, Ban } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { countWords, wordCountStatus, type PitchWordTarget } from '@/lib/pitchQuality'
 import type { ClientShortlistAgencyRelationship } from '@/services/clientShortlist'
@@ -61,12 +61,23 @@ export const AgencyRelationshipNotice = ({ relationship }: { relationship?: Clie
       detail: 'The opt-out applies to every client in this workspace. Outreach is blocked.',
     },
   }
-  const view = views[relationship.state] ?? {
+  const fallback = {
     tone: 'border-muted bg-muted/40 text-foreground',
     icon: <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />,
     title: 'Prior host relationship found',
     detail: 'Review the saved context before starting another outreach sequence.',
   }
+  const resolved = views[relationship.state] ?? fallback
+  // "Pitched, no reply" is ordinarily unremarkable and reads that way. Inside
+  // the quiet window it is the one case an operator should hesitate over, so it
+  // borrows the amber the other cautionary states already use.
+  const view = relationship.cooldown && resolved.tone === fallback.tone
+    ? {
+      ...resolved,
+      tone: 'border-amber-200 bg-amber-50 text-amber-950',
+      icon: <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />,
+    }
+    : resolved
 
   return (
     <div className={`rounded-xl border p-3 ${view.tone}`} aria-label="Agency relationship with this host">
@@ -83,6 +94,18 @@ export const AgencyRelationshipNotice = ({ relationship }: { relationship?: Clie
           {relationship.summary?.trim() && (
             <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-[11px] leading-4">
               <span className="font-medium">Relationship note:</span> {relationship.summary.trim()}
+            </p>
+          )}
+          {relationship.cooldown && (
+            <p className="mt-1 text-[11px] font-medium leading-4">
+              <Clock className="mr-1 inline h-3 w-3 align-[-2px]" aria-hidden="true" />
+              Inside the {relationship.cooldown.window_days}-day quiet window: last emailed{' '}
+              {relationship.cooldown.days_since_contact === 0
+                ? 'today'
+                : `${relationship.cooldown.days_since_contact} ${relationship.cooldown.days_since_contact === 1 ? 'day' : 'days'} ago`}
+              , clear on{' '}
+              {new Date(`${relationship.cooldown.resumes_on}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              . You can still send, but only if this angle is genuinely different.
             </p>
           )}
           {relationship.same_contact_other_show && (

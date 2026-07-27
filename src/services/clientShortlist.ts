@@ -103,6 +103,19 @@ export interface ClientShortlistAgencyRelationship {
   same_contact_other_show: boolean
   manual_stage: 'nurturing' | 'warm' | 'do_not_contact' | null
   summary: string | null
+  cooldown?: ClientShortlistOutreachCooldown | null
+}
+
+/**
+ * A quiet window this host is still inside, computed server-side so the app and
+ * the pitch prompt describe the same policy. Present only while the window is
+ * open; a served window is absent rather than zeroed.
+ */
+export interface ClientShortlistOutreachCooldown {
+  window_days: number
+  days_since_contact: number
+  days_remaining: number
+  resumes_on: string
 }
 
 export interface ClientShortlistPodcast extends ClientShortlistPodcastInput {

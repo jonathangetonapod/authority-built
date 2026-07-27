@@ -422,7 +422,7 @@ function present(value: string | null | undefined): string {
 // Stamped on research documents and generated pitches so reply rates can be
 // compared per prompt-chain revision once volume exists. Bump on any change
 // to the prompt chain or its assembly.
-const PITCH_CHAIN_VERSION = 'p4-relationship-preflight-2026-07-27'
+const PITCH_CHAIN_VERSION = 'p5-outreach-cooldown-2026-07-27'
 
 export interface PodcastRelationship {
   podcast_id: string
@@ -438,6 +438,62 @@ export interface PodcastRelationship {
   same_contact_other_show: boolean
   manual_stage: 'nurturing' | 'warm' | 'do_not_contact' | null
   summary: string | null
+  cooldown: OutreachCooldown | null
+}
+
+/**
+ * How long to leave a host alone after contact that produced nothing.
+ *
+ * A sequence runs three emails over thirteen days. Starting a second sequence
+ * for a different client days after the first one finished means the same
+ * address receives six emails from this agency inside a month, which is how a
+ * sender reputation and a host relationship are spent at the same time.
+ *
+ * Only the two states where the outcome was silence or a pass have a window.
+ * A booked host is warm and a re-pitch is welcome; a live conversation and an
+ * opt-out are already blocked outright and never reach a cooldown question.
+ * Windows are deliberately unequal: an explicit "no" earns more room than no
+ * answer at all.
+ */
+const OUTREACH_COOLDOWN_DAYS: Partial<Record<PodcastRelationship['state'], number>> = {
+  pitched: 60,
+  declined: 90,
+}
+
+const DAY_MS = 86_400_000
+
+export interface OutreachCooldown {
+  window_days: number
+  days_since_contact: number
+  days_remaining: number
+  /** Calendar day the window closes, so the warning names a date not a delta. */
+  resumes_on: string
+}
+
+/**
+ * Advisory only. Jonathan's policy is to block the unsafe and warn on the
+ * rest, so a live cooldown never stops a send — it tells the operator what the
+ * host's inbox looks like right now and when it stops looking crowded.
+ */
+function outreachCooldown(
+  state: PodcastRelationship['state'],
+  lastContactedAt: string | null,
+  now: number,
+): OutreachCooldown | null {
+  const windowDays = OUTREACH_COOLDOWN_DAYS[state]
+  if (!windowDays || !lastContactedAt) return null
+  const contactedAt = Date.parse(lastContactedAt)
+  if (!Number.isFinite(contactedAt)) return null
+  const daysSinceContact = Math.floor((now - contactedAt) / DAY_MS)
+  // A future timestamp is bad data, not a reason to warn; a served window is
+  // simply no longer a warning.
+  if (daysSinceContact < 0 || daysSinceContact >= windowDays) return null
+  return {
+    window_days: windowDays,
+    days_since_contact: daysSinceContact,
+    days_remaining: windowDays - daysSinceContact,
+    resumes_on: new Date(contactedAt + windowDays * DAY_MS).toISOString().slice(0, 10),
+  }
 }
 
 /**
@@ -487,6 +543,9 @@ async function readPodcastRelationships(admin: any, workspaceId: string, podcast
     matches.push(row)
     curatedByContact.set(row.contact_email, matches)
   }
+  // One clock for the whole batch, so two shows contacted the same day never
+  // report different cooldowns because the loop straddled midnight.
+  const now = Date.now()
   return new Map(derivedRows.map((row: PodcastRelationship) => {
     const contactMatches = row.contact_email ? curatedByContact.get(row.contact_email) ?? [] : []
     const exact = curatedByPodcast.get(row.podcast_id)
@@ -504,11 +563,13 @@ async function readPodcastRelationships(admin: any, workspaceId: string, podcast
       : contactContextMatches.length === 1
         ? contactContextMatches[0]
         : exact
+    const state = curated?.manual_stage === 'do_not_contact' ? 'suppressed' : row.state
     return [row.podcast_id, {
       ...row,
-      state: curated?.manual_stage === 'do_not_contact' ? 'suppressed' : row.state,
+      state,
       manual_stage: curated?.manual_stage ?? null,
       summary: curated?.summary ?? null,
+      cooldown: outreachCooldown(state, row.last_contacted_at, now),
     }]
   }))
 }
@@ -586,6 +647,13 @@ function describeRelationship(relationship: PodcastRelationship | undefined): st
     case 'suppressed':
       lines.push('This host asked this agency to stop contacting them. Do not write anything.')
       break
+  }
+  if (relationship.cooldown) {
+    // The model cannot see the earlier email, so the useful instruction is not
+    // "reference it" but "earn the second interruption".
+    lines.push(
+      `Recency: this agency last emailed this host ${relationship.cooldown.days_since_contact} day(s) ago, which is inside the ${relationship.cooldown.window_days}-day quiet window for this state. The host's inbox already holds mail from us, so this email has to justify itself on the strength of the angle alone. Keep it shorter than usual, lead with the specific episode moment, and do not add pressure or a deadline.`,
+    )
   }
   if (relationship.same_contact_other_show) {
     lines.push('The same contact has already been emailed about a different show they host, so this is the same person, not a new introduction.')
