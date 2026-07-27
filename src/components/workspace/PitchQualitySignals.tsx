@@ -10,12 +10,20 @@ import type { ClientShortlistAgencyRelationship } from '@/services/clientShortli
  * hosted one of your guests — is the mistake this exists to prevent.
  */
 export const AgencyRelationshipNotice = ({ relationship }: { relationship?: ClientShortlistAgencyRelationship | null }) => {
-  if (!relationship || relationship.state === 'none') return null
+  if (!relationship) return null
+  const hasCuratedContext = Boolean(relationship.manual_stage || relationship.summary?.trim())
+  if (relationship.state === 'none' && !hasCuratedContext) return null
   const contactedOn = relationship.last_contacted_at
     ? new Date(relationship.last_contacted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : null
 
-  const view = {
+  const views = {
+    none: {
+      tone: 'border-violet-200 bg-violet-50 text-violet-950',
+      icon: <Handshake className="mt-0.5 h-4 w-4 shrink-0 text-violet-700" />,
+      title: 'Relationship context saved',
+      detail: 'No prior outreach is recorded. The pitch will introduce you honestly while using the saved context below.',
+    },
     booked: {
       tone: 'border-emerald-200 bg-emerald-50 text-emerald-950',
       icon: <Handshake className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />,
@@ -27,6 +35,12 @@ export const AgencyRelationshipNotice = ({ relationship }: { relationship?: Clie
       icon: <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />,
       title: 'This host has corresponded with you before',
       detail: `You exchanged messages${contactedOn ? ` around ${contactedOn}` : ''} for another client. The pitch will acknowledge that instead of opening cold.`,
+    },
+    declined: {
+      tone: 'border-amber-200 bg-amber-50 text-amber-950',
+      icon: <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />,
+      title: 'This host passed on an earlier idea',
+      detail: `You exchanged messages${contactedOn ? ` around ${contactedOn}` : ''}, and the host declined that idea. The pitch will briefly acknowledge the exchange and make the new angle distinct.`,
     },
     pitched: {
       tone: 'border-muted bg-muted/40 text-foreground',
@@ -46,7 +60,13 @@ export const AgencyRelationshipNotice = ({ relationship }: { relationship?: Clie
       title: 'This host asked not to be contacted',
       detail: 'The opt-out applies to every client in this workspace. Outreach is blocked.',
     },
-  }[relationship.state]
+  }
+  const view = views[relationship.state] ?? {
+    tone: 'border-muted bg-muted/40 text-foreground',
+    icon: <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />,
+    title: 'Prior host relationship found',
+    detail: 'Review the saved context before starting another outreach sequence.',
+  }
 
   return (
     <div className={`rounded-xl border p-3 ${view.tone}`} aria-label="Agency relationship with this host">
@@ -55,6 +75,16 @@ export const AgencyRelationshipNotice = ({ relationship }: { relationship?: Clie
         <div className="min-w-0">
           <p className="text-xs font-semibold">{view.title}</p>
           <p className="mt-0.5 text-[11px] leading-4 opacity-90">{view.detail}</p>
+          {relationship.manual_stage && relationship.manual_stage !== 'do_not_contact' && (
+            <p className="mt-1 text-[11px] font-medium leading-4">
+              Relationship stage: {relationship.manual_stage === 'warm' ? 'Warm' : 'Nurturing'}
+            </p>
+          )}
+          {relationship.summary?.trim() && (
+            <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-[11px] leading-4">
+              <span className="font-medium">Relationship note:</span> {relationship.summary.trim()}
+            </p>
+          )}
           {relationship.same_contact_other_show && (
             <p className="mt-1 text-[11px] font-medium leading-4">
               The same contact also hosts another show you have emailed — this is the same person, not a new introduction.

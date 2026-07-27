@@ -468,6 +468,7 @@ export interface WorkspaceInboxThread {
     client: { id: string; name: string } | null
   } | null
   lead_context?: {
+    podcast_id: string | null
     podcast_name: string | null
     host_name: string | null
     stage: string | null
@@ -476,6 +477,7 @@ export interface WorkspaceInboxThread {
     replies: number
   } | null
   thread_key?: string
+  relationship?: { podcast_id: string } | null
   state?: {
     status: WorkspaceInboxThreadStatus
     classification: WorkspaceInboxReplyClassification | null

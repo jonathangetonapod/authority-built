@@ -24,7 +24,7 @@ describe('workspace routes', () => {
     expect(workspaceModuleHref('/app', 'podcast-database')).toBe('/app/podcast-database')
   })
 
-  it.each(['client-campaigns', 'master-inbox', 'mailboxes'] as const)(
+  it.each(['client-campaigns', 'relationships', 'master-inbox', 'mailboxes'] as const)(
     'preserves the %s module while switching workspaces',
     (module) => {
       expect(workspaceModuleFromPath(`/app/workspaces/11111111-1111-4111-8111-111111111111/${module}`)).toBe(module)

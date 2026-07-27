@@ -84,11 +84,12 @@ export interface ClientShortlistEpisode {
 }
 
 /**
- * What this workspace already means to a host. `booked` and `replied` are
- * assets to lead with; `in_conversation` and `suppressed` block outreach.
+ * What this workspace already means to a host. `booked`, `replied`, and
+ * `declined` change the opening; `in_conversation` and `suppressed` block
+ * outreach. Curated context can exist even while the derived state is `none`.
  */
 export interface ClientShortlistAgencyRelationship {
-  state: 'none' | 'pitched' | 'replied' | 'booked' | 'in_conversation' | 'suppressed'
+  state: 'none' | 'pitched' | 'replied' | 'declined' | 'booked' | 'in_conversation' | 'suppressed'
   touch_count: number
   last_contacted_at: string | null
   last_client_name: string | null
@@ -97,6 +98,8 @@ export interface ClientShortlistAgencyRelationship {
   booked_episode_url: string | null
   replied_client_name: string | null
   same_contact_other_show: boolean
+  manual_stage: 'nurturing' | 'warm' | 'do_not_contact' | null
+  summary: string | null
 }
 
 export interface ClientShortlistPodcast extends ClientShortlistPodcastInput {

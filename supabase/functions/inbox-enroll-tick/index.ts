@@ -125,18 +125,34 @@ serve(async (req) => {
       // Which show each host address belongs to. A reply is the moment a
       // relationship becomes real, so the thread records the show it came
       // from rather than waiting for an analytics sync to infer it.
-      const { data: contactRows } = await admin
+      const { data: contactRows, error: contactRowsError } = await admin
         .from('workspace_client_campaign_targets')
-        .select('contact_email, podcast_id')
+        .select('client_id, contact_email, podcast_id')
         .eq('workspace_id', workspaceId)
         .not('contact_email', 'is', null)
+        .or('launched_at.not.is.null,instantly_lead_id.not.is.null')
         .limit(5_000)
-      const podcastByContact = new Map<string, string>()
+      if (contactRowsError) throw contactRowsError
+      const podcastsByClientContact = new Map<string, Set<string>>()
       for (const row of (contactRows ?? []) as Array<Record<string, unknown>>) {
-        if (typeof row.contact_email === 'string' && typeof row.podcast_id === 'string') {
-          const key = row.contact_email.trim().toLowerCase()
-          if (key && !podcastByContact.has(key)) podcastByContact.set(key, row.podcast_id)
-        }
+        if (
+          typeof row.client_id !== 'string'
+          || typeof row.contact_email !== 'string'
+          || typeof row.podcast_id !== 'string'
+        ) continue
+        const email = row.contact_email.trim().toLowerCase()
+        if (!email) continue
+        const key = `${row.client_id}:${email}`
+        const ids = podcastsByClientContact.get(key) ?? new Set<string>()
+        ids.add(row.podcast_id)
+        podcastsByClientContact.set(key, ids)
+      }
+      // One host address can represent several shows. Only stamp a show when
+      // the client + address pair resolves unambiguously; a missing link is
+      // safer than recording a reply against the wrong relationship.
+      const podcastByClientContact = new Map<string, string>()
+      for (const [key, ids] of podcastsByClientContact) {
+        if (ids.size === 1) podcastByClientContact.set(key, [...ids][0])
       }
 
       // New replies since the cursor (small overlap absorbs clock skew and
@@ -191,19 +207,50 @@ serve(async (req) => {
         // Identity of the human who wrote, and the show they host. Stamped on
         // every thread write so a reply lands in the relationship register
         // immediately instead of waiting on an analytics sync.
-        const leadEmail = typeof email.lead === 'string' ? email.lead.trim().toLowerCase() : ''
+        const leadEmail = (
+          typeof email.lead === 'string'
+            ? email.lead
+            : typeof email.from_address_email === 'string'
+              ? email.from_address_email
+              : ''
+        ).trim().toLowerCase()
+        const attributionKey = `${clientId}:${leadEmail}`
+        const attributionKnown = Boolean(leadEmail) && podcastsByClientContact.has(attributionKey)
+        const resolvedPodcastId = attributionKnown
+          ? podcastByClientContact.get(attributionKey) ?? null
+          : null
         const leadIdentity = {
           ...(leadEmail ? { lead_email: leadEmail } : {}),
-          ...(leadEmail && podcastByContact.has(leadEmail) ? { podcast_id: podcastByContact.get(leadEmail) } : {}),
+          ...(attributionKnown ? { podcast_id: resolvedPodcastId } : {}),
         }
 
-        const { data: stateRow } = await admin
+        const { data: stateRow, error: stateError } = await admin
           .from('workspace_inbox_thread_state')
-          .select('status, draft, suppressed_at, draft_claim_email_id, draft_claimed_at')
+          .select('status, draft, suppressed_at, draft_claim_email_id, draft_claimed_at, lead_email, podcast_id')
           .eq('workspace_id', workspaceId)
           .eq('thread_key', threadKey)
           .maybeSingle()
+        if (stateError) throw stateError
         if (stateRow) {
+          const identityPatch: Record<string, unknown> = {}
+          if (leadEmail && stateRow.lead_email !== leadEmail) {
+            identityPatch.lead_email = leadEmail
+            // A changed address invalidates the prior show's identity even
+            // when the new address is not present in the bounded target map.
+            identityPatch.podcast_id = resolvedPodcastId
+          } else if (attributionKnown && stateRow.podcast_id !== resolvedPodcastId) {
+            // Explicit null clears a stale guess when one address now maps to
+            // multiple contacted shows for this client.
+            identityPatch.podcast_id = resolvedPodcastId
+          }
+          if (Object.keys(identityPatch).length > 0) {
+            const { error: identityError } = await admin
+              .from('workspace_inbox_thread_state')
+              .update({ ...identityPatch, updated_at: new Date().toISOString() })
+              .eq('workspace_id', workspaceId)
+              .eq('thread_key', threadKey)
+            if (identityError) throw identityError
+          }
           if (['booked', 'archived'].includes(String(stateRow.status ?? ''))) continue
           if (stateRow.suppressed_at) continue
           const existingDraft = stateRow.draft && typeof stateRow.draft === 'object' && !Array.isArray(stateRow.draft)

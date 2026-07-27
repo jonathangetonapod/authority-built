@@ -307,7 +307,7 @@ const MailboxesContent = ({ data, loading, error, onRetry }: MailboxesContentPro
 }
 
 const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutreachSuiteProps) => {
-  const { user, workspace } = useAuth()
+  const { isPlatformAdmin, membership, user, workspace } = useAuth()
   const selectedWorkspaceId = (platformWorkspaceId || '').toLowerCase()
   const isSelectedWorkspace = platformWorkspaceId !== undefined
   const validSelectedWorkspaceId = UUID_PATTERN.test(selectedWorkspaceId)
@@ -351,6 +351,12 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
   const baseHref = isSelectedWorkspace
     ? selectedWorkspaceBaseHref(selectedWorkspaceId)
     : MY_WORKSPACE_BASE_HREF
+  const canManage = Boolean(
+    isSelectedWorkspace
+    || isPlatformAdmin
+    || membership?.role === 'owner'
+    || membership?.role === 'admin',
+  )
   const platformWorkspace: PlatformWorkspaceConfig | undefined = isSelectedWorkspace
     ? {
         workspaceName: effectiveWorkspace?.name || 'Client workspace',
@@ -443,6 +449,7 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
             clientsLoading={campaignClientsLoading}
             clientsError={campaignClientsError}
             baseHref={baseHref}
+            canManage={canManage}
           />
         )}
         {module === 'mailboxes' && (

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuth } from '@/contexts/AuthContext'
@@ -7,6 +7,7 @@ import WorkspaceOutreachSuite, { type OutreachWorkspaceModule } from '@/pages/ap
 import { getAdminWorkspaceView } from '@/services/adminWorkspaces'
 import { getWorkspaceClients, getWorkspaceClientSdrContext } from '@/services/clients'
 import { getWorkspaceCampaignOverview, getWorkspaceInboxThreads, getWorkspaceMailboxes } from '@/services/workspaceCampaigns'
+import { captureHostRelationshipThread } from '@/services/hostRelationships'
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('@/services/adminWorkspaces', () => ({ getAdminWorkspaceView: vi.fn() }))
@@ -16,6 +17,7 @@ vi.mock('@/services/clients', () => ({
   getWorkspaceClientSdrContext: vi.fn(),
 }))
 vi.mock('@/services/clientShortlist', () => ({ getClientShortlist: vi.fn() }))
+vi.mock('@/services/hostRelationships', () => ({ captureHostRelationshipThread: vi.fn() }))
 vi.mock('@/services/mailboxInfra', () => ({
   getMailboxInfraOverview: vi.fn().mockResolvedValue({ domains: [], orders: [] }),
   getMailboxOrderStatus: vi.fn(),
@@ -55,6 +57,7 @@ const mockedClients = vi.mocked(getWorkspaceClients)
 const mockedSdrContext = vi.mocked(getWorkspaceClientSdrContext)
 const mockedCampaignOverview = vi.mocked(getWorkspaceCampaignOverview)
 const mockedMailboxes = vi.mocked(getWorkspaceMailboxes)
+const mockedCaptureRelationshipThread = vi.mocked(captureHostRelationshipThread)
 const defaultWorkspaceId = '00000000-0000-4000-8000-000000000000'
 const selectedWorkspaceId = '11111111-1111-4111-8111-111111111111'
 
@@ -87,6 +90,8 @@ describe('WorkspaceOutreachSuite', () => {
     vi.mocked(getWorkspaceInboxThreads).mockResolvedValue({ connected: true, threads: [] })
     mockedUseAuth.mockReturnValue({
       user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+      membership: { role: 'owner' },
+      isPlatformAdmin: false,
       workspace: {
         id: defaultWorkspaceId,
         name: 'Get On A Pod',
@@ -167,6 +172,11 @@ describe('WorkspaceOutreachSuite', () => {
       })),
       last_synced_at: '2026-07-24T12:00:00.000Z',
       analytics_errors: [],
+    })
+    mockedCaptureRelationshipThread.mockResolvedValue({
+      podcast_id: 'show-one',
+      relationship_created: false,
+      thread_saved: true,
     })
   })
 
@@ -345,6 +355,64 @@ describe('WorkspaceOutreachSuite', () => {
       `/app/clients/${clientId}?tab=ai-sdr`,
     )
     expect(mockedSdrContext).toHaveBeenCalledWith(defaultWorkspaceId, clientId)
+  })
+
+  it('saves a selected Master Inbox conversation to its host relationship', async () => {
+    const clientId = '22222222-2222-4222-8222-222222222222'
+    vi.mocked(getWorkspaceInboxThreads).mockResolvedValue({
+      connected: true,
+      threads: [{
+        id: 'message-one',
+        thread_id: 'thread-one',
+        message_id: 'provider-message-one',
+        eaccount: 'sdr@example.com',
+        subject: 'Re: operator systems',
+        from_email: 'morgan@example.com',
+        to_email: 'sdr@example.com',
+        body_text: 'Interested in revisiting this in Q3.',
+        received_at: '2026-07-21T12:00:00.000Z',
+        is_unread: true,
+        interested: true,
+        lead_email: 'morgan@example.com',
+        campaign: {
+          campaign_id: 'campaign-one',
+          campaign_name: 'Taylor outreach',
+          client: { id: clientId, name: 'Taylor Client' },
+        },
+        lead_context: {
+          podcast_id: 'show-one',
+          podcast_name: 'Founder & Operator',
+          host_name: 'Morgan Host',
+          stage: 'contacted',
+          first_message_at: '2026-07-20T12:00:00.000Z',
+          opens: 2,
+          replies: 1,
+        },
+        thread_key: 'thread-one',
+        relationship: null,
+      }],
+    })
+
+    renderPage('master-inbox')
+    fireEvent.click(await screen.findByRole('button', { name: /morgan@example\.com.*operator systems/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save to relationships' }))
+
+    await waitFor(() => expect(mockedCaptureRelationshipThread).toHaveBeenCalledWith(defaultWorkspaceId, {
+      podcastId: 'show-one',
+      podcastName: 'Founder & Operator',
+      hostName: 'Morgan Host',
+      contactEmail: 'morgan@example.com',
+      threadKey: 'thread-one',
+      clientId,
+      messageId: 'message-one',
+      subject: 'Re: operator systems',
+      fromEmail: 'morgan@example.com',
+      toEmail: 'sdr@example.com',
+      body: 'Interested in revisiting this in Q3.',
+      receivedAt: '2026-07-21T12:00:00.000Z',
+      campaignId: 'campaign-one',
+      campaignName: 'Taylor outreach',
+    }))
   })
 
   it('loads a selected workspace and scopes every suite route to it', async () => {

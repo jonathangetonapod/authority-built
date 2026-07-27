@@ -24,6 +24,7 @@ const expectedNavigation = [
   'Client Command Center',
   'Clients',
   'Client Campaigns',
+  'Relationships',
   'Master Inbox',
   'Mailboxes',
   'Settings',
@@ -67,7 +68,7 @@ describe('WorkspaceLayout', () => {
     expect(labels).toEqual(expectedNavigation)
 
     const links = within(navigation).getAllByRole('link')
-    expect(links).toHaveLength(10)
+    expect(links).toHaveLength(11)
     expect(within(navigation).getByRole('link', { name: 'Settings' })).toHaveAttribute(
       'href',
       '/app/settings',

@@ -2466,7 +2466,7 @@ serve(async (req) => {
       }
       const apiKey = await integrationApiKey(connection, false);
 
-      const [{ data: campaignRows }, linksResult, targetsRows, stateRows] = await Promise.all([
+      const [{ data: campaignRows }, linksResult, targetsRows, stateRows, savedRelationshipThreads] = await Promise.all([
         context.admin
           .from("workspace_client_campaigns")
           .select("id, client_id, instantly_campaign_id, name, client:clients(id, name)")
@@ -2480,13 +2480,19 @@ serve(async (req) => {
           .limit(1_000),
         context.admin
           .from("workspace_client_campaign_targets")
-          .select("client_id, contact_email, podcast_name, host_name, status, launched_at, email_open_count, email_reply_count")
+          .select("client_id, podcast_id, contact_email, podcast_name, host_name, status, launched_at, email_open_count, email_reply_count")
           .eq("workspace_id", workspaceId)
           .not("contact_email", "is", null)
+          .or("launched_at.not.is.null,instantly_lead_id.not.is.null")
           .limit(5_000),
         context.admin
           .from("workspace_inbox_thread_state")
           .select("thread_key, client_id, status, classification, draft, nudges_sent, nudges_paused, last_nudge_at, last_nudge_error, suppressed_at, auto_send_eligible_at, auto_sent_at, auto_send_error")
+          .eq("workspace_id", workspaceId)
+          .limit(5_000),
+        context.admin
+          .from("workspace_host_relationship_threads")
+          .select("thread_key, podcast_id")
           .eq("workspace_id", workspaceId)
           .limit(5_000),
       ]);
@@ -2495,12 +2501,24 @@ serve(async (req) => {
       for (const row of ((stateRows.error ? [] : stateRows.data ?? []) as Array<Record<string, unknown>>)) {
         if (typeof row.thread_key === "string") stateByThreadKey.set(row.thread_key, row);
       }
+      const relationshipByThreadKey = new Map<string, string>();
+      for (const row of ((savedRelationshipThreads.error ? [] : savedRelationshipThreads.data ?? []) as Array<Record<string, unknown>>)) {
+        if (typeof row.thread_key === "string" && typeof row.podcast_id === "string") {
+          relationshipByThreadKey.set(row.thread_key, row.podcast_id);
+        }
+      }
       // Lead context: which podcast/host a reply address belongs to, keyed by
       // client so one address never leaks another client's outreach.
-      const targetByClientEmail = new Map<string, Record<string, unknown>>();
+      const targetByClientEmail = new Map<string, Record<string, unknown> | null>();
       for (const row of ((targetsRows.error ? [] : targetsRows.data ?? []) as Array<Record<string, unknown>>)) {
         if (typeof row.contact_email !== "string" || typeof row.client_id !== "string") continue;
-        targetByClientEmail.set(`${row.client_id}:${row.contact_email.toLowerCase()}`, row);
+        const key = `${row.client_id}:${row.contact_email.trim().toLowerCase()}`;
+        if (!targetByClientEmail.has(key)) {
+          targetByClientEmail.set(key, row);
+          continue;
+        }
+        const current = targetByClientEmail.get(key);
+        if (current?.podcast_id !== row.podcast_id) targetByClientEmail.set(key, null);
       }
       const campaignByProviderId = new Map(
         ((campaignRows ?? []) as Array<Record<string, unknown>>).flatMap((row) => {
@@ -2607,7 +2625,7 @@ serve(async (req) => {
         const bodyText = text(bodyRecord.text, 2_000)
           || text(bodyRecord.html, 4_000).replace(/<[^>]+>/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 2_000);
         const interestValue = typeof email.i_status === "number" ? email.i_status : null;
-        const leadEmail = (text(email.lead, 320) || text(email.from_address_email, 320)).toLowerCase();
+        const leadEmail = (text(email.lead, 320) || text(email.from_address_email, 320)).trim().toLowerCase();
         const target = mapped.client && leadEmail
           ? targetByClientEmail.get(`${mapped.client.id}:${leadEmail}`) ?? null
           : null;
@@ -2638,6 +2656,9 @@ serve(async (req) => {
           lead_id: typeof email.lead_id === "string" ? email.lead_id : null,
           campaign: mapped,
           thread_key: threadKey,
+          relationship: relationshipByThreadKey.has(threadKey)
+            ? { podcast_id: relationshipByThreadKey.get(threadKey) }
+            : null,
           state: stateRow
             ? {
               status: typeof stateRow.status === "string" ? stateRow.status : "needs_reply",
@@ -2672,6 +2693,7 @@ serve(async (req) => {
             : null,
           lead_context: target
             ? {
+              podcast_id: typeof target.podcast_id === "string" ? target.podcast_id : null,
               podcast_name: typeof target.podcast_name === "string" ? target.podcast_name.slice(0, 300) : null,
               host_name: typeof target.host_name === "string" ? target.host_name.slice(0, 300) : null,
               stage: target.status === "in_outreach" || target.status === "launching"
@@ -2705,6 +2727,34 @@ serve(async (req) => {
       }
       const dedupedThreads = [...newestByThread.values()].sort((left, right) =>
         String(right.received_at ?? "").localeCompare(String(left.received_at ?? "")));
+      // Reading the provider inbox is also ingestion: persist the identity of
+      // every attributable host reply so manual-mode clients enter the shared
+      // relationship book too. Only unambiguous client + address mappings have
+      // lead_context, so this can never guess between two shows for one host.
+      const relationshipRows = dedupedThreads.flatMap((thread) => {
+        const clientId = thread.campaign?.client?.id;
+        const leadEmail = thread.lead_email.trim().toLowerCase();
+        const key = `${clientId}:${leadEmail}`;
+        if (!thread.thread_key || !clientId || !leadEmail || !targetByClientEmail.has(key)) return [];
+        const target = targetByClientEmail.get(key);
+        return [{
+          workspace_id: workspaceId,
+          thread_key: thread.thread_key,
+          client_id: clientId,
+          lead_email: leadEmail,
+          // Null is deliberate: clear any stale guess when this client has
+          // contacted the same address for more than one show.
+          podcast_id: typeof target?.podcast_id === "string" ? target.podcast_id : null,
+        }];
+      });
+      if (relationshipRows.length > 0) {
+        const { error: relationshipStateError } = await context.admin
+          .from("workspace_inbox_thread_state")
+          .upsert(relationshipRows, { onConflict: "workspace_id,thread_key" });
+        if (relationshipStateError) {
+          throw new HttpError(503, "THREAD_STATE_UNAVAILABLE", "Reply relationships could not be recorded");
+        }
+      }
       return jsonResponse(req, METHODS, 200, { connected: true, threads: dedupedThreads });
     }
 

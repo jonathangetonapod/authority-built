@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   AlertCircle,
   ArrowRight,
   Bot,
+  BookUser,
   CalendarCheck2,
   Inbox,
   Loader2,
@@ -42,6 +43,7 @@ import {
   type WorkspaceInboxThreadStatus,
   type WorkspaceLeadInterestValue,
 } from '@/services/workspaceCampaigns'
+import { captureHostRelationshipThread } from '@/services/hostRelationships'
 import {
   CLIENT_SDR_PROFILE_FIELD_DEFINITIONS,
   type ClientSdrProfile,
@@ -124,6 +126,7 @@ interface MasterInboxPreviewProps {
   clientsLoading: boolean
   clientsError: Error | null
   baseHref: string
+  canManage: boolean
 }
 
 function ClientSdrContextPanel({
@@ -212,7 +215,8 @@ function ClientSdrContextPanel({
   )
 }
 
-const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError, baseHref }: MasterInboxPreviewProps) => {
+const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError, baseHref, canManage }: MasterInboxPreviewProps) => {
+  const queryClient = useQueryClient()
   const [scope, setScope] = useState<InboxScope>('interested')
   const [filter, setFilter] = useState<InboxFilter>('all')
   const [search, setSearch] = useState('')
@@ -307,6 +311,37 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
   const firstContactedAt = leadDetail?.first_contacted_at
     || selectedThread?.lead_context?.first_message_at
     || null
+
+  const captureRelationshipMutation = useMutation({
+    mutationFn: (thread: WorkspaceInboxThread) => captureHostRelationshipThread(workspaceId, {
+      podcastId: thread.lead_context?.podcast_id ?? null,
+      podcastName: thread.lead_context?.podcast_name
+        || `Conversation with ${leadName}`,
+      hostName: leadFullName || thread.lead_context?.host_name || null,
+      contactEmail: leadDetail?.email || thread.lead_email || thread.from_email || null,
+      threadKey: thread.thread_key || thread.id,
+      clientId: thread.campaign?.client?.id ?? null,
+      messageId: thread.id,
+      subject: thread.subject || null,
+      fromEmail: thread.from_email || null,
+      toEmail: thread.to_email || null,
+      body: thread.body_text || null,
+      receivedAt: thread.received_at,
+      campaignId: thread.campaign?.campaign_id ?? null,
+      campaignName: thread.campaign?.campaign_name ?? null,
+    }),
+    onSuccess: (result) => {
+      toast.success(result.relationship_created
+        ? 'Relationship created and conversation saved.'
+        : 'Conversation saved to the relationship book.')
+      void inboxQuery.refetch()
+      void queryClient.invalidateQueries({ queryKey: ['host-relationships', workspaceId] })
+      void queryClient.invalidateQueries({ queryKey: ['host-relationship', workspaceId, result.podcast_id] })
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'The conversation could not be saved to relationships.')
+    },
+  })
 
   const draftMutation = useMutation({
     mutationFn: (thread: WorkspaceInboxThread) => draftWorkspaceInboxReply(
@@ -630,7 +665,23 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
               <h2 className="text-sm font-semibold">{selectedThread ? 'Conversation' : selectedClient ? 'Client AI SDR profile' : 'Conversation thread'}</h2>
               <p className="mt-0.5 text-xs text-muted-foreground">{selectedThread ? (selectedThread.campaign?.campaign_name || 'Reply from outreach') : selectedClient ? 'Preview the exact context available to mapped inbox replies.' : 'Open a reply to see its history and client AI SDR state.'}</p>
             </div>
-            <Badge variant="outline" className="text-muted-foreground">{selectedThread ? (selectedThread.campaign?.client?.name || 'Unmapped reply') : selectedClient?.name || 'No conversation selected'}</Badge>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {selectedThread && canManage && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={selectedThread.relationship ? 'secondary' : 'outline'}
+                  disabled={captureRelationshipMutation.isPending}
+                  onClick={() => captureRelationshipMutation.mutate(selectedThread)}
+                >
+                  {captureRelationshipMutation.isPending
+                    ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                    : <BookUser className="mr-2 h-3.5 w-3.5" />}
+                  {selectedThread.relationship ? 'Update saved conversation' : 'Save to relationships'}
+                </Button>
+              )}
+              <Badge variant="outline" className="text-muted-foreground">{selectedThread ? (selectedThread.campaign?.client?.name || 'Unmapped reply') : selectedClient?.name || 'No conversation selected'}</Badge>
+            </div>
           </div>
 
           <div className={cn('flex flex-1', selectedThread ? 'min-h-0' : 'items-center justify-center')}>

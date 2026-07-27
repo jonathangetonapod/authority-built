@@ -1,0 +1,268 @@
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { useAuth } from '@/contexts/AuthContext'
+import WorkspaceRelationships from '@/pages/app/WorkspaceRelationships'
+import { getAdminWorkspaceView } from '@/services/adminWorkspaces'
+import { getWorkspaceClients } from '@/services/clients'
+import {
+  addHostRelationshipNote,
+  createHostRelationship,
+  getHostRelationship,
+  linkHostRelationshipClient,
+  listHostRelationships,
+  saveHostRelationship,
+  type HostRelationshipDetail,
+  type HostRelationshipSummary,
+} from '@/services/hostRelationships'
+
+vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
+vi.mock('@/components/workspace/WorkspaceLayout', () => ({
+  WorkspaceLayout: ({
+    children,
+    platformWorkspace,
+  }: {
+    children: React.ReactNode
+    platformWorkspace?: { baseHref?: string }
+  }) => <div data-testid="workspace-layout" data-base-href={platformWorkspace?.baseHref}>{children}</div>,
+}))
+vi.mock('@/services/adminWorkspaces', () => ({ getAdminWorkspaceView: vi.fn() }))
+vi.mock('@/services/clients', () => ({ getWorkspaceClients: vi.fn() }))
+vi.mock('@/services/hostRelationships', () => ({
+  addHostRelationshipNote: vi.fn(),
+  createHostRelationship: vi.fn(),
+  getHostRelationship: vi.fn(),
+  linkHostRelationshipClient: vi.fn(),
+  listHostRelationships: vi.fn(),
+  saveHostRelationship: vi.fn(),
+}))
+
+const mockedUseAuth = vi.mocked(useAuth)
+const mockedAdminWorkspace = vi.mocked(getAdminWorkspaceView)
+const mockedClients = vi.mocked(getWorkspaceClients)
+const mockedList = vi.mocked(listHostRelationships)
+const mockedDetail = vi.mocked(getHostRelationship)
+const mockedSave = vi.mocked(saveHostRelationship)
+const mockedAddNote = vi.mocked(addHostRelationshipNote)
+const mockedCreate = vi.mocked(createHostRelationship)
+const mockedLinkClient = vi.mocked(linkHostRelationshipClient)
+
+const workspaceId = '11111111-1111-4111-8111-111111111111'
+const platformWorkspaceId = '99999999-9999-4999-8999-999999999999'
+const clientId = '22222222-2222-4222-8222-222222222222'
+
+const relationship: HostRelationshipSummary = {
+  podcast_id: 'show-one',
+  podcast_name: 'Founder &amp; Operator',
+  host_name: 'Morgan Host',
+  contact_email: 'morgan@example.com',
+  derived_state: 'replied',
+  manual_stage: null,
+  summary: 'Prefers practical operator stories.',
+  last_contacted_at: '2026-07-20T12:00:00.000Z',
+  touch_count: 1,
+  booked_client_name: null,
+  client_count: 1,
+  note_count: 1,
+  last_note_at: '2026-07-21T12:00:00.000Z',
+  curated: true,
+}
+
+const detail: HostRelationshipDetail = {
+  relationship: {
+    podcast_id: 'show-one',
+    podcast_name: 'Founder & Operator',
+    host_name: 'Morgan Host',
+    contact_email: 'morgan@example.com',
+    manual_stage: null,
+    summary: 'Prefers practical operator stories.',
+    updated_at: '2026-07-21T12:00:00.000Z',
+  },
+  derived: { state: 'replied', last_client_name: 'Taylor Client', booked_client_name: null },
+  clients: [{
+    client_id: clientId,
+    client_name: 'Taylor Client',
+    intent: 'pitched',
+    note: null,
+    created_at: '2026-07-20T12:00:00.000Z',
+  }],
+  events: [{
+    id: 'event-one',
+    client_id: clientId,
+    kind: 'note',
+    body: 'Asked for a tighter angle next time.',
+    occurred_at: '2026-07-21T12:00:00.000Z',
+  }],
+  threads: [{
+    thread_key: 'thread-one',
+    client_id: clientId,
+    client_name: 'Taylor Client',
+    provider: 'instantly',
+    latest_message_id: 'message-one',
+    subject: 'Re: operator systems',
+    lead_email: 'morgan@example.com',
+    from_email: 'morgan@example.com',
+    to_email: 'sdr@example.com',
+    latest_message_body: 'Interested in revisiting this in Q3.',
+    latest_message_at: '2026-07-21T12:00:00.000Z',
+    campaign_id: 'campaign-one',
+    campaign_name: 'Taylor outreach',
+    created_at: '2026-07-21T12:00:00.000Z',
+    updated_at: '2026-07-21T12:00:00.000Z',
+  }],
+}
+
+function renderPage(props: { platformWorkspaceId?: string } = {}) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={['/app/relationships']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <WorkspaceRelationships {...props} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+}
+
+describe('WorkspaceRelationships', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockedUseAuth.mockReturnValue({
+      user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+      workspace: { id: workspaceId, name: 'Acme Workspace' },
+      membership: { role: 'owner' },
+      isPlatformAdmin: false,
+    } as never)
+    mockedList.mockResolvedValue([relationship])
+    mockedDetail.mockResolvedValue(detail)
+    mockedClients.mockResolvedValue([
+      { id: clientId, name: 'Taylor Client', status: 'active' },
+      { id: '33333333-3333-4333-8333-333333333333', name: 'Jordan Client', status: 'active' },
+    ] as never)
+    mockedSave.mockResolvedValue(undefined)
+    mockedAddNote.mockResolvedValue(undefined)
+    mockedLinkClient.mockResolvedValue(undefined)
+    mockedCreate.mockResolvedValue({ podcast_id: 'manual-relationship-one', created: true })
+    mockedAdminWorkspace.mockResolvedValue({
+      workspace: {
+        id: platformWorkspaceId,
+        name: 'Selected Agency',
+        slug: 'selected-agency',
+        status: 'active',
+        is_default: false,
+        logo_path: null,
+        logo_updated_at: null,
+      },
+      viewer: { workspace_id: platformWorkspaceId, email: 'owner@example.com', full_name: 'Owner', role: 'owner' },
+      clients: [],
+    })
+  })
+
+  it('lets a manager curate the stage, timeline, and client plan', async () => {
+    renderPage()
+
+    expect(await screen.findByText('Founder & Operator')).toBeInTheDocument()
+    expect(screen.getByText('Replied')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }))
+
+    const summary = await screen.findByLabelText('What we know about this host')
+    fireEvent.change(summary, { target: { value: 'Warm, direct, and prefers concise pitches.' } })
+    fireEvent.click(screen.getByRole('combobox', { name: 'Relationship stage' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Warm relationship' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save relationship' }))
+
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledWith(workspaceId, {
+      podcastId: 'show-one',
+      summary: 'Warm, direct, and prefers concise pitches.',
+      manualStage: 'warm',
+    }))
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Interaction type' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Call' }))
+    fireEvent.change(screen.getByLabelText('Log an interaction'), { target: { value: 'Call went well.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add interaction' }))
+    await waitFor(() => expect(mockedAddNote).toHaveBeenCalledWith(workspaceId, {
+      podcastId: 'show-one',
+      body: 'Call went well.',
+      kind: 'call',
+    }))
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Choose a client' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Jordan Client' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save client' }))
+    await waitFor(() => expect(mockedLinkClient).toHaveBeenCalledWith(workspaceId, {
+      podcastId: 'show-one',
+      clientId: '33333333-3333-4333-8333-333333333333',
+      intent: 'considering',
+    }))
+    expect(screen.getByText('Re: operator systems')).toBeInTheDocument()
+    expect(screen.getByText('Interested in revisiting this in Q3.')).toBeInTheDocument()
+  })
+
+  it('lets a manager add a relationship before outreach exists', async () => {
+    renderPage()
+    await screen.findByText('Founder & Operator')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add relationship' }))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Podcast or show'), { target: { value: 'The Operator Room' } })
+    fireEvent.change(within(dialog).getByLabelText('Host name'), { target: { value: 'Alex Host' } })
+    fireEvent.change(within(dialog).getByLabelText('Host email'), { target: { value: 'alex@example.com' } })
+    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Relationship stage' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Warm relationship' }))
+    fireEvent.change(within(dialog).getByLabelText('What should the team remember?'), {
+      target: { value: 'Met at the operator summit.' },
+    })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add relationship' }))
+
+    await waitFor(() => expect(mockedCreate).toHaveBeenCalledWith(workspaceId, {
+      podcastName: 'The Operator Room',
+      hostName: 'Alex Host',
+      contactEmail: 'alex@example.com',
+      manualStage: 'warm',
+      summary: 'Met at the operator summit.',
+    }))
+  })
+
+  it('gives ordinary members relationship context without mutation controls', async () => {
+    mockedUseAuth.mockReturnValue({
+      user: { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+      workspace: { id: workspaceId, name: 'Acme Workspace' },
+      membership: { role: 'member' },
+      isPlatformAdmin: false,
+    } as never)
+
+    renderPage()
+    await screen.findByText('Founder & Operator')
+    expect(screen.getByText(/owners and admins curate stages/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }))
+
+    expect(await screen.findByText('Prefers practical operator stories.')).toBeInTheDocument()
+    expect(screen.getByText('Asked for a tighter angle next time.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save relationship' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add interaction' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add relationship' })).not.toBeInTheDocument()
+    expect(mockedClients).not.toHaveBeenCalled()
+  })
+
+  it('keeps platform admins inside the explicitly selected workspace shell', async () => {
+    mockedUseAuth.mockReturnValue({
+      user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+      workspace: null,
+      membership: null,
+      isPlatformAdmin: true,
+    } as never)
+
+    renderPage({ platformWorkspaceId })
+
+    expect(await screen.findByText('Founder & Operator')).toBeInTheDocument()
+    expect(mockedAdminWorkspace).toHaveBeenCalledWith(platformWorkspaceId, expect.any(AbortSignal))
+    expect(mockedList).toHaveBeenCalledWith(platformWorkspaceId)
+    expect(screen.getByTestId('workspace-layout')).toHaveAttribute(
+      'data-base-href',
+      `/app/workspaces/${platformWorkspaceId}`,
+    )
+  })
+})
