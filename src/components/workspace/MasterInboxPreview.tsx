@@ -518,6 +518,10 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
 
   return (
     <Card className="overflow-hidden shadow-none">
+      {/* Scope, search, and filters only describe an inbox that loaded. With
+          nothing behind them they offer controls that cannot change anything
+          and counts that are zero for a reason the notice below explains. */}
+      {!unavailable && (
       <div className="border-b bg-background">
         <div className="flex flex-col gap-3 p-3 lg:flex-row lg:items-center lg:justify-between lg:px-4">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -623,6 +627,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
           ))}
         </div>
       </div>
+      )}
 
       {unavailable ? (
         <div className="flex flex-col items-center justify-center px-6 py-12 text-center">

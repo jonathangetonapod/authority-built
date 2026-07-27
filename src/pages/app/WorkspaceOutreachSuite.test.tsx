@@ -420,6 +420,19 @@ describe('WorkspaceOutreachSuite', () => {
     }))
   })
 
+  it('collapses to a single notice when Instantly is not connected', async () => {
+    vi.mocked(getWorkspaceInboxThreads).mockResolvedValue({ connected: false, threads: [] } as never)
+
+    renderPage('master-inbox')
+
+    expect(await screen.findByText('Instantly is not connected')).toBeInTheDocument()
+    // The split view is sized to the viewport, and the toolbar only describes
+    // an inbox that loaded, so neither may render around an empty state.
+    expect(screen.queryByLabelText('Search conversations')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Conversation filters')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Inbox conversations')).not.toBeInTheDocument()
+  })
+
   it('replies on the host thread subject and offers no way to change it', async () => {
     const clientId = '22222222-2222-4222-8222-222222222222'
     vi.mocked(getWorkspaceInboxThreads).mockResolvedValue({
