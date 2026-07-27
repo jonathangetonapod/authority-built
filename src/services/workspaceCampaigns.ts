@@ -503,6 +503,8 @@ export interface WorkspaceInboxThread {
    * lead does not rewrite emails already in the list.
    */
   interest_status?: number | null
+  /** The sender is on this workspace's do-not-contact list. */
+  suppressed?: boolean
   lead_email: string
   lead_id?: string | null
   campaign: {

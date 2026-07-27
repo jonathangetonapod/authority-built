@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import {
   AlertCircle,
   ArrowRight,
+  Ban,
   Bot,
   BookUser,
   CalendarCheck2,
@@ -24,6 +25,14 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -43,7 +52,7 @@ import {
   type WorkspaceInboxThreadStatus,
   type WorkspaceLeadInterestValue,
 } from '@/services/workspaceCampaigns'
-import { captureHostRelationshipThread } from '@/services/hostRelationships'
+import { addOutreachSuppression, captureHostRelationshipThread } from '@/services/hostRelationships'
 import {
   CLIENT_SDR_PROFILE_FIELD_DEFINITIONS,
   type ClientSdrProfile,
@@ -230,6 +239,7 @@ function replySubject(subject: string | null | undefined): string {
 const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError, baseHref, canManage }: MasterInboxPreviewProps) => {
   const queryClient = useQueryClient()
   const [scope, setScope] = useState<InboxScope>('interested')
+  const [suppressTarget, setSuppressTarget] = useState<WorkspaceInboxThread | null>(null)
   const [filter, setFilter] = useState<InboxFilter>('all')
   const [search, setSearch] = useState('')
   const [searchParams, setSearchParams] = useSearchParams()
@@ -461,6 +471,35 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'The lead status could not be updated.')
+    },
+  })
+  // The reply in front of the operator is often the only place an opt-out is
+  // ever seen. Until now there was nothing to do about it here: the automatic
+  // prefilter only suppresses threads it processes, so a request to stop that
+  // arrived on an unprocessed thread simply sat in the list.
+  const suppressMutation = useMutation({
+    mutationFn: async (thread: WorkspaceInboxThread) => {
+      const email = (thread.lead_email || thread.from_email || '').trim().toLowerCase()
+      if (!email) throw new Error('This conversation has no sender address to suppress.')
+      await addOutreachSuppression(workspaceId, {
+        contactEmail: email,
+        reason: 'opted_out',
+        note: `Asked to stop in ${thread.subject ? `“${thread.subject.slice(0, 120)}”` : 'a reply'}`,
+      })
+      await setWorkspaceInboxThreadStatus(workspaceId, {
+        thread_key: thread.thread_key,
+        client_id: thread.campaign?.client?.id ?? '',
+        status: 'archived',
+      }).catch(() => undefined)
+    },
+    onSuccess: () => {
+      setSuppressTarget(null)
+      toast.success('Added to do not contact. No client in this workspace will email that address again.')
+      void inboxQuery.refetch()
+    },
+    onError: (error) => {
+      setSuppressTarget(null)
+      toast.error(error instanceof Error ? error.message : 'The address could not be suppressed.')
     },
   })
   const statusMutation = useMutation({
@@ -889,6 +928,22 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                           <Button type="button" size="sm" variant="ghost" className="text-muted-foreground" disabled={statusMutation.isPending} onClick={() => statusMutation.mutate({ thread: selectedThread, status: 'archived' })}>
                             Archive conversation
                           </Button>
+                          {selectedThread.suppressed ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-destructive">
+                              <Ban className="h-3.5 w-3.5" />Do not contact
+                            </span>
+                          ) : (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive hover:text-destructive"
+                              disabled={suppressMutation.isPending}
+                              onClick={() => setSuppressTarget(selectedThread)}
+                            >
+                              <Ban className="mr-1.5 h-3.5 w-3.5" />Do not contact
+                            </Button>
+                          )}
                         </>
                       )}
                     </div>
@@ -1111,6 +1166,37 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
 
       </div>
       )}
+
+      {/* Suppression is workspace-wide and directed at the sender, so it is
+          worth naming the address before it silences that person for every
+          client. The safe direction, but not a small one. */}
+      <Dialog open={Boolean(suppressTarget)} onOpenChange={(next) => !suppressMutation.isPending && !next && setSuppressTarget(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Never contact {suppressTarget?.lead_email || suppressTarget?.from_email}?</DialogTitle>
+            <DialogDescription>
+              An opt-out is directed at your agency, not at one campaign. This address will be
+              excluded from outreach for every client in this workspace, and the conversation is
+              archived.
+            </DialogDescription>
+          </DialogHeader>
+          {suppressTarget?.body_text && (
+            <p className="mt-4 line-clamp-4 rounded-lg border bg-muted/40 p-3 text-xs leading-5 text-muted-foreground">
+              {suppressTarget.body_text.slice(0, 400)}
+            </p>
+          )}
+          <p className="mt-3 text-xs leading-5 text-muted-foreground">
+            It stays reversible from Relationships, where removing it asks for a written reason.
+          </p>
+          <DialogFooter className="mt-5">
+            <Button type="button" variant="outline" onClick={() => setSuppressTarget(null)} disabled={suppressMutation.isPending}>Cancel</Button>
+            <Button type="button" variant="destructive" onClick={() => suppressTarget && suppressMutation.mutate(suppressTarget)} disabled={suppressMutation.isPending}>
+              {suppressMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Add to do not contact
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

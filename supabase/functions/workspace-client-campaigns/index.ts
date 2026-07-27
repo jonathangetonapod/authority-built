@@ -2699,7 +2699,7 @@ serve(async (req) => {
       }
       const apiKey = await integrationApiKey(connection, false);
 
-      const [{ data: campaignRows }, linksResult, targetsRows, stateRows, savedRelationshipThreads, leadInterestRows] = await Promise.all([
+      const [{ data: campaignRows }, linksResult, targetsRows, stateRows, savedRelationshipThreads, leadInterestRows, suppressionRows] = await Promise.all([
         context.admin
           .from("workspace_client_campaigns")
           .select("id, client_id, instantly_campaign_id, name, client:clients(id, name)")
@@ -2733,6 +2733,11 @@ serve(async (req) => {
           .select("contact_email, interest_value")
           .eq("workspace_id", workspaceId)
           .limit(5_000),
+        context.admin
+          .from("workspace_outreach_suppressions")
+          .select("contact_email")
+          .eq("workspace_id", workspaceId)
+          .limit(5_000),
       ]);
       // Persisted SDR state per thread — tolerate the pre-migration table.
       const stateByThreadKey = new Map<string, Record<string, unknown>>();
@@ -2753,6 +2758,17 @@ serve(async (req) => {
           row.contact_email,
           typeof row.interest_value === "number" ? row.interest_value : null,
         );
+      }
+      // Who this workspace may not contact. Surfaced on the thread so the
+      // inbox can say an address is already silenced instead of offering to
+      // silence it again.
+      const suppressedEmails = new Set<string>();
+      for (
+        const row of ((suppressionRows.error ? [] : suppressionRows.data ?? []) as Array<
+          Record<string, unknown>
+        >)
+      ) {
+        if (typeof row.contact_email === "string") suppressedEmails.add(row.contact_email);
       }
       const relationshipByThreadKey = new Map<string, string>();
       for (const row of ((savedRelationshipThreads.error ? [] : savedRelationshipThreads.data ?? []) as Array<Record<string, unknown>>)) {
@@ -2912,6 +2928,7 @@ serve(async (req) => {
           interest_status: interestByLeadEmail.has(leadEmail)
             ? interestByLeadEmail.get(leadEmail) ?? null
             : interestValue,
+          suppressed: suppressedEmails.has(leadEmail),
           lead_email: text(email.lead, 320) || text(email.from_address_email, 320),
           lead_id: typeof email.lead_id === "string" ? email.lead_id : null,
           campaign: mapped,

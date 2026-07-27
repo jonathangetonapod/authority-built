@@ -395,3 +395,15 @@ assert.match(leadInterestMigration, /FORCE ROW LEVEL SECURITY/u)
 // The conversation is followed into its new bucket rather than vanishing.
 assert.match(masterInbox, /const movedTo: InboxScope = input\.value === 1 \? 'interested' : 'other'[\s\S]*?setScope\(movedTo\)/u)
 assert.match(masterInbox, /selectedThread\.interest_status \?\? leadDetail\?\.interest_status \?\? null/u)
+
+// An opt-out is usually only ever seen in the reply itself. The automatic
+// prefilter suppresses threads it processes; a request to stop on any other
+// thread had nowhere to go, so the inbox offers the action directly.
+assert.match(masterInbox, /const suppressMutation = useMutation\(\{[\s\S]*?addOutreachSuppression\(workspaceId, \{[\s\S]*?reason: 'opted_out'/u)
+// Archiving is best-effort: the suppression is the part that must not be lost.
+assert.match(masterInbox, /setWorkspaceInboxThreadStatus\(workspaceId, \{[\s\S]*?status: 'archived',\s+\}\)\.catch\(\(\) => undefined\)/u)
+assert.match(masterInbox, /excluded from outreach for every client in this workspace/u)
+// An address already on the list is stated, not offered for suppressing again.
+assert.match(masterInbox, /selectedThread\.suppressed \?/u)
+assert.match(edge, /suppressed: suppressedEmails\.has\(leadEmail\)/u)
+assert.match(edge, /from\("workspace_outreach_suppressions"\)\s+\.select\("contact_email"\)/u)

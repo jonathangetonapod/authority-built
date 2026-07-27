@@ -13,7 +13,7 @@ import {
   sendWorkspaceInboxReply,
   setWorkspaceInboxLeadInterest,
 } from '@/services/workspaceCampaigns'
-import { captureHostRelationshipThread } from '@/services/hostRelationships'
+import { addOutreachSuppression, captureHostRelationshipThread } from '@/services/hostRelationships'
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('@/services/adminWorkspaces', () => ({ getAdminWorkspaceView: vi.fn() }))
@@ -23,7 +23,10 @@ vi.mock('@/services/clients', () => ({
   getWorkspaceClientSdrContext: vi.fn(),
 }))
 vi.mock('@/services/clientShortlist', () => ({ getClientShortlist: vi.fn() }))
-vi.mock('@/services/hostRelationships', () => ({ captureHostRelationshipThread: vi.fn() }))
+vi.mock('@/services/hostRelationships', () => ({
+  addOutreachSuppression: vi.fn().mockResolvedValue(undefined),
+  captureHostRelationshipThread: vi.fn(),
+}))
 vi.mock('@/services/mailboxInfra', () => ({
   getMailboxInfraOverview: vi.fn().mockResolvedValue({ domains: [], orders: [] }),
   getMailboxOrderStatus: vi.fn(),
@@ -364,6 +367,67 @@ describe('WorkspaceOutreachSuite', () => {
       `/app/clients/${clientId}?tab=ai-sdr`,
     )
     expect(mockedSdrContext).toHaveBeenCalledWith(defaultWorkspaceId, clientId)
+  })
+
+  it('lets an operator suppress a host who asked to stop, from the reply itself', async () => {
+    const clientId = '22222222-2222-4222-8222-222222222222'
+    vi.mocked(getWorkspaceInboxThreads).mockResolvedValue({
+      connected: true,
+      threads: [{
+        id: 'message-optout',
+        thread_id: 'thread-optout',
+        message_id: 'provider-message-optout',
+        eaccount: 'sdr@example.com',
+        subject: 'Do not send correspondence to this email address, please',
+        from_email: 'bingram.precision@gmail.com',
+        to_email: 'sdr@example.com',
+        body_text: 'Do not send correspondence to this email address, please.',
+        received_at: '2026-07-21T12:00:00.000Z',
+        is_unread: true,
+        interested: false,
+        interest_status: null,
+        // The automatic prefilter never processed this thread, so nothing
+        // suppressed the address — the production case this exists for.
+        suppressed: false,
+        lead_email: 'bingram.precision@gmail.com',
+        campaign: {
+          campaign_id: 'campaign-one',
+          campaign_name: 'Titan outreach',
+          client: { id: clientId, name: 'Dallas Fontaine' },
+        },
+        lead_context: {
+          podcast_id: 'show-one',
+          podcast_name: 'Titan Solar',
+          host_name: 'Brad Ingram',
+          stage: 'contacted',
+          first_message_at: '2026-07-20T12:00:00.000Z',
+          opens: 1,
+          replies: 1,
+        },
+        thread_key: 'thread-optout',
+        relationship: null,
+      }],
+    } as never)
+    renderPage('master-inbox')
+
+    fireEvent.click(await screen.findByRole('radio', { name: /Other replies/ }))
+    fireEvent.click(await screen.findByText('Do not send correspondence to this email address, please'))
+    fireEvent.click(await screen.findByRole('button', { name: /Do not contact/ }))
+
+    // Workspace-wide, so the address is named before it is silenced everywhere.
+    const cancel = await screen.findByRole('button', { name: 'Cancel' })
+    const confirm = within(cancel.closest('[role="dialog"]') as HTMLElement)
+    expect(confirm.getByText(/excluded from outreach for every client/i)).toBeInTheDocument()
+    expect(addOutreachSuppression).not.toHaveBeenCalled()
+
+    fireEvent.click(confirm.getByRole('button', { name: 'Add to do not contact' }))
+    await waitFor(() => expect(addOutreachSuppression).toHaveBeenCalledWith(
+      defaultWorkspaceId,
+      expect.objectContaining({
+        contactEmail: 'bingram.precision@gmail.com',
+        reason: 'opted_out',
+      }),
+    ))
   })
 
   it('moves a conversation into Interested only when it is marked interested', async () => {
