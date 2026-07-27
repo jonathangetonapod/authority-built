@@ -1,0 +1,274 @@
+{
+  "_readme": [
+    "Labelled pitch sequences for the offline eval harness (src/lib/pitchEval.ts).",
+    "",
+    "Each case pairs a generated sequence with the evidence it was supposed to be",
+    "built from, and states exactly which findings the scorer must produce. Change",
+    "a prompt in docs/pitch-research-prompts.json, a word target in",
+    "src/lib/pitchQuality.ts, or a check in the scorer, and the cases that flip",
+    "tell you what the change actually did.",
+    "",
+    "Failure cases are drawn from things that have shipped or nearly shipped: a",
+    "generic opener that could have gone to any show, an invented guest name, a",
+    "strategy document pasted into a host-facing email, and a prior client named",
+    "on an episode that never aired.",
+    "",
+    "expect_findings must list every finding id the scorer emits, in any order.",
+    "An empty list means the sequence is clean.",
+    "",
+    "A label starting 'Fails' means at least one blocking finding — copy that must",
+    "never reach a host. 'Flags without blocking' is copy an operator should fix",
+    "before sending but which is not itself dangerous."
+  ],
+  "cases": [
+    {
+      "id": "grounded-opener",
+      "label": "Clean: opens on a real episode moment, right length, no tells",
+      "expect_findings": [],
+      "evidence": {
+        "research": "The Good, Bad & the Ugly of Self Storage is hosted by Michael Wagner. In the episode 'Buying at the top of the market' he spoke with Peter Smythe about paying too much for a facility in 2022 and what the workout looked like. Michael repeatedly returns to operators who bought badly and recovered.",
+        "episode_titles": [
+          "Buying at the top of the market"
+        ],
+        "guest_names": [
+          "Peter Smythe"
+        ],
+        "host_name": "Michael Wagner",
+        "client_name": "Dallas Fontaine"
+      },
+      "sequence": {
+        "subject": "Your Peter Smythe episode",
+        "email_1": "Hi Michael, your conversation with Peter Smythe about buying at the top of the market stuck with me, particularly the part where he walked through the workout rather than skipping to the happy ending. Most storage conversations stop at the acquisition and leave the hard year out entirely. I work with Dallas Fontaine, who took over three underwater facilities in 2023 and rebuilt occupancy without discounting rates, and he can talk through the specific decisions that worked as well as the two that did not. Would that be a fit for the show? Happy to send a few specifics first if it helps you judge.",
+        "follow_up_1": "Hi Michael, following up on the note about Dallas Fontaine. One thing your listeners might find useful: he tracks the point at which a discount stops buying occupancy and starts buying churn. Worth a conversation?",
+        "follow_up_2": "Hi Michael, I will stop here so I am not cluttering your inbox. If the timing is better later in the year, just say the word and I will come back then."
+      }
+    },
+    {
+      "id": "generic-opener",
+      "label": "Fails: could have been sent to any podcast in the category",
+      "expect_findings": [
+        "no_show_reference"
+      ],
+      "evidence": {
+        "research": "The Good, Bad & the Ugly of Self Storage is hosted by Michael Wagner. In the episode 'Buying at the top of the market' he spoke with Peter Smythe about paying too much for a facility in 2022.",
+        "episode_titles": [
+          "Buying at the top of the market"
+        ],
+        "guest_names": [
+          "Peter Smythe"
+        ],
+        "host_name": "Michael Wagner",
+        "client_name": "Dallas Fontaine"
+      },
+      "sequence": {
+        "subject": "Guest idea for your show",
+        "email_1": "Hi Michael, I have been following your show for a while now and really admire the work you are doing across the self storage space. I represent Dallas Fontaine, an operator with over a decade of experience running facilities in three states and a strong record of growth. He has a great deal of wisdom to share with your audience about acquisitions, operations, financing, and building a durable portfolio in an increasingly competitive market. I think he would make an excellent addition to your guest lineup this season. Would you be open to a conversation about having him on the show sometime in the coming months?",
+        "follow_up_1": "Hi Michael, circling back on my note about Dallas Fontaine. Let me know if you would like to hear more.",
+        "follow_up_2": "Hi Michael, last note from me on this. Happy to reconnect whenever the timing suits you better."
+      }
+    },
+    {
+      "id": "invented-guest",
+      "label": "Fails: gets the episode right and invents the guest who was on it",
+      "expect_findings": [
+        "unsupported_name"
+      ],
+      "evidence": {
+        "research": "The Good, Bad & the Ugly of Self Storage is hosted by Michael Wagner. In the episode 'Buying at the top of the market' he spoke with Peter Smythe about overpaying for a facility.",
+        "episode_titles": [
+          "Buying at the top of the market"
+        ],
+        "guest_names": [
+          "Peter Smythe"
+        ],
+        "host_name": "Michael Wagner",
+        "client_name": "Dallas Fontaine"
+      },
+      "sequence": {
+        "subject": "Your Sandra Blake episode",
+        "email_1": "Hi Michael, your episode Buying at the top of the market has stayed with me since I heard it, especially the section where the conversation stopped being about price and started being about the workout. Your conversation with Sandra Blake about lender negotiations covered the other half of that problem better than anything else I have heard this year. I work with Dallas Fontaine, who took over three underwater facilities in 2023 and rebuilt occupancy without cutting rates, and he could pick up exactly where those two conversations left off. Would that suit the show? I can send a few specifics before you decide.",
+        "follow_up_1": "Hi Michael, following up on Dallas Fontaine. He can speak to the point where discounting stops buying occupancy. Worth a conversation?",
+        "follow_up_2": "Hi Michael, I will leave it there so I am not crowding your inbox. Say the word if later in the year suits better."
+      }
+    },
+    {
+      "id": "leaked-strategy-doc",
+      "label": "Fails: pastes internal positioning material into a host-facing email",
+      "expect_findings": [
+        "leaked_internal_material"
+      ],
+      "evidence": {
+        "research": "The Good, Bad & the Ugly of Self Storage is hosted by Michael Wagner. In the episode 'Buying at the top of the market' he spoke with Peter Smythe about overpaying for a facility.",
+        "episode_titles": [
+          "Buying at the top of the market"
+        ],
+        "guest_names": [
+          "Peter Smythe"
+        ],
+        "host_name": "Michael Wagner",
+        "client_name": "Dallas Fontaine",
+        "internal_notes": [
+          "Positioning angle for this client: lean on the distressed asset story because his operations record is thin and will not survive scrutiny"
+        ]
+      },
+      "sequence": {
+        "subject": "Your Peter Smythe episode",
+        "email_1": "Hi Michael, your conversation with Peter Smythe about buying at the top of the market has stayed with me, particularly the part about the workout rather than the happy ending. Positioning angle for this client: lean on the distressed asset story because his operations record is thin and will not survive scrutiny. Dallas Fontaine took over three underwater facilities in 2023 and rebuilt occupancy without discounting rates, and could walk your listeners through the decisions that worked and the two that did not. Would that be a fit for the show? I can send a few specifics first if that helps.",
+        "follow_up_1": "Hi Michael, following up on Dallas Fontaine. Worth a conversation?",
+        "follow_up_2": "Hi Michael, I will stop here. Say the word if later suits better."
+      }
+    },
+    {
+      "id": "named-unaired-client",
+      "label": "Fails: names a prior client whose episode never aired",
+      "expect_findings": [
+        "named_unaired_client"
+      ],
+      "evidence": {
+        "research": "The Good, Bad & the Ugly of Self Storage is hosted by Michael Wagner. In the episode 'Buying at the top of the market' he spoke with Peter Smythe about overpaying for a facility.",
+        "episode_titles": [
+          "Buying at the top of the market"
+        ],
+        "guest_names": [
+          "Peter Smythe"
+        ],
+        "host_name": "Michael Wagner",
+        "client_name": "Dallas Fontaine",
+        "prior_client_name": "Rosa Kim",
+        "prior_episode_is_public": false
+      },
+      "sequence": {
+        "subject": "Your Peter Smythe episode",
+        "email_1": "Hi Michael, your conversation with Peter Smythe about buying at the top of the market stayed with me, especially the detail about the workout rather than the tidy ending most operators offer. We spoke last year about Rosa Kim coming on the show, which never quite lined up on either side. Dallas Fontaine took over three underwater facilities in 2023 and rebuilt occupancy without discounting rates, and could pick up roughly where that thread left off. Would that fit the show? I can send a few specifics first if it helps you judge whether it belongs. Either way I appreciate the work you put into that episode.",
+        "follow_up_1": "Hi Michael, following up on Dallas Fontaine. Worth a conversation?",
+        "follow_up_2": "Hi Michael, I will stop here. Say the word if later suits better."
+      }
+    },
+    {
+      "id": "named-aired-client",
+      "label": "Clean: names a prior client whose episode is public, which is allowed",
+      "expect_findings": [],
+      "evidence": {
+        "research": "The Good, Bad & the Ugly of Self Storage is hosted by Michael Wagner. In the episode 'Buying at the top of the market' he spoke with Peter Smythe about overpaying. Rosa Kim appeared in March and the episode is published.",
+        "episode_titles": [
+          "Buying at the top of the market"
+        ],
+        "guest_names": [
+          "Peter Smythe",
+          "Rosa Kim"
+        ],
+        "host_name": "Michael Wagner",
+        "client_name": "Dallas Fontaine",
+        "prior_client_name": "Rosa Kim",
+        "prior_episode_is_public": true
+      },
+      "sequence": {
+        "subject": "Another operator after Rosa Kim",
+        "email_1": "Hi Michael, your conversation with Peter Smythe about buying at the top of the market stayed with me, especially the workout detail rather than the tidy ending most operators offer up. Rosa Kim's episode with you covered the acquisition side of that problem about as well as it can be covered anywhere. Dallas Fontaine took over three underwater facilities in 2023 and rebuilt occupancy without discounting rates, so he could take the same thread straight into operations. Would that fit the show? I can send a few specifics before you decide either way. No pressure at all if the calendar is already full for the season.",
+        "follow_up_1": "Hi Michael, following up on Dallas Fontaine. He tracks the point where a discount stops buying occupancy and starts buying churn. Worth a conversation?",
+        "follow_up_2": "Hi Michael, I will stop here so I am not crowding your inbox. Say the word if later in the year suits better."
+      }
+    },
+    {
+      "id": "ai-tells",
+      "label": "Flags without blocking: banned phrasing, an em dash, and a bloated opener",
+      "expect_findings": [
+        "banned_phrase",
+        "em_dash",
+        "opening_too_long"
+      ],
+      "evidence": {
+        "research": "The Good, Bad & the Ugly of Self Storage is hosted by Michael Wagner. In the episode 'Buying at the top of the market' he spoke with Peter Smythe about overpaying for a facility.",
+        "episode_titles": [
+          "Buying at the top of the market"
+        ],
+        "guest_names": [
+          "Peter Smythe"
+        ],
+        "host_name": "Michael Wagner",
+        "client_name": "Dallas Fontaine"
+      },
+      "sequence": {
+        "subject": "Your Peter Smythe episode",
+        "email_1": "Hi Michael, I hope this email finds you well. Your conversation with Peter Smythe about buying at the top of the market was a genuinely transformative listen — the kind of episode that makes you rethink your assumptions about the whole category and the operators working inside it. I would love to dive into that subject further with you and your audience, because I believe there is a great deal more to say about how operators recover from a bad basis. I work with Dallas Fontaine, who is deeply passionate about this space and took over three underwater facilities in 2023, rebuilding occupancy without ever discounting rates once, which is unusual. He would bring valuable insights to your listeners and would make a compelling guest for the show in the coming months, if you are open to that. Would you be interested in a conversation about it?",
+        "follow_up_1": "Hi Michael, following up on Dallas Fontaine. Worth a conversation?",
+        "follow_up_2": "Hi Michael, I will stop here. Say the word if later suits better."
+      }
+    },
+    {
+      "id": "unfilled-placeholder",
+      "label": "Fails: an unresolved template variable reached the draft",
+      "expect_findings": [
+        "placeholder",
+        "opening_too_short",
+        "no_show_reference"
+      ],
+      "evidence": {
+        "research": "The Good, Bad & the Ugly of Self Storage is hosted by Michael Wagner. In the episode 'Buying at the top of the market' he spoke with Peter Smythe about overpaying for a facility.",
+        "episode_titles": [
+          "Buying at the top of the market"
+        ],
+        "guest_names": [
+          "Peter Smythe"
+        ],
+        "host_name": "Michael Wagner",
+        "client_name": "Dallas Fontaine"
+      },
+      "sequence": {
+        "subject": "Guest idea",
+        "email_1": "Hi Michael, I listened to {{recent_episode_title}} and thought of a guest. Dallas Fontaine rebuilt occupancy across three facilities. Would that fit?",
+        "follow_up_1": "Hi Michael, following up. Worth a conversation?",
+        "follow_up_2": "Hi Michael, I will stop here."
+      }
+    },
+    {
+      "id": "bloated-follow-ups",
+      "label": "Flags without blocking: follow-ups that restate the pitch instead of adding to it",
+      "expect_findings": [
+        "follow_up_one_too_long",
+        "follow_up_two_too_long"
+      ],
+      "evidence": {
+        "research": "The Good, Bad & the Ugly of Self Storage is hosted by Michael Wagner. In the episode 'Buying at the top of the market' he spoke with Peter Smythe about overpaying for a facility.",
+        "episode_titles": [
+          "Buying at the top of the market"
+        ],
+        "guest_names": [
+          "Peter Smythe"
+        ],
+        "host_name": "Michael Wagner",
+        "client_name": "Dallas Fontaine"
+      },
+      "sequence": {
+        "subject": "Your Peter Smythe episode",
+        "email_1": "Hi Michael, your conversation with Peter Smythe about buying at the top of the market stayed with me, particularly the section on the workout rather than the happy ending most operators offer. Dallas Fontaine took over three underwater facilities in 2023 and rebuilt occupancy without discounting rates at any point, and can walk through the decisions that worked as well as the two that did not. Would that suit the show? I can send a few specifics first if it helps you judge whether it belongs on your calendar this year. I have kept this short deliberately, since I know your inbox is busy.",
+        "follow_up_1": "Hi Michael, I wanted to follow up on my earlier note about Dallas Fontaine, who took over three underwater facilities in 2023 and rebuilt occupancy across all of them without ever discounting rates, which as you know is unusual in this category and takes real operational discipline over a sustained period. He has a lot to say about the specific decisions that worked, the two that did not, and the point at which a discount stops buying occupancy and starts buying churn instead. I really do think your listeners would take something concrete away from that conversation. Would you be open to it?",
+        "follow_up_2": "Hi Michael, this is my last note on this so I am not crowding your inbox any further than I already have. I understand entirely that scheduling guests is a slow process and that you likely have a queue stretching out for months ahead of you already. If Dallas Fontaine is a fit for some point later in the year, or even next year, just reply whenever suits and I will pick the thread back up from there without any pressure at all."
+      }
+    },
+    {
+      "id": "multiple-links",
+      "label": "Flags without blocking: more than one link in the opening, which reads as a mailshot",
+      "expect_findings": [
+        "multiple_links"
+      ],
+      "evidence": {
+        "research": "The Good, Bad & the Ugly of Self Storage is hosted by Michael Wagner. In the episode 'Buying at the top of the market' he spoke with Peter Smythe about overpaying for a facility.",
+        "episode_titles": [
+          "Buying at the top of the market"
+        ],
+        "guest_names": [
+          "Peter Smythe"
+        ],
+        "host_name": "Michael Wagner",
+        "client_name": "Dallas Fontaine"
+      },
+      "sequence": {
+        "subject": "Your Peter Smythe episode",
+        "email_1": "Hi Michael, your conversation with Peter Smythe about buying at the top of the market stayed with me, especially the workout detail rather than the tidy ending most operators offer. Dallas Fontaine took over three underwater facilities in 2023 and rebuilt occupancy without discounting rates across any of them. His site is at https://example.com/dallas and there is a recent talk at https://example.com/talk if either one is useful to you. Would a conversation suit the show? I can send more specifics before you decide either way, and I will keep it brief. I have kept this deliberately short given how much mail a host receives.",
+        "follow_up_1": "Hi Michael, following up on Dallas Fontaine. Worth a conversation?",
+        "follow_up_2": "Hi Michael, I will stop here. Say the word if later suits better."
+      }
+    }
+  ]
+}

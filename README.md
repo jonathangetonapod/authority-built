@@ -254,6 +254,12 @@ Generated copy passes two gates before an operator ever sees it:
 
 Anything flagged triggers one revision pass. Whatever remains is shown to the operator as visible flags in the pitch dialog, never silently suppressed. While an operator edits, the deterministic checks rerun on every keystroke ([`src/lib/pitchQuality.ts`](src/lib/pitchQuality.ts)) so hand-written copy meets the same standard.
 
+### Regression harness
+
+Prompt edits used to be judged by reading a few pitches and forming an impression. [`docs/pitch-golden-set.json`](docs/pitch-golden-set.json) holds labelled sequences — clean ones and one per failure that has shipped or nearly shipped — each paired with the evidence it was supposed to be built from and the exact findings the scorer must produce. [`src/lib/pitchEval.ts`](src/lib/pitchEval.ts) scores them offline: the style rules above, plus the groundedness ones a person actually cares about — an opener that references no episode, guest, or quoted moment from the research; a name that appears nowhere in the evidence; internal note text reproduced in a host-facing email; and a prior client named on an episode that never aired.
+
+`npm run test:pitch-eval` runs in CI and fails when a case stops matching its label. `npm run eval:pitch` prints the same run as a report, with per-case findings and scores, which is the useful form while tuning a prompt. Point it at a file of the same shape to score your own captured generations before promoting any of them into the set. It is deliberately deterministic and offline, so it complements the model-driven claim audit rather than replacing it.
+
 ### Cost and measurement
 
 Every stage of a run shares one byte-identical cached context block, so stage one pays the cache write and later stages read the same transcript and profile at a fraction of the input price. Each research document and generated pitch is stamped with a prompt-chain version that is persisted onto the campaign target, which makes reply rate per prompt revision queryable once send volume exists.

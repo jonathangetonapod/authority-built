@@ -130,7 +130,18 @@ assert.match(shortlistEdge, /await logOperationCost\(authContext\.admin, \{[\s\S
 assert.match(shortlistEdge, /if \(action === 'email-search-run'\)[\s\S]*?requireOnlyKeys\(body, \['action', 'workspace_id', 'client_id', 'shortlist_podcast_id', 'relationship_acknowledged'\]\)/u)
 assert.match(shortlistEdge, /from\('podcast_direct_contacts'\)[\s\S]*?\.eq\('verification_status', 'verified'\)[\s\S]*?buildUnlockedPayload\(existingContact, 0\)/u)
 assert.match(shortlistEdge, /EMAIL_SEARCH_ALREADY_RUNNING/u)
-assert.match(shortlistEdge, /INSTANTLY_NOT_CONNECTED[\s\S]*?decryptInstantlyApiKey/u)
+// The connection status is checked before the key is ever decrypted...
+assert.match(
+  shortlistEdge,
+  /const readInstantlyKey = async \(\): Promise<string \| null> => \{[\s\S]*?integration\.status !== 'connected'[\s\S]*?return null[\s\S]*?\}[\s\S]*?return await decryptInstantlyApiKey\(/u,
+)
+// ...and a full search refuses before it writes any progress, so a workspace
+// without Instantly never leaves a half-started run on the shortlist row.
+assert.ok(
+  emailSearchAction.indexOf('INSTANTLY_NOT_CONNECTED')
+    < emailSearchAction.indexOf("await writeUnlockProgress({ status: 'running'"),
+  'the Instantly gate must precede the first progress write',
+)
 assert.match(shortlistEdge, /record_global_podcast_direct_contact_v1[\s\S]*?p_provider: 'instantly-verification'/u)
 assert.match(shortlistEdge, /if \(record\.credit_charge_allowed\)[\s\S]*?operationType: 'email_unlock_verify'[\s\S]*?idempotencyKey: `email-unlock:\$\{shortlistRow\.podcast_id\}`/u)
 assert.match(shortlistEdge, /status: 'not_found'[\s\S]*?You were not charged/u)
