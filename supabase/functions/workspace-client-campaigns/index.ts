@@ -1557,6 +1557,36 @@ async function launchTarget(
       "Outreach has already started for this podcast",
     );
   }
+  // The last gate before a host actually hears from us. The same show gets
+  // pitched for many clients over time, and the two states below are the ones
+  // that damage the agency's standing rather than merely repeat it: emailing
+  // someone who opted out, and opening cold on a live conversation.
+  const { data: relationshipRows, error: relationshipError } = await context.admin.rpc(
+    "workspace_podcast_relationships_v1",
+    { p_workspace_id: campaign.workspace_id, p_podcast_ids: [target.podcast_id] },
+  );
+  if (relationshipError) {
+    throw new HttpError(
+      503,
+      "CAMPAIGN_RELATIONSHIP_CHECK_FAILED",
+      "The outreach history for this podcast could not be checked. Try again shortly",
+    );
+  }
+  const relationship = (relationshipRows ?? [])[0] as { state?: string; last_client_name?: string | null } | undefined;
+  if (relationship?.state === "suppressed") {
+    throw new HttpError(
+      409,
+      "CAMPAIGN_CONTACT_SUPPRESSED",
+      "This host asked to stop being contacted by this workspace. Outreach cannot start for any client.",
+    );
+  }
+  if (relationship?.state === "in_conversation") {
+    throw new HttpError(
+      409,
+      "CAMPAIGN_CONTACT_IN_CONVERSATION",
+      `A conversation with this host is already live${relationship.last_client_name ? ` for ${relationship.last_client_name}` : ""}. Continue that thread instead of starting cold outreach.`,
+    );
+  }
   if (target.prior_outreach_at) {
     throw new HttpError(
       409,

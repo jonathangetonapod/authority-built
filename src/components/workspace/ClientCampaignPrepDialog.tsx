@@ -40,7 +40,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { buildPodcastCampaignSequenceDraft, buildThreadReplySubject, type PodcastCampaignSequenceDraft } from '@/lib/campaignSequence'
-import { PitchTrustPanel, PitchWordCount } from '@/components/workspace/PitchQualitySignals'
+import { AgencyRelationshipNotice, PitchTrustPanel, PitchWordCount } from '@/components/workspace/PitchQualitySignals'
 import { checkPitchCopy, PITCH_WORD_TARGETS } from '@/lib/pitchQuality'
 import { safeExternalUrl } from '@/lib/externalUrl'
 import {
@@ -796,6 +796,12 @@ export function ClientCampaignPrepDialog({
                       {podcastUrl && <Button asChild variant="outline" size="sm"><a href={podcastUrl} target="_blank" rel="noreferrer">Open show<ExternalLink className="ml-2 h-3.5 w-3.5" /></a></Button>}
                     </div>
                   </div>
+
+                  {podcast.agency_relationship && podcast.agency_relationship.state !== 'none' && (
+                    <div className="px-4 pb-4 sm:px-5">
+                      <AgencyRelationshipNotice relationship={podcast.agency_relationship} />
+                    </div>
+                  )}
 
                   {showPodcastDetails && (
                     <div id="pitch-podcast-details" className="border-t">

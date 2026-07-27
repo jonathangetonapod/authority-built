@@ -215,6 +215,21 @@ serve(async (req) => {
               ...(deterministic === 'opt_out' ? { suppressed_at: new Date().toISOString() } : {}),
               updated_at: new Date().toISOString(),
             }, { onConflict: 'workspace_id,thread_key' })
+          // An opt-out is directed at the sender, not at one client's
+          // campaign. Record it workspace-wide so no other client's outreach
+          // can reach this person again.
+          const leadEmail = typeof email.lead === 'string' ? email.lead.trim().toLowerCase() : ''
+          if (deterministic === 'opt_out' && leadEmail) {
+            await admin
+              .from('workspace_outreach_suppressions')
+              .upsert({
+                workspace_id: workspaceId,
+                contact_email: leadEmail,
+                reason: 'opted_out',
+                source: 'inbox_auto',
+                note: `Detected in a reply for client ${clientId}`,
+              }, { onConflict: 'workspace_id,contact_email' })
+          }
           prefiltered += 1
           continue
         }

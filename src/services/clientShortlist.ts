@@ -83,6 +83,22 @@ export interface ClientShortlistEpisode {
   topics?: string[]
 }
 
+/**
+ * What this workspace already means to a host. `booked` and `replied` are
+ * assets to lead with; `in_conversation` and `suppressed` block outreach.
+ */
+export interface ClientShortlistAgencyRelationship {
+  state: 'none' | 'pitched' | 'replied' | 'booked' | 'in_conversation' | 'suppressed'
+  touch_count: number
+  last_contacted_at: string | null
+  last_client_name: string | null
+  booked_client_name: string | null
+  booked_at: string | null
+  booked_episode_url: string | null
+  replied_client_name: string | null
+  same_contact_other_show: boolean
+}
+
 export interface ClientShortlistPodcast extends ClientShortlistPodcastInput {
   id: string
   client_id: string
@@ -114,6 +130,7 @@ export interface ClientShortlistPodcast extends ClientShortlistPodcastInput {
   feedback_notes: string | null
   feedback_updated_at: string | null
   prior_outreach_at?: string | null
+  agency_relationship?: ClientShortlistAgencyRelationship | null
   created_at: string
   updated_at: string
 }

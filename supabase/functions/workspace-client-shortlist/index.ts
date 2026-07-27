@@ -424,6 +424,77 @@ function present(value: string | null | undefined): string {
 // to the prompt chain or its assembly.
 const PITCH_CHAIN_VERSION = 'p2-2026-07-27'
 
+export interface PodcastRelationship {
+  podcast_id: string
+  state: 'none' | 'pitched' | 'replied' | 'booked' | 'in_conversation' | 'suppressed'
+  touch_count: number
+  last_contacted_at: string | null
+  last_client_name: string | null
+  booked_client_name: string | null
+  booked_at: string | null
+  booked_episode_url: string | null
+  replied_client_name: string | null
+  contact_email: string | null
+  same_contact_other_show: boolean
+}
+
+/**
+ * What this workspace already means to these hosts. Read before writing any
+ * pitch: an agency that has placed a guest on a show, or is mid conversation
+ * with its host, must never send that host a cold open.
+ */
+// deno-lint-ignore no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function readPodcastRelationships(admin: any, workspaceId: string, podcastIds: string[]): Promise<Map<string, PodcastRelationship>> {
+  if (podcastIds.length === 0) return new Map()
+  const { data, error } = await admin.rpc('workspace_podcast_relationships_v1', {
+    p_workspace_id: workspaceId,
+    p_podcast_ids: podcastIds,
+  })
+  if (error) {
+    // Relationship history is a safety input: if it cannot be read, callers
+    // decide whether to proceed rather than silently assuming "cold".
+    throw new HttpError(503, 'RELATIONSHIP_LOOKUP_FAILED', 'The outreach history for this podcast could not be checked. Try again shortly')
+  }
+  return new Map((data ?? []).map((row: PodcastRelationship) => [row.podcast_id, row]))
+}
+
+/** Human-readable summary of the relationship, for prompts and operators. */
+function describeRelationship(relationship: PodcastRelationship | undefined): string {
+  if (!relationship || relationship.state === 'none') {
+    return 'State: none. This workspace has never contacted this show. Write as a stranger.'
+  }
+  const when = relationship.last_contacted_at
+    ? new Date(relationship.last_contacted_at).toISOString().slice(0, 10)
+    : 'an earlier date'
+  const lines = [`State: ${relationship.state}.`]
+  switch (relationship.state) {
+    case 'booked':
+      lines.push(
+        `This agency already placed ${relationship.booked_client_name ?? 'a guest'} on this show${relationship.booked_at ? ` (${relationship.booked_at})` : ''}.`,
+        relationship.booked_episode_url ? `Episode: ${relationship.booked_episode_url}` : '',
+        'That episode is public, so it may be named. This is a warm re-pitch to a host we have worked with.',
+      )
+      break
+    case 'replied':
+      lines.push(`This host corresponded with this agency before (last contact ${when}). Acknowledge the earlier exchange without naming the other client.`)
+      break
+    case 'pitched':
+      lines.push(`This agency emailed this host on ${when} for a different client and received no reply. Do not mention that email.`)
+      break
+    case 'in_conversation':
+      lines.push('A conversation with this host is live right now for another client. Do not write a new cold sequence.')
+      break
+    case 'suppressed':
+      lines.push('This host asked this agency to stop contacting them. Do not write anything.')
+      break
+  }
+  if (relationship.same_contact_other_show) {
+    lines.push('The same contact has already been emailed about a different show they host, so this is the same person, not a new introduction.')
+  }
+  return lines.filter(Boolean).join('\n')
+}
+
 interface PitchSequence {
   subject: string
   email_1: string
@@ -644,6 +715,13 @@ serve(async (req) => {
         ((directContactResult.data || []) as unknown as DirectContactRow[])
           .map((contact) => [contact.podcast_id, contact]),
       )
+      // What this workspace already means to each host, so the operator sees
+      // a warm or off-limits show before spending research on it.
+      const relationships = await readPodcastRelationships(
+        authContext.admin,
+        workspaceId,
+        shortlistPodcastIds,
+      ).catch(() => new Map())
       const podcasts = shortlistRows.map((row) => {
         const { email_unlock_progress: storedUnlockProgress, ...podcast } = row
         const feedback = feedbackByPodcast.get(podcast.podcast_id as string)
@@ -686,6 +764,7 @@ serve(async (req) => {
           feedback_notes: feedback?.notes || null,
           feedback_updated_at: feedback?.updated_at || null,
           prior_outreach_at: priorOutreachByPodcast.get(podcast.podcast_id) || null,
+          agency_relationship: relationships.get(podcast.podcast_id as string) ?? null,
         }
       })
       return jsonResponse(req, METHODS, 200, { client, podcasts })
@@ -1868,8 +1947,26 @@ serve(async (req) => {
       // in the selected angle. Everything angle-independent lives in one
       // cached CONTEXT block, so option one pays the cache write and options
       // two and three read the same prefix at a tenth of the input price.
+      // Relationship first: it decides whether this pitch may be cold at all.
+      const relationships = await readPodcastRelationships(authContext.admin, workspaceId, [shortlistRow.podcast_id])
+      const relationship = relationships.get(shortlistRow.podcast_id)
+      if (relationship?.state === 'suppressed') {
+        throw new HttpError(
+          409,
+          'PODCAST_SUPPRESSED',
+          'This host asked to stop being contacted by this workspace. No pitch can be written for them.',
+        )
+      }
+      if (relationship?.state === 'in_conversation') {
+        throw new HttpError(
+          409,
+          'PODCAST_IN_CONVERSATION',
+          `A conversation with this host is already live${relationship.last_client_name ? ` for ${relationship.last_client_name}` : ''}. Continue that thread in Master Inbox instead of opening a new pitch.`,
+        )
+      }
       const pitchContext = [
         '<context>',
+        `<agency_relationship>\n${describeRelationship(relationship)}\n</agency_relationship>`,
         '<client>',
         `Name: ${present(variables.client_name)}`,
         `LinkedIn: ${present(variables.client_linkedin_url)}`,
@@ -1913,6 +2010,16 @@ serve(async (req) => {
         // Legacy or workspace-customized prompts may still carry the old
         // "no email" refusal conditional; surface it as a clear, actionable
         // error instead of shipping the refusal text as a pitch.
+        // The writer refuses on the two states that must never produce a cold
+        // sequence; both are already blocked above, so a refusal here means a
+        // customized prompt disagreed with the gate. Surface it, never ship it.
+        if (/^\s*(ACTIVE CONVERSATION|SUPPRESSED CONTACT)/iu.test(draftRaw)) {
+          throw new HttpError(
+            409,
+            'PODCAST_RELATIONSHIP_BLOCKED',
+            'The pitch writer stopped because this workspace already has a live relationship with this host. Review it in Master Inbox.',
+          )
+        }
         if (/^\s*NO EMAIL AVAILABLE/iu.test(draftRaw)) {
           throw new HttpError(
             409,
