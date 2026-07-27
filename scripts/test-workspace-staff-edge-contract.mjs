@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 
 const source = readFileSync('supabase/functions/manage-workspace-staff/index.ts', 'utf8')
 const config = readFileSync('supabase/config.toml', 'utf8')
+const workspaceAuth = readFileSync('supabase/functions/_shared/workspaceAuth.ts', 'utf8')
 const migration = readFileSync(
   'supabase/migrations/20260722000100_subagency_workspace_foundation.sql',
   'utf8',
@@ -382,3 +383,21 @@ for (const forbidden of [
 assert.match(config, /\[functions\.manage-workspace-staff\]\s+verify_jwt = true/u)
 
 process.stdout.write('Workspace Staff Edge contract checks passed\n')
+
+// Platform access is anchored to the caller's membership ON THE DEFAULT
+// WORKSPACE, not to their having exactly one membership anywhere. The stricter
+// form made platform admin mutually exclusive with owning a workspace: a
+// sub-agency owner added to the default workspace held two active memberships
+// and every workspace call 403'd. public.is_platform_admin_identity has always
+// joined to the default workspace instead of counting, so this keeps the
+// TypeScript gate from being stricter than the SQL one.
+assert.match(workspaceAuth, /\.eq\('workspaces\.is_default', true\)/u)
+// Exactly one is still required — two memberships on the single default
+// workspace is ambiguous data with no knowable identity to anchor to.
+assert.match(workspaceAuth, /homeMembershipData\.length !== 1/u)
+// The path is unreachable unless the caller is already a platform admin by the
+// SQL definition, so widening the anchor cannot grant anyone new access.
+assert.match(workspaceAuth, /if \(!context\.platformAdmin \|\| workspace\.is_default\) \{/u)
+// Defence in depth: the anchor workspace is re-checked explicitly after the
+// join, so a filter change alone cannot admit a non-default workspace.
+assert.match(workspaceAuth, /homeWorkspaceData\.is_default !== true/u)

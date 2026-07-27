@@ -284,20 +284,33 @@ export async function requireWorkspaceFeatureAccess(
     throw new HttpError(403, 'WORKSPACE_ACCESS_REQUIRED', 'Active workspace access is required')
   }
 
-  // Platform access is anchored to the caller's active default-workspace
+  // Platform access is anchored to the caller's active DEFAULT-workspace
   // membership. It grants entry to another workspace, never impersonation of
   // that workspace's owner or additional feature controls.
+  //
+  // The anchor is the membership ON THE DEFAULT WORKSPACE, not "the caller's
+  // only membership". Requiring exactly one active membership anywhere made
+  // platform access mutually exclusive with owning a workspace: a sub-agency
+  // owner added to the default workspace would hold two active memberships and
+  // every workspace call would 403 — costing them their own workspace and
+  // granting nothing. public.is_platform_admin_identity has always joined to
+  // the default workspace rather than counting memberships, so this makes the
+  // TypeScript gate agree with the SQL one instead of being stricter than it.
   const { data: homeMembershipData, error: homeMembershipError } = await context.admin
     .from('workspace_memberships')
-    .select('id,workspace_id,email_normalized,role,status,provisioning_method,password_change_required,workspace_access_not_before_epoch')
+    .select('id,workspace_id,email_normalized,role,status,provisioning_method,password_change_required,workspace_access_not_before_epoch,workspaces!inner(is_default)')
     .eq('user_id', context.user.id)
     .eq('email_normalized', context.email)
     .eq('status', 'active')
+    .eq('workspaces.is_default', true)
     .limit(2)
 
   if (homeMembershipError) {
     throw new HttpError(500, 'WORKSPACE_ACCESS_UNAVAILABLE', 'Workspace access could not be verified')
   }
+  // Still exactly one. Two active memberships on the single default workspace
+  // is ambiguous data, not a supported arrangement, and the identity it would
+  // anchor to is unknowable.
   if (!homeMembershipData || homeMembershipData.length !== 1) {
     throw new HttpError(403, 'WORKSPACE_ACCESS_REQUIRED', 'Active workspace access is required')
   }
