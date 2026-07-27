@@ -31,6 +31,7 @@ assert.match(edge, /workspaceCredentialIsFresh\(authContext\)/u)
 assert.match(edge, /requireWorkspaceFeatureAccess\(authContext, workspaceId\)/u)
 assert.match(edge, /const MANAGER_ROLES = new Set\(\['owner', 'admin', 'platform_admin'\]\)/u)
 assert.match(edge, /if \(action === 'list'\)[\s\S]*?workspace_host_relationship_book_v1/u)
+assert.match(edge, /select\('podscan_id, podcast_image_url'\)[\s\S]*?podcast_image_url:/u)
 assert.match(edge, /if \(action === 'detail'\)[\s\S]*?workspace_podcast_relationships_v1/u)
 
 for (const action of ['create', 'thread-capture', 'upsert', 'note-add', 'client-link', 'client-unlink']) {
@@ -118,6 +119,9 @@ assert.match(pitchSignals, /declined: \{[\s\S]*?This host passed on an earlier i
 assert.match(pitchSignals, /Relationship note:/u)
 assert.match(masterInbox, /captureHostRelationshipThread/u)
 assert.match(masterInbox, /Save to relationships/u)
+assert.match(page, /Search podcasts, hosts, or emails/u)
+assert.match(page, /value="notes"[\s\S]*?value="threads"[\s\S]*?value="activity"/u)
+assert.match(page, /PodcastArtwork/u)
 assert.match(workspaceNavigation, /name: 'Relationships', segment: 'relationships'/u)
 assert.match(adminNavigation, /name: 'Relationships', href: '\/app\/relationships'/u)
 

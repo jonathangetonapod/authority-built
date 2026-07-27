@@ -93,7 +93,7 @@ serve(async (req) => {
       requireOnlyKeys(body, ['action', 'workspace_id', 'limit'])
       const limit = typeof body.limit === 'number' && Number.isInteger(body.limit)
         ? Math.max(1, Math.min(body.limit, 500))
-        : 200
+        : 500
       const { data, error } = await admin.rpc('workspace_host_relationship_book_v1', {
         p_workspace_id: workspaceId,
         p_limit: limit,
@@ -101,7 +101,27 @@ serve(async (req) => {
       if (error) {
         throw new HttpError(500, 'RELATIONSHIP_LIST_FAILED', 'The relationship book could not be loaded')
       }
-      return jsonResponse(req, METHODS, 200, { relationships: data ?? [] })
+      const relationships = (data ?? []) as Array<Record<string, unknown>>
+      const showIds = relationships.flatMap((row) => typeof row.podcast_id === 'string' ? [row.podcast_id] : [])
+      const artworkByShow = new Map<string, string>()
+      if (showIds.length > 0) {
+        const { data: artworkRows } = await admin.from('podcasts')
+          .select('podscan_id, podcast_image_url')
+          .in('podscan_id', showIds)
+        for (const row of artworkRows ?? []) {
+          if (typeof row.podscan_id === 'string' && typeof row.podcast_image_url === 'string') {
+            artworkByShow.set(row.podscan_id, row.podcast_image_url)
+          }
+        }
+      }
+      return jsonResponse(req, METHODS, 200, {
+        relationships: relationships.map((row) => ({
+          ...row,
+          podcast_image_url: typeof row.podcast_id === 'string'
+            ? artworkByShow.get(row.podcast_id) ?? null
+            : null,
+        })),
+      })
     }
 
     if (action === 'detail') {
@@ -126,7 +146,7 @@ serve(async (req) => {
         admin.from('workspace_host_relationship_events')
           .select('id, client_id, kind, body, occurred_at, created_at')
           .eq('workspace_id', workspaceId).eq('podcast_id', showId)
-          .order('occurred_at', { ascending: false }).limit(200),
+          .order('occurred_at', { ascending: false }).limit(500),
         admin.rpc('workspace_podcast_relationships_v1', {
           p_workspace_id: workspaceId,
           p_podcast_ids: [showId],
@@ -151,7 +171,7 @@ serve(async (req) => {
           .eq('workspace_id', workspaceId).eq('podcast_id', showId)
           .order('latest_message_at', { ascending: false, nullsFirst: false })
           .order('updated_at', { ascending: false })
-          .limit(100),
+          .limit(250),
       ])
       if (
         bookResult.error || clientsResult.error || eventsResult.error || derivedResult.error

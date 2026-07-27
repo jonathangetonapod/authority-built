@@ -55,6 +55,7 @@ const clientId = '22222222-2222-4222-8222-222222222222'
 const relationship: HostRelationshipSummary = {
   podcast_id: 'show-one',
   podcast_name: 'Founder &amp; Operator',
+  podcast_image_url: 'https://cdn.example.com/founder-operator.jpg',
   host_name: 'Morgan Host',
   contact_email: 'morgan@example.com',
   derived_state: 'replied',
@@ -179,16 +180,18 @@ describe('WorkspaceRelationships', () => {
       manualStage: 'warm',
     }))
 
+    fireEvent.click(screen.getByRole('button', { name: 'Add note' }))
     fireEvent.click(screen.getByRole('combobox', { name: 'Interaction type' }))
     fireEvent.click(await screen.findByRole('option', { name: 'Call' }))
-    fireEvent.change(screen.getByLabelText('Log an interaction'), { target: { value: 'Call went well.' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add interaction' }))
+    fireEvent.change(screen.getByLabelText('Add an internal note'), { target: { value: 'Call went well.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Log call' }))
     await waitFor(() => expect(mockedAddNote).toHaveBeenCalledWith(workspaceId, {
       podcastId: 'show-one',
       body: 'Call went well.',
       kind: 'call',
     }))
 
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Overview' }), { button: 0, ctrlKey: false })
     fireEvent.click(screen.getByRole('combobox', { name: 'Choose a client' }))
     fireEvent.click(await screen.findByRole('option', { name: 'Jordan Client' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save client' }))
@@ -198,6 +201,30 @@ describe('WorkspaceRelationships', () => {
       intent: 'considering',
     }))
     expect(screen.getByText('Re: operator systems')).toBeInTheDocument()
+    expect(screen.getByText('Interested in revisiting this in Q3.')).toBeInTheDocument()
+  })
+
+  it('works as a simple owner CRM with artwork, fast search, threads, and one activity log', async () => {
+    renderPage()
+
+    expect(await screen.findByRole('img', { name: 'Founder & Operator cover' })).toHaveAttribute(
+      'src',
+      'https://cdn.example.com/founder-operator.jpg',
+    )
+    fireEvent.change(screen.getByLabelText('Search relationships'), { target: { value: 'morgan@example.com' } })
+    expect(screen.getByText('Founder & Operator')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }))
+
+    expect(await screen.findByRole('tab', { name: 'Overview' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Notes 1' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Threads 1' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Activity 2' })).toBeInTheDocument()
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Threads 1' }), { button: 0, ctrlKey: false })
+    expect(screen.getByText('Re: operator systems')).toBeInTheDocument()
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Activity 2' }), { button: 0, ctrlKey: false })
+    expect(screen.getByText('Activity log')).toBeInTheDocument()
+    expect(screen.getByText('Internal note added')).toBeInTheDocument()
     expect(screen.getByText('Interested in revisiting this in Q3.')).toBeInTheDocument()
   })
 
@@ -242,7 +269,7 @@ describe('WorkspaceRelationships', () => {
     expect(await screen.findByText('Prefers practical operator stories.')).toBeInTheDocument()
     expect(screen.getByText('Asked for a tighter angle next time.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Save relationship' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Add interaction' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save note' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Add relationship' })).not.toBeInTheDocument()
     expect(mockedClients).not.toHaveBeenCalled()
   })

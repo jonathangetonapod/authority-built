@@ -14,6 +14,7 @@ export type HostRelationshipClientIntent =
 export interface HostRelationshipSummary {
   podcast_id: string
   podcast_name: string | null
+  podcast_image_url: string | null
   host_name: string | null
   contact_email: string | null
   derived_state: HostRelationshipDerivedState

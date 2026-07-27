@@ -2,11 +2,18 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
+  Activity,
   Ban,
   BookUser,
+  CalendarDays,
+  ChevronRight,
+  Clock3,
   Handshake,
   Loader2,
+  Mail,
   MessageSquare,
+  NotebookPen,
+  PhoneCall,
   Plus,
   Search,
   ShieldCheck,
@@ -31,6 +38,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { useAuth } from '@/contexts/AuthContext'
 import { decodeHtmlEntities } from '@/lib/htmlEntities'
@@ -72,6 +80,18 @@ const MANUAL_STAGE_VIEW: Record<HostRelationshipManualStage, { label: string; cl
 
 type StageDraft = HostRelationshipManualStage | 'derived'
 type NoteKind = 'note' | 'call' | 'meeting'
+type RelationshipFilter = 'all' | 'active' | 'warm' | 'placed' | 'do_not_contact'
+type RelationshipView = 'overview' | 'notes' | 'threads' | 'activity'
+
+interface RelationshipActivityItem {
+  id: string
+  kind: 'note' | 'call' | 'meeting' | 'stage_change' | 'system' | 'email'
+  title: string
+  body: string | null
+  occurredAt: string
+  clientName: string | null
+  meta: string | null
+}
 
 function formatDate(value: string | null): string {
   if (!value) return '—'
@@ -79,6 +99,90 @@ function formatDate(value: string | null): string {
   return Number.isNaN(date.getTime())
     ? '—'
     : new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date)
+}
+
+function formatDateTime(value: string | null): string {
+  if (!value) return 'Date unavailable'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? 'Date unavailable'
+    : new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(date)
+}
+
+const EVENT_TITLES: Record<Exclude<RelationshipActivityItem['kind'], 'email'>, string> = {
+  note: 'Internal note added',
+  call: 'Call logged',
+  meeting: 'Meeting logged',
+  stage_change: 'Relationship stage changed',
+  system: 'Relationship updated',
+}
+
+function podcastInitials(name: string): string {
+  const words = decodeHtmlEntities(name).trim().split(/\s+/u).filter(Boolean)
+  if (words.length === 0) return 'P'
+  return (words.length === 1 ? words[0].slice(0, 2) : `${words[0][0]}${words[1][0]}`).toUpperCase()
+}
+
+function PodcastArtwork({ imageUrl, name, large = false }: { imageUrl: string | null; name: string; large?: boolean }) {
+  const [imageFailed, setImageFailed] = useState(false)
+  const sizeClass = large ? 'h-20 w-20 rounded-xl text-lg' : 'h-12 w-12 rounded-lg text-xs'
+  return (
+    <div className={`${sizeClass} flex shrink-0 items-center justify-center overflow-hidden border bg-primary/5 font-semibold text-primary`}>
+      {imageUrl && !imageFailed
+        ? (
+          <img
+            src={imageUrl}
+            alt={`${decodeHtmlEntities(name)} cover`}
+            className="h-full w-full object-cover"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setImageFailed(true)}
+          />
+        )
+        : <span aria-hidden="true">{podcastInitials(name)}</span>}
+    </div>
+  )
+}
+
+function ActivityItemView({ item, compact = false }: { item: RelationshipActivityItem; compact?: boolean }) {
+  const Icon = item.kind === 'email'
+    ? Mail
+    : item.kind === 'call'
+      ? PhoneCall
+      : item.kind === 'meeting'
+        ? CalendarDays
+        : item.kind === 'note'
+          ? NotebookPen
+          : Activity
+  return (
+    <div className="flex gap-3">
+      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-background text-muted-foreground">
+        <Icon className="h-3.5 w-3.5" />
+      </div>
+      <div className="min-w-0 flex-1 pb-4">
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+          <p className="text-sm font-medium">{item.title}</p>
+          <p className="shrink-0 text-xs text-muted-foreground">{formatDateTime(item.occurredAt)}</p>
+        </div>
+        {(item.clientName || item.meta) && (
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {[item.clientName, item.meta].filter(Boolean).join(' · ')}
+          </p>
+        )}
+        {item.body && (
+          <p className={`mt-1.5 whitespace-pre-wrap text-sm leading-6 text-foreground/80 ${compact ? 'line-clamp-2' : ''}`}>
+            {item.body}
+          </p>
+        )}
+      </div>
+    </div>
+  )
 }
 
 interface WorkspaceRelationshipsProps {
@@ -99,7 +203,10 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
   )
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
+  const [relationshipFilter, setRelationshipFilter] = useState<RelationshipFilter>('all')
   const [openPodcastId, setOpenPodcastId] = useState<string | null>(null)
+  const [activeView, setActiveView] = useState<RelationshipView>('overview')
+  const [threadSearch, setThreadSearch] = useState('')
   const [noteDraft, setNoteDraft] = useState('')
   const [noteKind, setNoteKind] = useState<NoteKind>('note')
   const [summaryDraft, setSummaryDraft] = useState('')
@@ -144,13 +251,26 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
   const relationships = useMemo(() => bookQuery.data ?? [], [bookQuery.data])
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
-    if (!term) return relationships
-    return relationships.filter((row) => (
-      decodeHtmlEntities(row.podcast_name ?? '').toLowerCase().includes(term)
-      || decodeHtmlEntities(row.host_name ?? '').toLowerCase().includes(term)
-      || (row.contact_email ?? '').toLowerCase().includes(term)
+    const matches = relationships.filter((row) => (
+      (
+        relationshipFilter === 'all'
+        || (relationshipFilter === 'active' && ['in_conversation', 'replied'].includes(row.derived_state))
+        || (relationshipFilter === 'warm' && ['warm', 'nurturing'].includes(row.manual_stage ?? ''))
+        || (relationshipFilter === 'placed' && row.derived_state === 'booked')
+        || (relationshipFilter === 'do_not_contact' && (row.manual_stage === 'do_not_contact' || row.derived_state === 'suppressed'))
+      )
+      && (
+        !term
+        || decodeHtmlEntities(row.podcast_name ?? '').toLowerCase().includes(term)
+        || decodeHtmlEntities(row.host_name ?? '').toLowerCase().includes(term)
+        || (row.contact_email ?? '').toLowerCase().includes(term)
+      )
     ))
-  }, [relationships, search])
+    if (!openPodcastId) return matches
+    return matches.sort((left, right) => (
+      Number(right.podcast_id === openPodcastId) - Number(left.podcast_id === openPodcastId)
+    ))
+  }, [openPodcastId, relationshipFilter, relationships, search])
 
   // Live and warm relationships are the ones worth acting on; count them so
   // the header answers "what do we have" before any scrolling.
@@ -216,6 +336,8 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
       setNewStage('nurturing')
       setNewSummary('')
       setOpenPodcastId(result.podcast_id)
+      setActiveView('overview')
+      setThreadSearch('')
       setSummaryDraft(summary)
       setStageDraft(stage)
       toast.success(result.created ? 'Relationship added to the book.' : 'Existing relationship updated.')
@@ -230,6 +352,51 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
     ? selectedWorkspaceQuery.data?.clients ?? []
     : tenantClientsQuery.data ?? []
   const activeClients = clients.filter((client) => client.status === 'active')
+  const internalNotes = detail?.events.filter((event) => ['note', 'call', 'meeting'].includes(event.kind)) ?? []
+  const threadTerm = threadSearch.trim().toLowerCase()
+  const visibleThreads = (detail?.threads ?? []).filter((thread) => (
+    !threadTerm
+    || [
+      thread.subject,
+      thread.client_name,
+      thread.campaign_name,
+      thread.from_email,
+      thread.lead_email,
+      thread.latest_message_body,
+    ].filter(Boolean).join(' ').toLowerCase().includes(threadTerm)
+  ))
+  const clientNames = new Map((detail?.clients ?? []).map((client) => [client.client_id, client.client_name]))
+  const activityItems: RelationshipActivityItem[] = [
+    ...(detail?.events ?? []).map((event) => ({
+      id: `event:${event.id}`,
+      kind: event.kind,
+      title: EVENT_TITLES[event.kind],
+      body: event.body,
+      occurredAt: event.occurred_at,
+      clientName: event.client_id ? clientNames.get(event.client_id) ?? null : null,
+      meta: null,
+    })),
+    ...(detail?.threads ?? []).map((thread) => ({
+      id: `thread:${thread.thread_key}`,
+      kind: 'email' as const,
+      title: thread.subject || 'Inbox conversation saved',
+      body: thread.latest_message_body,
+      occurredAt: thread.latest_message_at || thread.updated_at,
+      clientName: thread.client_name,
+      meta: [thread.campaign_name, thread.from_email || thread.lead_email].filter(Boolean).join(' · ') || null,
+    })),
+  ].sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt))
+  const selectedName = decodeHtmlEntities(
+    detail?.relationship?.podcast_name
+    || openRow?.podcast_name
+    || 'Untitled show',
+  )
+  const selectedHost = decodeHtmlEntities(
+    detail?.relationship?.host_name
+    || openRow?.host_name
+    || 'Host not identified',
+  )
+  const selectedState = detail?.derived?.state || openRow?.derived_state || 'none'
   const baseHref = isPlatformWorkspace
     ? selectedWorkspaceBaseHref(selectedWorkspaceId)
     : MY_WORKSPACE_BASE_HREF
@@ -282,8 +449,7 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
               <BookUser className="h-6 w-6 text-primary" />Relationships
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Every host this workspace has reached, across all clients. What you know about them lives here,
-              so the next pitch continues the relationship instead of restarting it.
+              Your agency's host CRM. Find a show, understand the relationship, and continue the right conversation.
             </p>
           </div>
           <div className="flex flex-col items-start gap-2 sm:items-end">
@@ -307,15 +473,27 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
           </div>
         )}
 
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            aria-label="Search relationships"
-            placeholder="Search by show, host, or email"
-            className="pl-9"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
+        <div className="flex max-w-2xl flex-col gap-2 sm:flex-row">
+          <div className="relative min-w-0 flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              aria-label="Search relationships"
+              placeholder="Search podcasts, hosts, or emails"
+              className="pl-9"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </div>
+          <Select value={relationshipFilter} onValueChange={(value) => setRelationshipFilter(value as RelationshipFilter)}>
+            <SelectTrigger aria-label="Filter relationships" className="w-full sm:w-48"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All relationships</SelectItem>
+              <SelectItem value="active">Active conversations</SelectItem>
+              <SelectItem value="warm">Warm &amp; nurturing</SelectItem>
+              <SelectItem value="placed">Guest placements</SelectItem>
+              <SelectItem value="do_not_contact">Do not contact</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {bookQuery.isLoading && (
@@ -340,27 +518,35 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
               <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
                 {relationships.length === 0
                   ? 'Hosts appear here after outreach, a reply, a booking, or a relationship note.'
-                  : 'Try a different show, host, or email address.'}
+                  : 'Try a different search or relationship filter.'}
               </p>
             </CardContent>
           </Card>
         )}
 
-        <div className="grid gap-3">
+        <div className="grid items-start gap-3 xl:grid-cols-[22rem_minmax(0,1fr)]">
           {filtered.map((row: HostRelationshipSummary) => {
             const view = STATE_VIEW[row.derived_state] ?? STATE_VIEW.none
             const manualView = row.manual_stage ? MANUAL_STAGE_VIEW[row.manual_stage] : null
             const open = row.podcast_id === openPodcastId
             return (
-              <Card key={row.podcast_id} className={open ? 'border-primary/40 ring-1 ring-primary/10' : undefined}>
+              <Card
+                key={row.podcast_id}
+                className={open
+                  ? 'overflow-hidden border-primary/40 ring-1 ring-primary/10 xl:col-span-2 xl:grid xl:grid-cols-[22rem_minmax(0,1fr)]'
+                  : 'xl:col-start-1'}
+              >
                 <CardHeader className="pb-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <CardTitle className="text-base">{decodeHtmlEntities(row.podcast_name ?? 'Untitled show')}</CardTitle>
-                      <CardDescription className="mt-1">
-                        {decodeHtmlEntities(row.host_name || 'Host not identified')}
-                        {row.contact_email ? ` · ${row.contact_email}` : ''}
-                      </CardDescription>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <PodcastArtwork imageUrl={row.podcast_image_url} name={row.podcast_name ?? 'Untitled show'} />
+                      <div className="min-w-0">
+                        <CardTitle className="truncate text-base">{decodeHtmlEntities(row.podcast_name ?? 'Untitled show')}</CardTitle>
+                        <CardDescription className="mt-1 truncate">
+                          {decodeHtmlEntities(row.host_name || 'Host not identified')}
+                          {row.contact_email ? ` · ${row.contact_email}` : ''}
+                        </CardDescription>
+                      </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant="outline" className={view.className}>{view.label}</Badge>
@@ -377,6 +563,8 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
                         onClick={() => {
                           const next = open ? null : row.podcast_id
                           setOpenPodcastId(next)
+                          setActiveView('overview')
+                          setThreadSearch('')
                           setSummaryDraft(next ? row.summary ?? '' : '')
                           setStageDraft(next ? row.manual_stage ?? 'derived' : 'derived')
                           setNoteDraft('')
@@ -402,7 +590,7 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
                 </CardHeader>
 
                 {open && (
-                  <CardContent className="space-y-5 border-t pt-4">
+                  <CardContent className="space-y-5 border-t pt-4 xl:col-start-2 xl:row-start-1 xl:border-l xl:border-t-0">
                     {detailQuery.isLoading && (
                       <p className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Loader2 className="h-4 w-4 animate-spin" />Loading history…
@@ -415,7 +603,66 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
                       </div>
                     )}
                     {detail && (
-                      <>
+                      <Tabs value={activeView} onValueChange={(value) => setActiveView(value as RelationshipView)}>
+                        <div className="flex flex-col gap-4 rounded-xl border bg-muted/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex min-w-0 items-center gap-4">
+                            <PodcastArtwork imageUrl={openRow?.podcast_image_url ?? null} name={selectedName} large />
+                            <div className="min-w-0">
+                              <h2 className="truncate text-xl font-semibold">{selectedName}</h2>
+                              <p className="mt-1 truncate text-sm text-muted-foreground">
+                                {selectedHost}{(detail.relationship?.contact_email || openRow?.contact_email) ? ` · ${detail.relationship?.contact_email || openRow?.contact_email}` : ''}
+                              </p>
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                <Badge variant="outline" className={STATE_VIEW[selectedState].className}>{STATE_VIEW[selectedState].label}</Badge>
+                                {openRow?.manual_stage && (
+                                  <Badge variant="outline" className={MANUAL_STAGE_VIEW[openRow.manual_stage].className}>
+                                    {MANUAL_STAGE_VIEW[openRow.manual_stage].label}
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          {canManage && (
+                            <Button type="button" size="sm" onClick={() => setActiveView('notes')}>
+                              <NotebookPen className="mr-2 h-4 w-4" />Add note
+                            </Button>
+                          )}
+                        </div>
+
+                        <div className="mt-4 overflow-x-auto border-b">
+                          <TabsList aria-label="Relationship CRM sections" className="h-auto min-w-max justify-start bg-transparent p-0">
+                            <TabsTrigger value="overview" className="rounded-b-none">Overview</TabsTrigger>
+                            <TabsTrigger value="notes" className="rounded-b-none">
+                              Notes <span className="ml-1 text-muted-foreground">{internalNotes.length}</span>
+                            </TabsTrigger>
+                            <TabsTrigger value="threads" className="rounded-b-none">
+                              Threads <span className="ml-1 text-muted-foreground">{detail.threads.length}</span>
+                            </TabsTrigger>
+                            <TabsTrigger value="activity" className="rounded-b-none">
+                              Activity <span className="ml-1 text-muted-foreground">{activityItems.length}</span>
+                            </TabsTrigger>
+                          </TabsList>
+                        </div>
+
+                        <TabsContent value="overview" className="mt-5 space-y-5">
+                          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                            <div className="rounded-lg border bg-background p-3">
+                              <p className="text-xs text-muted-foreground">Last contact</p>
+                              <p className="mt-1 text-sm font-medium">{formatDate(openRow?.last_contacted_at ?? null)}</p>
+                            </div>
+                            <div className="rounded-lg border bg-background p-3">
+                              <p className="text-xs text-muted-foreground">Clients</p>
+                              <p className="mt-1 text-sm font-medium">{detail.clients.length}</p>
+                            </div>
+                            <div className="rounded-lg border bg-background p-3">
+                              <p className="text-xs text-muted-foreground">Internal notes</p>
+                              <p className="mt-1 text-sm font-medium">{internalNotes.length}</p>
+                            </div>
+                            <div className="rounded-lg border bg-background p-3">
+                              <p className="text-xs text-muted-foreground">Saved threads</p>
+                              <p className="mt-1 text-sm font-medium">{detail.threads.length}</p>
+                            </div>
+                          </div>
                         {canManage ? (
                           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_15rem]">
                             <div className="space-y-2">
@@ -531,9 +778,23 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
                           </div>
                         )}
 
+                        <div className="rounded-xl border p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-medium">Recent activity</p>
+                            <Button type="button" variant="ghost" size="sm" onClick={() => setActiveView('activity')}>
+                              View all <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                          {activityItems.length === 0
+                            ? <p className="mt-2 text-sm text-muted-foreground">No activity has been recorded yet.</p>
+                            : <div className="mt-3 divide-y">{activityItems.slice(0, 4).map((item) => <ActivityItemView key={item.id} item={item} compact />)}</div>}
+                        </div>
+                        </TabsContent>
+
+                        <TabsContent value="notes" className="mt-5 space-y-5">
                         {canManage && (
                           <div className="space-y-2">
-                            <Label htmlFor="relationship-note">Log an interaction</Label>
+                            <Label htmlFor="relationship-note">Add an internal note</Label>
                             <div className="grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)]">
                               <Select value={noteKind} onValueChange={(value) => setNoteKind(value as NoteKind)}>
                                 <SelectTrigger aria-label="Interaction type"><SelectValue /></SelectTrigger>
@@ -562,18 +823,65 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
                                 kind: noteKind,
                               })}
                             >
-                              {noteMutation.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}Add interaction
+                              {noteMutation.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                              {noteKind === 'note' ? 'Save note' : noteKind === 'call' ? 'Log call' : 'Log meeting'}
                             </Button>
                           </div>
                         )}
 
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Saved conversations</p>
-                          {detail.threads.length === 0
-                            ? <p className="mt-1.5 text-sm text-muted-foreground">No Master Inbox conversation has been saved yet.</p>
+                          <div className="flex flex-wrap items-end justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-medium">Internal notes</p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">Private to your agency workspace.</p>
+                            </div>
+                            <span className="text-xs text-muted-foreground">{internalNotes.length} total</span>
+                          </div>
+                          {internalNotes.length === 0
+                            ? <p className="mt-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">No internal notes yet.</p>
                             : (
-                              <ul className="mt-1.5 space-y-2">
-                                {detail.threads.map((thread) => (
+                              <div className="mt-3 divide-y rounded-xl border px-4">
+                                {internalNotes.map((event) => (
+                                  <div key={event.id} className="py-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{EVENT_TITLES[event.kind]}</p>
+                                      <p className="text-xs text-muted-foreground">{formatDateTime(event.occurred_at)}</p>
+                                    </div>
+                                    <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6">{event.body}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                        </div>
+                        </TabsContent>
+
+                        <TabsContent value="threads" className="mt-5 space-y-4">
+                        <div>
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                            <div>
+                              <p className="text-sm font-medium">Saved inbox threads</p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">Conversations deliberately saved from Master Inbox.</p>
+                            </div>
+                            {detail.threads.length > 1 && (
+                              <div className="relative w-full sm:w-64">
+                                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                                <Input
+                                  aria-label="Search saved threads"
+                                  value={threadSearch}
+                                  onChange={(event) => setThreadSearch(event.target.value)}
+                                  placeholder="Search threads"
+                                  className="h-9 pl-8"
+                                />
+                              </div>
+                            )}
+                          </div>
+                          {detail.threads.length === 0
+                            ? <p className="mt-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">No Master Inbox conversation has been saved yet.</p>
+                            : visibleThreads.length === 0
+                              ? <p className="mt-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">No saved threads match that search.</p>
+                            : (
+                              <ul className="mt-3 space-y-2">
+                                {visibleThreads.map((thread) => (
                                   <li key={thread.thread_key} className="rounded-lg border bg-muted/10 p-3">
                                     <div className="flex flex-wrap items-start justify-between gap-2">
                                       <div className="min-w-0">
@@ -599,25 +907,27 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
                               </ul>
                             )}
                         </div>
+                        </TabsContent>
 
+                        <TabsContent value="activity" className="mt-5">
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">History</p>
-                          {detail.events.length === 0
-                            ? <p className="mt-1.5 text-sm text-muted-foreground">Nothing recorded yet.</p>
+                          <div className="flex flex-wrap items-end justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-medium">Activity log</p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">Internal notes and saved conversations, newest first.</p>
+                            </div>
+                            <span className="text-xs text-muted-foreground">{activityItems.length} activities</span>
+                          </div>
+                          {activityItems.length === 0
+                            ? <p className="mt-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Nothing recorded yet.</p>
                             : (
-                              <ul className="mt-1.5 space-y-2">
-                                {detail.events.map((event) => (
-                                  <li key={event.id} className="rounded-lg border bg-muted/10 p-3">
-                                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                                      {event.kind.replace('_', ' ')} · {formatDate(event.occurred_at)}
-                                    </p>
-                                    <p className="mt-1 whitespace-pre-wrap text-sm leading-6">{event.body}</p>
-                                  </li>
-                                ))}
-                              </ul>
+                              <div className="mt-4 divide-y rounded-xl border px-4 pt-4">
+                                {activityItems.map((item) => <ActivityItemView key={item.id} item={item} />)}
+                              </div>
                             )}
                         </div>
-                      </>
+                        </TabsContent>
+                      </Tabs>
                     )}
                   </CardContent>
                 )}
