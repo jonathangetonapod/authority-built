@@ -34,6 +34,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -84,6 +85,14 @@ interface ClientCampaignPrepDialogProps {
 }
 
 type PitchStep = 'email' | 'research' | 'pitch'
+
+interface PrepareResult {
+  added: boolean
+  willSend: boolean
+  hostName: string
+  contactEmail: string
+  campaignName: string
+}
 type EmailRoute = 'podcast' | 'waterfall' | 'manual'
 type SequenceEmailStep = 'opening' | 'follow_up_one' | 'follow_up_two'
 type ResearchProgressStatus = 'complete' | 'active' | 'queued' | 'failed'
@@ -211,6 +220,12 @@ export function ClientCampaignPrepDialog({
 }: ClientCampaignPrepDialogProps) {
   const queryClient = useQueryClient()
   const [activeStep, setActiveStep] = useState<PitchStep>('email')
+  // What happened on the last successful send. Held rather than toasted: the
+  // operator just created a record in an external system and may have started
+  // emailing a stranger, and a notification that disappears is a poor place to
+  // learn that.
+  const [stagedResult, setStagedResult] = useState<PrepareResult | null>(null)
+  const [confirmSendOpen, setConfirmSendOpen] = useState(false)
   const [emailRoute, setEmailRoute] = useState<EmailRoute>('podcast')
   const [previewEmailSearchPodcastId, setPreviewEmailSearchPodcastId] = useState<string | null>(null)
   const [acknowledgedRelationshipPodcastId, setAcknowledgedRelationshipPodcastId] = useState<string | null>(null)
@@ -618,6 +633,10 @@ export function ClientCampaignPrepDialog({
   }, [open, podcast?.podcast_id])
 
   useEffect(() => {
+    if (!open) {
+      setStagedResult(null)
+      setConfirmSendOpen(false)
+    }
     if (!open || !podcast || campaignQuery.isLoading) return
     const initial = buildPodcastCampaignSequenceDraft({ podcast, clientName, clientBio })
     const savedContactEmail = target?.contact_email?.trim() || ''
@@ -750,6 +769,10 @@ export function ClientCampaignPrepDialog({
   // see which of those they are about to do, before they do it.
   const campaignIsLive = campaign?.instantly_campaign_status === 1
   const submitWillSend = campaignIsLive && validEmail(normalizedEmail)
+  // Reopening a podcast that is already in the campaign. Sending again updates
+  // the existing lead rather than adding a second one, and the operator should
+  // know that before they press it.
+  const alreadyStaged = Boolean(target?.lead_staged_at) && !target?.launched_at
 
   const emailReady = validEmail(normalizedEmail)
   const sequenceComplete = [
@@ -791,20 +814,22 @@ export function ClientCampaignPrepDialog({
       })
     },
     onSuccess: async (result) => {
+      setConfirmSendOpen(false)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: campaignQueryKey }),
         queryClient.invalidateQueries({ queryKey: ['workspace-client-campaigns', workspaceId] }),
       ])
-      // Never report "saved" when the truth is "this host is being emailed".
-      if (result.will_send) {
-        toast.warning(`${podcast?.podcast_name || 'Podcast'} is now a lead in a live campaign. The opening email sends on the next send window.`)
-      } else {
-        toast.success(result.added
-          ? `${podcast?.podcast_name || 'Podcast'} was sent to Client Campaign.`
-          : `${podcast?.podcast_name || 'Podcast'} was updated in Client Campaign.`)
-      }
+      // The dialog stays open on a confirmation screen instead of vanishing.
+      // Closing on success left the operator with a three-second toast as the
+      // only record of an action that reaches a real person.
+      setStagedResult({
+        added: result.added,
+        willSend: result.will_send,
+        hostName: hostName.trim(),
+        contactEmail: normalizedEmail,
+        campaignName: campaign?.name || 'the client campaign',
+      })
       onPrepared?.()
-      onOpenChange(false)
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'The pitch could not be sent to Client Campaign.'),
   })
@@ -831,7 +856,46 @@ export function ClientCampaignPrepDialog({
         </DialogHeader>
 
         <div className="min-h-0 overflow-y-auto overscroll-contain">
-          {campaignQuery.isLoading ? (
+          {stagedResult ? (
+            <div
+              role="status"
+              aria-label="Pitch added to client campaign"
+              className={stagedResult.willSend
+                ? 'm-6 flex min-h-80 flex-col items-center justify-center rounded-2xl border border-amber-300 bg-amber-50 px-6 py-10 text-center'
+                : 'm-6 flex min-h-80 flex-col items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50/60 px-6 py-10 text-center'}
+            >
+              {stagedResult.willSend
+                ? <AlertCircle className="h-10 w-10 text-amber-700" />
+                : <CheckCircle2 className="h-10 w-10 text-emerald-600" />}
+              <h3 className="mt-4 text-lg font-semibold">
+                {stagedResult.willSend
+                  ? `${podcast?.podcast_name || 'This podcast'} is now in a live sequence`
+                  : `${podcast?.podcast_name || 'This podcast'} was added to ${stagedResult.campaignName}`}
+              </h3>
+              <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+                {stagedResult.hostName || 'The host'} was {stagedResult.added ? 'added' : 'updated'} in {stagedResult.campaignName} as a lead, with the full three-email sequence attached.
+              </p>
+              <dl className="mt-5 w-full max-w-sm space-y-2 rounded-xl border bg-background/80 p-4 text-left text-xs">
+                <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Contact</dt><dd className="truncate font-medium">{stagedResult.contactEmail}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Campaign</dt><dd className="truncate font-medium">{stagedResult.campaignName}</dd></div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Sending</dt>
+                  <dd className={stagedResult.willSend ? 'font-semibold text-amber-800' : 'font-medium'}>
+                    {stagedResult.willSend ? 'Live — starts automatically' : 'Paused — nothing sends yet'}
+                  </dd>
+                </div>
+              </dl>
+              <p className="mt-4 max-w-md text-xs leading-5 text-muted-foreground">
+                {stagedResult.willSend
+                  ? 'The opening email goes out on the campaign\u2019s next send window, then the two follow-ups on day 6 and day 13. To stop it, pause the campaign in Client Campaigns.'
+                  : 'Open Client Campaigns and choose Approve & start outreach when you are ready for this to send. You can keep editing the sequence until then.'}
+              </p>
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+                <Button asChild variant={stagedResult.willSend ? 'default' : 'outline'}><Link to={campaignHref}>Open Client Campaigns</Link></Button>
+                <Button type="button" variant={stagedResult.willSend ? 'outline' : 'default'} onClick={() => onOpenChange(false)}>Done</Button>
+              </div>
+            </div>
+          ) : campaignQuery.isLoading ? (
             <div className="flex min-h-96 flex-col items-center justify-center gap-3"><Loader2 className="h-7 w-7 animate-spin text-primary" /><p className="text-sm text-muted-foreground">Loading the pitch workspace…</p></div>
           ) : locked ? (
             <div className="m-6 flex min-h-80 flex-col items-center justify-center rounded-2xl border border-dashed px-6 text-center">
@@ -1643,7 +1707,38 @@ export function ClientCampaignPrepDialog({
           ) : null}
         </div>
 
-        {podcast && !locked && !campaignQuery.isLoading && (
+        {/* The last stop before a stranger is emailed. The campaign is live, so
+            there is no draft state on the other side of this button and no way
+            to recall what goes out. Naming the person and the address is the
+            difference between a decision and a reflex. */}
+        <Dialog open={confirmSendOpen} onOpenChange={(next) => !prepareMutation.isPending && setConfirmSendOpen(next)}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Email {hostName.trim() || 'this host'} now?</DialogTitle>
+              <DialogDescription>
+                {campaign?.name || 'This campaign'} is live. Adding this lead starts the sequence, so the
+                opening email goes to {normalizedEmail} on the next send window without another approval.
+              </DialogDescription>
+            </DialogHeader>
+            <dl className="mt-4 space-y-2 rounded-xl border bg-muted/30 p-4 text-xs">
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Podcast</dt><dd className="truncate font-medium">{podcast?.podcast_name}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Sending as</dt><dd className="truncate font-medium">{clientName}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Sequence</dt><dd className="font-medium">Opening, then day 6 and day 13</dd></div>
+            </dl>
+            <p className="mt-3 text-xs leading-5 text-muted-foreground">
+              To add the lead without sending, pause {campaign?.name || 'the campaign'} in Client Campaigns first.
+            </p>
+            <DialogFooter className="mt-5">
+              <Button type="button" variant="outline" onClick={() => setConfirmSendOpen(false)} disabled={prepareMutation.isPending}>Cancel</Button>
+              <Button type="button" variant="destructive" onClick={() => prepareMutation.mutate()} disabled={prepareMutation.isPending}>
+                {prepareMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Add and start sending
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {podcast && !locked && !stagedResult && !campaignQuery.isLoading && (
           <footer aria-label="Pitch actions" className="shrink-0 border-t bg-muted/20 px-4 pb-5 pt-4 sm:px-6 sm:pb-6">
             <div className="flex flex-col gap-4 rounded-2xl border bg-background p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
               <p className="max-w-xl text-xs leading-5 text-muted-foreground">
@@ -1667,16 +1762,18 @@ export function ClientCampaignPrepDialog({
                     : 'Research is included with your plan, saved to this podcast, and used to shape the pitch.')}
                 {activeStep === 'pitch' && (draftHasUnsavedEdits
                   ? 'You have unsaved edits. Save them before sending this sequence to Client Campaign.'
-                  : submitWillSend
-                    ? `All edits are saved. Sending adds ${hostName.trim() || 'this host'} to ${campaign?.name || 'the campaign'} as a lead, and that campaign is live, so the opening email goes out on its next send window.`
-                    : 'All edits are saved. Sending adds this host to the campaign as a lead. The campaign is paused, so nothing goes out until you start outreach.')}
+                  : alreadyStaged && !submitWillSend
+                    ? `${hostName.trim() || 'This host'} is already a lead in ${campaign?.name || 'the campaign'}. Sending again replaces the sequence on that lead rather than adding a second one, and the campaign is paused so nothing goes out.`
+                    : submitWillSend
+                      ? `All edits are saved. Sending ${alreadyStaged ? 'updates' : 'adds'} ${hostName.trim() || 'this host'} ${alreadyStaged ? 'in' : 'to'} ${campaign?.name || 'the campaign'}, and that campaign is live, so the opening email goes out on its next send window.`
+                      : 'All edits are saved. Sending adds this host to the campaign as a lead. The campaign is paused, so nothing goes out until you start outreach.')}
               </p>
               <div className="grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
                 {activeStep !== 'email' && <Button type="button" variant="outline" onClick={() => setActiveStep(activeStep === 'pitch' ? 'research' : 'email')}><ArrowLeft className="mr-2 h-4 w-4" />Back</Button>}
                 {activeStep === 'email' && <Button type="button" disabled={!emailReady || !relationshipCanProceed} onClick={() => setActiveStep('research')}>Continue to research<ArrowRight className="ml-2 h-4 w-4" /></Button>}
                 {activeStep === 'research' && <Button type="button" disabled={!researchComplete} onClick={() => { setActiveSequenceEmail('opening'); setActiveStep('pitch') }}>Finalize selected pitch<ArrowRight className="ml-2 h-4 w-4" /></Button>}
-                {activeStep === 'pitch' && <Button type="button" variant={submitWillSend ? 'destructive' : 'default'} disabled={submitDisabled} onClick={() => prepareMutation.mutate()}>{prepareMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}{submitWillSend ? 'Send to Client Campaign (goes live)' : 'Send to Client Campaign'}</Button>}
+                {activeStep === 'pitch' && <Button type="button" variant={submitWillSend ? 'destructive' : 'default'} disabled={submitDisabled} onClick={() => (submitWillSend ? setConfirmSendOpen(true) : prepareMutation.mutate())}>{prepareMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}{submitWillSend ? 'Send to Client Campaign (goes live)' : alreadyStaged ? 'Update in Client Campaign' : 'Send to Client Campaign'}</Button>}
               </div>
             </div>
           </footer>

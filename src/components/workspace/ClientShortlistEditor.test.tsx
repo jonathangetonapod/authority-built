@@ -469,6 +469,12 @@ describe('ClientShortlistEditor', () => {
       followUpOneBody: expect.stringContaining('Just following up'),
       followUpTwoBody: expect.stringContaining('One last note'),
     })))
+    // The dialog holds a confirmation rather than vanishing, so the operator
+    // can see what was added, where, and whether it is sending.
+    const confirmation = await screen.findByRole('status', { name: 'Pitch added to client campaign' })
+    expect(within(confirmation).getByText('host@founderstories.fm')).toBeInTheDocument()
+    expect(within(confirmation).getByText('Paused — nothing sends yet')).toBeInTheDocument()
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Done' }))
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'Write a pitch for Founder Stories' })).not.toBeInTheDocument())
 
     expect(screen.queryByRole('button', { name: 'Write Pitch for Operator Weekly' })).not.toBeInTheDocument()
@@ -747,6 +753,14 @@ describe('ClientShortlistEditor', () => {
       followUpOneSubject: 'Re: A tailored Founder Stories idea',
       followUpTwoSubject: 'Re: A tailored Founder Stories idea',
     })))
+    // The dialog stays open on a confirmation instead of vanishing behind a toast.
+    const confirmation = await screen.findByRole('status', { name: 'Pitch added to client campaign' })
+    expect(within(confirmation).getByText(/was added to Taylor Client Podcast Outreach/i)).toBeInTheDocument()
+    expect(within(confirmation).getByText('Paused — nothing sends yet')).toBeInTheDocument()
+    expect(within(confirmation).getByText(/Approve & start outreach when you are ready/i)).toBeInTheDocument()
+    expect(within(confirmation).getByRole('link', { name: 'Open Client Campaigns' })).toBeInTheDocument()
+
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Done' }))
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'Write a pitch for Founder Stories' })).not.toBeInTheDocument())
   })
 
@@ -784,7 +798,21 @@ describe('ClientShortlistEditor', () => {
     await waitFor(() => expect(sendToCampaign).toBeEnabled())
     fireEvent.click(sendToCampaign)
 
+    // A live campaign has no draft state on the other side of the button, so
+    // the host is named before anything is sent.
+    const confirmButton = await screen.findByRole('button', { name: 'Add and start sending' })
+    const confirm = within(confirmButton.closest('[role="dialog"]') as HTMLElement)
+    expect(confirm.getByText(/next send window without another approval/i)).toBeInTheDocument()
+    expect(confirm.getByText(/To add the lead without sending, pause/i)).toBeInTheDocument()
+    expect(prepareWorkspaceCampaignPodcast).not.toHaveBeenCalled()
+
+    fireEvent.click(confirmButton)
     await waitFor(() => expect(prepareWorkspaceCampaignPodcast).toHaveBeenCalled())
+
+    const confirmation = await screen.findByRole('status', { name: 'Pitch added to client campaign' })
+    expect(within(confirmation).getByText(/is now in a live sequence/i)).toBeInTheDocument()
+    expect(within(confirmation).getByText('Live — starts automatically')).toBeInTheDocument()
+    expect(within(confirmation).getByText(/To stop it, pause the campaign/i)).toBeInTheDocument()
   })
 
   it('says nothing sends when the campaign is paused', async () => {

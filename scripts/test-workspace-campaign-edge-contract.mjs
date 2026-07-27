@@ -318,7 +318,30 @@ assert.doesNotMatch(prepareAction[0], /target\.instantly_lead_id \|\|/u)
 
 // The dialog must state which of the two things the button does.
 assert.match(prepDialog, /const submitWillSend = campaignIsLive && validEmail\(normalizedEmail\)/u)
-assert.match(prepDialog, /submitWillSend \? 'Send to Client Campaign \(goes live\)' : 'Send to Client Campaign'/u)
-assert.match(prepDialog, /result\.will_send[\s\S]*?toast\.warning/u)
+assert.match(prepDialog, /submitWillSend \? 'Send to Client Campaign \(goes live\)' : alreadyStaged \? 'Update in Client Campaign' : 'Send to Client Campaign'/u)
+// (the will_send warning moved from a toast into the confirmation panel,
+// asserted below)
 assert.match(stagingMigration, /ADD COLUMN IF NOT EXISTS lead_staged_at TIMESTAMPTZ/u)
 assert.match(stagingMigration, /ADD COLUMN IF NOT EXISTS lead_staged_campaign_status INTEGER/u)
+
+// A consequential action deserves a completion state, not a toast that leaves.
+// The dialog holds a confirmation naming the contact, the campaign, and whether
+// the sequence is running, with the next step spelled out.
+assert.match(prepDialog, /setStagedResult\(\{[\s\S]*?willSend: result\.will_send/u)
+assert.match(prepDialog, /aria-label="Pitch added to client campaign"/u)
+assert.match(prepDialog, /stagedResult\.willSend \? 'Live — starts automatically' : 'Paused — nothing sends yet'/u)
+assert.doesNotMatch(
+  prepDialog.match(/onSuccess: async \(result\) => \{[\s\S]*?\n    \},/u)[0],
+  /onOpenChange\(false\)/u,
+  'a successful send must land on a confirmation, not close the dialog',
+)
+// Sending into a live campaign asks first, because there is no draft state on
+// the other side of it and nothing can be recalled.
+assert.match(
+  prepDialog,
+  /onClick=\{\(\) => \(submitWillSend \? setConfirmSendOpen\(true\) : prepareMutation\.mutate\(\)\)\}/u,
+)
+assert.match(prepDialog, /Add and start sending/u)
+assert.match(prepDialog, /To add the lead without sending, pause/u)
+// Reopening a staged podcast says so, so a second send is an update by choice.
+assert.match(prepDialog, /const alreadyStaged = Boolean\(target\?\.lead_staged_at\) && !target\?\.launched_at/u)
