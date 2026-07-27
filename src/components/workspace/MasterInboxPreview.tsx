@@ -295,6 +295,30 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
   const threadClient = selectedThread?.campaign?.client
     ? clients.find((client) => client.id === selectedThread.campaign?.client?.id) ?? null
     : null
+
+  // When there is no inbox to browse, there is nothing for two panes to hold.
+  // The split view is sized to the viewport so the reading pane has something
+  // to scroll inside; wrapping that around a one-line notice leaves most of
+  // the screen blank, which reads as a broken page rather than an empty one.
+  const unavailable = inboxQuery.isLoading
+    ? null
+    : inboxQuery.data?.connected === false
+      ? {
+        title: inboxQuery.data.reason ? 'Instantly declined the connected key' : 'Instantly is not connected',
+        detail: inboxQuery.data.reason === 'key_rejected'
+          ? 'Instantly rejected the saved API key. Reconnect Instantly in Client Campaigns with a current key.'
+          : inboxQuery.data.reason === 'scope_missing'
+            ? 'The saved API key cannot read emails. Reconnect Instantly with a key that has all scopes enabled.'
+            : 'Connect Instantly in Client Campaigns to load replies.',
+        action: true,
+      }
+      : inboxQuery.isError
+        ? {
+          title: 'Replies could not be loaded',
+          detail: inboxQuery.error instanceof Error ? inboxQuery.error.message : 'Try again in a moment.',
+          action: false,
+        }
+        : null
   // Lead identity is fetched lazily for the open conversation only: campaigns
   // built directly in Instantly have no local target row, so this is the only
   // place a host's real name, company, and engagement can come from.
@@ -600,6 +624,20 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
         </div>
       </div>
 
+      {unavailable ? (
+        <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl border bg-background text-muted-foreground">
+            <Inbox className="h-5 w-5" />
+          </div>
+          <h3 className="mt-4 text-sm font-semibold">{unavailable.title}</h3>
+          <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">{unavailable.detail}</p>
+          {unavailable.action && (
+            <Button asChild size="sm" variant="outline" className="mt-4">
+              <Link to={`${baseHref}/client-campaigns`}>Open Client Campaigns</Link>
+            </Button>
+          )}
+        </div>
+      ) : (
       <div className="grid h-[max(520px,calc(100vh-260px))] md:grid-cols-[21rem_minmax(0,1fr)]">
         <aside className={cn('min-h-0 flex-col border-r bg-muted/10', selectedClient ? 'hidden md:flex' : 'flex')}>
           <div className="flex items-center justify-between border-b px-4 py-3">
@@ -612,26 +650,6 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
           {inboxQuery.isLoading ? (
             <div className="flex flex-1 items-center justify-center gap-2 py-10 text-xs text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />Loading replies…
-            </div>
-          ) : inboxQuery.data?.connected === false ? (
-            <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
-              <h3 className="text-sm font-semibold">
-                {inboxQuery.data.reason ? 'Instantly declined the connected key' : 'Instantly is not connected'}
-              </h3>
-              <p className="mt-1 max-w-52 text-xs leading-5 text-muted-foreground">
-                {inboxQuery.data.reason === 'key_rejected'
-                  ? 'Instantly rejected the saved API key. Reconnect Instantly in Client Campaigns with a current key.'
-                  : inboxQuery.data.reason === 'scope_missing'
-                    ? 'The saved API key cannot read emails. Reconnect Instantly with a key that has all scopes enabled.'
-                    : 'Connect Instantly in Client Campaigns to load replies.'}
-              </p>
-            </div>
-          ) : inboxQuery.isError ? (
-            <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
-              <h3 className="text-sm font-semibold">Replies could not be loaded</h3>
-              <p className="mt-1 max-w-52 text-xs leading-5 text-muted-foreground">
-                {inboxQuery.error instanceof Error ? inboxQuery.error.message : 'Try again in a moment.'}
-              </p>
             </div>
           ) : visibleThreads.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
@@ -1075,6 +1093,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
         </section>
 
       </div>
+      )}
     </Card>
   )
 }
