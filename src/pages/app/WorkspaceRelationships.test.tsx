@@ -319,4 +319,33 @@ describe('WorkspaceRelationships', () => {
       `/app/workspaces/${platformWorkspaceId}`,
     )
   })
+
+  it('separates an unreachable cover from a show that has no name yet', async () => {
+    mockedList.mockResolvedValue([
+      relationship,
+      {
+        ...relationship,
+        podcast_id: 'manual-unknown',
+        podcast_name: null,
+        podcast_image_url: null,
+        contact_email: 'unknown-host@example.com',
+      },
+    ])
+
+    renderPage()
+
+    // A show can take its artwork private long after the feed keeps pointing
+    // there, so the tile must degrade to a deliberate stand-in rather than the
+    // browser's broken-image glyph.
+    const cover = await screen.findByRole('img', { name: 'Founder & Operator cover' })
+    fireEvent.error(cover)
+    await waitFor(() => {
+      expect(screen.queryByRole('img', { name: 'Founder & Operator cover' })).not.toBeInTheDocument()
+    })
+    expect(screen.getByTitle('Founder & Operator — cover art unavailable')).toBeInTheDocument()
+
+    // An unnamed row is a different job for the operator and has to say so
+    // rather than looking like one more show whose art failed to load.
+    expect(screen.getByTitle('Show not identified yet')).toBeInTheDocument()
+  })
 })

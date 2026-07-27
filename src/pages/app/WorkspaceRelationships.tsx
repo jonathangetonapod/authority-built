@@ -13,6 +13,7 @@ import {
   Loader2,
   Mail,
   MessageSquare,
+  Mic,
   NotebookPen,
   PhoneCall,
   Plus,
@@ -131,23 +132,50 @@ function podcastInitials(name: string): string {
   return (words.length === 1 ? words[0].slice(0, 2) : `${words[0][0]}${words[1][0]}`).toUpperCase()
 }
 
-function PodcastArtwork({ imageUrl, name, large = false }: { imageUrl: string | null; name: string; large?: boolean }) {
+// A cover that never loads is routine rather than exceptional: a show can take
+// its artwork private or delete it long after the feed keeps pointing there,
+// which is why roughly one in four Buzzsprout-hosted covers 403s. The stand-in
+// therefore has to look deliberate instead of broken, and it has to separate
+// the two cases an operator can act on — a show we cannot name yet, versus a
+// named show whose cover simply is not reachable.
+function PodcastArtwork({ imageUrl, name, identified = true, large = false }: {
+  imageUrl: string | null
+  name: string
+  identified?: boolean
+  large?: boolean
+}) {
   const [imageFailed, setImageFailed] = useState(false)
+  const [imageLoaded, setImageLoaded] = useState(false)
   const sizeClass = large ? 'h-20 w-20 rounded-xl text-lg' : 'h-12 w-12 rounded-lg text-xs'
+  const showImage = Boolean(imageUrl) && !imageFailed
+  const label = identified
+    ? (showImage ? `${decodeHtmlEntities(name)} cover` : `${decodeHtmlEntities(name)} — cover art unavailable`)
+    : 'Show not identified yet'
+
   return (
-    <div className={`${sizeClass} flex shrink-0 items-center justify-center overflow-hidden border bg-primary/5 font-semibold text-primary`}>
-      {imageUrl && !imageFailed
+    <div
+      className={`relative ${sizeClass} flex shrink-0 items-center justify-center overflow-hidden border bg-primary/5 font-semibold text-primary`}
+      title={label}
+    >
+      {/* The stand-in stays mounted underneath the image rather than being
+          swapped in on error, so a cover that 403s degrades into it silently
+          instead of flashing the browser's broken-image glyph first. */}
+      {identified
+        ? <span aria-hidden="true">{podcastInitials(name)}</span>
+        : <Mic aria-hidden="true" className={large ? 'h-7 w-7 opacity-60' : 'h-4 w-4 opacity-60'} />}
+      {showImage
         ? (
           <img
-            src={imageUrl}
+            src={imageUrl as string}
             alt={`${decodeHtmlEntities(name)} cover`}
-            className="h-full w-full object-cover"
+            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
             loading="lazy"
             referrerPolicy="no-referrer"
+            onLoad={() => setImageLoaded(true)}
             onError={() => setImageFailed(true)}
           />
         )
-        : <span aria-hidden="true">{podcastInitials(name)}</span>}
+        : <span className="sr-only">{label}</span>}
     </div>
   )
 }
@@ -556,7 +584,11 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
                 <CardHeader className="pb-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
-                      <PodcastArtwork imageUrl={row.podcast_image_url} name={row.podcast_name ?? 'Show not identified'} />
+                      <PodcastArtwork
+                        imageUrl={row.podcast_image_url}
+                        name={row.podcast_name ?? 'Show not identified'}
+                        identified={Boolean(row.podcast_name)}
+                      />
                       <div className="min-w-0">
                         <CardTitle className="truncate text-base">{decodeHtmlEntities(row.podcast_name ?? 'Show not identified')}</CardTitle>
                         <CardDescription className="mt-1 truncate">
@@ -623,7 +655,12 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
                       <Tabs value={activeView} onValueChange={(value) => setActiveView(value as RelationshipView)}>
                         <div className="flex flex-col gap-4 rounded-xl border bg-muted/10 p-4 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex min-w-0 items-center gap-4">
-                            <PodcastArtwork imageUrl={openRow?.podcast_image_url ?? null} name={selectedName} large />
+                            <PodcastArtwork
+                              imageUrl={openRow?.podcast_image_url ?? null}
+                              name={selectedName}
+                              identified={Boolean(detail.relationship?.podcast_name || openRow?.podcast_name)}
+                              large
+                            />
                             <div className="min-w-0">
                               <h2 className="truncate text-xl font-semibold">{selectedName}</h2>
                               <p className="mt-1 truncate text-sm text-muted-foreground">
