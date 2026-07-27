@@ -42,6 +42,7 @@ import { safeExternalUrl } from '@/lib/externalUrl'
 import {
   draftWorkspaceInboxReply,
   getWorkspaceInboxLeadDetail,
+  getWorkspaceInboxThreadMessages,
   getWorkspaceInboxThreads,
   setWorkspaceInboxLeadInterest,
   sendWorkspaceInboxReply,
@@ -262,6 +263,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
     staleTime: 30_000,
   })
   const threads = useMemo(() => inboxQuery.data?.threads ?? [], [inboxQuery.data?.threads])
+  const [showFullThread, setShowFullThread] = useState(false)
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null)
   const [draftBody, setDraftBody] = useState('')
   const [draftedForThread, setDraftedForThread] = useState<string | null>(null)
@@ -305,9 +307,32 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
   const selectedThread = visibleThreads.find((thread) => thread.id === selectedThreadId)
     || threads.find((thread) => thread.id === selectedThreadId)
     || null
+  // Both sides of the conversation. Loaded on request rather than with the
+  // list: it is one provider call per thread, and most triage never needs it.
+  const threadMessagesQuery = useQuery({
+    queryKey: ['workspace-inbox-thread', workspaceId, selectedThread?.thread_key ?? ''],
+    queryFn: () => getWorkspaceInboxThreadMessages(workspaceId, selectedThread!.thread_key),
+    enabled: showFullThread && Boolean(workspaceId) && Boolean(selectedThread?.thread_key),
+    retry: false,
+    staleTime: 30_000,
+  })
   const threadClient = selectedThread?.campaign?.client
     ? clients.find((client) => client.id === selectedThread.campaign?.client?.id) ?? null
     : null
+
+  // Which core fields are missing, for the thread's own client. sdrContextQuery
+  // is keyed to the client FILTER, so during all-client triage it is disabled
+  // and the banner had nothing to name. "Not ready" without saying what is
+  // missing sends the operator to hunt through a form.
+  const threadSdrQuery = useQuery({
+    queryKey: ['workspace-client-sdr-context', workspaceId, threadClient?.id ?? 'none'],
+    queryFn: () => getWorkspaceClientSdrContext(workspaceId, threadClient!.id),
+    enabled: Boolean(workspaceId) && Boolean(threadClient?.id) && threadClient?.ai_sdr_profile_ready === false,
+    retry: false,
+  })
+  const missingSdrFields = (threadSdrQuery.data?.readiness.missing_core_fields ?? [])
+    .map((field) => CLIENT_SDR_PROFILE_FIELD_DEFINITIONS.find((definition) => definition.id === field)?.shortLabel)
+    .filter((label) => Boolean(label))
 
   // When there is no inbox to browse, there is nothing for two panes to hold.
   // The split view is sized to the viewport so the reading pane has something
@@ -543,6 +568,9 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
   })
   const openThread = (threadId: string) => {
     setSelectedThreadId(threadId)
+    // History is per-conversation; carrying it open into the next thread would
+    // show one host's messages under another's subject line.
+    setShowFullThread(false)
     const thread = threads.find((item) => item.id === threadId)
     const persisted = thread?.state?.draft
     if (persisted && !thread.state?.draft_stale) {
@@ -826,6 +854,55 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                   <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{selectedThread.body_text || 'No text content.'}</p>
                 </div>
 
+                {/* The list reads received mail only, so without this an
+                    operator answers having never seen what was pitched —
+                    only what the host happened to quote back. */}
+                {selectedThread.thread_key && (
+                  <div className="mt-3">
+                    {!showFullThread ? (
+                      <Button type="button" variant="outline" size="sm" onClick={() => setShowFullThread(true)}>
+                        <MailOpen className="mr-2 h-3.5 w-3.5" />Show what we sent
+                      </Button>
+                    ) : threadMessagesQuery.isLoading ? (
+                      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />Loading the full conversation…
+                      </p>
+                    ) : threadMessagesQuery.error ? (
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3">
+                        <p className="text-xs text-destructive">The conversation history could not be loaded.</p>
+                        <Button type="button" variant="outline" size="sm" onClick={() => void threadMessagesQuery.refetch()}>Retry</Button>
+                      </div>
+                    ) : (threadMessagesQuery.data ?? []).length === 0 ? (
+                      <p className="rounded-xl border border-dashed p-3 text-xs text-muted-foreground">
+                        Instantly returned no other messages on this thread.
+                      </p>
+                    ) : (
+                      <div className="space-y-2" aria-label="Full conversation">
+                        {(threadMessagesQuery.data ?? []).map((message) => (
+                          <div
+                            key={message.id}
+                            className={message.direction === 'outbound'
+                              ? 'rounded-xl border border-primary/20 bg-primary/5 p-3'
+                              : 'rounded-xl border bg-muted/15 p-3'}
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                {message.direction === 'outbound' ? 'We sent' : 'They replied'}
+                              </span>
+                              {message.sent_at && (
+                                <span className="text-[11px] text-muted-foreground">{new Date(message.sent_at).toLocaleString()}</span>
+                              )}
+                            </div>
+                            <p className="mt-1 text-xs font-medium">{message.subject || '(no subject)'}</p>
+                            <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">{message.body_text || 'No text content.'}</p>
+                          </div>
+                        ))}
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setShowFullThread(false)}>Hide history</Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {selectedThread.suppressed ? (
                   <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-xs leading-5 text-destructive">
                     <span className="font-semibold">This address is on the do-not-contact list.</span> Replying is disabled for
@@ -840,7 +917,14 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                   <div className="mt-4 space-y-3">
                     {threadClient && !threadClient.ai_sdr_profile_ready && (
                       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs leading-5 text-amber-900">
-                        <span><span className="font-semibold">{selectedThread.campaign.client.name}&rsquo;s AI SDR profile is not ready.</span> AI drafting is off until the core fields are complete — you can still reply manually below.</span>
+                        <span>
+                          <span className="font-semibold">{selectedThread.campaign.client.name}&rsquo;s AI SDR profile is not ready.</span>{' '}
+                          {missingSdrFields.length > 0
+                            ? `AI drafting is off until ${missingSdrFields.length === 1 ? 'one core field is' : `${missingSdrFields.length} core fields are`} filled in: ${missingSdrFields.join(', ')}. You can still reply manually below.`
+                            : threadSdrQuery.isLoading
+                              ? 'Checking which fields are missing. You can still reply manually below.'
+                              : 'AI drafting is off until the core fields are complete — you can still reply manually below.'}
+                        </span>
                         <Button asChild size="sm" variant="outline" className="border-amber-300 bg-background">
                           <Link to={`${baseHref}/clients/${selectedThread.campaign.client.id}`}>Open profile</Link>
                         </Button>

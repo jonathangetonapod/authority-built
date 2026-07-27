@@ -508,3 +508,21 @@ assert.match(sdrShared, /export function withinSendWindow\(timezone: string, win
 assert.match(sdrShared, /if \(to <= from\) return true/u)
 assert.match(nudgeTick, /\.select\('timezone, provider_schedule'\)/u)
 assert.match(nudgeTick, /withinSendWindow\(\s*timezoneByClient\.get\(raw\.client_id\)!,\s*windowByClient\.get\(raw\.client_id\) \?\? null,/u)
+
+// The reading pane read received mail only, so an operator answered having
+// never seen what was pitched. The full thread is available on request, and
+// only for campaigns this workspace has claimed.
+assert.match(edge, /action === "inbox-thread-messages"/u)
+const threadMessagesAction = edge.match(/action === "inbox-thread-messages"[\s\S]*?action === "inbox-draft"/u)
+assert.ok(threadMessagesAction, 'inbox-thread-messages action must exist')
+assert.match(threadMessagesAction[0], /if \(!campaignId \|\| !claimed\.has\(campaignId\)\) return \[\]/u)
+assert.match(threadMessagesAction[0], /direction: email\.ue_type === 2 \? "inbound" : "outbound"/u)
+assert.match(masterInbox, /Show what we sent/u)
+// One provider call per thread, so it loads on request rather than with the list.
+assert.match(masterInbox, /enabled: showFullThread && Boolean\(workspaceId\) && Boolean\(selectedThread\?\.thread_key\)/u)
+// History is per-conversation and must not carry across threads.
+assert.match(masterInbox, /setSelectedThreadId\(threadId\)[\s\S]{0,220}setShowFullThread\(false\)/u)
+
+// "Not ready" now names the fields, instead of sending the operator to hunt.
+assert.match(masterInbox, /missingSdrFields/u)
+assert.match(masterInbox, /threadClient\?\.ai_sdr_profile_ready === false/u)

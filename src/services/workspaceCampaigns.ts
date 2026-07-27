@@ -629,6 +629,34 @@ export async function setClientInstantlyCampaignLinks(
   return data.links ?? []
 }
 
+export interface WorkspaceInboxMessage {
+  id: string
+  /** 'outbound' is what this agency sent — the half the pane could not show. */
+  direction: 'inbound' | 'outbound'
+  subject: string
+  from_email: string
+  to_email: string
+  body_text: string
+  sent_at: string | null
+}
+
+/**
+ * Both sides of one conversation, oldest first. The reply list reads only
+ * received mail, so without this an operator composes a reply having never
+ * seen what was actually pitched — only what the host happened to quote back.
+ */
+export async function getWorkspaceInboxThreadMessages(
+  workspaceId: string,
+  threadKey: string,
+): Promise<WorkspaceInboxMessage[]> {
+  const data = await invokeWorkspaceCampaigns<{ messages: WorkspaceInboxMessage[] }>({
+    action: 'inbox-thread-messages',
+    workspace_id: workspaceId,
+    thread_key: threadKey,
+  }, 'The conversation history could not be loaded.')
+  return Array.isArray(data.messages) ? data.messages : []
+}
+
 export async function getWorkspaceInboxThreads(
   workspaceId: string,
 ): Promise<WorkspaceInboxThreadsResponse> {

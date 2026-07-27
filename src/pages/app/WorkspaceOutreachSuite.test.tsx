@@ -10,6 +10,7 @@ import {
   getWorkspaceCampaignOverview,
   getWorkspaceInboxThreads,
   getWorkspaceMailboxes,
+  getWorkspaceInboxThreadMessages,
   sendWorkspaceInboxReply,
   setWorkspaceInboxLeadInterest,
 } from '@/services/workspaceCampaigns'
@@ -41,6 +42,7 @@ vi.mock('@/services/workspaceCampaigns', () => ({
   getWorkspaceMailboxes: vi.fn(),
   getWorkspaceInboxThreads: vi.fn().mockResolvedValue({ connected: true, threads: [] }),
   getWorkspaceInboxLeadDetail: vi.fn().mockResolvedValue({ lead: null }),
+  getWorkspaceInboxThreadMessages: vi.fn().mockResolvedValue([]),
   setWorkspaceInboxLeadInterest: vi.fn().mockResolvedValue({ success: true, interest_value: 1 }),
   setWorkspaceInboxThreadStatus: vi.fn().mockResolvedValue({ success: true }),
   draftWorkspaceInboxReply: vi.fn(),
@@ -423,6 +425,72 @@ describe('WorkspaceOutreachSuite', () => {
     expect(screen.queryByRole('button', { name: 'Draft with AI' })).not.toBeInTheDocument()
     // And it is already suppressed, so it is stated rather than offered again.
     expect(screen.queryByRole('button', { name: /add to do not contact/i })).not.toBeInTheDocument()
+  })
+
+  it('can show what was sent, not only what came back', async () => {
+    const clientId = '22222222-2222-4222-8222-222222222222'
+    vi.mocked(getWorkspaceInboxThreads).mockResolvedValue({
+      connected: true,
+      threads: [{
+        id: 'message-one',
+        thread_id: 'thread-one',
+        message_id: 'provider-message-one',
+        eaccount: 'sdr@example.com',
+        subject: 'Re: guest idea',
+        from_email: 'morgan@example.com',
+        to_email: 'sdr@example.com',
+        body_text: 'What is this about?',
+        received_at: '2026-07-21T12:00:00.000Z',
+        is_unread: true,
+        interested: true,
+        interest_status: 1,
+        suppressed: false,
+        opt_out_detected: false,
+        lead_email: 'morgan@example.com',
+        campaign: {
+          campaign_id: 'campaign-one',
+          campaign_name: 'Taylor outreach',
+          client: { id: clientId, name: 'Taylor Client' },
+        },
+        lead_context: null,
+        thread_key: 'thread-one',
+        relationship: null,
+      }],
+    } as never)
+    vi.mocked(getWorkspaceInboxThreadMessages).mockResolvedValue([
+      {
+        id: 'sent-one',
+        direction: 'outbound',
+        subject: 'Guest idea for Founder Stories',
+        from_email: 'sdr@example.com',
+        to_email: 'morgan@example.com',
+        body_text: 'Your conversation with Peter Smythe stayed with me.',
+        sent_at: '2026-07-20T12:00:00.000Z',
+      },
+      {
+        id: 'reply-one',
+        direction: 'inbound',
+        subject: 'Re: guest idea',
+        from_email: 'morgan@example.com',
+        to_email: 'sdr@example.com',
+        body_text: 'What is this about?',
+        sent_at: '2026-07-21T12:00:00.000Z',
+      },
+    ] as never)
+    renderPage('master-inbox')
+
+    fireEvent.click(await screen.findByText('Re: guest idea'))
+    // Not fetched until asked for: one provider call per thread.
+    expect(getWorkspaceInboxThreadMessages).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: /Show what we sent/i }))
+    await waitFor(() => expect(getWorkspaceInboxThreadMessages).toHaveBeenCalledWith(
+      defaultWorkspaceId,
+      'thread-one',
+    ))
+    expect(await screen.findByText('We sent')).toBeInTheDocument()
+    expect(screen.getByText(/Your conversation with Peter Smythe stayed with me/)).toBeInTheDocument()
+    expect(screen.getByText('They replied')).toBeInTheDocument()
   })
 
   it('says when the reply list is only a window onto a longer inbox', async () => {

@@ -3135,6 +3135,86 @@ serve(async (req) => {
       });
     }
 
+    if (action === "inbox-thread-messages") {
+      requireOnlyKeys(body, ["action", "workspace_id", "thread_key"]);
+      const threadKey = requireString(body.thread_key, "thread_key", { max: 120 });
+      const connection = await readConnection(context.admin, workspaceId);
+      if (
+        !connection || connection.status === "disconnected" ||
+        !connection.api_key_ciphertext || !connection.api_key_iv
+      ) {
+        return jsonResponse(req, METHODS, 200, { messages: [] });
+      }
+      const apiKey = await integrationApiKey(connection, false);
+
+      // Only threads on a campaign this workspace has claimed may be read, so
+      // a guessed thread id cannot pull mail belonging to nobody here.
+      const [managedRows, linkedRows] = await Promise.all([
+        context.admin
+          .from("workspace_client_campaigns")
+          .select("instantly_campaign_id")
+          .eq("workspace_id", workspaceId)
+          .not("instantly_campaign_id", "is", null)
+          .limit(1_000),
+        context.admin
+          .from("client_instantly_campaign_links")
+          .select("instantly_campaign_id")
+          .eq("workspace_id", workspaceId)
+          .limit(1_000),
+      ]);
+      const claimed = new Set<string>();
+      for (
+        const row of [
+          ...((managedRows.error ? [] : managedRows.data ?? []) as Array<Record<string, unknown>>),
+          ...((linkedRows.error ? [] : linkedRows.data ?? []) as Array<Record<string, unknown>>),
+        ]
+      ) {
+        if (typeof row.instantly_campaign_id === "string") claimed.add(row.instantly_campaign_id);
+      }
+
+      let payload: { items?: Array<Record<string, unknown>> };
+      try {
+        payload = await instantlyRequest<{ items?: Array<Record<string, unknown>> }>(
+          apiKey,
+          "/emails",
+          { query: new URLSearchParams({ search: `thread:${threadKey}`, limit: "50" }) },
+        );
+      } catch (error) {
+        if (error instanceof InstantlyApiError) throw providerHttpError(error);
+        throw error;
+      }
+
+      const text = (value: unknown, max: number): string =>
+        typeof value === "string" ? value.slice(0, max) : "";
+      const messages = (payload.items ?? []).flatMap((raw) => {
+        if (!raw || typeof raw !== "object") return [];
+        const email = raw as Record<string, unknown>;
+        const campaignId = typeof email.campaign_id === "string" ? email.campaign_id : null;
+        if (!campaignId || !claimed.has(campaignId)) return [];
+        const bodyRecord = (email.body ?? {}) as Record<string, unknown>;
+        const bodyText = text(bodyRecord.text, 6_000)
+          || text(bodyRecord.html, 12_000).replace(/<[^>]+>/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 6_000);
+        return [{
+          id: String(email.id ?? crypto.randomUUID()),
+          // ue_type 2 is inbound. Anything else is ours, which is the half of
+          // the conversation the reading pane could never show.
+          direction: email.ue_type === 2 ? "inbound" : "outbound",
+          subject: text(email.subject, 300),
+          from_email: text(email.from_address_email, 320),
+          to_email: text(email.to_address_email_list, 320),
+          body_text: bodyText,
+          sent_at: typeof email.timestamp_email === "string"
+            ? email.timestamp_email
+            : typeof email.timestamp_created === "string"
+              ? email.timestamp_created
+              : null,
+        }];
+      }).sort((left, right) =>
+        String(left.sent_at ?? "").localeCompare(String(right.sent_at ?? "")));
+
+      return jsonResponse(req, METHODS, 200, { messages });
+    }
+
     if (action === "inbox-draft") {
       requireOnlyKeys(body, ["action", "workspace_id", "client_id", "subject", "message", "thread_key", "email_id", "force", "lead_email"]);
       const clientId = requireUuid(body.client_id, "client_id");
