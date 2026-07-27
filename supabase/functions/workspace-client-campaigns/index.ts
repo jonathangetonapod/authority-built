@@ -2906,6 +2906,10 @@ serve(async (req) => {
       const items: Array<Record<string, unknown>> = [];
       let startingAfter: string | null = null;
       let authFailure: "key_rejected" | "scope_missing" | null = null;
+      // Whether older replies exist beyond what we read. Silence here would
+      // make a truncated inbox look like a complete one, and a reply that fell
+      // off the end is indistinguishable from a reply that never arrived.
+      let truncated = false;
       for (let page = 0; page < 3; page += 1) {
         const query = new URLSearchParams({ limit: "100", email_type: "received" });
         if (startingAfter) query.set("starting_after", startingAfter);
@@ -2927,8 +2931,12 @@ serve(async (req) => {
               authFailure = "scope_missing";
               break;
             }
-            // Rate-limited mid-pagination: keep the pages we already have.
-            if (page > 0 && error.status === 429) break;
+            // Rate-limited mid-pagination: keep the pages we already have,
+            // but say that the window is short rather than implying it is all.
+            if (page > 0 && error.status === 429) {
+              truncated = true;
+              break;
+            }
             throw providerHttpError(error);
           }
           throw error;
@@ -2938,6 +2946,8 @@ serve(async (req) => {
         const next = typeof payload.next_starting_after === "string" ? payload.next_starting_after : null;
         if (!next || pageItems.length === 0) break;
         startingAfter = next;
+        // A cursor still outstanding on the final page means there is more.
+        if (page === 2) truncated = true;
       }
       if (authFailure) {
         return jsonResponse(req, METHODS, 200, {
@@ -3104,7 +3114,11 @@ serve(async (req) => {
           throw new HttpError(503, "THREAD_STATE_UNAVAILABLE", "Reply relationships could not be recorded");
         }
       }
-      return jsonResponse(req, METHODS, 200, { connected: true, threads: dedupedThreads });
+      return jsonResponse(req, METHODS, 200, {
+        connected: true,
+        threads: dedupedThreads,
+        truncated,
+      });
     }
 
     if (action === "inbox-draft") {
@@ -3219,7 +3233,7 @@ serve(async (req) => {
     }
 
     if (action === "inbox-reply") {
-      requireOnlyKeys(body, ["action", "workspace_id", "reply_to_id", "eaccount", "subject", "message", "thread_key", "client_id"]);
+      requireOnlyKeys(body, ["action", "workspace_id", "reply_to_id", "eaccount", "subject", "message", "thread_key", "client_id", "lead_email"]);
       if (!["owner", "admin", "platform_admin"].includes(access.role)) {
         throw new HttpError(403, "WORKSPACE_ACCESS_REQUIRED", "Workspace manager access is required");
       }
@@ -3241,6 +3255,29 @@ serve(async (req) => {
         throw new HttpError(409, "INSTANTLY_NOT_CONNECTED", "Connect Instantly before replying from the inbox");
       }
       const apiKey = await integrationApiKey(connection, false);
+
+      // Do-not-contact is checked on the way out, not only where a pitch is
+      // written. The inbox is the one place someone can email a suppressed
+      // address by hand — often the very reply that asked us to stop.
+      const replyLeadEmail = (typeof body.lead_email === "string" ? body.lead_email : "")
+        .trim()
+        .toLowerCase();
+      if (replyLeadEmail) {
+        const { data: replySuppression } = await context.admin
+          .from("workspace_outreach_suppressions")
+          .select("reason")
+          .eq("workspace_id", workspaceId)
+          .eq("contact_email", replyLeadEmail)
+          .maybeSingle();
+        if (replySuppression) {
+          throw new HttpError(
+            409,
+            "INBOX_CONTACT_SUPPRESSED",
+            "This address is on the workspace do-not-contact list. Remove it in Relationships before replying.",
+          );
+        }
+      }
+
       // Send-time gate (server-owned): if the host has said something newer
       // than the message this reply answers, refuse instead of replying to a
       // stale turn. The UI gate is UX; this is the invariant.

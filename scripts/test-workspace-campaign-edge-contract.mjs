@@ -22,6 +22,7 @@ const leadInterestMigration = readFileSync(
 )
 const masterInbox = readFileSync('src/components/workspace/MasterInboxPreview.tsx', 'utf8')
 const campaignDetail = readFileSync('src/pages/app/WorkspaceCampaignDetail.tsx', 'utf8')
+const outreachSuite = readFileSync('src/pages/app/WorkspaceOutreachSuite.tsx', 'utf8')
 const scheduleMigration = readFileSync(
   'supabase/migrations/20260728001600_campaign_provider_schedule.sql',
   'utf8',
@@ -459,3 +460,33 @@ assert.match(campaignDetail, /Nothing read yet[\s\S]*?deliberately blank rather 
 assert.match(campaignDetail, /Instantly's API reference does not state which day index is Sunday/u)
 assert.match(campaignDetail, /Their API reference does not state it, so check this against the campaign in Instantly once/u)
 assert.match(campaignDetail, /providerTimezoneMismatch/u)
+
+// The Master Inbox connection badge was a static element reading "not
+// connected" whenever the module was open, including above replies it had just
+// loaded. It now shares the inbox query so the two cannot disagree.
+assert.match(outreachSuite, /queryKey: \['workspace-inbox', effectiveWorkspace\?\.id \?\? ''\]/u)
+assert.match(outreachSuite, /inboxConnectionQuery\.data\?\.connected\s*\?/u)
+assert.match(outreachSuite, /Instantly key rejected/u)
+
+// Do-not-contact is enforced on the way out. The inbox is the one place a
+// suppressed address can be emailed by hand, often on the reply that asked.
+assert.match(
+  edge,
+  /action === "inbox-reply"[\s\S]*?from\("workspace_outreach_suppressions"\)[\s\S]*?INBOX_CONTACT_SUPPRESSED/u,
+)
+// The gate precedes the provider send, not merely the status write.
+const replyAction = edge.match(/action === "inbox-reply"[\s\S]*?action === "inbox-lead-detail"/u)
+assert.ok(replyAction, 'inbox-reply action must exist')
+assert.ok(
+  replyAction[0].indexOf('INBOX_CONTACT_SUPPRESSED')
+    < replyAction[0].indexOf('"/emails/reply"'),
+  'a suppressed address must be refused before anything is sent',
+)
+assert.match(masterInbox, /This address is on the do-not-contact list/u)
+
+// A paged provider inbox shared by every campaign can push a client's reply
+// past the end. Silence would make a short window look like the whole inbox.
+assert.match(edge, /let truncated = false;/u)
+assert.match(edge, /if \(page === 2\) truncated = true;/u)
+assert.match(edge, /if \(page > 0 && error\.status === 429\) \{\s+truncated = true;/u)
+assert.match(masterInbox, /Showing the most recent replies only/u)

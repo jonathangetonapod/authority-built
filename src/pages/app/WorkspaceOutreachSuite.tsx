@@ -29,6 +29,7 @@ import {
 import { getAdminWorkspaceView } from '@/services/adminWorkspaces'
 import { getWorkspaceClients } from '@/services/clients'
 import {
+  getWorkspaceInboxThreads,
   getWorkspaceMailboxes,
   type WorkspaceMailboxAccount,
   type WorkspaceMailboxesResponse,
@@ -369,6 +370,17 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
       }
     : undefined
 
+  // Same key the Master Inbox itself uses, so the badge and the panel below it
+  // can never disagree. It used to be a static element that said "not
+  // connected" whenever this module was open — including above a list of
+  // replies it had just loaded from Instantly.
+  const inboxConnectionQuery = useQuery({
+    queryKey: ['workspace-inbox', effectiveWorkspace?.id ?? ''],
+    queryFn: () => getWorkspaceInboxThreads(effectiveWorkspace?.id ?? ''),
+    enabled: module === 'master-inbox' && Boolean(effectiveWorkspace?.id),
+    retry: false,
+    staleTime: 30_000,
+  })
   if (isSelectedWorkspace && selectedWorkspaceQuery.isLoading && validSelectedWorkspaceId) {
     return (
       <WorkspaceLayout platformWorkspace={platformWorkspace}>
@@ -422,10 +434,23 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
               <p className="truncate text-xs text-muted-foreground" title={config.description}>{workspaceLabel}</p>
             </div>
           </div>
-          {module === 'master-inbox' && (
-            <div data-testid="instantly-connection-state" className="flex w-fit shrink-0 items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-              <PlugZap className="h-3.5 w-3.5" />Instantly not connected
-            </div>
+          {module === 'master-inbox' && !inboxConnectionQuery.isLoading && (
+            inboxConnectionQuery.data?.connected
+              ? (
+                <div data-testid="instantly-connection-state" className="flex w-fit shrink-0 items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+                  <PlugZap className="h-3.5 w-3.5" />Instantly connected
+                </div>
+              )
+              : (
+                <div data-testid="instantly-connection-state" className="flex w-fit shrink-0 items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                  <PlugZap className="h-3.5 w-3.5" />
+                  {inboxConnectionQuery.data?.reason === 'key_rejected'
+                    ? 'Instantly key rejected'
+                    : inboxConnectionQuery.data?.reason === 'scope_missing'
+                      ? 'Instantly key missing scopes'
+                      : 'Instantly not connected'}
+                </div>
+              )
           )}
         </header>
 

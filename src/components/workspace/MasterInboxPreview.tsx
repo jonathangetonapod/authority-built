@@ -441,6 +441,11 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
       message: draftBody.trim(),
       ...(thread.thread_key ? { thread_key: thread.thread_key } : {}),
       ...(thread.campaign?.client ? { client_id: thread.campaign.client.id } : {}),
+      // Sent so the server can refuse a reply to a suppressed address. The UI
+      // hides the composer for those, but the gate belongs on the send.
+      ...(thread.lead_email || thread.from_email
+        ? { lead_email: (thread.lead_email || thread.from_email).trim().toLowerCase() }
+        : {}),
     }),
     onSuccess: (_result, thread) => {
       setSentThreadIds((current) => new Set([...current, thread.id]))
@@ -706,6 +711,15 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
           {/* An unactioned request to stop is the one thing in this list that
               should not wait to be scrolled to. Counted across both scopes,
               because an opt-out does not care which bucket it landed in. */}
+          {inboxQuery.data?.truncated && (
+            <div role="status" className="flex items-start gap-2 border-b bg-muted/30 px-4 py-2.5">
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <p className="text-[11px] leading-4 text-muted-foreground">
+                Showing the most recent replies only. Instantly has more than this window holds, so an
+                older conversation may be missing — search finds only what is loaded here.
+              </p>
+            </div>
+          )}
           {counts.optOutsAwaitingAction > 0 && (
             <div role="status" className="flex items-start gap-2 border-b border-destructive/30 bg-destructive/5 px-4 py-2.5">
               <Ban className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
@@ -812,7 +826,13 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                   <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{selectedThread.body_text || 'No text content.'}</p>
                 </div>
 
-                {!selectedThread.campaign?.client ? (
+                {selectedThread.suppressed ? (
+                  <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-xs leading-5 text-destructive">
+                    <span className="font-semibold">This address is on the do-not-contact list.</span> Replying is disabled for
+                    every client in this workspace. If that was recorded in error, remove it in Relationships, where the
+                    reversal asks for a written reason.
+                  </div>
+                ) : !selectedThread.campaign?.client ? (
                   <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs leading-5 text-amber-900">
                     <span className="font-semibold">No client match, no AI response.</span> This reply is not mapped to a client campaign, so drafting is disabled by policy.
                   </div>

@@ -203,11 +203,24 @@ describe('WorkspaceOutreachSuite', () => {
     if (module === 'client-campaigns') {
       expect(await screen.findByTestId('instantly-connection-card')).toHaveTextContent('Connect Instantly')
     } else {
-      expect(screen.getByTestId('instantly-connection-state')).toHaveTextContent('not connected')
+      // The badge reports the inbox's real connection state. It used to be a
+      // static element reading "not connected" whenever this module was open.
+      expect(await screen.findByTestId('instantly-connection-state')).toHaveTextContent('Instantly connected')
     }
     expect(screen.queryByRole('navigation', { name: 'Outreach suite' })).not.toBeInTheDocument()
     expect(screen.getByText('My Workspace')).toBeInTheDocument()
     expect(mockedView).not.toHaveBeenCalled()
+  })
+
+  it('reports the inbox connection honestly instead of always claiming disconnected', async () => {
+    vi.mocked(getWorkspaceInboxThreads).mockResolvedValue({
+      connected: false,
+      reason: 'key_rejected',
+      threads: [],
+    } as never)
+    renderPage('master-inbox')
+
+    expect(await screen.findByTestId('instantly-connection-state')).toHaveTextContent('Instantly key rejected')
   })
 
   it('renders live Instantly accounts in the supplied operational table layout', async () => {
@@ -367,6 +380,61 @@ describe('WorkspaceOutreachSuite', () => {
       `/app/clients/${clientId}?tab=ai-sdr`,
     )
     expect(mockedSdrContext).toHaveBeenCalledWith(defaultWorkspaceId, clientId)
+  })
+
+  it('refuses to compose a reply to an address on the do-not-contact list', async () => {
+    const clientId = '22222222-2222-4222-8222-222222222222'
+    vi.mocked(getWorkspaceInboxThreads).mockResolvedValue({
+      connected: true,
+      threads: [{
+        id: 'message-suppressed',
+        thread_id: 'thread-suppressed',
+        message_id: 'provider-message-suppressed',
+        eaccount: 'sdr@example.com',
+        subject: 'Please stop',
+        from_email: 'quiet@example.com',
+        to_email: 'sdr@example.com',
+        body_text: 'Do not email me.',
+        received_at: '2026-07-21T12:00:00.000Z',
+        is_unread: false,
+        interested: false,
+        interest_status: null,
+        suppressed: true,
+        opt_out_detected: true,
+        lead_email: 'quiet@example.com',
+        campaign: {
+          campaign_id: 'campaign-one',
+          campaign_name: 'Titan outreach',
+          client: { id: clientId, name: 'Dallas Fontaine' },
+        },
+        lead_context: null,
+        thread_key: 'thread-suppressed',
+        relationship: null,
+      }],
+    } as never)
+    renderPage('master-inbox')
+
+    fireEvent.click(await screen.findByRole('radio', { name: /Other replies/ }))
+    fireEvent.click(await screen.findByText('Please stop'))
+
+    expect(await screen.findByText(/This address is on the do-not-contact list/i)).toBeInTheDocument()
+    // The composer is gone entirely, not merely disabled.
+    expect(screen.queryByRole('button', { name: 'Send reply' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Draft with AI' })).not.toBeInTheDocument()
+    // And it is already suppressed, so it is stated rather than offered again.
+    expect(screen.queryByRole('button', { name: /add to do not contact/i })).not.toBeInTheDocument()
+  })
+
+  it('says when the reply list is only a window onto a longer inbox', async () => {
+    vi.mocked(getWorkspaceInboxThreads).mockResolvedValue({
+      connected: true,
+      truncated: true,
+      threads: [],
+    } as never)
+    renderPage('master-inbox')
+
+    expect(await screen.findByText(/Showing the most recent replies only/i)).toBeInTheDocument()
+    expect(screen.getByText(/an older conversation may be missing/i)).toBeInTheDocument()
   })
 
   it('lets an operator suppress a host who asked to stop, from the reply itself', async () => {

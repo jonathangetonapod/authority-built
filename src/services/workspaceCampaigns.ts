@@ -575,6 +575,12 @@ export interface WorkspaceInboxThreadsResponse {
   connected: boolean
   reason?: 'key_rejected' | 'scope_missing'
   threads: WorkspaceInboxThread[]
+  /**
+   * Older replies exist beyond the window that was read. The provider inbox is
+   * paged and shared by every campaign, so a busy workspace can push a client's
+   * reply past the end. A truncated list must not look like a complete one.
+   */
+  truncated?: boolean
 }
 
 export interface ClientInstantlyCampaignLink {
@@ -781,7 +787,7 @@ export async function setWorkspaceInboxThreadStatus(
 
 export async function sendWorkspaceInboxReply(
   workspaceId: string,
-  input: { reply_to_id: string; eaccount: string; subject: string; message: string; thread_key?: string; client_id?: string },
+  input: { reply_to_id: string; eaccount: string; subject: string; message: string; thread_key?: string; client_id?: string; lead_email?: string },
 ): Promise<void> {
   await invokeWorkspaceCampaigns<{ success: boolean }>({
     action: 'inbox-reply',
