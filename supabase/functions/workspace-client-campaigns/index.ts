@@ -77,6 +77,8 @@ const CAMPAIGN_COLUMNS = [
   "sender_accounts",
   "timezone",
   "daily_limit",
+  "provider_schedule",
+  "provider_email_gap",
   "analytics",
   "provider_sync_state",
   "provider_sync_started_at",
@@ -170,6 +172,8 @@ interface CampaignRow {
   sender_accounts: string[];
   timezone: string;
   daily_limit: number;
+  provider_schedule: Record<string, unknown> | null;
+  provider_email_gap: number | null;
   analytics: unknown;
   provider_sync_state: "idle" | "creating" | "syncing" | "error";
   provider_sync_started_at: string | null;
@@ -222,6 +226,25 @@ interface TargetRow {
   updated_at: string;
 }
 
+/**
+ * The sending window Instantly actually holds for a campaign.
+ *
+ * Day keys are '0'..'6'. Instantly's API reference does not state which day '0'
+ * is, so this carries the raw booleans through untranslated and lets the UI
+ * label them under one stated convention (0 = Sunday, matching JavaScript's
+ * getDay). Showing the real values is the point: the page used to assert
+ * "Monday–Friday" from a hardcoded string, which could not disagree with
+ * reality and so could never reveal that it did.
+ */
+interface ProviderSchedule {
+  name: string | null;
+  from: string | null;
+  to: string | null;
+  timezone: string | null;
+  /** Index 0..6 in key order, true when sending is allowed that day. */
+  days: boolean[];
+}
+
 interface ProviderCampaign {
   id: string;
   status: number;
@@ -229,6 +252,9 @@ interface ProviderCampaign {
   senderAccounts: string[];
   timezone: string;
   dailyLimit: number;
+  /** Minutes between sends, as configured at the provider. */
+  emailGap: number | null;
+  schedule: ProviderSchedule | null;
   timestampCreated: string | null;
   timestampUpdated: string | null;
 }
@@ -471,6 +497,8 @@ function campaignDto(campaign: CampaignRow, targets: TargetRow[] = []) {
     sender_accounts: campaign.sender_accounts,
     timezone: campaign.timezone,
     daily_limit: campaign.daily_limit,
+    provider_schedule: campaign.provider_schedule ?? null,
+    provider_email_gap: campaign.provider_email_gap ?? null,
     analytics: safeInstantlyAnalytics(campaign.analytics),
     target_counts: targetCounts(targets),
     target_shortlist_podcast_ids: targets.map((target) =>
@@ -688,6 +716,39 @@ function providerCampaign(value: unknown): ProviderCampaign {
       item.daily_limit <= 1_000
     ? item.daily_limit
     : 30;
+  const emailGap = typeof item.email_gap === "number" &&
+      Number.isFinite(item.email_gap) && item.email_gap >= 0 &&
+      item.email_gap <= 1_440
+    ? Math.round(item.email_gap)
+    : null;
+  const scheduleDays = firstSchedule?.days &&
+      typeof firstSchedule.days === "object" && !Array.isArray(firstSchedule.days)
+    ? firstSchedule.days as Record<string, unknown>
+    : null;
+  const timeOfDay = (candidate: unknown): string | null => (
+    typeof candidate === "string" && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(candidate)
+      ? candidate
+      : null
+  );
+  const timing = firstSchedule?.timing &&
+      typeof firstSchedule.timing === "object" && !Array.isArray(firstSchedule.timing)
+    ? firstSchedule.timing as Record<string, unknown>
+    : null;
+  const providerSchedule: ProviderSchedule | null = firstSchedule
+    ? {
+      name: typeof firstSchedule.name === "string"
+        ? firstSchedule.name.slice(0, 120)
+        : null,
+      from: timeOfDay(timing?.from),
+      to: timeOfDay(timing?.to),
+      timezone: typeof firstSchedule.timezone === "string"
+        ? firstSchedule.timezone.slice(0, 100)
+        : null,
+      days: scheduleDays
+        ? Array.from({ length: 7 }, (_value, index) => scheduleDays[String(index)] === true)
+        : [],
+    }
+    : null;
   const timestamp = (candidate: unknown): string | null => (
       typeof candidate === "string" && !Number.isNaN(Date.parse(candidate))
         ? candidate
@@ -700,6 +761,8 @@ function providerCampaign(value: unknown): ProviderCampaign {
     senderAccounts,
     timezone,
     dailyLimit,
+    emailGap,
+    schedule: providerSchedule,
     timestampCreated: timestamp(item.timestamp_created),
     timestampUpdated: timestamp(item.timestamp_updated),
   };
@@ -2165,6 +2228,10 @@ async function syncProviderCampaign(
     .update({
       instantly_campaign_status: provider.status,
       status: localCampaignStatus(provider.status),
+      // Observed from the provider, never authored here. Cached so the page can
+      // state the real window without a round trip on every open.
+      provider_schedule: provider.schedule,
+      provider_email_gap: provider.emailGap,
       analytics,
       provider_sync_state: "idle",
       provider_sync_started_at: null,

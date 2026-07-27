@@ -83,6 +83,16 @@ export interface WorkspaceCampaignTargetCounts {
   staged_sending: number
 }
 
+export interface WorkspaceCampaignProviderSchedule {
+  name: string | null
+  /** 24h "HH:MM" in the schedule's own timezone. */
+  from: string | null
+  to: string | null
+  timezone: string | null
+  /** Seven booleans in provider key order 0..6. */
+  days: boolean[]
+}
+
 export interface WorkspaceClientCampaign {
   id: string
   workspace_id: string
@@ -94,6 +104,10 @@ export interface WorkspaceClientCampaign {
   sender_accounts: string[]
   timezone: string
   daily_limit: number
+  /** The sending window Instantly actually holds, observed on the last sync. */
+  provider_schedule: WorkspaceCampaignProviderSchedule | null
+  /** Minutes between sends at the provider, null when it reported none. */
+  provider_email_gap: number | null
   analytics: WorkspaceCampaignAnalytics
   target_counts: WorkspaceCampaignTargetCounts
   target_shortlist_podcast_ids: string[]

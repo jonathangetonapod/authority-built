@@ -130,6 +130,8 @@ const persistedCampaign = {
   daily_limit: 30,
   analytics: { emails_sent_count: 12, contacted_count: 9, open_count_unique: 4, reply_count_unique: 2, bounced_count: 0, unsubscribed_count: 0, total_interested: 1, total_meeting_booked: 0 },
   target_counts: { total: 2, needs_contact: 1, needs_pitch: 0, ready: 0, in_outreach: 1, replied: 1, failed: 0, staged: 0, staged_sending: 0 },
+  provider_schedule: null,
+  provider_email_gap: null,
   target_shortlist_podcast_ids: ['shortlist-one', 'shortlist-two'],
   last_synced_at: '2026-07-23T12:00:00Z',
   last_error: null,

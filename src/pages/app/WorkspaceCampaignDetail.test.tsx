@@ -299,6 +299,72 @@ describe('WorkspaceCampaignDetail', () => {
     expect(screen.getAllByRole('button', { name: 'Pause Campaign' })[0]).toHaveClass('bg-destructive')
   })
 
+  it('shows the sending window Instantly actually holds, not an assumed one', async () => {
+    mockedCampaign.mockResolvedValue({
+      ...campaignState,
+      campaign: {
+        ...activeCampaign,
+        timezone: 'America/Bogota',
+        last_synced_at: '2026-07-27T12:00:00Z',
+        provider_email_gap: 15,
+        provider_schedule: {
+          name: 'Weekdays',
+          from: '09:00',
+          to: '17:00',
+          timezone: 'America/Bogota',
+          // 0..4 true is what the campaign body actually sets. Under the stated
+          // Sunday-first convention that is Sunday through Thursday, which is
+          // exactly the thing a hardcoded "Monday–Friday" could never reveal.
+          days: [true, true, true, true, true, false, false],
+        },
+      },
+    })
+    renderPage()
+
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Schedule' }), { button: 0 })
+    expect(await screen.findByText('Sunday–Thursday')).toBeInTheDocument()
+    expect(screen.getByText('9:00 AM–5:00 PM')).toBeInTheDocument()
+    expect(screen.getByText('15 min')).toBeInTheDocument()
+    expect(screen.getByText(/Their API reference does not state it/i)).toBeInTheDocument()
+    // No mismatch warning when the two agree.
+    expect(screen.queryByText(/Save the schedule to push your timezone across/i)).not.toBeInTheDocument()
+  })
+
+  it('flags a campaign whose provider timezone disagrees with the one set here', async () => {
+    mockedCampaign.mockResolvedValue({
+      ...campaignState,
+      campaign: {
+        ...activeCampaign,
+        timezone: 'America/Bogota',
+        provider_schedule: {
+          name: 'Weekdays',
+          from: '09:00',
+          to: '17:00',
+          timezone: 'America/New_York',
+          days: [false, true, true, true, true, true, false],
+        },
+      },
+    })
+    renderPage()
+
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Schedule' }), { button: 0 })
+    expect(await screen.findByText('Monday–Friday')).toBeInTheDocument()
+    expect(screen.getByText(/Instantly is sending in America\/New_York/i)).toBeInTheDocument()
+  })
+
+  it('leaves the window blank rather than guessing when nothing has been synced', async () => {
+    mockedCampaign.mockResolvedValue({
+      ...campaignState,
+      campaign: { ...activeCampaign, provider_schedule: null, provider_email_gap: null },
+    })
+    renderPage()
+
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Schedule' }), { button: 0 })
+    expect(await screen.findByText('Nothing read yet')).toBeInTheDocument()
+    expect(screen.getByText(/deliberately blank rather than guessed/i)).toBeInTheDocument()
+    expect(screen.queryByText('Monday–Friday')).not.toBeInTheDocument()
+  })
+
   it('explains that every podcast has a reviewed three-email sequence before Instantly sends it', async () => {
     renderPage()
 

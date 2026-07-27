@@ -56,6 +56,7 @@ import {
   saveWorkspaceCampaign,
   setWorkspaceCampaignRunning,
   updateWorkspaceCampaignSettings,
+  type WorkspaceCampaignProviderSchedule,
   type WorkspaceCampaignTarget,
 } from '@/services/workspaceCampaigns'
 
@@ -132,6 +133,41 @@ function Metric({ label, value, detail, icon: Icon }: { label: string; value: nu
       </CardContent>
     </Card>
   )
+}
+
+/**
+ * Instantly's API reference does not state which day index is Sunday, so the
+ * convention lives here in one place and the page says so out loud. Guessing
+ * silently is what produced a hardcoded "Monday–Friday" nobody could check.
+ */
+const SCHEDULE_DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+function scheduleDaysLabel(schedule: WorkspaceCampaignProviderSchedule | null): string {
+  const days = schedule?.days ?? []
+  const active = days.map((enabled, index) => (enabled ? SCHEDULE_DAY_NAMES[index] : null))
+    .filter((name): name is string => Boolean(name))
+  if (active.length === 0) return 'None'
+  if (active.length === 7) return 'Every day'
+  const indexes = days.map((enabled, index) => (enabled ? index : -1)).filter((index) => index >= 0)
+  const contiguous = indexes.every((value, position) => (
+    position === 0 || value === indexes[position - 1] + 1
+  ))
+  // A contiguous run reads as a range; anything scattered has to be listed.
+  return contiguous && active.length > 2
+    ? `${active[0]}–${active[active.length - 1]}`
+    : active.join(', ')
+}
+
+function scheduleWindowLabel(schedule: WorkspaceCampaignProviderSchedule | null): string {
+  if (!schedule?.from || !schedule.to) return 'Not reported'
+  const label = (value: string) => {
+    const [hour, minute] = value.split(':').map(Number)
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return value
+    const suffix = hour < 12 ? 'AM' : 'PM'
+    const display = hour % 12 === 0 ? 12 : hour % 12
+    return `${display}:${String(minute).padStart(2, '0')} ${suffix}`
+  }
+  return `${label(schedule.from)}–${label(schedule.to)}`
 }
 
 const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetailProps) => {
@@ -320,6 +356,12 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
         : campaignStatus === 'Completed'
           ? 'Campaign inactive · Completed'
           : 'Campaign inactive · Not launched'
+  const providerSchedule = campaign?.provider_schedule ?? null
+  const providerScheduleDays = scheduleDaysLabel(providerSchedule)
+  const providerScheduleWindow = scheduleWindowLabel(providerSchedule)
+  const providerTimezoneMismatch = Boolean(
+    providerSchedule?.timezone && settingsTimezone && providerSchedule.timezone !== settingsTimezone,
+  )
   // Podcasts already sitting in the provider campaign. Activating emails them.
   const stagedWaitingCount = campaign?.target_counts.staged ?? 0
   const campaignRunningAction = campaignIsRunning
@@ -549,21 +591,59 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
           <TabsContent value="schedule" className="mt-0">
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]">
               <Card>
-                <CardHeader><CardTitle>Sending schedule</CardTitle><CardDescription>Control when this client campaign can contact new podcast leads.</CardDescription></CardHeader>
+                <CardHeader>
+                  <CardTitle>Sending schedule</CardTitle>
+                  <CardDescription>What you set here is pushed to Instantly, which does the sending.</CardDescription>
+                </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2"><Label htmlFor="campaign-detail-timezone">Sending timezone</Label><Input id="campaign-detail-timezone" value={settingsTimezone} onChange={(event) => setSettingsTimezone(event.target.value)} disabled={!canManageCampaign} /></div>
-                    <div className="space-y-2"><Label htmlFor="campaign-detail-limit">Daily lead limit</Label><Input id="campaign-detail-limit" type="number" min={1} max={1000} value={settingsDailyLimit} onChange={(event) => setSettingsDailyLimit(Number(event.target.value) || 1)} disabled={!canManageCampaign} /></div>
+                    <div className="space-y-2">
+                      <Label htmlFor="campaign-detail-timezone">Sending timezone</Label>
+                      <Input id="campaign-detail-timezone" value={settingsTimezone} onChange={(event) => setSettingsTimezone(event.target.value)} disabled={!canManageCampaign} />
+                      <p className="text-xs text-muted-foreground">An IANA name, like America/Bogota. The daily window below is interpreted in this timezone.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="campaign-detail-limit">Daily lead limit</Label>
+                      <Input id="campaign-detail-limit" type="number" min={1} max={1000} value={settingsDailyLimit} onChange={(event) => setSettingsDailyLimit(Number(event.target.value) || 1)} disabled={!canManageCampaign} />
+                      <p className="text-xs text-muted-foreground">The most new podcast hosts this campaign may email in a day, across every sending account.</p>
+                    </div>
                   </div>
                   <Button disabled={!canManageCampaign || !settingsName.trim() || settingsMutation.isPending} onClick={() => settingsMutation.mutate()}>{settingsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save schedule</Button>
                 </CardContent>
               </Card>
               <Card>
-                <CardHeader><CardTitle>Delivery window</CardTitle><CardDescription>The standard safe window applied to this campaign in Instantly.</CardDescription></CardHeader>
+                <CardHeader>
+                  <CardTitle>What Instantly is set to</CardTitle>
+                  <CardDescription>
+                    {providerSchedule
+                      ? `Read from the campaign${campaign?.last_synced_at ? ` on ${formatDate(campaign.last_synced_at)}` : ''}, not assumed.`
+                      : 'Read from the campaign once it has been synced.'}
+                  </CardDescription>
+                </CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="flex items-center justify-between rounded-xl border p-3"><span className="text-sm text-muted-foreground">Sending days</span><strong className="text-sm">Monday–Friday</strong></div>
-                  <div className="flex items-center justify-between rounded-xl border p-3"><span className="text-sm text-muted-foreground">Local window</span><strong className="text-sm">9:00 AM–5:00 PM</strong></div>
-                  <div className="flex items-center justify-between rounded-xl border p-3"><span className="text-sm text-muted-foreground">Gap between emails</span><strong className="text-sm">15+ minutes</strong></div>
+                  {providerSchedule ? (
+                    <>
+                      <div className="flex items-center justify-between gap-3 rounded-xl border p-3"><span className="text-sm text-muted-foreground">Sending days</span><strong className="text-right text-sm">{providerScheduleDays}</strong></div>
+                      <div className="flex items-center justify-between gap-3 rounded-xl border p-3"><span className="text-sm text-muted-foreground">Daily window</span><strong className="text-right text-sm">{providerScheduleWindow}</strong></div>
+                      <div className="flex items-center justify-between gap-3 rounded-xl border p-3"><span className="text-sm text-muted-foreground">Timezone</span><strong className="text-right text-sm">{providerSchedule.timezone || 'Not reported'}</strong></div>
+                      <div className="flex items-center justify-between gap-3 rounded-xl border p-3"><span className="text-sm text-muted-foreground">Gap between emails</span><strong className="text-right text-sm">{campaign?.provider_email_gap === null || campaign?.provider_email_gap === undefined ? 'Not reported' : `${campaign.provider_email_gap} min`}</strong></div>
+                      {providerTimezoneMismatch && (
+                        <p className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                          Instantly is sending in {providerSchedule.timezone}, but this campaign is set to {settingsTimezone}. Save the schedule to push your timezone across.
+                        </p>
+                      )}
+                      <p className="text-xs leading-5 text-muted-foreground">
+                        Day names assume Instantly numbers days from Sunday. Their API reference does not state it, so check this against the campaign in Instantly once.
+                      </p>
+                    </>
+                  ) : (
+                    <div className="rounded-xl border border-dashed p-4 text-center">
+                      <p className="text-sm font-medium">Nothing read yet</p>
+                      <p className="mx-auto mt-1 max-w-xs text-xs leading-5 text-muted-foreground">
+                        This campaign has not been synced with Instantly, so its real sending window is unknown. It is deliberately blank rather than guessed.
+                      </p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>

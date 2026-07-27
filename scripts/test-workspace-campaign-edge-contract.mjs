@@ -22,6 +22,10 @@ const leadInterestMigration = readFileSync(
 )
 const masterInbox = readFileSync('src/components/workspace/MasterInboxPreview.tsx', 'utf8')
 const campaignDetail = readFileSync('src/pages/app/WorkspaceCampaignDetail.tsx', 'utf8')
+const scheduleMigration = readFileSync(
+  'supabase/migrations/20260728001600_campaign_provider_schedule.sql',
+  'utf8',
+)
 const stagingMigration = readFileSync(
   'supabase/migrations/20260728001400_campaign_target_lead_staging.sql',
   'utf8',
@@ -430,3 +434,28 @@ assert.equal(
   2,
   'both activation controls must confirm, and neither pause path may',
 )
+
+// The schedule page asserted "Monday–Friday, 9-5, 15+ minutes" from hardcoded
+// strings under a heading claiming it was what Instantly applied. Nothing read
+// the provider, so the card could not disagree with reality. It now reports
+// what the campaign actually holds.
+assert.match(edge, /interface ProviderSchedule \{[\s\S]*?days: boolean\[\];/u)
+assert.match(edge, /provider_schedule: provider\.schedule,\s+provider_email_gap: provider\.emailGap,/u)
+assert.match(edge, /provider_schedule: campaign\.provider_schedule \?\? null/u)
+assert.match(scheduleMigration, /ADD COLUMN IF NOT EXISTS provider_schedule JSONB/u)
+assert.match(scheduleMigration, /ADD COLUMN IF NOT EXISTS provider_email_gap INTEGER/u)
+// No hardcoded window may survive on that page.
+assert.doesNotMatch(campaignDetail, /The standard safe window applied to this campaign/u)
+for (const claim of ['Monday–Friday', '9:00 AM–5:00 PM', '15\\+ minutes']) {
+  assert.doesNotMatch(
+    campaignDetail,
+    new RegExp(`>${claim}<`, 'u'),
+    `"${claim}" must be read from Instantly, never asserted`,
+  )
+}
+// Unsynced reads as unknown rather than as the old default.
+assert.match(campaignDetail, /Nothing read yet[\s\S]*?deliberately blank rather than guessed/u)
+// The day-index convention is stated where it is applied, and to the operator.
+assert.match(campaignDetail, /Instantly's API reference does not state which day index is Sunday/u)
+assert.match(campaignDetail, /Their API reference does not state it, so check this against the campaign in Instantly once/u)
+assert.match(campaignDetail, /providerTimezoneMismatch/u)
