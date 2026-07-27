@@ -1,6 +1,6 @@
 import { assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 
-import { withinSendWindow } from './inboxSdr.ts'
+import { detectDeterministicReply, withinSendWindow } from './inboxSdr.ts'
 
 Deno.test('the send window is weekday business hours in the campaign timezone', () => {
   // Fix "now" so the assertion does not depend on when the suite runs.
@@ -35,5 +35,53 @@ Deno.test('the send window is weekday business hours in the campaign timezone', 
   } finally {
     // deno-lint-ignore no-explicit-any
     ;(globalThis as any).Date = RealDate
+  }
+})
+
+Deno.test('opt-out detection covers how people actually decline', () => {
+  // The reply that went undetected in production: the request is aimed at the
+  // address rather than at the sender, and never says "again".
+  assertEquals(
+    detectDeterministicReply('Do not send correspondence to this email address, please.'),
+    'opt_out',
+  )
+  for (
+    const message of [
+      'Please unsubscribe me from this list.',
+      'Opt out.',
+      'Take me off your list.',
+      'Please stop emailing about this.',
+      'Do not email me.',
+      'Do not contact me again.',
+      'Please remove my email address from your records.',
+      'I no longer wish to receive these.',
+      'Please remove me.',
+      'Do not reply to this email account.',
+    ]
+  ) {
+    assertEquals(detectDeterministicReply(message), 'opt_out', message)
+  }
+})
+
+Deno.test('opt-out detection leaves ordinary replies alone', () => {
+  // Each of these contains language near a pattern. Silencing a host for every
+  // client in the workspace is the cost of getting one of them wrong.
+  //
+  // The bare word "unsubscribe" is deliberately not defended against here: on
+  // its own it is an opt-out often enough that treating it as one is the right
+  // trade, and that rule predates the widening below.
+  for (
+    const message of [
+      'Happy to chat. Do not send it to my assistant, send it straight to me.',
+      'I do not email guests before a pre-call, so let us book one.',
+      'Remove the second topic and this works for me.',
+      'Please stop by the booth at the conference.',
+      'I want to receive the media kit before deciding.',
+      'Do not worry about the deadline, we can be flexible.',
+      'This address is the best one for scheduling.',
+    ]
+  ) {
+    const verdict = detectDeterministicReply(message)
+    assertEquals(verdict === 'opt_out', false, `${message} -> ${verdict}`)
   }
 })

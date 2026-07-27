@@ -35,6 +35,14 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/contexts/AuthContext'
@@ -216,15 +224,18 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
       queryClient.invalidateQueries({ queryKey: ['workspace-client-campaigns', workspaceId] }),
     ])
   }
+  const [confirmActivateOpen, setConfirmActivateOpen] = useState(false)
   const runningMutation = useMutation({
     mutationFn: (running: boolean) => setWorkspaceCampaignRunning(workspaceId, clientId, running),
     onMutate: (running) => setCampaignRunningPreview(running),
     onSuccess: async (result, running) => {
+      setConfirmActivateOpen(false)
       setCampaignRunningPreview(result.status === 'active')
       await refreshCampaignData()
       toast.success(running ? campaign?.status === 'draft' ? 'Campaign launched.' : 'Campaign resumed.' : 'Campaign paused.')
     },
     onError: (error) => {
+      setConfirmActivateOpen(false)
       setCampaignRunningPreview(null)
       toast.error(error instanceof Error ? error.message : 'Campaign status could not be changed.')
     },
@@ -309,6 +320,8 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
         : campaignStatus === 'Completed'
           ? 'Campaign inactive · Completed'
           : 'Campaign inactive · Not launched'
+  // Podcasts already sitting in the provider campaign. Activating emails them.
+  const stagedWaitingCount = campaign?.target_counts.staged ?? 0
   const campaignRunningAction = campaignIsRunning
     ? 'Pause Campaign'
     : persistedCampaignStatus === 'Draft' ? 'Launch Campaign' : 'Resume Campaign'
@@ -561,7 +574,7 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div><h2 className="text-lg font-semibold">Campaign options</h2><p className="mt-1 text-sm text-muted-foreground">Update the campaign identity, sending accounts, and live status.</p></div>
                 {campaign?.instantly_campaign_id && canManageCampaign && (persistedCampaignStatus !== 'Draft' || campaignIsRunning) && (
-                  <Button variant={campaignIsRunning ? 'destructive' : 'default'} disabled={runningMutation.isPending} onClick={() => runningMutation.mutate(!campaignIsRunning)}>
+                  <Button variant={campaignIsRunning ? 'destructive' : 'default'} disabled={runningMutation.isPending} onClick={() => (campaignIsRunning ? runningMutation.mutate(false) : setConfirmActivateOpen(true))}>
                     {runningMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : campaignIsRunning ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}{campaignRunningAction}
                   </Button>
                 )}
@@ -586,7 +599,7 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <Button variant="outline" disabled={!canManageCampaign || !settingsName.trim() || settingsMutation.isPending} onClick={() => settingsMutation.mutate()}>{settingsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save settings</Button>
                   {campaign?.instantly_campaign_id && canManageCampaign && (
-                    <Button variant={campaignIsRunning ? 'destructive' : 'default'} disabled={runningMutation.isPending} onClick={() => runningMutation.mutate(!campaignIsRunning)}>
+                    <Button variant={campaignIsRunning ? 'destructive' : 'default'} disabled={runningMutation.isPending} onClick={() => (campaignIsRunning ? runningMutation.mutate(false) : setConfirmActivateOpen(true))}>
                       {runningMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : campaignIsRunning ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}{campaignRunningAction}
                     </Button>
                   )}
@@ -663,6 +676,44 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Activating does two things, and only one of them is obvious. The
+          second — that Send to Client Campaign stops being a staging action and
+          starts emailing hosts on its own — is a change to what a button
+          elsewhere in the product means, so it is stated here rather than
+          discovered later. */}
+      <Dialog open={confirmActivateOpen} onOpenChange={(next) => !runningMutation.isPending && setConfirmActivateOpen(next)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Start sending from {campaign?.name || 'this campaign'}?</DialogTitle>
+            <DialogDescription>
+              Instantly begins working through this campaign on its next send window.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 space-y-3">
+            {stagedWaitingCount > 0 && (
+              <p className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                {stagedWaitingCount === 1
+                  ? '1 podcast is already staged in this campaign and will be emailed.'
+                  : `${stagedWaitingCount} podcasts are already staged in this campaign and will be emailed.`}
+              </p>
+            )}
+            <p className="rounded-xl border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
+              <span className="font-medium text-foreground">This also changes Send to Client Campaign.</span>{' '}
+              While the campaign is live, sending a finished pitch adds that host straight into the
+              running sequence — the opening email goes out without a separate launch step. Pause the
+              campaign again to go back to staging pitches without contacting anyone.
+            </p>
+          </div>
+          <DialogFooter className="mt-5">
+            <Button variant="outline" onClick={() => setConfirmActivateOpen(false)} disabled={runningMutation.isPending}>Cancel</Button>
+            <Button onClick={() => runningMutation.mutate(true)} disabled={runningMutation.isPending}>
+              {runningMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {campaignRunningAction}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </WorkspaceLayout>
   )
 }

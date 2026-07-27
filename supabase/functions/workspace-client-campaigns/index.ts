@@ -2929,6 +2929,11 @@ serve(async (req) => {
             ? interestByLeadEmail.get(leadEmail) ?? null
             : interestValue,
           suppressed: suppressedEmails.has(leadEmail),
+          // Run the same deterministic detector the enroll tick uses, on every
+          // thread rather than only the ones that tick reaches. It processes
+          // nothing while a client's SDR profile is incomplete, which is how a
+          // plain request to stop sat in this list contactable.
+          opt_out_detected: detectDeterministicReply(bodyText || "") === "opt_out",
           lead_email: text(email.lead, 320) || text(email.from_address_email, 320),
           lead_id: typeof email.lead_id === "string" ? email.lead_id : null,
           campaign: mapped,

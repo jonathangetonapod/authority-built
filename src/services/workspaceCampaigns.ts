@@ -505,6 +505,8 @@ export interface WorkspaceInboxThread {
   interest_status?: number | null
   /** The sender is on this workspace's do-not-contact list. */
   suppressed?: boolean
+  /** This reply asks not to be contacted, by deterministic detection. */
+  opt_out_detected?: boolean
   lead_email: string
   lead_id?: string | null
   campaign: {

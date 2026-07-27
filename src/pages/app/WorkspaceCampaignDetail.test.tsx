@@ -284,6 +284,15 @@ describe('WorkspaceCampaignDetail', () => {
     expect(launchButtons).toHaveLength(1)
     fireEvent.click(launchButtons[0])
 
+    // Activating also changes what Send to Client Campaign does, so it is
+    // confirmed rather than fired straight off the button.
+    const cancel = await screen.findByRole('button', { name: 'Cancel' })
+    const confirm = within(cancel.closest('[role="dialog"]') as HTMLElement)
+    expect(confirm.getByText(/This also changes Send to Client Campaign/i)).toBeInTheDocument()
+    expect(confirm.getByText(/without a separate launch step/i)).toBeInTheDocument()
+    expect(mockedRunning).not.toHaveBeenCalled()
+
+    fireEvent.click(confirm.getByRole('button', { name: 'Launch Campaign' }))
     await waitFor(() => expect(mockedRunning).toHaveBeenCalledWith(workspaceId, clientId, true))
     await waitFor(() => expect(screen.getAllByRole('button', { name: 'Pause Campaign' })).toHaveLength(2))
     expect(screen.getByText('Campaign active')).toBeInTheDocument()

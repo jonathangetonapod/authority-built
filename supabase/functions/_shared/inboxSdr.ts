@@ -65,14 +65,29 @@ const CLASSIFICATION_LABELS = [
   'other',
 ]
 
-// Deterministic pre-filters (confidence 100, zero tokens). Patterns are
-// deliberately narrow: a false "unsubscribe" suppresses a real host.
+// Deterministic pre-filters (confidence 100, zero tokens). Patterns stay
+// narrow, because a false "unsubscribe" silences a real host for every client.
+//
+// The set below was widened after a real reply went undetected: "Do not send
+// correspondence to this email address, please" matched nothing, because the
+// only "do not ..." rule demanded the word "again" and the only "address" rule
+// did not exist. People decline in the second person ("do not email me"), the
+// third ("this address is not monitored"), and by naming the address itself —
+// all three are here now, each still requiring an explicit negative plus an
+// unambiguous object, so ordinary sentences do not trip them.
 const OPT_OUT_PATTERNS = [
   /\bunsubscribe\b/iu,
   /\bopt[- ]?out\b/iu,
   /\b(?:remove|take)\s+(?:me|us)\s+(?:from|off)\b/iu,
   /\bstop\s+(?:emailing|contacting|messaging)\b/iu,
-  /\bdo\s+not\s+(?:email|contact|message)\s+(?:me|us)\s+again\b/iu,
+  // "again" is now optional: the request stands without it.
+  /\bdo\s+not\s+(?:email|contact|message|write\s+to)\s+(?:me|us)\b/iu,
+  // "Do not send correspondence to this email address" and its relatives. The
+  // verb, the negative, and the address are all required together.
+  /\bdo\s+not\s+(?:send|reply|respond|write)\b[^.!?]{0,60}\bthis\s+(?:e-?mail\s+)?(?:address|account|inbox)\b/iu,
+  /\b(?:remove|delete)\s+(?:my|this)\s+(?:e-?mail\s+)?(?:address|account)\b/iu,
+  /\bno\s+longer\s+(?:wish|want)(?:es)?\s+to\s+(?:receive|be\s+(?:contacted|emailed))\b/iu,
+  /\bplease\s+(?:remove|delete)\s+(?:me|us)\b/iu,
 ]
 
 const AUTO_REPLY_PATTERNS = [

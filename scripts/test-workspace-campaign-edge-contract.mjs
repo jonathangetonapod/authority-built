@@ -21,6 +21,7 @@ const leadInterestMigration = readFileSync(
   'utf8',
 )
 const masterInbox = readFileSync('src/components/workspace/MasterInboxPreview.tsx', 'utf8')
+const campaignDetail = readFileSync('src/pages/app/WorkspaceCampaignDetail.tsx', 'utf8')
 const stagingMigration = readFileSync(
   'supabase/migrations/20260728001400_campaign_target_lead_staging.sql',
   'utf8',
@@ -407,3 +408,25 @@ assert.match(masterInbox, /excluded from outreach for every client in this works
 assert.match(masterInbox, /selectedThread\.suppressed \?/u)
 assert.match(edge, /suppressed: suppressedEmails\.has\(leadEmail\)/u)
 assert.match(edge, /from\("workspace_outreach_suppressions"\)\s+\.select\("contact_email"\)/u)
+
+// A request to stop must be caught wherever it arrives, not only on threads the
+// enroll tick happens to process — it processes none while a client's SDR
+// profile is incomplete, which is how a plain opt-out stayed contactable.
+assert.match(edge, /opt_out_detected: detectDeterministicReply\(bodyText \|\| ""\) === "opt_out"/u)
+assert.match(sdrShared, /do\\s\+not\\s\+\(\?:send\|reply\|respond\|write\)/u)
+assert.match(masterInbox, /They asked to stop — add to do not contact/u)
+assert.match(masterInbox, /optOutsAwaitingAction: threads\.filter\(\(thread\) => \(\s+thread\.opt_out_detected && !thread\.suppressed/u)
+// Activating a campaign changes what a button on another page does. That is
+// stated at the moment of the decision rather than discovered afterwards.
+assert.match(campaignDetail, /This also changes Send to Client Campaign/u)
+assert.match(campaignDetail, /without a separate launch step/u)
+assert.match(
+  campaignDetail,
+  /onClick=\{\(\) => \(campaignIsRunning \? runningMutation\.mutate\(false\) : setConfirmActivateOpen\(true\)\)\}/u,
+)
+// Pausing needs no confirmation: it only ever reduces what goes out.
+assert.equal(
+  [...campaignDetail.matchAll(/setConfirmActivateOpen\(true\)/gu)].length,
+  2,
+  'both activation controls must confirm, and neither pause path may',
+)

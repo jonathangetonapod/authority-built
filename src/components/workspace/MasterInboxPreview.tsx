@@ -272,6 +272,9 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
   const counts = useMemo(() => ({
     interested: threads.filter((thread) => thread.interested).length,
     other: threads.filter((thread) => !thread.interested).length,
+    optOutsAwaitingAction: threads.filter((thread) => (
+      thread.opt_out_detected && !thread.suppressed
+    )).length,
   }), [threads])
   const filterCounts = useMemo(() => {
     const counts: Record<InboxFilter, number> = { all: 0, needs_reply: 0, review: 0, replied: 0, booked: 0, archived: 0 }
@@ -700,6 +703,20 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
             </div>
             <span className="text-xs tabular-nums text-muted-foreground">{visibleThreads.length}</span>
           </div>
+          {/* An unactioned request to stop is the one thing in this list that
+              should not wait to be scrolled to. Counted across both scopes,
+              because an opt-out does not care which bucket it landed in. */}
+          {counts.optOutsAwaitingAction > 0 && (
+            <div role="status" className="flex items-start gap-2 border-b border-destructive/30 bg-destructive/5 px-4 py-2.5">
+              <Ban className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+              <p className="text-[11px] leading-4 text-destructive">
+                {counts.optOutsAwaitingAction === 1
+                  ? '1 reply asks not to be contacted and is not on the do-not-contact list.'
+                  : `${counts.optOutsAwaitingAction} replies ask not to be contacted and are not on the do-not-contact list.`}
+                {' '}Open each one to add the address.
+              </p>
+            </div>
+          )}
           {inboxQuery.isLoading ? (
             <div className="flex flex-1 items-center justify-center gap-2 py-10 text-xs text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />Loading replies…
@@ -932,6 +949,16 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                             <span className="inline-flex items-center gap-1.5 text-xs font-medium text-destructive">
                               <Ban className="h-3.5 w-3.5" />Do not contact
                             </span>
+                          ) : selectedThread.opt_out_detected ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="destructive"
+                              disabled={suppressMutation.isPending}
+                              onClick={() => setSuppressTarget(selectedThread)}
+                            >
+                              <Ban className="mr-1.5 h-3.5 w-3.5" />They asked to stop — add to do not contact
+                            </Button>
                           ) : (
                             <Button
                               type="button"
