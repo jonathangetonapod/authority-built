@@ -672,7 +672,12 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
           )}
         </aside>
 
-        <section className={cn('min-w-0 flex-col bg-background', selectedClient ? 'flex' : 'hidden md:flex')}>
+        {/* min-h-0 is load-bearing: as a grid item this column defaults to
+            min-height:auto and grows to fit the thread, so the reading pane's
+            overflow-y-auto below never gets a constrained parent to scroll
+            against and the Card's overflow-hidden clips the rest out of reach.
+            The conversation list beside it already carries the same guard. */}
+        <section className={cn('min-h-0 min-w-0 flex-col bg-background', selectedClient ? 'flex' : 'hidden md:flex')}>
           <div className="flex items-center justify-between border-b px-5 py-3.5">
             <div>
               <h2 className="text-sm font-semibold">{selectedThread ? 'Conversation' : selectedClient ? 'Client AI SDR profile' : 'Conversation thread'}</h2>
