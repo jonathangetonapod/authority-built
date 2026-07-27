@@ -70,6 +70,7 @@ const SQL_INPUTS = [
   'supabase/migrations/20260728001200_outreach_suppression_management.sql',
   'supabase/migrations/20260728001300_direct_contact_reverification.sql',
   'supabase/migrations/20260728001400_campaign_target_lead_staging.sql',
+  'supabase/migrations/20260728001500_inbox_lead_interest.sql',
   'supabase/tests/20260720_invite_only_workspace_verification.sql',
   'supabase/tests/20260721_workspace_guest_resources_behavior.sql',
   'supabase/tests/20260722_subagency_workspace_foundation_behavior.sql',

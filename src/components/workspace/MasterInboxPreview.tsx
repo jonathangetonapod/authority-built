@@ -446,7 +446,16 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
         ...(input.thread.campaign?.campaign_id ? { campaign_id: input.thread.campaign.campaign_id } : {}),
       }),
     onSuccess: (_result, input) => {
-      toast.success(input.value === null ? 'Status reset in Instantly.' : 'Status updated in Instantly.')
+      // Marking a conversation changes which bucket it belongs to, so follow it
+      // rather than letting it disappear out of the list being read.
+      const movedTo: InboxScope = input.value === 1 ? 'interested' : 'other'
+      const moved = movedTo !== scope
+      setScope(movedTo)
+      toast.success(input.value === null
+        ? 'Status reset in Instantly.'
+        : moved
+          ? `Status updated. Moved to ${movedTo === 'interested' ? 'Interested only' : 'Other replies'}.`
+          : 'Status updated in Instantly.')
       void inboxQuery.refetch()
       void leadDetailQuery.refetch()
     },
@@ -903,8 +912,11 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                   </div>
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {(() => {
-                      const interest = typeof leadDetail?.interest_status === 'number'
-                        ? INTEREST_STATUS[leadDetail.interest_status]
+                      // The thread carries the operator's own decision; the
+                      // lead detail is the provider's view and lags it.
+                      const effectiveInterest = selectedThread.interest_status ?? leadDetail?.interest_status ?? null
+                      const interest = typeof effectiveInterest === 'number'
+                        ? INTEREST_STATUS[effectiveInterest]
                         : null
                       if (interest) {
                         return <Badge variant="outline" className={interest.className} title="Interest status in Instantly">{interest.label}</Badge>
@@ -931,7 +943,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                           { value: -1 as const, label: 'Not interested' },
                           { value: null, label: 'Reset' },
                         ]).map((option) => {
-                          const active = (leadDetail?.interest_status ?? null) === option.value
+                          const active = (selectedThread.interest_status ?? leadDetail?.interest_status ?? null) === option.value
                           return (
                             <Button
                               key={String(option.value)}

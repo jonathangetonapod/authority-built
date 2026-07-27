@@ -129,7 +129,7 @@ const persistedCampaign = {
   timezone: 'America/New_York',
   daily_limit: 30,
   analytics: { emails_sent_count: 12, contacted_count: 9, open_count_unique: 4, reply_count_unique: 2, bounced_count: 0, unsubscribed_count: 0, total_interested: 1, total_meeting_booked: 0 },
-  target_counts: { total: 2, needs_contact: 1, needs_pitch: 0, ready: 0, in_outreach: 1, replied: 1, failed: 0 },
+  target_counts: { total: 2, needs_contact: 1, needs_pitch: 0, ready: 0, in_outreach: 1, replied: 1, failed: 0, staged: 0, staged_sending: 0 },
   target_shortlist_podcast_ids: ['shortlist-one', 'shortlist-two'],
   last_synced_at: '2026-07-23T12:00:00Z',
   last_error: null,
@@ -203,6 +203,37 @@ describe('WorkspaceCampaigns', () => {
     expect(screen.getByText('Replies marked interested')).toBeInTheDocument()
     expect(screen.queryByText('Ready to launch')).not.toBeInTheDocument()
     expect(screen.queryByText(/Feb 16–22|podcasts in view|Current wave/i)).not.toBeInTheDocument()
+  })
+
+  it('distinguishes pitches waiting in Instantly from pitches already sending', async () => {
+    mockedOverview.mockResolvedValue({
+      ...campaignOverview,
+      campaigns: [{
+        ...persistedCampaign,
+        target_counts: { ...persistedCampaign.target_counts, staged: 4, staged_sending: 0 },
+      }],
+    })
+    renderCampaigns()
+
+    // Waiting: added to the campaign, but the campaign is paused.
+    expect(await screen.findByText('4 waiting')).toBeInTheDocument()
+    expect(screen.getAllByText(/Launch 4 staged pitches/i).length).toBeGreaterThan(0)
+  })
+
+  it('calls out staged pitches that are already emailing hosts', async () => {
+    mockedOverview.mockResolvedValue({
+      ...campaignOverview,
+      campaigns: [{
+        ...persistedCampaign,
+        target_counts: { ...persistedCampaign.target_counts, staged: 4, staged_sending: 3 },
+      }],
+    })
+    renderCampaigns()
+
+    // Nobody pressed launch for these, so nothing else on the page would say
+    // they are reaching hosts right now.
+    expect((await screen.findAllByText('4 · 3 sending')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/3 pitches already sending/i).length).toBeGreaterThan(0)
   })
 
   it('creates an empty Instantly campaign that receives podcasts only from Write Pitch', async () => {

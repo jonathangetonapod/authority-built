@@ -444,6 +444,18 @@ function targetCounts(targets: TargetRow[]) {
       targets.filter((target) => target.status === "in_outreach").length,
     replied: targets.filter((target) => target.status === "replied").length,
     failed: targets.filter((target) => target.status === "failed").length,
+    // In the provider campaign but not launched from here. Without this a
+    // podcast waiting in Instantly is indistinguishable from one that was only
+    // ever drafted, and the difference is whether a host can receive it.
+    staged: targets.filter((target) =>
+      target.lead_staged_at && !target.launched_at
+    ).length,
+    // Of those, the ones whose campaign was live when they were staged, so the
+    // sequence is already running.
+    staged_sending: targets.filter((target) =>
+      target.lead_staged_at && !target.launched_at &&
+      target.lead_staged_campaign_status === 1
+    ).length,
   };
 }
 
@@ -2687,7 +2699,7 @@ serve(async (req) => {
       }
       const apiKey = await integrationApiKey(connection, false);
 
-      const [{ data: campaignRows }, linksResult, targetsRows, stateRows, savedRelationshipThreads] = await Promise.all([
+      const [{ data: campaignRows }, linksResult, targetsRows, stateRows, savedRelationshipThreads, leadInterestRows] = await Promise.all([
         context.admin
           .from("workspace_client_campaigns")
           .select("id, client_id, instantly_campaign_id, name, client:clients(id, name)")
@@ -2716,11 +2728,31 @@ serve(async (req) => {
           .select("thread_key, podcast_id")
           .eq("workspace_id", workspaceId)
           .limit(5_000),
+        context.admin
+          .from("workspace_inbox_lead_interest")
+          .select("contact_email, interest_value")
+          .eq("workspace_id", workspaceId)
+          .limit(5_000),
       ]);
       // Persisted SDR state per thread — tolerate the pre-migration table.
       const stateByThreadKey = new Map<string, Record<string, unknown>>();
       for (const row of ((stateRows.error ? [] : stateRows.data ?? []) as Array<Record<string, unknown>>)) {
         if (typeof row.thread_key === "string") stateByThreadKey.set(row.thread_key, row);
+      }
+      // What an operator decided about this person, which outranks the i_status
+      // carried by provider email rows: updating a lead does not rewrite the
+      // emails already sitting in the list.
+      const interestByLeadEmail = new Map<string, number | null>();
+      for (
+        const row of ((leadInterestRows.error ? [] : leadInterestRows.data ?? []) as Array<
+          Record<string, unknown>
+        >)
+      ) {
+        if (typeof row.contact_email !== "string") continue;
+        interestByLeadEmail.set(
+          row.contact_email,
+          typeof row.interest_value === "number" ? row.interest_value : null,
+        );
       }
       const relationshipByThreadKey = new Map<string, string>();
       for (const row of ((savedRelationshipThreads.error ? [] : savedRelationshipThreads.data ?? []) as Array<Record<string, unknown>>)) {
@@ -2872,7 +2904,14 @@ serve(async (req) => {
               ? email.timestamp_created
               : null,
           is_unread: email.is_unread === true || email.is_unread === 1,
-          interested: interestValue === 1,
+          interested: interestByLeadEmail.has(leadEmail)
+            ? interestByLeadEmail.get(leadEmail) === 1
+            : interestValue === 1,
+          // The status the controls should show as selected. An operator's own
+          // decision wins; otherwise fall back to what the provider says.
+          interest_status: interestByLeadEmail.has(leadEmail)
+            ? interestByLeadEmail.get(leadEmail) ?? null
+            : interestValue,
           lead_email: text(email.lead, 320) || text(email.from_address_email, 320),
           lead_id: typeof email.lead_id === "string" ? email.lead_id : null,
           campaign: mapped,
@@ -3296,6 +3335,26 @@ serve(async (req) => {
       } catch (error) {
         if (error instanceof InstantlyApiError) throw providerHttpError(error);
         throw error;
+      }
+      // Instantly applies this to the lead, but the email rows the inbox reads
+      // keep their old i_status, so without recording it here the conversation
+      // never moves out of "Other replies" and the operator's decision looks
+      // like it did nothing.
+      const { error: interestStoreError } = await context.admin
+        .from("workspace_inbox_lead_interest")
+        .upsert({
+          workspace_id: workspaceId,
+          contact_email: leadEmail.trim().toLowerCase(),
+          interest_value: interestValue,
+          set_by: context.user.id,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "workspace_id,contact_email" });
+      if (interestStoreError) {
+        throw new HttpError(
+          500,
+          "INBOX_INTEREST_SAVE_FAILED",
+          "Instantly was updated but the inbox could not record the change. Reload to see the current status.",
+        );
       }
       await writeAudit(context.admin, {
         workspaceId,

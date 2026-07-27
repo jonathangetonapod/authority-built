@@ -77,6 +77,10 @@ export interface WorkspaceCampaignTargetCounts {
   in_outreach: number
   replied: number
   failed: number
+  /** Leads sitting in the provider campaign that nobody launched from here. */
+  staged: number
+  /** Of those, the ones already sending because the campaign was live. */
+  staged_sending: number
 }
 
 export interface WorkspaceClientCampaign {
@@ -493,6 +497,12 @@ export interface WorkspaceInboxThread {
   received_at: string | null
   is_unread: boolean
   interested: boolean
+  /**
+   * Effective Instantly interest status. An operator's own decision, recorded
+   * locally, wins over the i_status on the provider's email rows — updating a
+   * lead does not rewrite emails already in the list.
+   */
+  interest_status?: number | null
   lead_email: string
   lead_id?: string | null
   campaign: {

@@ -16,6 +16,11 @@ const nudgeTick = readFileSync('supabase/functions/inbox-nudge-tick/index.ts', '
 const enrollTick = readFileSync('supabase/functions/inbox-enroll-tick/index.ts', 'utf8')
 const sdrShared = readFileSync('supabase/functions/_shared/inboxSdr.ts', 'utf8')
 const prepDialog = readFileSync('src/components/workspace/ClientCampaignPrepDialog.tsx', 'utf8')
+const leadInterestMigration = readFileSync(
+  'supabase/migrations/20260728001500_inbox_lead_interest.sql',
+  'utf8',
+)
+const masterInbox = readFileSync('src/components/workspace/MasterInboxPreview.tsx', 'utf8')
 const stagingMigration = readFileSync(
   'supabase/migrations/20260728001400_campaign_target_lead_staging.sql',
   'utf8',
@@ -371,3 +376,22 @@ assert.doesNotMatch(
   /toast\.error/u,
   'a refused send belongs in the dialog, not in a notification that fades',
 )
+
+// Marking a conversation interested has to move it. The write goes to the LEAD
+// via /leads/update-interest-status, while the bucket is decided by i_status on
+// the provider's EMAIL rows — different records, so the operator's decision is
+// recorded locally and read in preference to what the emails still say.
+assert.match(edge, /action === "inbox-interest-set"[\s\S]*?from\("workspace_inbox_lead_interest"\)[\s\S]*?\.upsert\(\{[\s\S]*?contact_email: leadEmail\.trim\(\)\.toLowerCase\(\)/u)
+assert.match(edge, /interested: interestByLeadEmail\.has\(leadEmail\)\s+\? interestByLeadEmail\.get\(leadEmail\) === 1\s+: interestValue === 1/u)
+assert.match(edge, /interest_status: interestByLeadEmail\.has\(leadEmail\)/u)
+// Same normalization trap as the suppression list: a stored override that does
+// not match lower(btrim(...)) would silently apply to nobody.
+assert.match(
+  leadInterestMigration,
+  /CONSTRAINT workspace_inbox_lead_interest_email_normalized_check\s+CHECK \(contact_email = lower\(btrim\(contact_email\)\) AND contact_email <> ''\)/u,
+)
+assert.match(leadInterestMigration, /CREATE POLICY workspace_inbox_lead_interest_isolation/u)
+assert.match(leadInterestMigration, /FORCE ROW LEVEL SECURITY/u)
+// The conversation is followed into its new bucket rather than vanishing.
+assert.match(masterInbox, /const movedTo: InboxScope = input\.value === 1 \? 'interested' : 'other'[\s\S]*?setScope\(movedTo\)/u)
+assert.match(masterInbox, /selectedThread\.interest_status \?\? leadDetail\?\.interest_status \?\? null/u)

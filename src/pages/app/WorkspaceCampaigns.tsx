@@ -132,9 +132,15 @@ function summarizeCampaign(
           : 'Draft'
   const readyCount = campaign?.target_counts.ready || 0
   const needsPitchCount = campaign?.target_counts.needs_pitch || 0
+  const stagedCount = campaign?.target_counts.staged || 0
+  const stagedSendingCount = campaign?.target_counts.staged_sending || 0
   const nextAction = campaign?.last_error
     ? 'Resolve campaign issue'
-    : readyCount > 0
+    : stagedSendingCount > 0
+      ? `${stagedSendingCount} pitch${stagedSendingCount === 1 ? '' : 'es'} already sending`
+      : stagedCount > 0
+      ? `Launch ${stagedCount} staged pitch${stagedCount === 1 ? '' : 'es'}`
+      : readyCount > 0
       ? `Launch ${readyCount} approved pitch${readyCount === 1 ? '' : 'es'}`
       : needsPitchCount > 0
         ? `Write ${needsPitchCount} pitch${needsPitchCount === 1 ? '' : 'es'}`
@@ -174,6 +180,12 @@ function campaignListMetrics(summary: CampaignSummary) {
     sent: campaign?.analytics.emails_sent_count ?? 0,
     replies: campaign ? campaign.analytics.reply_count_unique : null,
     positiveReplies: campaign ? campaign.analytics.total_interested : null,
+    // Sitting in Instantly without anyone having launched them from here.
+    staged: campaign?.target_counts.staged ?? 0,
+    // The subset already sending, because the campaign was live when they were
+    // added. Nobody pressed launch for these, so nothing else on this page
+    // would say they are reaching hosts right now.
+    stagedSending: campaign?.target_counts.staged_sending ?? 0,
   }
 }
 
@@ -583,6 +595,7 @@ const WorkspaceCampaigns = ({
                       <div><p className="text-xs text-muted-foreground">Sent</p><p className="mt-1 font-medium">{metrics.sent.toLocaleString()}</p></div>
                       <div><p className="text-xs text-muted-foreground">Replies</p><p className="mt-1 font-medium">{metrics.replies === null ? '—' : metrics.replies.toLocaleString()}</p></div>
                       <div><p className="text-xs text-muted-foreground">Positive replies</p><p className="mt-1 font-medium">{metrics.positiveReplies === null ? '—' : metrics.positiveReplies.toLocaleString()}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Staged in Instantly</p><p className={metrics.stagedSending > 0 ? 'mt-1 font-semibold text-amber-700' : 'mt-1 font-medium'}>{metrics.staged}{metrics.stagedSending > 0 ? ` · ${metrics.stagedSending} sending` : ''}</p></div>
                       <div className="col-span-2"><p className="text-xs text-muted-foreground">Next step</p><p className="mt-1 font-medium text-primary">{summary.error ? 'Campaign data unavailable' : summary.nextAction}</p></div>
                     </div>
                   </Link>
@@ -601,6 +614,7 @@ const WorkspaceCampaigns = ({
                     <TableHead>Sent</TableHead>
                     <TableHead>Replies</TableHead>
                     <TableHead>Positive replies</TableHead>
+                    <TableHead className="min-w-32">Staged</TableHead>
                     <TableHead className="w-20 text-right">Open</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -618,6 +632,13 @@ const WorkspaceCampaigns = ({
                         <TableCell>{metrics.sent.toLocaleString()}</TableCell>
                         <TableCell>{metrics.replies === null ? <span className="text-muted-foreground">—</span> : metrics.replies.toLocaleString()}</TableCell>
                         <TableCell>{metrics.positiveReplies === null ? <span className="text-muted-foreground">—</span> : metrics.positiveReplies.toLocaleString()}</TableCell>
+                        <TableCell>
+                          {metrics.staged === 0
+                            ? <span className="text-muted-foreground">—</span>
+                            : metrics.stagedSending > 0
+                              ? <span className="font-semibold text-amber-700">{metrics.staged} · {metrics.stagedSending} sending</span>
+                              : <span className="font-medium">{metrics.staged} waiting</span>}
+                        </TableCell>
                         <TableCell className="text-right"><Button asChild variant="ghost" size="icon" className="text-primary"><Link to={`${baseHref}/client-campaigns/${summary.client.id}`} aria-label={`Open ${summary.client.name} campaign`}><ArrowRight className="h-4 w-4" /></Link></Button></TableCell>
                       </TableRow>
                     )

@@ -11,6 +11,7 @@ import {
   getWorkspaceInboxThreads,
   getWorkspaceMailboxes,
   sendWorkspaceInboxReply,
+  setWorkspaceInboxLeadInterest,
 } from '@/services/workspaceCampaigns'
 import { captureHostRelationshipThread } from '@/services/hostRelationships'
 
@@ -36,6 +37,9 @@ vi.mock('@/services/workspaceCampaigns', () => ({
   getWorkspaceCampaignOverview: vi.fn(),
   getWorkspaceMailboxes: vi.fn(),
   getWorkspaceInboxThreads: vi.fn().mockResolvedValue({ connected: true, threads: [] }),
+  getWorkspaceInboxLeadDetail: vi.fn().mockResolvedValue({ lead: null }),
+  setWorkspaceInboxLeadInterest: vi.fn().mockResolvedValue({ success: true, interest_value: 1 }),
+  setWorkspaceInboxThreadStatus: vi.fn().mockResolvedValue({ success: true }),
   draftWorkspaceInboxReply: vi.fn(),
   sendWorkspaceInboxReply: vi.fn(),
   refreshWorkspaceInstantly: vi.fn(),
@@ -360,6 +364,61 @@ describe('WorkspaceOutreachSuite', () => {
       `/app/clients/${clientId}?tab=ai-sdr`,
     )
     expect(mockedSdrContext).toHaveBeenCalledWith(defaultWorkspaceId, clientId)
+  })
+
+  it('moves a conversation into Interested only when it is marked interested', async () => {
+    const clientId = '22222222-2222-4222-8222-222222222222'
+    vi.mocked(getWorkspaceInboxThreads).mockResolvedValue({
+      connected: true,
+      threads: [{
+        id: 'message-one',
+        thread_id: 'thread-one',
+        message_id: 'provider-message-one',
+        eaccount: 'sdr@example.com',
+        subject: 'Re: Titan bankruptcy',
+        from_email: 'randy@example.com',
+        to_email: 'sdr@example.com',
+        body_text: 'How does this relate to my current system?',
+        received_at: '2026-07-21T12:00:00.000Z',
+        is_unread: true,
+        // The provider's email row still says not interested. This is exactly
+        // the state that made marking interested look like it did nothing.
+        interested: false,
+        interest_status: null,
+        lead_email: 'randy@example.com',
+        campaign: {
+          campaign_id: 'campaign-one',
+          campaign_name: 'Titan outreach',
+          client: { id: clientId, name: 'Dallas Fontaine' },
+        },
+        lead_context: {
+          podcast_id: 'show-one',
+          podcast_name: 'Titan Solar',
+          host_name: 'Randy Brown',
+          stage: 'contacted',
+          first_message_at: '2026-07-20T12:00:00.000Z',
+          opens: 1,
+          replies: 1,
+        },
+        thread_key: 'thread-one',
+        relationship: null,
+      }],
+    } as never)
+    renderPage('master-inbox')
+
+    // It starts under Other replies, so that is where it has to be found.
+    fireEvent.click(await screen.findByRole('radio', { name: /Other replies/ }))
+    fireEvent.click(await screen.findByText('Re: Titan bankruptcy'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Interested' }))
+
+    await waitFor(() => expect(setWorkspaceInboxLeadInterest).toHaveBeenCalledWith(
+      defaultWorkspaceId,
+      expect.objectContaining({ lead_email: 'randy@example.com', interest_value: 1 }),
+    ))
+    // The scope follows the conversation rather than letting it vanish.
+    await waitFor(() => expect(
+      screen.getByRole('radio', { name: /Interested only/ }),
+    ).toHaveAttribute('aria-checked', 'true'))
   })
 
   it('saves a selected Master Inbox conversation to its host relationship', async () => {
