@@ -69,6 +69,21 @@ describe('PortalCalendar', () => {
     expect(screen.getByText(/Episode live ·/)).toBeInTheDocument()
   })
 
+  it('summarises what is ahead and says how far off each date is', async () => {
+    render(<PortalCalendar />)
+
+    // The counts answer "what is coming" without reading the grid, and
+    // cancelled bookings must not inflate them.
+    expect(await screen.findByText('Next recording')).toBeInTheDocument()
+    const recordings = screen.getByText('Recordings ahead').closest('div') as HTMLElement
+    expect(recordings).toHaveTextContent('1')
+    const releases = screen.getByText('Episodes going live').closest('div') as HTMLElement
+    expect(releases).toHaveTextContent('1')
+
+    expect(screen.getByText('In 3 days')).toBeInTheDocument()
+    expect(screen.getByText('Next week')).toBeInTheDocument()
+  })
+
   it('opens the booking detail dialog from an upcoming event', async () => {
     render(<PortalCalendar />)
 
