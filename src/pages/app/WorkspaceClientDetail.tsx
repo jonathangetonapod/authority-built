@@ -51,6 +51,7 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { getWorkspaceProspects } from '@/services/prospectDashboards'
 import { useAuth } from '@/contexts/AuthContext'
 import { safeExternalUrl } from '@/lib/externalUrl'
 import { workspaceLogoUrl } from '@/lib/workspaceLogo'
@@ -62,6 +63,7 @@ import {
   createWorkspaceClientPortalPreview,
   createWorkspaceClientPortalSetupLink,
   draftWorkspaceClientSdrProfile,
+  linkWorkspaceClientProspect,
   setWorkspaceClientPassword,
   updateWorkspaceClient,
   updateWorkspaceClientProfile,
@@ -306,6 +308,8 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const [portalPreviewBusy, setPortalPreviewBusy] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [profileEditorOpen, setProfileEditorOpen] = useState(false)
+  const [prospectPickerOpen, setProspectPickerOpen] = useState(false)
+  const [prospectSearch, setProspectSearch] = useState('')
   const [profileDraft, setProfileDraft] = useState('')
   const [profileExpectedUpdatedAt, setProfileExpectedUpdatedAt] = useState('')
   const [profileBusy, setProfileBusy] = useState(false)
@@ -335,6 +339,16 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
     retry: false,
     gcTime: isPlatformWorkspace ? 0 : undefined,
   })
+
+  // Loaded only when the picker opens: most visits never link a prospect page,
+  // and this is a separate workspace-wide query.
+  const prospectsQuery = useQuery({
+    queryKey: [isPlatformWorkspace ? 'platform' : 'tenant', user?.id || 'unknown', 'workspace', workspaceId, 'prospects'],
+    queryFn: () => getWorkspaceProspects(workspaceId),
+    enabled: prospectPickerOpen && validAddress,
+    retry: false,
+  })
+  const [prospectLinkBusy, setProspectLinkBusy] = useState(false)
 
   const detail = detailQuery.data
   const client = detail?.client
@@ -632,6 +646,28 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
       if (/changed since you opened/i.test(message)) await detailQuery.refetch()
     } finally {
       setProfileBusy(false)
+    }
+  }
+
+  const prospectMatches = (prospectsQuery.data?.dashboards ?? []).filter((prospect) => {
+    const term = prospectSearch.trim().toLowerCase()
+    if (!term) return true
+    return [prospect.prospect_name, prospect.prospect_company, prospect.prospect_email, prospect.slug]
+      .filter(Boolean).join(' ').toLowerCase().includes(term)
+  })
+  const linkProspectPage = async (slug: string | null) => {
+    if (!canManage || prospectLinkBusy) return
+    setProspectLinkBusy(true)
+    try {
+      await linkWorkspaceClientProspect(workspaceId, canonicalClientId, slug)
+      await detailQuery.refetch()
+      setProspectPickerOpen(false)
+      setProspectSearch('')
+      toast.success(slug ? 'Prospect page linked.' : 'Prospect page unlinked.')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The prospect page could not be linked.')
+    } finally {
+      setProspectLinkBusy(false)
     }
   }
 
@@ -1248,7 +1284,27 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                   {mediaKitUrl ? <Button asChild variant="ghost" size="sm" className="-ml-3 h-8"><a href={mediaKitUrl} target="_blank" rel="noreferrer">Open media kit<ExternalLink className="ml-2 h-3.5 w-3.5" /></a></Button> : <span className="text-xs text-muted-foreground">No file connected</span>}
                 </ConnectedResource>
                 <ConnectedResource icon={LayoutDashboard} title="Original prospect page" description="The pre-client sales dashboard remains separate from active delivery." status={prospectDashboardHref ? 'Linked' : 'Not linked'} statusClassName={prospectDashboardHref ? 'border-sky-200 bg-sky-50 text-sky-800' : undefined}>
-                  {prospectDashboardHref ? <Button asChild variant="ghost" size="sm" className="-ml-3 h-8"><a href={prospectDashboardHref} target="_blank" rel="noreferrer">Open prospect page<ExternalLink className="ml-2 h-3.5 w-3.5" /></a></Button> : <span className="text-xs text-muted-foreground">No prospect page linked</span>}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {prospectDashboardHref && (
+                      <Button asChild variant="ghost" size="sm" className="-ml-3 h-8">
+                        <a href={prospectDashboardHref} target="_blank" rel="noreferrer">Open prospect page<ExternalLink className="ml-2 h-3.5 w-3.5" /></a>
+                      </Button>
+                    )}
+                    {canManage ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => setProspectPickerOpen(true)}
+                      >
+                        <Search className="mr-2 h-3.5 w-3.5" />
+                        {prospectDashboardHref ? 'Change' : 'Link a prospect page'}
+                      </Button>
+                    ) : !prospectDashboardHref && (
+                      <span className="text-xs text-muted-foreground">No prospect page linked</span>
+                    )}
+                  </div>
                 </ConnectedResource>
               </CardContent>
             </Card>
@@ -1649,6 +1705,97 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
               </DialogFooter>
             </form>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={prospectPickerOpen} onOpenChange={(open) => { if (!prospectLinkBusy) { setProspectPickerOpen(open); if (!open) setProspectSearch('') } }}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Link a prospect page</DialogTitle>
+            <DialogDescription>
+              Attach the sales dashboard this client came from, so the original pitch stays reachable
+              from their record.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="relative mt-4">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              aria-label="Search prospect pages"
+              placeholder="Search by name, company, or email"
+              className="pl-9"
+              value={prospectSearch}
+              onChange={(event) => setProspectSearch(event.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="mt-3 space-y-2">
+            {prospectsQuery.isLoading && (
+              <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />Loading prospect pages…
+              </p>
+            )}
+            {prospectsQuery.error && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3">
+                <p className="text-sm text-destructive">Prospect pages could not be loaded.</p>
+                <Button type="button" variant="outline" size="sm" onClick={() => void prospectsQuery.refetch()}>Retry</Button>
+              </div>
+            )}
+            {!prospectsQuery.isLoading && !prospectsQuery.error && prospectMatches.length === 0 && (
+              <div className="rounded-xl border border-dashed p-6 text-center">
+                <p className="text-sm font-medium">
+                  {(prospectsQuery.data?.dashboards ?? []).length === 0 ? 'No prospect pages yet' : 'Nothing matches that search'}
+                </p>
+                <p className="mx-auto mt-1 max-w-xs text-xs leading-5 text-muted-foreground">
+                  {(prospectsQuery.data?.dashboards ?? []).length === 0
+                    ? 'Prospect pages are built in Prospect Studio before a client signs.'
+                    : 'Try a different name, company, or email.'}
+                </p>
+              </div>
+            )}
+            {prospectMatches.slice(0, 25).map((prospect) => {
+              const isCurrent = prospect.slug === client.prospect_dashboard_slug
+              return (
+                <button
+                  key={prospect.slug}
+                  type="button"
+                  disabled={prospectLinkBusy}
+                  onClick={() => void linkProspectPage(prospect.slug)}
+                  className={isCurrent
+                    ? 'flex w-full items-center justify-between gap-3 rounded-xl border border-primary/40 bg-primary/5 p-3 text-left'
+                    : 'flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-muted/40'}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">{prospect.prospect_name || 'Unnamed prospect'}</span>
+                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                      {[prospect.prospect_company, prospect.prospect_email].filter(Boolean).join(' · ') || prospect.slug}
+                    </span>
+                  </span>
+                  {isCurrent
+                    ? <Badge variant="outline" className="shrink-0 border-primary/40 bg-background text-primary">Linked</Badge>
+                    : <span className="shrink-0 text-xs font-semibold text-primary">Link</span>}
+                </button>
+              )
+            })}
+            {prospectMatches.length > 25 && (
+              <p className="px-1 text-xs text-muted-foreground">
+                Showing the first 25 of {prospectMatches.length}. Narrow the search to see the rest.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="mt-4">
+            {client.prospect_dashboard_slug && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="mr-auto text-destructive hover:text-destructive"
+                disabled={prospectLinkBusy}
+                onClick={() => void linkProspectPage(null)}
+              >
+                Unlink current page
+              </Button>
+            )}
+            <Button type="button" variant="outline" disabled={prospectLinkBusy} onClick={() => setProspectPickerOpen(false)}>Close</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

@@ -524,6 +524,29 @@ export async function updateWorkspaceClient(
   return data.client as WorkspaceClient
 }
 
+/**
+ * Attach an existing prospect page to a client, or clear the link with null.
+ *
+ * The slug is resolved inside the workspace server-side, so a page belonging to
+ * another tenant cannot be attached and then read through the client record.
+ */
+export async function linkWorkspaceClientProspect(
+  workspaceId: string,
+  clientId: string,
+  prospectSlug: string | null,
+): Promise<string | null> {
+  const { data, error } = await supabase.functions.invoke('workspace-clients', {
+    body: {
+      action: 'prospect-link',
+      workspace_id: workspaceId,
+      client_id: clientId,
+      prospect_slug: prospectSlug,
+    },
+  })
+  if (error) throw await toFunctionError(error, 'The prospect page could not be linked.')
+  return typeof data?.prospect_dashboard_slug === 'string' ? data.prospect_dashboard_slug : null
+}
+
 export async function rotateWorkspaceClientDashboardSlug(
   workspaceId: string,
   clientId: string,

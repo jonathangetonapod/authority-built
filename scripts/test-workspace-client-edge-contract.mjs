@@ -291,3 +291,19 @@ assert.match(forwardMigration, /CREATE OR REPLACE FUNCTION public\.workspace_cli
 assert.doesNotMatch(forwardMigration, /platform administrator preview is read-only/u)
 
 process.stdout.write('Workspace Client Edge contract checks passed\n')
+
+// Linking a prospect page: the slug is a public capability URL, so it is
+// resolved inside the workspace before it is written. Without that, one tenant
+// could attach another tenant's prospect page and read it from their own
+// client record thereafter.
+assert.match(
+  clientsEdge,
+  /action === 'prospect-link'[\s\S]*?from\('prospect_dashboards'\)[\s\S]*?\.eq\('workspace_id', workspaceId\)[\s\S]*?\.eq\('slug', prospectSlug\)/u,
+)
+assert.match(clientsEdge, /PROSPECT_NOT_FOUND[\s\S]*?does not belong to this workspace/u)
+// The write is workspace-scoped too, and clearing the link is supported.
+assert.match(
+  clientsEdge,
+  /update\(\{ prospect_dashboard_slug: prospectSlug, updated_at: new Date\(\)\.toISOString\(\) \}\)\s*\.eq\('id', clientId!\)\s*\.eq\('workspace_id', workspaceId\)/u,
+)
+assert.match(clientsEdge, /action: prospectSlug \? 'client\.prospect_page\.linked' : 'client\.prospect_page\.unlinked'/u)

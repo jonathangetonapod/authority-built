@@ -10,8 +10,10 @@ import {
   updateWorkspaceClient,
   updateWorkspaceClientProfile,
   updateWorkspaceClientSdrProfile,
+  linkWorkspaceClientProspect,
   type WorkspaceClientDetail as WorkspaceClientDetailData,
 } from '@/services/clients'
+import { getWorkspaceProspects } from '@/services/prospectDashboards'
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('@/services/clients', () => ({
@@ -24,6 +26,12 @@ vi.mock('@/services/clients', () => ({
   updateWorkspaceClient: vi.fn(),
   updateWorkspaceClientProfile: vi.fn(),
   updateWorkspaceClientSdrProfile: vi.fn(),
+  draftWorkspaceClientSdrProfile: vi.fn(),
+  linkWorkspaceClientProspect: vi.fn(),
+  rotateWorkspaceClientDashboardSlug: vi.fn(),
+}))
+vi.mock('@/services/prospectDashboards', () => ({
+  getWorkspaceProspects: vi.fn().mockResolvedValue({ dashboards: [] }),
 }))
 vi.mock('@/components/admin/WorkspaceSwitcher', () => ({ WorkspaceSwitcher: () => <div>Workspace switcher</div> }))
 vi.mock('@/components/workspace/ClientInstantlyCampaignsCard', () => ({
@@ -493,6 +501,44 @@ describe('WorkspaceClientDetail', () => {
 
     expect(screen.queryByRole('button', { name: 'Change portal password' })).not.toBeInTheDocument()
     expect(screen.getByText('Only the workspace owner can manage client portal passwords.')).toBeInTheDocument()
+  })
+
+  it('links a prospect page from a searchable list instead of leaving a dead end', async () => {
+    vi.mocked(getWorkspaceProspects).mockResolvedValue({
+      dashboards: [
+        { slug: 'prospect-aaa', prospect_name: 'Andre Daughty', prospect_company: 'Daughty Media', prospect_email: 'andre@example.com' },
+        { slug: 'prospect-bbb', prospect_name: 'Kari Yasi', prospect_company: null, prospect_email: 'kari@example.com' },
+      ],
+    } as never)
+    vi.mocked(linkWorkspaceClientProspect).mockResolvedValue('prospect-bbb')
+    renderPage()
+
+    // The prospect link lives on the Files tab, not the default one.
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: /Files/i }), { button: 0 })
+    fireEvent.click(await screen.findByRole('button', { name: /Link a prospect page/i }))
+    expect(await screen.findByText('Andre Daughty')).toBeInTheDocument()
+    expect(screen.getByText('Kari Yasi')).toBeInTheDocument()
+
+    // The search narrows the list rather than making the operator scan 26 pages.
+    fireEvent.change(screen.getByLabelText('Search prospect pages'), { target: { value: 'kari' } })
+    expect(screen.queryByText('Andre Daughty')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Kari Yasi'))
+    await waitFor(() => expect(linkWorkspaceClientProspect).toHaveBeenCalledWith(
+      workspaceId,
+      clientId,
+      'prospect-bbb',
+    ))
+  })
+
+  it('explains an empty prospect list rather than showing a blank picker', async () => {
+    vi.mocked(getWorkspaceProspects).mockResolvedValue({ dashboards: [] } as never)
+    renderPage()
+
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: /Files/i }), { button: 0 })
+    fireEvent.click(await screen.findByRole('button', { name: /Link a prospect page/i }))
+    expect(await screen.findByText('No prospect pages yet')).toBeInTheDocument()
+    expect(screen.getByText(/built in Prospect Studio before a client signs/i)).toBeInTheDocument()
   })
 
   it('fails closed before requesting a malformed client address', async () => {

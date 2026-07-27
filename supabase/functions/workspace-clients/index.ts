@@ -259,6 +259,7 @@ serve(async (req) => {
     let expectedUpdatedAt: string | null = null
     let sdrProfile: AiSdrProfile = {}
     let expectedSdrProfileUpdatedAt: string | null = null
+    let prospectSlug: string | null = null
 
     if (action === 'research-get' || action === 'detail-get' || action === 'sdr-context-get') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'client_id'])
@@ -297,6 +298,13 @@ serve(async (req) => {
     } else if (action === 'dashboard-slug-rotate') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'client_id'])
       clientId = requireUuid(body.client_id, 'client_id')
+    } else if (action === 'prospect-link') {
+      // null clears the link; a slug attaches an existing prospect page.
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'prospect_slug'])
+      clientId = requireUuid(body.client_id, 'client_id')
+      prospectSlug = body.prospect_slug === null || body.prospect_slug === undefined
+        ? null
+        : requireString(body.prospect_slug, 'prospect_slug', { max: 120 })
     } else if (action === 'booking-create') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'booking'])
       clientId = requireUuid(body.client_id, 'client_id')
@@ -440,6 +448,47 @@ serve(async (req) => {
         metadata: {},
       })
       return jsonResponse(req, METHODS, 200, { dashboard_slug: rotated.dashboard_slug })
+    }
+
+    if (action === 'prospect-link') {
+      const access = await requireWorkspaceFeatureAccess(authContext, workspaceId)
+      if (!['owner', 'admin', 'platform_admin'].includes(access.role)) {
+        throw new HttpError(403, 'WORKSPACE_ACCESS_REQUIRED', 'Workspace manager access is required')
+      }
+      // The slug is a public capability URL. Resolving it inside this
+      // workspace is what stops one tenant attaching another tenant's
+      // prospect page to their own client and reading it thereafter.
+      if (prospectSlug) {
+        const { data: prospect, error: prospectError } = await admin
+          .from('prospect_dashboards')
+          .select('slug')
+          .eq('workspace_id', workspaceId)
+          .eq('slug', prospectSlug)
+          .maybeSingle()
+        if (prospectError) {
+          throw new HttpError(500, 'PROSPECT_LINK_FAILED', 'The prospect page could not be verified')
+        }
+        if (!prospect) {
+          throw new HttpError(404, 'PROSPECT_NOT_FOUND', 'That prospect page does not belong to this workspace')
+        }
+      }
+      const { error: linkError } = await admin
+        .from('clients')
+        .update({ prospect_dashboard_slug: prospectSlug, updated_at: new Date().toISOString() })
+        .eq('id', clientId!)
+        .eq('workspace_id', workspaceId)
+      if (linkError) {
+        throw new HttpError(500, 'PROSPECT_LINK_FAILED', 'The prospect page could not be linked')
+      }
+      await writeAudit(admin, {
+        workspaceId,
+        actorUserId: user.id,
+        action: prospectSlug ? 'client.prospect_page.linked' : 'client.prospect_page.unlinked',
+        entityType: 'client',
+        entityId: clientId!,
+        metadata: { prospect_slug: prospectSlug },
+      })
+      return jsonResponse(req, METHODS, 200, { prospect_dashboard_slug: prospectSlug })
     }
 
     if (action === 'sdr-profile-update') {
