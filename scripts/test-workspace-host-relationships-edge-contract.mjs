@@ -14,6 +14,10 @@ const threadCaptureMigration = readFileSync(
   'supabase/migrations/20260728000700_relationship_manual_thread_capture.sql',
   'utf8',
 )
+const auditRepairMigration = readFileSync(
+  'supabase/migrations/20260728000800_relationship_audit_repair.sql',
+  'utf8',
+)
 const enrollTick = readFileSync('supabase/functions/inbox-enroll-tick/index.ts', 'utf8')
 const campaignEdge = readFileSync('supabase/functions/workspace-client-campaigns/index.ts', 'utf8')
 const shortlistEdge = readFileSync('supabase/functions/workspace-client-shortlist/index.ts', 'utf8')
@@ -70,6 +74,20 @@ assert.match(edge, /current\?\.manual_stage !== manualStage[\s\S]*?kind: 'stage_
 assert.match(edge, /action: 'workspace\.host_relationship\.note_added'/u)
 assert.match(edge, /action: 'workspace\.host_relationship\.client_linked'/u)
 assert.match(edge, /action: 'workspace\.host_relationship\.client_unlinked'/u)
+assert.doesNotMatch(edge, /entityId: (?:showId|existingId)/u)
+assert.equal(
+  [...edge.matchAll(/entityType: 'podcast',\s+entityId: null,\s+metadata: \{\s+podcast_id:/gu)].length,
+  7,
+  'text podcast ids must be stored in audit metadata, never the UUID entity_id column',
+)
+assert.match(edge, /podcast_id: showId,\s+thread_key: threadKey/u)
+assert.match(auditRepairMigration, /'workspace\.host_relationship\.client_linked'[\s\S]*?'podcast_id', relationship_client\.podcast_id/u)
+assert.match(auditRepairMigration, /'workspace\.host_relationship\.thread_captured'[\s\S]*?'thread_key', relationship_thread\.thread_key/u)
+assert.equal(
+  [...auditRepairMigration.matchAll(/'podcast',\s+NULL,\s+jsonb_/gu)].length,
+  2,
+  'audit repair rows must leave the UUID entity_id empty',
+)
 
 // Client links are checked in the edge function and made cross-tenant
 // unrepresentable by composite foreign keys in SQL.

@@ -314,8 +314,12 @@ serve(async (req) => {
           actorUserId: authContext.user.id,
           action: 'workspace.host_relationship.saved',
           entityType: 'podcast',
-          entityId: existingId,
-          metadata: { source: 'manual_duplicate', changed_fields: Object.keys(changes).filter((key) => key !== 'updated_at') },
+          entityId: null,
+          metadata: {
+            podcast_id: existingId,
+            source: 'manual_duplicate',
+            changed_fields: Object.keys(changes).filter((key) => key !== 'updated_at'),
+          },
         })
         return jsonResponse(req, METHODS, 200, { relationship: data, created: false })
       }
@@ -339,8 +343,12 @@ serve(async (req) => {
         actorUserId: authContext.user.id,
         action: 'workspace.host_relationship.created',
         entityType: 'podcast',
-        entityId: showId,
-        metadata: { source: requestedPodcastId ? 'catalog' : 'manual', manual_stage: stage },
+        entityId: null,
+        metadata: {
+          podcast_id: showId,
+          source: requestedPodcastId ? 'catalog' : 'manual',
+          manual_stage: stage,
+        },
       })
       return jsonResponse(req, METHODS, 201, { relationship: data, created: true })
     }
@@ -484,8 +492,14 @@ serve(async (req) => {
         actorUserId: authContext.user.id,
         action: 'workspace.host_relationship.thread_captured',
         entityType: 'podcast',
-        entityId: showId,
-        metadata: { client_id: captureClientId, provider, relationship_created: relationshipCreated },
+        entityId: null,
+        metadata: {
+          podcast_id: showId,
+          thread_key: threadKey,
+          client_id: captureClientId,
+          provider,
+          relationship_created: relationshipCreated,
+        },
       })
       return jsonResponse(req, METHODS, 200, {
         podcast_id: showId,
@@ -545,8 +559,11 @@ serve(async (req) => {
         actorUserId: authContext.user.id,
         action: 'workspace.host_relationship.saved',
         entityType: 'podcast',
-        entityId: showId,
-        metadata: { changed_fields: Object.keys(changes).filter((key) => key !== 'updated_at') },
+        entityId: null,
+        metadata: {
+          podcast_id: showId,
+          changed_fields: Object.keys(changes).filter((key) => key !== 'updated_at'),
+        },
       })
       if (has('manual_stage') && current?.manual_stage !== manualStage) {
         const from = typeof current?.manual_stage === 'string' ? current.manual_stage : 'derived activity'
@@ -619,8 +636,8 @@ serve(async (req) => {
         actorUserId: authContext.user.id,
         action: 'workspace.host_relationship.note_added',
         entityType: 'podcast',
-        entityId: showId,
-        metadata: { kind, client_id: clientId },
+        entityId: null,
+        metadata: { podcast_id: showId, kind, client_id: clientId },
       })
       return jsonResponse(req, METHODS, 200, { event: data })
     }
@@ -674,8 +691,8 @@ serve(async (req) => {
         actorUserId: authContext.user.id,
         action: 'workspace.host_relationship.client_linked',
         entityType: 'podcast',
-        entityId: showId,
-        metadata: { client_id: clientId, intent },
+        entityId: null,
+        metadata: { podcast_id: showId, client_id: clientId, intent },
       })
       return jsonResponse(req, METHODS, 200, { client: data })
     }
@@ -699,8 +716,8 @@ serve(async (req) => {
         actorUserId: authContext.user.id,
         action: 'workspace.host_relationship.client_unlinked',
         entityType: 'podcast',
-        entityId: showId,
-        metadata: { client_id: clientId },
+        entityId: null,
+        metadata: { podcast_id: showId, client_id: clientId },
       })
       return jsonResponse(req, METHODS, 200, { removed: true })
     }
