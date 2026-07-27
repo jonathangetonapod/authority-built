@@ -215,6 +215,18 @@ function ClientSdrContextPanel({
   )
 }
 
+// A reply has to keep the subject the host is already reading. Mail clients
+// thread on subject as well as on the reference headers, so a changed subject —
+// whether an operator retyped it or the model invented its own — lands as a
+// second conversation beside the one being answered, and the host sees two.
+// Derived from the thread at send time rather than held in state, so no drafting
+// path can reintroduce the fork.
+function replySubject(subject: string | null | undefined): string {
+  const original = (subject ?? '').trim()
+  if (!original) return 'Re:'
+  return /^re\s*:/iu.test(original) ? original : `Re: ${original}`
+}
+
 const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError, baseHref, canManage }: MasterInboxPreviewProps) => {
   const queryClient = useQueryClient()
   const [scope, setScope] = useState<InboxScope>('interested')
@@ -241,7 +253,6 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
   })
   const threads = useMemo(() => inboxQuery.data?.threads ?? [], [inboxQuery.data?.threads])
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null)
-  const [draftSubject, setDraftSubject] = useState('')
   const [draftBody, setDraftBody] = useState('')
   const [draftedForThread, setDraftedForThread] = useState<string | null>(null)
   const [draftClassification, setDraftClassification] = useState<WorkspaceInboxReplyClassification | null>(null)
@@ -375,7 +386,6 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
       // Race guard: only stage the result if the thread it was drafted for is
       // still the open conversation.
       if (selectedThreadId !== thread.id) return
-      setDraftSubject(draft.subject)
       setDraftBody(draft.body)
       setDraftedForThread(thread.id)
       setDraftClassification(draft.classification)
@@ -390,7 +400,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
     mutationFn: (thread: WorkspaceInboxThread) => sendWorkspaceInboxReply(workspaceId, {
       reply_to_id: thread.id,
       eaccount: thread.eaccount!,
-      subject: draftSubject.trim() || `Re: ${thread.subject}`,
+      subject: replySubject(thread.subject),
       message: draftBody.trim(),
       ...(thread.thread_key ? { thread_key: thread.thread_key } : {}),
       ...(thread.campaign?.client ? { client_id: thread.campaign.client.id } : {}),
@@ -457,13 +467,11 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
     const persisted = thread?.state?.draft
     if (persisted && !thread.state?.draft_stale) {
       // Restore the staged review package (Reply-style persisted runs).
-      setDraftSubject(persisted.subject)
       setDraftBody(persisted.body)
       setDraftedForThread(threadId)
       setDraftClassification((thread.state?.classification ?? null) as WorkspaceInboxReplyClassification | null)
       setDraftNudges(persisted.nudges)
     } else {
-      setDraftSubject('')
       setDraftBody('')
       setDraftedForThread(null)
       setDraftClassification(null)
@@ -478,7 +486,6 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
     setSearchParams(next, { replace: true })
     // Switching clients closes the previous client's open conversation.
     setSelectedThreadId(null)
-    setDraftSubject('')
     setDraftBody('')
     setDraftedForThread(null)
     setDraftClassification(null)
@@ -764,12 +771,17 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                         {draftedForThread === selectedThread.id ? 'Redraft with AI' : 'Draft with AI'}
                       </Button>
                     </div>
-                    <Input
-                      value={draftSubject}
-                      onChange={(event) => setDraftSubject(event.target.value)}
-                      placeholder={`Re: ${selectedThread.subject || ''}`}
+                    {/* Shown, not editable: the subject is what keeps this
+                        reply in the host's existing thread. */}
+                    <div
+                      className="flex items-center gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground"
                       aria-label="Reply subject"
-                    />
+                    >
+                      <span className="shrink-0 text-xs uppercase tracking-wide">Subject</span>
+                      <span className="truncate text-foreground" title={replySubject(selectedThread.subject)}>
+                        {replySubject(selectedThread.subject)}
+                      </span>
+                    </div>
                     <Textarea
                       value={draftBody}
                       onChange={(event) => setDraftBody(event.target.value)}

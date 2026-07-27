@@ -6,7 +6,12 @@ import { useAuth } from '@/contexts/AuthContext'
 import WorkspaceOutreachSuite, { type OutreachWorkspaceModule } from '@/pages/app/WorkspaceOutreachSuite'
 import { getAdminWorkspaceView } from '@/services/adminWorkspaces'
 import { getWorkspaceClients, getWorkspaceClientSdrContext } from '@/services/clients'
-import { getWorkspaceCampaignOverview, getWorkspaceInboxThreads, getWorkspaceMailboxes } from '@/services/workspaceCampaigns'
+import {
+  getWorkspaceCampaignOverview,
+  getWorkspaceInboxThreads,
+  getWorkspaceMailboxes,
+  sendWorkspaceInboxReply,
+} from '@/services/workspaceCampaigns'
 import { captureHostRelationshipThread } from '@/services/hostRelationships'
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
@@ -413,6 +418,51 @@ describe('WorkspaceOutreachSuite', () => {
       campaignId: 'campaign-one',
       campaignName: 'Taylor outreach',
     }))
+  })
+
+  it('replies on the host thread subject and offers no way to change it', async () => {
+    const clientId = '22222222-2222-4222-8222-222222222222'
+    vi.mocked(getWorkspaceInboxThreads).mockResolvedValue({
+      connected: true,
+      threads: [{
+        id: 'message-one',
+        thread_id: 'thread-one',
+        message_id: 'provider-message-one',
+        eaccount: 'sdr@example.com',
+        subject: 'Re: operator systems',
+        from_email: 'morgan@example.com',
+        to_email: 'sdr@example.com',
+        body_text: 'Interested in revisiting this in Q3.',
+        received_at: '2026-07-21T12:00:00.000Z',
+        is_unread: true,
+        interested: true,
+        lead_email: 'morgan@example.com',
+        campaign: {
+          campaign_id: 'campaign-one',
+          campaign_name: 'Taylor outreach',
+          client: { id: clientId, name: 'Taylor Client' },
+        },
+        thread_key: 'thread-one',
+        relationship: null,
+      }],
+    } as never)
+    vi.mocked(sendWorkspaceInboxReply).mockResolvedValue({} as never)
+
+    renderPage('master-inbox')
+    fireEvent.click(await screen.findByRole('button', { name: /morgan@example\.com.*operator systems/i }))
+
+    // The subject is what keeps the reply in the host's existing thread, so it
+    // is displayed rather than offered as an input.
+    expect(screen.queryByRole('textbox', { name: 'Reply subject' })).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Reply body'), { target: { value: 'Q3 works well.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send reply' }))
+
+    // Already prefixed upstream — the reply must not stack a second "Re:".
+    await waitFor(() => expect(sendWorkspaceInboxReply).toHaveBeenCalledWith(
+      defaultWorkspaceId,
+      expect.objectContaining({ subject: 'Re: operator systems', reply_to_id: 'message-one' }),
+    ))
   })
 
   it('loads a selected workspace and scopes every suite route to it', async () => {
