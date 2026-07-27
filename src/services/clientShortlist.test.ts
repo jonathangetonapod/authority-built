@@ -3,9 +3,11 @@ import { supabase } from '@/lib/supabase'
 import {
   addClientShortlistPodcasts,
   ensureClientShortlistEpisodes,
+  generateClientShortlistPitch,
   getClientShortlist,
   getClientShortlistResearchDocument,
   reorderClientShortlistFeatured,
+  runClientShortlistEmailSearch,
   runClientShortlistResearch,
   searchClientPodcastCatalog,
   updateClientShortlistPodcast,
@@ -65,7 +67,7 @@ describe('clientShortlist service', () => {
     }
     invoke.mockResolvedValueOnce({ data: { research_progress: progress }, error: null } as never)
 
-    const result = await runClientShortlistResearch(workspaceId, clientId, '33333333-3333-4333-8333-333333333333')
+    const result = await runClientShortlistResearch(workspaceId, clientId, '33333333-3333-4333-8333-333333333333', true)
 
     expect(invoke).toHaveBeenCalledWith('workspace-client-shortlist', {
       body: {
@@ -73,6 +75,7 @@ describe('clientShortlist service', () => {
         workspace_id: workspaceId,
         client_id: clientId,
         shortlist_podcast_id: '33333333-3333-4333-8333-333333333333',
+        relationship_acknowledged: true,
       },
     })
     expect(result).toEqual(progress)
@@ -88,7 +91,7 @@ describe('clientShortlist service', () => {
       error: null,
     } as never)
 
-    const result = await ensureClientShortlistEpisodes(workspaceId, clientId, 'podcast-one')
+    const result = await ensureClientShortlistEpisodes(workspaceId, clientId, 'podcast-one', true)
 
     expect(invoke).toHaveBeenCalledWith('workspace-client-shortlist', {
       body: {
@@ -96,12 +99,48 @@ describe('clientShortlist service', () => {
         workspace_id: workspaceId,
         client_id: clientId,
         podcast_id: 'podcast-one',
+        relationship_acknowledged: true,
       },
     })
     expect(result).toEqual({
       episodes: [{ title: 'Episode one', description: 'About storage tech', posted_at: '2026-07-20T00:00:00.000Z' }],
       last_posted_at: '2026-07-20T00:00:00.000Z',
       episodes_fetched_at: '2026-07-26T00:00:00.000Z',
+    })
+  })
+
+  it('forwards an explicit relationship acknowledgement to contact and pitch actions', async () => {
+    invoke
+      .mockResolvedValueOnce({
+        data: { email_unlock: { status: 'unlocked', current_stage: null, completed_stages: [], email: 'host@example.com' } },
+        error: null,
+      } as never)
+      .mockResolvedValueOnce({
+        data: { pitch: { subject: 'Warm follow-on', body: 'Good to be back in touch.', angle_index: 0 } },
+        error: null,
+      } as never)
+
+    await runClientShortlistEmailSearch(workspaceId, clientId, '33333333-3333-4333-8333-333333333333', true)
+    await generateClientShortlistPitch(workspaceId, clientId, '33333333-3333-4333-8333-333333333333', 0, true)
+
+    expect(invoke).toHaveBeenNthCalledWith(1, 'workspace-client-shortlist', {
+      body: {
+        action: 'email-search-run',
+        workspace_id: workspaceId,
+        client_id: clientId,
+        shortlist_podcast_id: '33333333-3333-4333-8333-333333333333',
+        relationship_acknowledged: true,
+      },
+    })
+    expect(invoke).toHaveBeenNthCalledWith(2, 'workspace-client-shortlist', {
+      body: {
+        action: 'pitch-generate',
+        workspace_id: workspaceId,
+        client_id: clientId,
+        shortlist_podcast_id: '33333333-3333-4333-8333-333333333333',
+        angle_index: 0,
+        relationship_acknowledged: true,
+      },
     })
   })
 

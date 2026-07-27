@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ClientShortlistEditor } from '@/components/workspace/ClientShortlistEditor'
 import {
   addClientShortlistPodcasts,
+  ensureClientShortlistEpisodes,
   generateClientShortlistPitch,
   getClientAutopilot,
   getClientShortlist,
@@ -15,7 +16,7 @@ import {
   updateClientShortlistPodcast,
   type ClientShortlistPodcast,
 } from '@/services/clientShortlist'
-import { getWorkspaceCampaign, prepareWorkspaceCampaignPodcast } from '@/services/workspaceCampaigns'
+import { getWorkspaceCampaign, getWorkspaceResearchPromptOverrides, prepareWorkspaceCampaignPodcast } from '@/services/workspaceCampaigns'
 
 vi.mock('@/services/clientShortlist', () => ({
   addClientShortlistPodcasts: vi.fn(),
@@ -113,6 +114,8 @@ function renderEditor(viewerRole: 'owner' | 'admin' | 'member' | 'platform_admin
 describe('ClientShortlistEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(ensureClientShortlistEpisodes).mockResolvedValue({ episodes: [], last_posted_at: null, episodes_fetched_at: null })
+    vi.mocked(getWorkspaceResearchPromptOverrides).mockResolvedValue({})
     // Research and email searches stay pending so tests can assert the in-flight UI.
     vi.mocked(runClientShortlistResearch).mockImplementation(() => new Promise(() => {}))
     vi.mocked(runClientShortlistEmailSearch).mockImplementation(() => new Promise(() => {}))
@@ -214,20 +217,90 @@ describe('ClientShortlistEditor', () => {
     expect(await screen.findByRole('menuitem', { name: 'Add to featured' })).toBeInTheDocument()
   })
 
-  it('shows earlier client outreach and prevents a duplicate pitch workflow', async () => {
+  it('shows a stern relationship warning before any credit-bearing pitch work, then allows a reviewed re-pitch', async () => {
     vi.mocked(getClientShortlist).mockResolvedValueOnce({
       client: { id: clientId, name: 'Taylor Client' },
-      podcasts: [podcast({ prior_outreach_at: '2026-07-10T00:00:00.000Z' })],
+      podcasts: [podcast({
+        prior_outreach_at: '2026-07-10T00:00:00.000Z',
+        agency_relationship: {
+          podcast_id: 'podcast-one',
+          state: 'pitched',
+          touch_count: 1,
+          last_contacted_at: '2026-07-10T00:00:00.000Z',
+          last_client_name: 'Earlier Client',
+          booked_client_name: null,
+          booked_at: null,
+          booked_episode_url: null,
+          replied_client_name: null,
+          contact_email: 'host@founderstories.fm',
+          same_contact_other_show: false,
+          manual_stage: null,
+          summary: 'The first angle focused on founder operations.',
+        },
+      })],
     })
     renderEditor()
 
     expect((await screen.findAllByLabelText('Founder Stories was previously contacted')).length).toBeGreaterThan(0)
-    expect(screen.getByRole('button', { name: 'Founder Stories was previously contacted' })).toBeDisabled()
-    expect(screen.queryByRole('button', { name: 'Write Pitch for Founder Stories' })).not.toBeInTheDocument()
+    const writePitch = screen.getByRole('button', { name: 'Write Pitch for Founder Stories' })
+    expect(writePitch).toHaveTextContent('Write Re-pitch')
+    fireEvent.click(writePitch)
 
+    expect(await screen.findByText("Warning: you've reached out to this podcast already")).toBeInTheDocument()
+    expect(screen.getByText('CRM match · Podcast ID podcast-one')).toBeInTheDocument()
+    expect(screen.getByText(/Nothing that can use research credits, pitch credits, or external contact enrichment will run/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Continue to research' })).toBeDisabled()
+    expect(vi.mocked(ensureClientShortlistEpisodes)).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'I reviewed the prior relationship and still want to prepare this pitch' }))
+    expect(screen.getByRole('button', { name: 'Continue to research' })).toBeEnabled()
+    await waitFor(() => expect(vi.mocked(ensureClientShortlistEpisodes)).toHaveBeenCalledWith(
+      workspaceId,
+      clientId,
+      'podcast-one',
+      true,
+    ))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    expect(await screen.findByRole('checkbox', { name: 'I reviewed the prior relationship and still want to prepare this pitch' })).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Continue to research' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     fireEvent.click(screen.getByRole('button', { name: 'View details for Founder Stories' }))
     expect(screen.getByRole('heading', { name: 'Outreach history' })).toBeInTheDocument()
-    expect(screen.getByText(/protected from being added to a second campaign/i)).toBeInTheDocument()
+    expect(screen.getByText(/prepare a re-pitch/i)).toBeInTheDocument()
+  })
+
+  it('does not allow a do-not-contact relationship to be overridden from pitch preparation', async () => {
+    vi.mocked(getClientShortlist).mockResolvedValueOnce({
+      client: { id: clientId, name: 'Taylor Client' },
+      podcasts: [podcast({
+        agency_relationship: {
+          podcast_id: 'podcast-one',
+          state: 'suppressed',
+          touch_count: 1,
+          last_contacted_at: '2026-07-10T00:00:00.000Z',
+          last_client_name: 'Earlier Client',
+          booked_client_name: null,
+          booked_at: null,
+          booked_episode_url: null,
+          replied_client_name: null,
+          contact_email: 'host@founderstories.fm',
+          same_contact_other_show: false,
+          manual_stage: 'do_not_contact',
+          summary: 'Host asked not to receive another pitch.',
+        },
+      })],
+    })
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+
+    expect(await screen.findByRole('region', { name: 'Relationship review required' })).toBeInTheDocument()
+    expect(screen.getByText('This instruction cannot be overridden from the pitch workflow.')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /reviewed the prior relationship/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Continue to research' })).toBeDisabled()
+    expect(vi.mocked(ensureClientShortlistEpisodes)).not.toHaveBeenCalled()
   })
 
   it('lets an owner mark a podcast approved or passed directly from its actions menu', async () => {
@@ -489,6 +562,7 @@ describe('ClientShortlistEditor', () => {
         workspaceId,
         clientId,
         '33333333-3333-4333-8333-333333333333',
+        false,
       )
     })
     const researchProgress = within(screen.getByRole('list', { name: 'Podcast research progress' }))

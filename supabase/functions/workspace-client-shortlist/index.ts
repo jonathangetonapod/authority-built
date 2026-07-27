@@ -422,7 +422,7 @@ function present(value: string | null | undefined): string {
 // Stamped on research documents and generated pitches so reply rates can be
 // compared per prompt-chain revision once volume exists. Bump on any change
 // to the prompt chain or its assembly.
-const PITCH_CHAIN_VERSION = 'p3-2026-07-27'
+const PITCH_CHAIN_VERSION = 'p4-relationship-preflight-2026-07-27'
 
 export interface PodcastRelationship {
   podcast_id: string
@@ -513,6 +513,46 @@ async function readPodcastRelationships(admin: any, workspaceId: string, podcast
   }))
 }
 
+function relationshipNeedsReview(relationship: PodcastRelationship | undefined): boolean {
+  if (!relationship) return false
+  return relationship.state !== 'none'
+    || relationship.touch_count > 0
+    || relationship.same_contact_other_show
+    || Boolean(relationship.manual_stage || relationship.summary?.trim())
+}
+
+/**
+ * Fail closed before any credit charge, AI request, or enrichment-provider
+ * call. Known history is deliberately overridable: the operator must first
+ * acknowledge the stern CRM warning, after which research and writing can use
+ * that history as context. An explicit do-not-contact decision is the only
+ * non-overridable state.
+ */
+async function preflightPodcastRelationship(
+  admin: AuthContext['admin'],
+  workspaceId: string,
+  podcastId: string,
+  acknowledged: boolean,
+): Promise<PodcastRelationship | undefined> {
+  const relationships = await readPodcastRelationships(admin, workspaceId, [podcastId])
+  const relationship = relationships.get(podcastId)
+  if (relationship?.state === 'suppressed' || relationship?.manual_stage === 'do_not_contact') {
+    throw new HttpError(
+      409,
+      'PODCAST_SUPPRESSED',
+      'This host is marked do not contact for the workspace. No research credits, contact lookup, or pitch generation were used.',
+    )
+  }
+  if (relationshipNeedsReview(relationship) && !acknowledged) {
+    throw new HttpError(
+      409,
+      'RELATIONSHIP_REVIEW_REQUIRED',
+      'You have reached out to this podcast or host before. Review the relationship warning and confirm before using research, contact, or pitch credits.',
+    )
+  }
+  return relationship
+}
+
 /** Human-readable summary of the relationship, for prompts and operators. */
 function describeRelationship(relationship: PodcastRelationship | undefined): string {
   if (!relationship) return 'State: none. This workspace has never contacted this show. Write as a stranger.'
@@ -541,7 +581,7 @@ function describeRelationship(relationship: PodcastRelationship | undefined): st
       lines.push(`This host corresponded with this agency and passed on an earlier idea (last contact ${when}). Acknowledge the prior exchange briefly, then make clear why this new angle is different. Do not name the other client.`)
       break
     case 'in_conversation':
-      lines.push('A conversation with this host is live right now for another client. Do not write a new cold sequence.')
+      lines.push('A conversation with this host is live right now for another client. This draft must read as a careful warm follow-on, never a new cold introduction. The operator should edit it with the live thread in mind before sending.')
       break
     case 'suppressed':
       lines.push('This host asked this agency to stop contacting them. Do not write anything.')
@@ -789,7 +829,7 @@ serve(async (req) => {
         authContext.admin,
         workspaceId,
         shortlistPodcastIds,
-      ).catch(() => new Map())
+      )
       const podcasts = shortlistRows.map((row) => {
         const { email_unlock_progress: storedUnlockProgress, ...podcast } = row
         const feedback = feedbackByPodcast.get(podcast.podcast_id as string)
@@ -1213,7 +1253,7 @@ serve(async (req) => {
       // exists (fetching from Podscan only when missing or stale) and return
       // the metadata the Podcast context panel shows. No operator action —
       // the dialog calls this on open.
-      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'podcast_id'])
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'podcast_id', 'relationship_acknowledged'])
       const podcastId = requireString(body.podcast_id, 'podcast_id', { max: 200 })
       if (!/^[a-zA-Z0-9_-]+$/.test(podcastId)) {
         throw new HttpError(400, 'INVALID_FIELD', 'podcast_id is invalid')
@@ -1230,6 +1270,12 @@ serve(async (req) => {
       if (!shortlistRow) {
         throw new HttpError(404, 'PODCAST_NOT_FOUND', 'Shortlist podcast not found for this client')
       }
+      await preflightPodcastRelationship(
+        authContext.admin,
+        workspaceId,
+        podcastId,
+        body.relationship_acknowledged === true,
+      )
       const captured = await ensureEpisodesCaptured(authContext.admin, podcastId)
       return jsonResponse(req, METHODS, 200, {
         // The full stored shape (minus transcript): title, description, urls,
@@ -1241,7 +1287,7 @@ serve(async (req) => {
     }
 
     if (action === 'research-run') {
-      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'shortlist_podcast_id'])
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'shortlist_podcast_id', 'relationship_acknowledged'])
       const shortlistPodcastId = requireUuid(body.shortlist_podcast_id, 'shortlist_podcast_id')
 
       const { data: shortlistRow, error: shortlistError } = await authContext.admin
@@ -1252,6 +1298,13 @@ serve(async (req) => {
         .maybeSingle()
       if (shortlistError) throw new HttpError(500, 'RESEARCH_FAILED', 'The shortlist podcast could not be loaded')
       if (!shortlistRow) throw new HttpError(404, 'PODCAST_NOT_FOUND', 'Shortlist podcast not found for this client')
+
+      const relationship = await preflightPodcastRelationship(
+        authContext.admin,
+        workspaceId,
+        shortlistRow.podcast_id,
+        body.relationship_acknowledged === true,
+      )
 
       const existingProgress = shortlistRow.research_progress as
         | { status?: string; updated_at?: string }
@@ -1352,6 +1405,10 @@ serve(async (req) => {
         // quality, so this is a quality change as much as a cost one.
         const sharedContext = [
           '<context>',
+          '<agency_relationship>',
+          describeRelationship(relationship),
+          'Use this history when evaluating the angle and recommended messaging. Never treat a known host as a brand-new relationship, and never expose private CRM notes verbatim.',
+          '</agency_relationship>',
           '<client>',
           `Name: ${present(baseVariables.client_name)}`,
           `LinkedIn: ${present(baseVariables.client_linkedin_url)}`,
@@ -1573,7 +1630,7 @@ serve(async (req) => {
     }
 
     if (action === 'email-search-run') {
-      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'shortlist_podcast_id'])
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'shortlist_podcast_id', 'relationship_acknowledged'])
       const shortlistPodcastId = requireUuid(body.shortlist_podcast_id, 'shortlist_podcast_id')
 
       const { data: shortlistRow, error: shortlistError } = await authContext.admin
@@ -1584,6 +1641,13 @@ serve(async (req) => {
         .maybeSingle()
       if (shortlistError) throw new HttpError(500, 'EMAIL_SEARCH_FAILED', 'The shortlist podcast could not be loaded')
       if (!shortlistRow) throw new HttpError(404, 'PODCAST_NOT_FOUND', 'Shortlist podcast not found for this client')
+
+      await preflightPodcastRelationship(
+        authContext.admin,
+        workspaceId,
+        shortlistRow.podcast_id,
+        body.relationship_acknowledged === true,
+      )
 
       const { data: catalogRow } = await authContext.admin
         .from('podcasts')
@@ -1880,7 +1944,7 @@ serve(async (req) => {
     }
 
     if (action === 'pitch-generate') {
-      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'shortlist_podcast_id', 'angle_index'])
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'shortlist_podcast_id', 'angle_index', 'relationship_acknowledged'])
       const shortlistPodcastId = requireUuid(body.shortlist_podcast_id, 'shortlist_podcast_id')
       const angleIndex = typeof body.angle_index === 'number' && Number.isInteger(body.angle_index)
         ? Math.max(0, Math.min(body.angle_index, 4))
@@ -1907,6 +1971,12 @@ serve(async (req) => {
           .maybeSingle(),
       ])
       if (!shortlistRow) throw new HttpError(404, 'PODCAST_NOT_FOUND', 'Shortlist podcast not found for this client')
+      const relationship = await preflightPodcastRelationship(
+        authContext.admin,
+        workspaceId,
+        shortlistRow.podcast_id,
+        body.relationship_acknowledged === true,
+      )
       // The catalog row is the fresher copy of show metadata and carries the
       // stored episode capture; the shortlist copy is only the fallback.
       const { data: pitchCatalogRow } = await authContext.admin
@@ -2015,23 +2085,6 @@ serve(async (req) => {
       // in the selected angle. Everything angle-independent lives in one
       // cached CONTEXT block, so option one pays the cache write and options
       // two and three read the same prefix at a tenth of the input price.
-      // Relationship first: it decides whether this pitch may be cold at all.
-      const relationships = await readPodcastRelationships(authContext.admin, workspaceId, [shortlistRow.podcast_id])
-      const relationship = relationships.get(shortlistRow.podcast_id)
-      if (relationship?.state === 'suppressed') {
-        throw new HttpError(
-          409,
-          'PODCAST_SUPPRESSED',
-          'This host asked to stop being contacted by this workspace. No pitch can be written for them.',
-        )
-      }
-      if (relationship?.state === 'in_conversation') {
-        throw new HttpError(
-          409,
-          'PODCAST_IN_CONVERSATION',
-          `A conversation with this host is already live${relationship.last_client_name ? ` for ${relationship.last_client_name}` : ''}. Continue that thread in Master Inbox instead of opening a new pitch.`,
-        )
-      }
       const pitchContext = [
         '<context>',
         `<agency_relationship>\n${describeRelationship(relationship)}\n</agency_relationship>`,
@@ -2069,23 +2122,58 @@ serve(async (req) => {
 
       const usage = { input: 0, output: 0 }
       try {
-        const draftRaw = await runResearchPrompt(
+        const relationshipReviewInstruction = relationship?.state === 'in_conversation'
+          ? 'OPERATOR REVIEW CONFIRMED: The operator saw the live-conversation warning and chose to draft anyway. Write a careful warm follow-on sequence for editing; do not return ACTIVE CONVERSATION.'
+          : ''
+        let draftRaw = await runResearchPrompt(
           anthropicKey.apiKey,
           RESEARCH_PROMPT_DEFAULTS.write_email,
-          { context: pitchContext, instruction: fillPromptTemplate(promptContent('write_email'), pitchVariables) },
+          {
+            context: pitchContext,
+            instruction: [
+              fillPromptTemplate(promptContent('write_email'), pitchVariables),
+              relationshipReviewInstruction,
+            ].filter(Boolean).join('\n\n'),
+          },
           usage,
         )
         // Legacy or workspace-customized prompts may still carry the old
         // "no email" refusal conditional; surface it as a clear, actionable
         // error instead of shipping the refusal text as a pitch.
-        // The writer refuses on the two states that must never produce a cold
-        // sequence; both are already blocked above, so a refusal here means a
-        // customized prompt disagreed with the gate. Surface it, never ship it.
-        if (/^\s*(ACTIVE CONVERSATION|SUPPRESSED CONTACT)/iu.test(draftRaw)) {
+        // A workspace override saved before relationship-aware drafting may
+        // still refuse live conversations. The operator already confirmed the
+        // warning, so retry once with today's canonical prompt instead of
+        // making the paid request unusable.
+        if (/^\s*ACTIVE CONVERSATION/iu.test(draftRaw) && relationship?.state === 'in_conversation') {
+          draftRaw = await runResearchPrompt(
+            anthropicKey.apiKey,
+            RESEARCH_PROMPT_DEFAULTS.write_email,
+            {
+              context: pitchContext,
+              instruction: [
+                fillPromptTemplate(RESEARCH_PROMPT_DEFAULTS.write_email.content, pitchVariables),
+                relationshipReviewInstruction,
+              ].filter(Boolean).join('\n\n'),
+            },
+            usage,
+          )
+        }
+        if (/^\s*ACTIVE CONVERSATION/iu.test(draftRaw)) {
           throw new HttpError(
             409,
             'PODCAST_RELATIONSHIP_BLOCKED',
-            'The pitch writer stopped because this workspace already has a live relationship with this host. Review it in Master Inbox.',
+            'The pitch writer could not produce a warm follow-on for this active conversation. Review the live thread before trying again.',
+          )
+        }
+        // Suppression is non-overridable and already blocked before credits.
+        // Keep this second guard in case an old customized prompt spots
+        // conflicting data. A live conversation, by contrast, may be drafted
+        // after the operator explicitly acknowledges the warning above.
+        if (/^\s*SUPPRESSED CONTACT/iu.test(draftRaw)) {
+          throw new HttpError(
+            409,
+            'PODCAST_RELATIONSHIP_BLOCKED',
+            'The pitch writer stopped because this host is marked do not contact in the relationship CRM.',
           )
         }
         if (/^\s*NO EMAIL AVAILABLE/iu.test(draftRaw)) {

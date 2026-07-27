@@ -473,28 +473,17 @@ export function ClientShortlistEditor({
                     <div>{visibilityBadge(podcast.visibility)}</div>
                   </div>
                   <div className="flex items-center justify-end gap-2 lg:shrink-0">
-                    {podcast.visibility === 'visible' && podcast.feedback_status === 'approved' && podcast.prior_outreach_at && (
+                    {podcast.visibility === 'visible' && podcast.feedback_status === 'approved' && (
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        disabled
-                        aria-label={`${podcast.podcast_name} was previously contacted`}
-                      >
-                        <MailCheck className="mr-2 h-4 w-4 text-sky-700" />
-                        Contacted
-                      </Button>
-                    )}
-                    {podcast.visibility === 'visible' && podcast.feedback_status === 'approved' && !podcast.prior_outreach_at && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
+                        className={podcast.prior_outreach_at ? 'border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 hover:text-amber-950' : undefined}
                         aria-label={`Write Pitch for ${podcast.podcast_name}`}
                         onClick={() => setCampaignPrepPodcast(podcast)}
                       >
-                        <PenLine className="mr-2 h-4 w-4 text-primary" />
-                        Write Pitch
+                        <PenLine className={`mr-2 h-4 w-4 ${podcast.prior_outreach_at ? 'text-amber-700' : 'text-primary'}`} />
+                        {podcast.prior_outreach_at ? 'Write Re-pitch' : 'Write Pitch'}
                       </Button>
                     )}
                     <PodcastExternalLink url={podcast.podcast_url} name={podcast.podcast_name} />
@@ -544,7 +533,7 @@ export function ClientShortlistEditor({
               </div>
               <section><h4 className="text-sm font-semibold">About this podcast</h4><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{detailPodcast.ai_clean_description || detailPodcast.podcast_description || 'No podcast description is available yet.'}</p></section>
               <section className="rounded-xl border bg-muted/20 p-4"><h4 className="text-sm font-semibold">Client feedback</h4><p className="mt-2 text-sm leading-6 text-muted-foreground">{detailPodcast.feedback_notes || (detailPodcast.feedback_status ? 'The client left a decision without a note.' : 'The client has not reviewed this podcast yet.')}</p></section>
-              {detailPodcast.prior_outreach_at && <section className="rounded-xl border border-sky-200 bg-sky-50/70 p-4"><h4 className="flex items-center gap-2 text-sm font-semibold text-sky-950"><MailCheck className="h-4 w-4" />Outreach history</h4><p className="mt-2 text-sm leading-6 text-sky-900/80">This podcast was already handed off for outreach for this client on {formattedDate(detailPodcast.prior_outreach_at)}. It is protected from being added to a second campaign accidentally.</p></section>}
+              {detailPodcast.prior_outreach_at && <section className="rounded-xl border border-amber-200 bg-amber-50/70 p-4"><h4 className="flex items-center gap-2 text-sm font-semibold text-amber-950"><MailCheck className="h-4 w-4" />Outreach history</h4><p className="mt-2 text-sm leading-6 text-amber-900/80">This podcast was already handed off for outreach for this client on {formattedDate(detailPodcast.prior_outreach_at)}. You can prepare a re-pitch, but the relationship warning must be reviewed first and any active campaign remains protected.</p></section>}
               <section className="space-y-2"><label htmlFor="podcast-operator-notes" className="text-sm font-semibold">Internal notes</label><Textarea id="podcast-operator-notes" value={operatorNotes} onChange={(event) => setOperatorNotes(event.target.value)} rows={5} maxLength={2_000} placeholder="Add workspace-only context, follow-up ideas, or research notes…" /><p className="text-xs text-muted-foreground">Only workspace managers can see these notes.</p></section>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Button className="flex-1" disabled={isSavingNotes || operatorNotes.trim() === (detailPodcast.operator_notes || '')} onClick={() => void saveOperatorNotes()}>{isSavingNotes && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save internal notes</Button>

@@ -208,7 +208,7 @@ serve(async (req) => {
       for (const row of (bookingsResult.data ?? []) as Array<Record<string, unknown>>) {
         putDerivedClient(row.client_id, 'placed', row.created_at)
       }
-      for (const row of (savedThreadsResult.data ?? []) as Array<Record<string, unknown>>) {
+      for (const row of (savedThreadsResult.data ?? []) as unknown as Array<Record<string, unknown>>) {
         putDerivedClient(row.client_id, 'pitched', row.created_at)
       }
       // A person's explicit association wins over an inferred campaign state.
@@ -241,7 +241,7 @@ serve(async (req) => {
           ...clientHistory.get(clientId),
         })),
         events: eventsResult.data ?? [],
-        threads: ((savedThreadsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+        threads: ((savedThreadsResult.data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => ({
           ...row,
           client_name: typeof row.client_id === 'string' ? clientNames.get(row.client_id) ?? null : null,
         })),

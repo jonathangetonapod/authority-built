@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertCircle,
+  AlertTriangle,
   Archive,
   ArrowLeft,
   ArrowRight,
@@ -14,7 +15,6 @@ import {
   Loader2,
   Lightbulb,
   Mail,
-  MailCheck,
   Mic2,
   Radio,
   RefreshCw,
@@ -29,6 +29,7 @@ import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -181,6 +182,20 @@ function formatPodcastDate(value: string | null | undefined): string {
   }).format(date)
 }
 
+function podcastRelationshipNeedsReview(podcast: ClientShortlistPodcast | null): boolean {
+  const relationship = podcast?.agency_relationship
+  return Boolean(
+    podcast?.prior_outreach_at
+    || (relationship && (
+      relationship.state !== 'none'
+      || relationship.touch_count > 0
+      || relationship.same_contact_other_show
+      || relationship.manual_stage
+      || relationship.summary?.trim()
+    )),
+  )
+}
+
 export function ClientCampaignPrepDialog({
   open,
   onOpenChange,
@@ -198,9 +213,21 @@ export function ClientCampaignPrepDialog({
   const [activeStep, setActiveStep] = useState<PitchStep>('email')
   const [emailRoute, setEmailRoute] = useState<EmailRoute>('podcast')
   const [previewEmailSearchPodcastId, setPreviewEmailSearchPodcastId] = useState<string | null>(null)
+  const [acknowledgedRelationshipPodcastId, setAcknowledgedRelationshipPodcastId] = useState<string | null>(null)
+  const relationshipAcknowledged = acknowledgedRelationshipPodcastId === podcast?.podcast_id
+  const relationshipNeedsReview = podcastRelationshipNeedsReview(podcast)
+  const relationshipSuppressed = podcast?.agency_relationship?.state === 'suppressed'
+    || podcast?.agency_relationship?.manual_stage === 'do_not_contact'
+  const relationshipReady = !relationshipNeedsReview || relationshipAcknowledged
+  const relationshipCanProceed = relationshipReady && !relationshipSuppressed
   const shortlistQueryKey = ['client-shortlist', workspaceId, clientId] as const
   const runResearchMutation = useMutation({
-    mutationFn: (shortlistPodcastId: string) => runClientShortlistResearch(workspaceId, clientId, shortlistPodcastId),
+    mutationFn: (shortlistPodcastId: string) => runClientShortlistResearch(
+      workspaceId,
+      clientId,
+      shortlistPodcastId,
+      relationshipAcknowledged,
+    ),
     onMutate: () => {
       // The shortlist poll only activates once it sees a running status, so
       // refresh shortly after the backend writes its first progress row.
@@ -238,7 +265,7 @@ export function ClientCampaignPrepDialog({
   const [pitchLoadingKey, setPitchLoadingKey] = useState<string | null>(null)
   const pitchKey = (podcastId: string, angleIndex: number) => `${podcastId}:${angleIndex}`
   const loadAiPitch = async (angleIndex: number, options?: { skipResearchCheck?: boolean }) => {
-    if (!podcast?.id) return
+    if (!podcast?.id || !relationshipCanProceed) return
     const key = pitchKey(podcast.id, angleIndex)
     if (aiPitches[key] || pitchLoadingKey === key) return
     // Only the current prompt pipeline counts — a legacy ai_analyzed_at
@@ -247,7 +274,13 @@ export function ClientCampaignPrepDialog({
     if (!researched && !options?.skipResearchCheck) return
     setPitchLoadingKey(key)
     try {
-      const pitch = await generateClientShortlistPitch(workspaceId, clientId, podcast.id, angleIndex)
+      const pitch = await generateClientShortlistPitch(
+        workspaceId,
+        clientId,
+        podcast.id,
+        angleIndex,
+        relationshipAcknowledged,
+      )
       if (!pitch?.subject || !pitch?.body) {
         throw new Error('The pitch could not be written from research.')
       }
@@ -272,6 +305,7 @@ export function ClientCampaignPrepDialog({
       setDraft(applyPitch)
       setSavedDraft(applyPitch)
     } catch (error) {
+      void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
       toast.error(error instanceof Error ? error.message : 'The pitch could not be written from research.')
     } finally {
       setPitchLoadingKey((current) => (current === key ? null : current))
@@ -279,7 +313,12 @@ export function ClientCampaignPrepDialog({
   }
 
   const emailSearchMutation = useMutation({
-    mutationFn: (shortlistPodcastId: string) => runClientShortlistEmailSearch(workspaceId, clientId, shortlistPodcastId),
+    mutationFn: (shortlistPodcastId: string) => runClientShortlistEmailSearch(
+      workspaceId,
+      clientId,
+      shortlistPodcastId,
+      relationshipAcknowledged,
+    ),
     onMutate: () => {
       window.setTimeout(() => {
         void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
@@ -325,8 +364,13 @@ export function ClientCampaignPrepDialog({
   // costs one cheap read — and fills "Latest activity" without anyone asking.
   const episodeMetadataQuery = useQuery({
     queryKey: ['client-shortlist-episodes', workspaceId, clientId, podcast?.podcast_id || 'none'],
-    queryFn: () => ensureClientShortlistEpisodes(workspaceId, clientId, podcast!.podcast_id),
-    enabled: open && Boolean(podcast?.podcast_id),
+    queryFn: () => ensureClientShortlistEpisodes(
+      workspaceId,
+      clientId,
+      podcast!.podcast_id,
+      relationshipAcknowledged,
+    ),
+    enabled: open && Boolean(podcast?.podcast_id) && relationshipCanProceed,
     retry: false,
     staleTime: 5 * 60_000,
   })
@@ -338,7 +382,7 @@ export function ClientCampaignPrepDialog({
   const canCustomizePrompts = viewerRole === 'owner' || viewerRole === 'platform_admin'
   const target = campaignQuery.data?.targets.find((item) => item.shortlist_podcast_id === podcast?.id) || null
   const previouslyContacted = Boolean(podcast?.prior_outreach_at || target?.prior_outreach_at)
-  const locked = previouslyContacted || Boolean(target && (
+  const locked = Boolean(target && (
     target.instantly_lead_id
     || ['launching', 'in_outreach', 'replied', 'completed'].includes(target.status)
   ))
@@ -566,6 +610,10 @@ export function ClientCampaignPrepDialog({
   }, [open])
 
   useEffect(() => {
+    setAcknowledgedRelationshipPodcastId(null)
+  }, [open, podcast?.podcast_id])
+
+  useEffect(() => {
     if (!open || !podcast || campaignQuery.isLoading) return
     const initial = buildPodcastCampaignSequenceDraft({ podcast, clientName, clientBio })
     const savedContactEmail = target?.contact_email?.trim() || ''
@@ -603,6 +651,12 @@ export function ClientCampaignPrepDialog({
   }
   const beginEmailSearchPreview = () => {
     if (!podcast || emailSearchMutation.isPending) return
+    if (!relationshipCanProceed) {
+      toast.info(relationshipSuppressed
+        ? 'This host is marked do not contact in Relationships.'
+        : 'Review and confirm the relationship warning before starting a contact search.')
+      return
+    }
     setEmailRoute('waterfall')
     setContactEmail('')
     setPreviewEmailSearchPodcastId(podcast.podcast_id)
@@ -645,6 +699,12 @@ export function ClientCampaignPrepDialog({
   }
   const beginResearchRegeneration = () => {
     if (!podcast) return
+    if (!relationshipCanProceed) {
+      toast.info(relationshipSuppressed
+        ? 'This host is marked do not contact in Relationships.'
+        : 'Review and confirm the relationship warning before using research credits.')
+      return
+    }
     if (promptDirty) {
       toast.info('Save or discard the current prompt changes before regenerating research.')
       setActiveStep('research')
@@ -662,6 +722,7 @@ export function ClientCampaignPrepDialog({
     toast.info('Research started — running your saved workspace prompts against live podcast data.')
   }
   const choosePitchAngle = (angleIndex: number) => {
+    if (!relationshipCanProceed) return
     setSelectedAngleIndex(angleIndex)
     if (!podcast) return
     const nextDraft = buildPodcastCampaignSequenceDraft({ podcast, clientName, clientBio, angleIndex })
@@ -734,6 +795,7 @@ export function ClientCampaignPrepDialog({
   const submitDisabled = !podcast
     || !mappedCampaign
     || locked
+    || !relationshipCanProceed
     || !sequenceComplete
     || draftHasUnsavedEdits
     || prepareMutation.isPending
@@ -756,10 +818,10 @@ export function ClientCampaignPrepDialog({
             <div className="flex min-h-96 flex-col items-center justify-center gap-3"><Loader2 className="h-7 w-7 animate-spin text-primary" /><p className="text-sm text-muted-foreground">Loading the pitch workspace…</p></div>
           ) : locked ? (
             <div className="m-6 flex min-h-80 flex-col items-center justify-center rounded-2xl border border-dashed px-6 text-center">
-              {previouslyContacted ? <MailCheck className="h-9 w-9 text-sky-600" /> : <Send className="h-9 w-9 text-sky-600" />}
-              <h3 className="mt-4 text-lg font-semibold">{previouslyContacted ? 'This podcast was already contacted' : 'This podcast is already in outreach'}</h3>
-              <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">{previouslyContacted ? 'Earlier outreach history for this client is preserved, so Scout will not create a duplicate campaign sequence.' : 'The sequence is locked so active Instantly outreach cannot be changed accidentally.'}</p>
-              {previouslyContacted ? <Button className="mt-5" onClick={() => onOpenChange(false)}>Close</Button> : <Button asChild className="mt-5"><Link to={campaignHref}>View outreach</Link></Button>}
+              <Send className="h-9 w-9 text-sky-600" />
+              <h3 className="mt-4 text-lg font-semibold">This podcast is already in active outreach</h3>
+              <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">The live campaign sequence is locked so it cannot be changed accidentally. Prior outreach by itself no longer prevents you from opening this workspace and preparing a considered re-pitch.</p>
+              <Button asChild className="mt-5"><Link to={campaignHref}>View outreach</Link></Button>
             </div>
           ) : podcast ? (
             <div>
@@ -797,9 +859,52 @@ export function ClientCampaignPrepDialog({
                     </div>
                   </div>
 
-                  {podcast.agency_relationship && podcast.agency_relationship.state !== 'none' && (
-                    <div className="px-4 pb-4 sm:px-5">
-                      <AgencyRelationshipNotice relationship={podcast.agency_relationship} />
+                  {relationshipNeedsReview && (
+                    <div className="space-y-3 px-4 pb-4 sm:px-5" role="region" aria-label="Relationship review required">
+                      <div className="rounded-xl border-2 border-amber-400 bg-amber-50 p-4 text-amber-950 shadow-sm">
+                        <div className="flex gap-3">
+                          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold">
+                              {previouslyContacted || (podcast.agency_relationship?.touch_count ?? 0) > 0
+                                ? "Warning: you've reached out to this podcast already"
+                                : 'Warning: this podcast already has relationship history'}
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-amber-900/85">
+                              Review the CRM history before continuing. Nothing that can use research credits, pitch credits, or external contact enrichment will run until this check is complete.
+                            </p>
+                            {podcast.agency_relationship?.podcast_id && (
+                              <p className="mt-1 text-[11px] text-amber-900/70">CRM match · Podcast ID {podcast.agency_relationship.podcast_id}</p>
+                            )}
+                            {relationshipSuppressed ? (
+                              <div className="mt-3 flex flex-wrap items-center gap-2">
+                                <Badge variant="destructive">Do not contact</Badge>
+                                <span className="text-xs font-medium">This instruction cannot be overridden from the pitch workflow.</span>
+                              </div>
+                            ) : (
+                              <label htmlFor="relationship-warning-acknowledgement" className="mt-3 flex cursor-pointer items-start gap-3 rounded-lg border border-amber-300 bg-background/80 p-3">
+                                <Checkbox
+                                  id="relationship-warning-acknowledgement"
+                                  checked={relationshipAcknowledged}
+                                  onCheckedChange={(checked) => setAcknowledgedRelationshipPodcastId(
+                                    checked === true ? podcast.podcast_id : null,
+                                  )}
+                                  aria-label="I reviewed the prior relationship and still want to prepare this pitch"
+                                />
+                                <span className="text-xs font-semibold leading-5">
+                                  I reviewed the prior relationship and still want to research and prepare this pitch. I will adjust the messaging before it is sent.
+                                </span>
+                              </label>
+                            )}
+                            <Button asChild variant="link" size="sm" className="mt-2 h-auto px-0 text-amber-950">
+                              <Link to="/app/relationships">Open the relationship CRM<ExternalLink className="ml-1.5 h-3.5 w-3.5" /></Link>
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                      {podcast.agency_relationship && (
+                        <AgencyRelationshipNotice relationship={podcast.agency_relationship} />
+                      )}
                     </div>
                   )}
 
@@ -875,7 +980,10 @@ export function ClientCampaignPrepDialog({
                   const active = activeStep === item.id
                   const lockedUntilEmail = item.id !== 'email' && !emailReady
                   const lockedUntilResearch = item.id === 'pitch' && !researchComplete
-                  const lockedStepLabel = lockedUntilEmail
+                  const lockedUntilRelationship = item.id !== 'email' && !relationshipCanProceed
+                  const lockedStepLabel = lockedUntilRelationship
+                    ? `Step ${item.step}: ${item.title} locked until the relationship warning is reviewed`
+                    : lockedUntilEmail
                     ? `Step ${item.step}: ${item.title} locked until an email is ready`
                     : lockedUntilResearch
                       ? `Step ${item.step}: ${item.title} locked until research is complete`
@@ -886,12 +994,12 @@ export function ClientCampaignPrepDialog({
                       type="button"
                       aria-label={lockedStepLabel}
                       aria-current={active ? 'step' : undefined}
-                      disabled={lockedUntilEmail || lockedUntilResearch}
+                      disabled={lockedUntilRelationship || lockedUntilEmail || lockedUntilResearch}
                       className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${active ? 'border-primary bg-primary/5 shadow-sm' : 'bg-background hover:border-primary/40 hover:bg-muted/30'}`}
                       onClick={() => setActiveStep(item.id)}
                     >
                       <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{item.step}</span>
-                      <span className="min-w-0"><span className="block text-sm font-semibold">{item.title}</span><span className="block truncate text-xs text-muted-foreground">{lockedUntilEmail ? 'Email required first' : lockedUntilResearch ? 'Research must finish first' : item.detail}</span></span>
+                      <span className="min-w-0"><span className="block text-sm font-semibold">{item.title}</span><span className="block truncate text-xs text-muted-foreground">{lockedUntilRelationship ? 'Review relationship first' : lockedUntilEmail ? 'Email required first' : lockedUntilResearch ? 'Research must finish first' : item.detail}</span></span>
                     </button>
                   )
                 })}
@@ -1041,7 +1149,7 @@ export function ClientCampaignPrepDialog({
                           </div>
                         ) : emailSearchHasNoResult ? (
                           <div aria-label="Waterfall enrichment plan" className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
-                            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex gap-3"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" /><div><p className="text-sm font-semibold text-amber-950">No verified direct email · No charge</p><p className="mt-1 max-w-2xl text-xs leading-5 text-amber-900/75">Try again, use the free Podscan inbox, or enter an address manually. A credit is eligible only for the first successful global unlock.</p></div></div><Button type="button" variant="outline" size="sm" className="shrink-0 border-amber-200 bg-background text-amber-950" onClick={beginEmailSearchPreview}>Try search again</Button></div>
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex gap-3"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" /><div><p className="text-sm font-semibold text-amber-950">No verified direct email · No charge</p><p className="mt-1 max-w-2xl text-xs leading-5 text-amber-900/75">Try again, use the free Podscan inbox, or enter an address manually. A credit is eligible only for the first successful global unlock.</p></div></div><Button type="button" variant="outline" size="sm" className="shrink-0 border-amber-200 bg-background text-amber-950" disabled={!relationshipCanProceed} onClick={beginEmailSearchPreview}>Try search again</Button></div>
                           </div>
                         ) : (
                           <div aria-label="Waterfall enrichment plan" className="rounded-xl border border-violet-200 bg-violet-50/50 p-4">
@@ -1050,7 +1158,7 @@ export function ClientCampaignPrepDialog({
                                 <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-violet-700" />
                                 <div><p className="text-sm font-semibold text-violet-950">Robust lookup · 1 credit on first global success</p><p className="mt-1 max-w-2xl text-xs leading-5 text-violet-900/75">We check the global contact network first. Only a true global miss starts host identification and verification; no verified direct email means no credit is charged.</p></div>
                               </div>
-                              <div className="flex shrink-0 flex-wrap gap-2"><Button asChild variant="outline" size="sm" className="border-violet-200 bg-background text-violet-900 hover:bg-violet-100"><Link to="/app/settings/billing" target="_blank" rel="noreferrer"><Coins className="mr-2 h-3.5 w-3.5" />Buy credits in Billing<ExternalLink className="ml-2 h-3.5 w-3.5" /></Link></Button><Button type="button" size="sm" onClick={beginEmailSearchPreview}><Search className="mr-2 h-3.5 w-3.5" />Start direct email search</Button></div>
+                              <div className="flex shrink-0 flex-wrap gap-2"><Button asChild variant="outline" size="sm" className="border-violet-200 bg-background text-violet-900 hover:bg-violet-100"><Link to="/app/settings/billing" target="_blank" rel="noreferrer"><Coins className="mr-2 h-3.5 w-3.5" />Buy credits in Billing<ExternalLink className="ml-2 h-3.5 w-3.5" /></Link></Button><Button type="button" size="sm" disabled={!relationshipCanProceed} onClick={beginEmailSearchPreview}><Search className="mr-2 h-3.5 w-3.5" />Start direct email search</Button></div>
                             </div>
                             <p className="mt-3 border-t border-violet-200/70 pt-3 text-[11px] font-medium leading-5 text-violet-800">Once successfully unlocked in the Database, this podcast never costs another direct-email credit. Billing opens in a new tab so this pitch stays here.</p>
                           </div>
@@ -1108,7 +1216,7 @@ export function ClientCampaignPrepDialog({
                                 variant={researchProgress || researchRegenerating ? 'outline' : 'default'}
                                 size="sm"
                                 className={researchProgress || researchRegenerating ? 'bg-background' : undefined}
-                                disabled={researchWorking}
+                                disabled={researchWorking || !relationshipCanProceed}
                                 title="Runs every research stage using the saved prompt for each stage, then writes the sequence"
                                 onClick={beginResearchRegeneration}
                               >
@@ -1335,7 +1443,7 @@ export function ClientCampaignPrepDialog({
                         <div className="flex items-center gap-2"><Lightbulb className="h-4 w-4 text-primary" /><h4 className="font-semibold">Recommended pitch angles</h4></div>
                         <p className="mt-1 text-xs leading-5 text-muted-foreground">Each direction creates its own opening pitch and two follow-ups. Select an option to compare the complete sequence below.</p>
                         {researchComplete && pitchAngles.length > 0
-                          ? <div className="mt-4 grid gap-3 lg:grid-cols-3">{pitchAngles.slice(0, 3).map((angle, index) => <button key={`${angle.title}-${index}`} type="button" aria-label={`Select sequence ${index + 1}: ${angle.title}`} aria-pressed={selectedAngleIndex === index} disabled={researchWorking} className={`relative flex min-h-48 flex-col rounded-xl border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${selectedAngleIndex === index ? 'border-primary bg-primary/5 shadow-sm ring-1 ring-primary/15' : 'bg-background hover:border-primary/40'}`} onClick={() => choosePitchAngle(index)}><div className="flex items-center justify-between gap-2"><Badge variant="secondary">Option {index + 1}</Badge>{selectedAngleIndex === index && <Badge className="bg-primary text-primary-foreground hover:bg-primary">Selected</Badge>}</div><span className="mt-4 block text-sm font-semibold leading-5">{angle.title}</span><span className="mt-2 block text-xs leading-5 text-muted-foreground">{angle.description}</span><span className="mt-auto pt-4 text-xs font-semibold text-primary">{selectedAngleIndex === index ? 'Previewing this sequence' : 'View this sequence'}</span></button>)}</div>
+                          ? <div className="mt-4 grid gap-3 lg:grid-cols-3">{pitchAngles.slice(0, 3).map((angle, index) => <button key={`${angle.title}-${index}`} type="button" aria-label={`Select sequence ${index + 1}: ${angle.title}`} aria-pressed={selectedAngleIndex === index} disabled={researchWorking || !relationshipCanProceed} className={`relative flex min-h-48 flex-col rounded-xl border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${selectedAngleIndex === index ? 'border-primary bg-primary/5 shadow-sm ring-1 ring-primary/15' : 'bg-background hover:border-primary/40'}`} onClick={() => choosePitchAngle(index)}><div className="flex items-center justify-between gap-2"><Badge variant="secondary">Option {index + 1}</Badge>{selectedAngleIndex === index && <Badge className="bg-primary text-primary-foreground hover:bg-primary">Selected</Badge>}</div><span className="mt-4 block text-sm font-semibold leading-5">{angle.title}</span><span className="mt-2 block text-xs leading-5 text-muted-foreground">{angle.description}</span><span className="mt-auto pt-4 text-xs font-semibold text-primary">{selectedAngleIndex === index ? 'Previewing this sequence' : 'View this sequence'}</span></button>)}</div>
                           : (
                             <p className="mt-3 rounded-xl border border-dashed p-3 text-sm leading-6 text-muted-foreground">
                               {researchWorking
@@ -1502,7 +1610,11 @@ export function ClientCampaignPrepDialog({
           <footer aria-label="Pitch actions" className="shrink-0 border-t bg-muted/20 px-4 pb-5 pt-4 sm:px-6 sm:pb-6">
             <div className="flex flex-col gap-4 rounded-2xl border bg-background p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
               <p className="max-w-xl text-xs leading-5 text-muted-foreground">
-                {activeStep === 'email' && (emailReady
+                {activeStep === 'email' && (!relationshipCanProceed
+                  ? relationshipSuppressed
+                    ? 'This host is marked do not contact. Pitch preparation is disabled.'
+                    : 'Review and confirm the relationship warning before continuing. No credit-bearing work has started.'
+                  : emailReady
                   ? 'Email ready. Research is unlocked.'
                   : emailSearchRunning
                     ? publicPodcastEmail
@@ -1523,7 +1635,7 @@ export function ClientCampaignPrepDialog({
               <div className="grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
                 {activeStep !== 'email' && <Button type="button" variant="outline" onClick={() => setActiveStep(activeStep === 'pitch' ? 'research' : 'email')}><ArrowLeft className="mr-2 h-4 w-4" />Back</Button>}
-                {activeStep === 'email' && <Button type="button" disabled={!emailReady} onClick={() => setActiveStep('research')}>Continue to research<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+                {activeStep === 'email' && <Button type="button" disabled={!emailReady || !relationshipCanProceed} onClick={() => setActiveStep('research')}>Continue to research<ArrowRight className="ml-2 h-4 w-4" /></Button>}
                 {activeStep === 'research' && <Button type="button" disabled={!researchComplete} onClick={() => { setActiveSequenceEmail('opening'); setActiveStep('pitch') }}>Finalize selected pitch<ArrowRight className="ml-2 h-4 w-4" /></Button>}
                 {activeStep === 'pitch' && <Button type="button" disabled={submitDisabled} onClick={() => prepareMutation.mutate()}>{prepareMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Send to Client Campaign</Button>}
               </div>

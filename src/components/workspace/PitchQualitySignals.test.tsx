@@ -6,6 +6,7 @@ import type { ClientShortlistAgencyRelationship } from '@/services/clientShortli
 const relationship = (
   overrides: Partial<ClientShortlistAgencyRelationship> = {},
 ): ClientShortlistAgencyRelationship => ({
+  podcast_id: 'podcast-one',
   state: 'none',
   touch_count: 0,
   last_contacted_at: null,
@@ -14,6 +15,7 @@ const relationship = (
   booked_at: null,
   booked_episode_url: null,
   replied_client_name: null,
+  contact_email: null,
   same_contact_other_show: false,
   manual_stage: null,
   summary: null,

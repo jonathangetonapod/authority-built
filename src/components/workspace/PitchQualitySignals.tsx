@@ -52,7 +52,7 @@ export const AgencyRelationshipNotice = ({ relationship }: { relationship?: Clie
       tone: 'border-destructive/30 bg-destructive/5 text-destructive',
       icon: <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />,
       title: 'A conversation with this host is already live',
-      detail: `There is an open thread${relationship.last_client_name ? ` for ${relationship.last_client_name}` : ''}. Continue it in Master Inbox — starting cold outreach here is blocked.`,
+      detail: `There is an open thread${relationship.last_client_name ? ` for ${relationship.last_client_name}` : ''}. You may still prepare a draft after confirming the warning, but it must read as a warm follow-on and should be edited against the live thread before sending.`,
     },
     suppressed: {
       tone: 'border-destructive/30 bg-destructive/5 text-destructive',

@@ -85,10 +85,12 @@ export interface ClientShortlistEpisode {
 
 /**
  * What this workspace already means to a host. `booked`, `replied`, and
- * `declined` change the opening; `in_conversation` and `suppressed` block
- * outreach. Curated context can exist even while the derived state is `none`.
+ * `declined` and `in_conversation` change the opening; `suppressed` blocks
+ * preparation. Curated context can exist even while the derived state is `none`.
  */
 export interface ClientShortlistAgencyRelationship {
+  /** Canonical Podscan show identifier used for workspace-wide dedupe. */
+  podcast_id: string
   state: 'none' | 'pitched' | 'replied' | 'declined' | 'booked' | 'in_conversation' | 'suppressed'
   touch_count: number
   last_contacted_at: string | null
@@ -97,6 +99,7 @@ export interface ClientShortlistAgencyRelationship {
   booked_at: string | null
   booked_episode_url: string | null
   replied_client_name: string | null
+  contact_email: string | null
   same_contact_other_show: boolean
   manual_stage: 'nurturing' | 'warm' | 'do_not_contact' | null
   summary: string | null
@@ -264,6 +267,7 @@ export async function runClientShortlistResearch(
   workspaceId: string,
   clientId: string,
   shortlistPodcastId: string,
+  relationshipAcknowledged = false,
 ): Promise<ClientShortlistResearchProgress> {
   const { data, error } = await supabase.functions.invoke('workspace-client-shortlist', {
     body: {
@@ -271,6 +275,7 @@ export async function runClientShortlistResearch(
       workspace_id: workspaceId,
       client_id: clientId,
       shortlist_podcast_id: shortlistPodcastId,
+      ...(relationshipAcknowledged ? { relationship_acknowledged: true } : {}),
     },
   })
   if (error) throw await toFunctionError(error, 'The research run could not be started.')
@@ -284,6 +289,7 @@ export async function runClientShortlistEmailSearch(
   workspaceId: string,
   clientId: string,
   shortlistPodcastId: string,
+  relationshipAcknowledged = false,
 ): Promise<ClientShortlistEmailUnlock> {
   const { data, error } = await supabase.functions.invoke('workspace-client-shortlist', {
     body: {
@@ -291,6 +297,7 @@ export async function runClientShortlistEmailSearch(
       workspace_id: workspaceId,
       client_id: clientId,
       shortlist_podcast_id: shortlistPodcastId,
+      ...(relationshipAcknowledged ? { relationship_acknowledged: true } : {}),
     },
   })
   if (error) throw await toFunctionError(error, 'The direct email search could not be started.')
@@ -340,12 +347,14 @@ export async function ensureClientShortlistEpisodes(
   workspaceId: string,
   clientId: string,
   podcastId: string,
+  relationshipAcknowledged = false,
 ): Promise<ClientShortlistEpisodeMetadata> {
   const data = await invokeClientShortlist<ClientShortlistEpisodeMetadata>({
     action: 'episodes-ensure',
     workspace_id: workspaceId,
     client_id: clientId,
     podcast_id: podcastId,
+    ...(relationshipAcknowledged ? { relationship_acknowledged: true } : {}),
   })
   return {
     episodes: Array.isArray(data.episodes) ? data.episodes : [],
@@ -407,6 +416,7 @@ export async function generateClientShortlistPitch(
   clientId: string,
   shortlistPodcastId: string,
   angleIndex: number,
+  relationshipAcknowledged = false,
 ): Promise<ClientShortlistPitch> {
   const { data, error } = await supabase.functions.invoke('workspace-client-shortlist', {
     body: {
@@ -415,6 +425,7 @@ export async function generateClientShortlistPitch(
       client_id: clientId,
       shortlist_podcast_id: shortlistPodcastId,
       angle_index: angleIndex,
+      ...(relationshipAcknowledged ? { relationship_acknowledged: true } : {}),
     },
   })
   if (error) throw await toFunctionError(error, 'The pitch could not be written.')

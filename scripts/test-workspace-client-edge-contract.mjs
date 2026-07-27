@@ -46,6 +46,14 @@ const clientAiSdrProfileMigration = readFileSync(
   'utf8',
 )
 
+function shortlistActionSource(action) {
+  const marker = `    if (action === '${action}') {`
+  const start = shortlistEdge.indexOf(marker)
+  assert.notEqual(start, -1, `Missing shortlist action: ${action}`)
+  const next = shortlistEdge.indexOf("\n    if (action === '", start + marker.length)
+  return shortlistEdge.slice(start, next === -1 ? undefined : next)
+}
+
 assert.match(edge, /if \(req\.method === 'OPTIONS'\) return optionsResponse\(req, METHODS\)/u)
 assert.match(edge, /return errorResponse\(req, METHODS, error\)/u)
 assert.match(edge, /const authContext = await requireAuthenticatedUser\(req\)/u)
@@ -85,9 +93,30 @@ assert.match(shortlistEdge, /\.from\('clients'\)[\s\S]*?\.eq\('id', clientId\)[\
 assert.match(shortlistEdge, /if \(action === 'list'\)[\s\S]*?if \(action === 'catalog-search'\)[\s\S]*?if \(action === 'add'\)[\s\S]*?if \(action === 'update'\)[\s\S]*?if \(action === 'reorder-featured'\)/u)
 assert.match(shortlistEdge, /archived_at = visibility === 'archived'[\s\S]*?archived_by = visibility === 'archived'/u)
 
-// Research pipeline executor: charge before provider calls, stale-lock 409,
-// progress written before the prompt chain, results persisted with metering.
-assert.match(shortlistEdge, /if \(action === 'research-run'\)[\s\S]*?requireOnlyKeys\(body, \['action', 'workspace_id', 'client_id', 'shortlist_podcast_id'\]\)/u)
+// Every pitch-preparation path checks the canonical podcast relationship
+// before a credit charge or external provider call. Prior history requires an
+// explicit acknowledgement; do-not-contact remains non-overridable.
+const episodesEnsureAction = shortlistActionSource('episodes-ensure')
+const researchRunAction = shortlistActionSource('research-run')
+const emailSearchAction = shortlistActionSource('email-search-run')
+const pitchGenerateAction = shortlistActionSource('pitch-generate')
+assert.match(shortlistEdge, /async function preflightPodcastRelationship[\s\S]*?PODCAST_SUPPRESSED[\s\S]*?RELATIONSHIP_REVIEW_REQUIRED/u)
+for (const actionSource of [episodesEnsureAction, researchRunAction, emailSearchAction, pitchGenerateAction]) {
+  assert.match(actionSource, /preflightPodcastRelationship\([\s\S]*?body\.relationship_acknowledged === true/u)
+}
+assert.ok(episodesEnsureAction.indexOf('preflightPodcastRelationship(') < episodesEnsureAction.indexOf('ensureEpisodesCaptured('))
+assert.ok(researchRunAction.indexOf('preflightPodcastRelationship(') < researchRunAction.indexOf('chargeCredits('))
+assert.ok(researchRunAction.indexOf('preflightPodcastRelationship(') < researchRunAction.indexOf('ensureEpisodesCaptured('))
+assert.ok(emailSearchAction.indexOf('preflightPodcastRelationship(') < emailSearchAction.indexOf('decryptInstantlyApiKey('))
+assert.ok(emailSearchAction.indexOf('preflightPodcastRelationship(') < emailSearchAction.indexOf('verifyEmailWithInstantly('))
+assert.ok(pitchGenerateAction.indexOf('preflightPodcastRelationship(') < pitchGenerateAction.indexOf('chargeCredits('))
+assert.ok(pitchGenerateAction.indexOf('preflightPodcastRelationship(') < pitchGenerateAction.indexOf('runResearchPrompt('))
+assert.match(pitchGenerateAction, /ACTIVE CONVERSATION[\s\S]*?RESEARCH_PROMPT_DEFAULTS\.write_email\.content[\s\S]*?ACTIVE CONVERSATION[\s\S]*?PODCAST_RELATIONSHIP_BLOCKED/u)
+
+// Research pipeline executor: relationship preflight and charge before
+// provider calls, stale-lock 409, progress written before the prompt chain,
+// results persisted with metering.
+assert.match(shortlistEdge, /if \(action === 'research-run'\)[\s\S]*?requireOnlyKeys\(body, \['action', 'workspace_id', 'client_id', 'shortlist_podcast_id', 'relationship_acknowledged'\]\)/u)
 assert.match(shortlistEdge, /RESEARCH_ALREADY_RUNNING/u)
 assert.match(shortlistEdge, /RESEARCH_STALE_LOCK_MS = 3 \* 60 \* 1000/u)
 assert.match(shortlistEdge, /const anthropicKey = await resolveAiKey\(authContext\.admin, workspaceId, 'anthropic'\)[\s\S]*?await chargeCredits\(authContext\.admin, \{[\s\S]*?operationType: 'research_run'[\s\S]*?byoKeyUsed,[\s\S]*?\}\)[\s\S]*?writeProgress\(\{ status: 'running', current_stage: 'podcast_profile', completed_stages: \[\] \}\)[\s\S]*?ensureEpisodesCaptured\(/u)
@@ -98,7 +127,7 @@ assert.match(shortlistEdge, /await logOperationCost\(authContext\.admin, \{[\s\S
 // Email waterfall: global-reuse short-circuits for free, Instantly gate before
 // any progress writes, and the 1-credit charge happens only when the RPC
 // reports the first global unlock.
-assert.match(shortlistEdge, /if \(action === 'email-search-run'\)[\s\S]*?requireOnlyKeys\(body, \['action', 'workspace_id', 'client_id', 'shortlist_podcast_id'\]\)/u)
+assert.match(shortlistEdge, /if \(action === 'email-search-run'\)[\s\S]*?requireOnlyKeys\(body, \['action', 'workspace_id', 'client_id', 'shortlist_podcast_id', 'relationship_acknowledged'\]\)/u)
 assert.match(shortlistEdge, /from\('podcast_direct_contacts'\)[\s\S]*?\.eq\('verification_status', 'verified'\)[\s\S]*?buildUnlockedPayload\(existingContact, 0\)/u)
 assert.match(shortlistEdge, /EMAIL_SEARCH_ALREADY_RUNNING/u)
 assert.match(shortlistEdge, /INSTANTLY_NOT_CONNECTED[\s\S]*?decryptInstantlyApiKey/u)
