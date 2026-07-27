@@ -122,6 +122,23 @@ serve(async (req) => {
         }
       }
 
+      // Which show each host address belongs to. A reply is the moment a
+      // relationship becomes real, so the thread records the show it came
+      // from rather than waiting for an analytics sync to infer it.
+      const { data: contactRows } = await admin
+        .from('workspace_client_campaign_targets')
+        .select('contact_email, podcast_id')
+        .eq('workspace_id', workspaceId)
+        .not('contact_email', 'is', null)
+        .limit(5_000)
+      const podcastByContact = new Map<string, string>()
+      for (const row of (contactRows ?? []) as Array<Record<string, unknown>>) {
+        if (typeof row.contact_email === 'string' && typeof row.podcast_id === 'string') {
+          const key = row.contact_email.trim().toLowerCase()
+          if (key && !podcastByContact.has(key)) podcastByContact.set(key, row.podcast_id)
+        }
+      }
+
       // New replies since the cursor (small overlap absorbs clock skew and
       // late provider ingestion); oldest first so the cursor advances safely.
       const cursorTs = typeof integration.auto_draft_cursor_ts === 'string'
@@ -171,6 +188,14 @@ serve(async (req) => {
         const emailId = typeof email.id === 'string' ? email.id : null
         const threadKey = typeof email.thread_id === 'string' && email.thread_id ? email.thread_id : emailId
         if (!emailId || !threadKey) continue
+        // Identity of the human who wrote, and the show they host. Stamped on
+        // every thread write so a reply lands in the relationship register
+        // immediately instead of waiting on an analytics sync.
+        const leadEmail = typeof email.lead === 'string' ? email.lead.trim().toLowerCase() : ''
+        const leadIdentity = {
+          ...(leadEmail ? { lead_email: leadEmail } : {}),
+          ...(leadEmail && podcastByContact.has(leadEmail) ? { podcast_id: podcastByContact.get(leadEmail) } : {}),
+        }
 
         const { data: stateRow } = await admin
           .from('workspace_inbox_thread_state')
@@ -212,13 +237,13 @@ serve(async (req) => {
               thread_key: threadKey,
               client_id: clientId,
               classification: deterministicClassification(deterministic),
+              ...leadIdentity,
               ...(deterministic === 'opt_out' ? { suppressed_at: new Date().toISOString() } : {}),
               updated_at: new Date().toISOString(),
             }, { onConflict: 'workspace_id,thread_key' })
           // An opt-out is directed at the sender, not at one client's
           // campaign. Record it workspace-wide so no other client's outreach
           // can reach this person again.
-          const leadEmail = typeof email.lead === 'string' ? email.lead.trim().toLowerCase() : ''
           if (deterministic === 'opt_out' && leadEmail) {
             await admin
               .from('workspace_outreach_suppressions')
@@ -241,6 +266,7 @@ serve(async (req) => {
             workspace_id: workspaceId,
             thread_key: threadKey,
             client_id: clientId,
+            ...leadIdentity,
             draft_claim_email_id: emailId,
             draft_claimed_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -263,6 +289,7 @@ serve(async (req) => {
               workspace_id: workspaceId,
               thread_key: threadKey,
               client_id: clientId,
+              ...leadIdentity,
               status: 'review',
               classification: pkg.classification,
               draft: {
