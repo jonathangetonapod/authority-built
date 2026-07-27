@@ -90,6 +90,8 @@ The campaign experience is organized around one ongoing podcast-booking campaign
 - activity and performance use sanitized workspace-scoped campaign and lead data returned by Instantly; and
 - settings update the campaign name, IANA timezone, daily limit, and active sending accounts.
 
+A verified direct-host contact is shared across the platform and reused for free, but it is not trusted indefinitely: after ninety days the stored address is re-checked with the verification provider before it is handed over. A re-check that passes costs nothing and refreshes the date. One that fails retires the contact — the row survives so the record of who paid for the original unlock is not lost — and a replacement search runs, also free, because that show's paid unlock already happened. When there is no provider connected to re-check with, the address is still returned, flagged as out of date rather than presented as ready.
+
 GOAP-created campaigns use a standard three-email Instantly sequence populated by per-podcast custom variables and stop on reply. Workspace groups and subsequences are intentionally not used. A podcast host may be contacted for different GOAP clients, so provider duplicate-skipping is disabled while local client/campaign ownership remains exact.
 
 The same campaign surfaces are available in My Workspace and in a platform-owner-selected workspace. Client command centers link directly to their campaign.

@@ -615,6 +615,35 @@ describe('ClientShortlistEditor', () => {
     expect(screen.getByRole('button', { name: 'Continue to research' })).toBeEnabled()
   })
 
+  it('flags a direct email that has gone out of date instead of showing it as ready', async () => {
+    vi.mocked(getClientShortlist).mockResolvedValueOnce({
+      client: { id: clientId, name: 'Taylor Client' },
+      podcasts: [podcast({
+        email_unlock: {
+          status: 'unlocked',
+          current_stage: null,
+          completed_stages: ['identify_contact', 'find_email', 'verify_email'],
+          email: 'direct@founderstories.fm',
+          host_name: 'Jamie Host',
+          unlocked_at: '2026-01-04T12:00:00.000Z',
+          verified_at: '2026-01-04T12:00:00.000Z',
+          stale: true,
+        },
+      })],
+    })
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+
+    expect(await screen.findByText('Direct email out of date')).toBeInTheDocument()
+    expect(screen.getAllByText('Needs re-check').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Re-check costs 0 credits').length).toBeGreaterThan(0)
+    expect(screen.getByText(/may now bounce/i)).toBeInTheDocument()
+    // The address is still usable — withholding a contact the workspace owns
+    // helps nobody — so the operator is not blocked, only told.
+    expect(screen.getByRole('button', { name: 'Continue to research' })).toBeEnabled()
+    expect(screen.queryByText('Direct email ready')).not.toBeInTheDocument()
+  })
+
   it('keeps a newly started email search visible when the visual modal is reopened', async () => {
     renderEditor()
     fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))

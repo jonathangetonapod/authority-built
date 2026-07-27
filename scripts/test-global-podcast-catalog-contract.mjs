@@ -29,6 +29,14 @@ const freeEmailLookup = readFileSync(
   'supabase/functions/fetch-podscan-email/index.ts',
   'utf8',
 )
+const reverificationMigration = readFileSync(
+  'supabase/migrations/20260728001300_direct_contact_reverification.sql',
+  'utf8',
+)
+const prepDialog = readFileSync(
+  'src/components/workspace/ClientCampaignPrepDialog.tsx',
+  'utf8',
+)
 
 assert.match(migration, /CREATE TABLE public\.podcast_catalog_contributions/u)
 assert.match(migration, /CREATE TABLE public\.podcast_direct_contacts/u)
@@ -70,5 +78,49 @@ assert.match(clientCampaigns, /verifiedDirectByShortlistId/u)
 assert.match(freeEmailLookup, /\.from\('podcasts'\)[\s\S]*?podscan_email/u)
 assert.match(freeEmailLookup, /contact_type: 'podscan_free'/u)
 assert.match(freeEmailLookup, /\.from\('podcast_emails'\)[\s\S]*?\.upsert/u)
+
+
+// A verified contact goes out of date. Ninety days is one re-check per quarter
+// per show, and an unchecked address costs a bounce against the sender's
+// reputation — more expensive than the verification call that prevents it.
+assert.match(clientShortlist, /const DIRECT_CONTACT_FRESH_DAYS = 90/u)
+assert.match(
+  clientShortlist,
+  /const stale = !Number\.isFinite\(verifiedAt\)\s+\|\| Date\.now\(\) - verifiedAt > DIRECT_CONTACT_FRESH_DAYS \* DAY_MS/u,
+)
+// A fresh contact is still returned without touching a provider.
+assert.match(clientShortlist, /if \(!stale\) \{\s+await clearProgress\(\)\s+return jsonResponse\(req, METHODS, 200, \{ email_unlock: buildUnlockedPayload\(existingContact, 0\) \}\)/u)
+// A stale contact is re-checked, and a successful re-check costs nothing: the
+// RPC only permits a charge on a show's first global unlock.
+assert.match(
+  clientShortlist,
+  /const recheck = await verifyEmailWithInstantly\(revalidationKey, existingContact\.email\)[\s\S]*?record_global_podcast_direct_contact_v1[\s\S]*?\}, 0, \{ revalidated: true \}\)/u,
+)
+// A failed re-check retires the row rather than deleting it, then falls through
+// to a replacement search.
+assert.match(clientShortlist, /expire_global_podcast_direct_contact_v1/u)
+assert.match(reverificationMigration, /UPDATE public\.podcast_direct_contacts contact\s+SET verification_status = 'invalid'/u)
+assert.doesNotMatch(
+  reverificationMigration,
+  /DELETE FROM public\.podcast_direct_contacts/u,
+  'the row carries who paid for the unlock; retiring it must not discard that',
+)
+assert.match(
+  reverificationMigration,
+  /REVOKE ALL ON FUNCTION public\.expire_global_podcast_direct_contact_v1\(TEXT\)\s+FROM PUBLIC, anon, authenticated, service_role;/u,
+)
+assert.match(
+  reverificationMigration,
+  /GRANT EXECUTE ON FUNCTION public\.expire_global_podcast_direct_contact_v1\(TEXT\)\s+TO service_role;/u,
+)
+// With no way to re-verify, the address is still handed over — withholding a
+// contact the workspace already owns helps nobody — but flagged, never silent.
+assert.match(
+  clientShortlist,
+  /if \(!revalidationKey\) \{[\s\S]*?stale: true,[\s\S]*?not been re-checked in over 90 days/u,
+)
+assert.match(prepDialog, /const contactIsStale = emailAlreadyUnlocked && storedEmailUnlock\?\.stale === true/u)
+assert.match(prepDialog, /contactIsStale \? 'Direct email out of date' : 'Direct email ready'/u)
+assert.match(prepDialog, /contactIsStale \? 'Re-check costs 0 credits'/u)
 
 process.stdout.write('Global podcast catalog contract checks passed.\n')

@@ -401,6 +401,10 @@ export function ClientCampaignPrepDialog({
     : ''
   const emailSearchRunning = emailUnlockStatus === 'queued' || emailUnlockStatus === 'running'
   const emailAlreadyUnlocked = emailUnlockStatus === 'unlocked' && validEmail(unlockedEmail)
+  // The server decides what "out of date" means; the dialog only says so. A
+  // stale address still fills the field — withholding a contact the workspace
+  // already owns helps nobody — but it must not read as freshly verified.
+  const contactIsStale = emailAlreadyUnlocked && storedEmailUnlock?.stale === true
   const emailSearchHasNoResult = emailUnlockStatus === 'not_found' || emailUnlockStatus === 'failed'
   const emailUnlockCurrentStage = previewEmailSearchRunning
     ? 'identify_contact'
@@ -1064,8 +1068,8 @@ export function ClientCampaignPrepDialog({
                             <div className="flex items-start justify-between gap-3">
                               <div className="rounded-xl bg-violet-100 p-2.5 text-violet-700">{emailAlreadyUnlocked ? <CheckCircle2 className="h-5 w-5" /> : emailSearchRunning ? <Loader2 className="h-5 w-5 animate-spin" /> : emailSearchHasNoResult ? <AlertCircle className="h-5 w-5" /> : <Search className="h-5 w-5" />}</div>
                               <div className="flex flex-col items-end gap-1.5">
-                                <Badge className="border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">{emailAlreadyUnlocked ? 'Globally unlocked' : emailSearchRunning ? 'Global search in progress' : emailSearchHasNoResult ? 'No result yet' : 'Recommended'}</Badge>
-                                <span className="text-[11px] font-semibold text-violet-800">{emailAlreadyUnlocked ? '0 additional credits' : emailSearchRunning ? 'Safe to close' : emailSearchHasNoResult ? 'You were not charged' : '1 credit on success'}</span>
+                                <Badge className={contactIsStale ? 'border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-100' : 'border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100'}>{contactIsStale ? 'Needs re-check' : emailAlreadyUnlocked ? 'Globally unlocked' : emailSearchRunning ? 'Global search in progress' : emailSearchHasNoResult ? 'No result yet' : 'Recommended'}</Badge>
+                                <span className={contactIsStale ? 'text-[11px] font-semibold text-amber-900' : 'text-[11px] font-semibold text-violet-800'}>{contactIsStale ? 'Re-check costs 0 credits' : emailAlreadyUnlocked ? '0 additional credits' : emailSearchRunning ? 'Safe to close' : emailSearchHasNoResult ? 'You were not charged' : '1 credit on success'}</span>
                               </div>
                             </div>
                             <h4 className="mt-4 font-semibold">{emailAlreadyUnlocked ? 'Use the direct host email' : emailSearchRunning ? 'Finding the direct host email' : emailSearchHasNoResult ? 'No direct email found yet' : "Find the host's direct email"}</h4>
@@ -1077,9 +1081,29 @@ export function ClientCampaignPrepDialog({
                                   ? storedEmailUnlock?.message || 'The last search did not return a verified direct email. Use the public inbox, enter your own address, or try again.'
                                   : 'Run a waterfall search to identify the host and verify a work or personal address—the stronger route for reply potential.'}</p>
                             {emailAlreadyUnlocked ? (
-                              <div className="mt-4 rounded-xl border border-violet-200 bg-background/80 px-3 py-2.5">
-                                <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-800">Direct email ready</p>
-                                <p className="mt-1 text-xs leading-5 text-muted-foreground">{storedEmailUnlock?.unlocked_at ? `First unlocked ${formatPodcastDate(storedEmailUnlock.unlocked_at)}.` : 'Saved to the global contact network.'} Future host and contact refreshes are included for every workspace.</p>
+                              <div className={contactIsStale
+                                ? 'mt-4 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5'
+                                : 'mt-4 rounded-xl border border-violet-200 bg-background/80 px-3 py-2.5'}>
+                                <p className={contactIsStale
+                                  ? 'text-[11px] font-semibold uppercase tracking-wide text-amber-900'
+                                  : 'text-[11px] font-semibold uppercase tracking-wide text-violet-800'}>
+                                  {contactIsStale ? 'Direct email out of date' : 'Direct email ready'}
+                                </p>
+                                <p className={contactIsStale ? 'mt-1 text-xs leading-5 text-amber-900' : 'mt-1 text-xs leading-5 text-muted-foreground'}>
+                                  {contactIsStale
+                                    ? storedEmailUnlock?.message
+                                      || `Last verified ${formatPodcastDate(storedEmailUnlock?.verified_at)}. Hosts change addresses, so this may now bounce — re-run the search to re-check it at no credit cost.`
+                                    : (
+                                      <>
+                                        {storedEmailUnlock?.revalidated
+                                          ? 'Re-checked just now and still valid.'
+                                          : storedEmailUnlock?.verified_at
+                                            ? `Verified ${formatPodcastDate(storedEmailUnlock.verified_at)}.`
+                                            : 'Saved to the global contact network.'}
+                                        {' '}Future host and contact refreshes are included for every workspace.
+                                      </>
+                                    )}
+                                </p>
                               </div>
                             ) : emailSearchRunning ? (
                               <div className="mt-4 space-y-2">

@@ -462,6 +462,21 @@ const OUTREACH_COOLDOWN_DAYS: Partial<Record<PodcastRelationship['state'], numbe
 
 const DAY_MS = 86_400_000
 
+/**
+ * How long a verified direct contact is trusted without re-checking.
+ *
+ * Hosts change jobs, hand shows over, and retire domains. An address verified
+ * in March is a guess by September, and pitching it spends sender reputation
+ * on a bounce instead of a person. Ninety days is one re-check per quarter per
+ * show — cheap next to the deliverability it protects.
+ *
+ * Staleness is derived from last_verified_at rather than stored, so there is no
+ * scheduled job holding a time-dependent fact in sync and being wrong between
+ * runs. Only a failed re-check is written down, because that is the one thing
+ * the clock cannot tell us.
+ */
+const DIRECT_CONTACT_FRESH_DAYS = 90
+
 export interface OutreachCooldown {
   window_days: number
   days_since_contact: number
@@ -1723,7 +1738,11 @@ serve(async (req) => {
         .eq('podscan_id', shortlistRow.podcast_id)
         .maybeSingle()
 
-      const buildUnlockedPayload = (contact: { email: string; host_name: string | null; first_paid_unlock_at?: string | null; last_verified_at?: string | null }, creditCost: number) => ({
+      const buildUnlockedPayload = (
+        contact: { email: string; host_name: string | null; first_paid_unlock_at?: string | null; last_verified_at?: string | null },
+        creditCost: number,
+        freshness?: { stale?: boolean; revalidated?: boolean; message?: string },
+      ) => ({
         status: 'unlocked',
         current_stage: null,
         completed_stages: ['identify_contact', 'find_email', 'verify_email'],
@@ -1733,7 +1752,27 @@ serve(async (req) => {
         verified_at: contact.last_verified_at ?? new Date().toISOString(),
         scope: 'global',
         credit_cost: creditCost,
+        stale: freshness?.stale === true,
+        ...(freshness?.revalidated ? { revalidated: true } : {}),
+        ...(freshness?.message ? { message: freshness.message } : {}),
       })
+
+      // Reading the workspace's Instantly key is only worth doing when there is
+      // something to verify, so it is resolved on demand rather than up front.
+      const readInstantlyKey = async (): Promise<string | null> => {
+        const { data: integration } = await authContext.admin
+          .from('workspace_instantly_integrations')
+          .select('status, api_key_ciphertext, api_key_iv')
+          .eq('workspace_id', workspaceId)
+          .maybeSingle()
+        if (!integration || integration.status !== 'connected' || !integration.api_key_ciphertext || !integration.api_key_iv) {
+          return null
+        }
+        return await decryptInstantlyApiKey({
+          ciphertext: integration.api_key_ciphertext,
+          iv: integration.api_key_iv,
+        })
+      }
 
       if (catalogRow) {
         const { data: existingContact } = await authContext.admin
@@ -1743,12 +1782,71 @@ serve(async (req) => {
           .eq('verification_status', 'verified')
           .maybeSingle()
         if (existingContact?.email) {
-          await authContext.admin
-            .from('client_dashboard_podcasts')
-            .update({ email_unlock_progress: null })
-            .eq('id', shortlistPodcastId)
-            .eq('client_id', clientId)
-          return jsonResponse(req, METHODS, 200, { email_unlock: buildUnlockedPayload(existingContact, 0) })
+          const clearProgress = async () => {
+            await authContext.admin
+              .from('client_dashboard_podcasts')
+              .update({ email_unlock_progress: null })
+              .eq('id', shortlistPodcastId)
+              .eq('client_id', clientId)
+          }
+          const verifiedAt = existingContact.last_verified_at
+            ? Date.parse(existingContact.last_verified_at)
+            : Number.NaN
+          const stale = !Number.isFinite(verifiedAt)
+            || Date.now() - verifiedAt > DIRECT_CONTACT_FRESH_DAYS * DAY_MS
+
+          if (!stale) {
+            await clearProgress()
+            return jsonResponse(req, METHODS, 200, { email_unlock: buildUnlockedPayload(existingContact, 0) })
+          }
+
+          // The address is past its shelf life. Re-check it before handing it
+          // over: an unchecked address costs a bounce against the sender's
+          // reputation, which is more expensive than one verification call.
+          const revalidationKey = await readInstantlyKey()
+          if (!revalidationKey) {
+            // Nothing to verify with. Returning the address flagged beats
+            // withholding a contact the workspace already owns.
+            await clearProgress()
+            return jsonResponse(req, METHODS, 200, {
+              email_unlock: buildUnlockedPayload(existingContact, 0, {
+                stale: true,
+                message: 'This address has not been re-checked in over 90 days. Connect Instantly in the Outreach suite to re-verify it before sending.',
+              }),
+            })
+          }
+
+          const recheck = await verifyEmailWithInstantly(revalidationKey, existingContact.email).catch(() => null)
+          if (recheck?.status === 'verified') {
+            const { data: refreshed } = await authContext.admin.rpc('record_global_podcast_direct_contact_v1', {
+              p_podscan_id: shortlistRow.podcast_id,
+              p_email: existingContact.email,
+              p_host_name: existingContact.host_name,
+              p_provider: 'instantly-verification',
+              p_workspace_id: workspaceId,
+              p_actor_user_id: authContext.user.id,
+            })
+            await clearProgress()
+            // Re-verification is platform hygiene, not a new unlock: the RPC
+            // only allows a charge on a show's first global unlock, and this
+            // show already had one.
+            return jsonResponse(req, METHODS, 200, {
+              email_unlock: buildUnlockedPayload({
+                email: existingContact.email,
+                host_name: existingContact.host_name,
+                first_paid_unlock_at: existingContact.first_paid_unlock_at,
+                last_verified_at: (refreshed as { verified_at?: string } | null)?.verified_at
+                  ?? new Date().toISOString(),
+              }, 0, { revalidated: true }),
+            })
+          }
+
+          // The re-check failed or the address no longer verifies. Retire it and
+          // fall through to a full search for a replacement, which is free
+          // because this show's paid unlock already happened.
+          await authContext.admin.rpc('expire_global_podcast_direct_contact_v1', {
+            p_podscan_id: shortlistRow.podcast_id,
+          })
         }
       }
 
@@ -1764,18 +1862,10 @@ serve(async (req) => {
         throw new HttpError(409, 'EMAIL_SEARCH_ALREADY_RUNNING', 'A direct email search is already running for this podcast')
       }
 
-      const { data: integration } = await authContext.admin
-        .from('workspace_instantly_integrations')
-        .select('status, api_key_ciphertext, api_key_iv')
-        .eq('workspace_id', workspaceId)
-        .maybeSingle()
-      if (!integration || integration.status !== 'connected' || !integration.api_key_ciphertext || !integration.api_key_iv) {
+      const instantlyKey = await readInstantlyKey()
+      if (!instantlyKey) {
         throw new HttpError(409, 'INSTANTLY_NOT_CONNECTED', 'Connect Instantly in the Outreach suite before running the direct email search')
       }
-      const instantlyKey = await decryptInstantlyApiKey({
-        ciphertext: integration.api_key_ciphertext,
-        iv: integration.api_key_iv,
-      })
 
       const searchStartedAt = new Date().toISOString()
       const writeUnlockProgress = async (progress: Record<string, unknown>) => {

@@ -31,6 +31,10 @@ export interface ClientShortlistEmailUnlock {
   verified_at?: string | null
   scope?: 'global' | null
   credit_cost?: number | null
+  /** Verified more than 90 days ago and not re-checked — send at your own risk. */
+  stale?: boolean
+  /** The stored address was re-checked on this request and still verifies. */
+  revalidated?: boolean
 }
 
 export interface ClientShortlistCategory {
