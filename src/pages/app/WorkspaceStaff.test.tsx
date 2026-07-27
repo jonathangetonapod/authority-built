@@ -622,6 +622,39 @@ describe('WorkspaceStaff', () => {
     expect(await screen.findByRole('dialog', { name: 'Save the temporary password' })).toBeInTheDocument()
   })
 
+  it('shows how long an invite has gone unclaimed, not just that it is pending', async () => {
+    const fiveDaysAgo = new Date(Date.now() - 5 * 86_400_000).toISOString()
+    mockedList.mockResolvedValue({
+      ...ownerView,
+      members: [
+        owner,
+        {
+          ...admin,
+          id: '44444444-4444-4444-8444-444444444444',
+          email: 'stalled@example.com',
+          full_name: 'Stalled Owner',
+          status: 'invited',
+          setup_method: 'admin_temporary_password',
+          invited_at: fiveDaysAgo,
+          accepted_at: null,
+        },
+      ],
+    })
+    renderPage()
+
+    // A temporary password is handed over by a person, so it can simply never
+    // arrive. "Password change required" read the same on day one and day five.
+    expect(await screen.findByText(/Never signed in · 5 days ago/)).toBeInTheDocument()
+  })
+
+  it('leaves a member who has signed in unmarked', async () => {
+    mockedList.mockResolvedValue({ ...ownerView, members: [owner, admin] })
+    renderPage()
+
+    await screen.findByText('Workspace Owner')
+    expect(screen.queryByText(/Never signed in/)).not.toBeInTheDocument()
+  })
+
   it('fails closed when selected-workspace data names a different workspace', async () => {
     mockedList.mockResolvedValue({
       ...ownerView,

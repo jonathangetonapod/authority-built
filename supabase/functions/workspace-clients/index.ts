@@ -963,6 +963,31 @@ serve(async (req) => {
       })
     }
 
+    // Plan limit, checked here rather than in the browser. included_active_clients
+    // has existed since billing was sketched and nothing has ever read it, so the
+    // cap was only a number in a column. Only creation is gated: editing or
+    // reactivating an existing client must never be blocked by a limit changed
+    // after they signed up.
+    if (action === 'create') {
+      const { data: allowanceRows, error: allowanceError } = await admin.rpc(
+        'workspace_client_allowance_v1',
+        { p_workspace_id: workspaceId },
+      )
+      if (allowanceError) {
+        throw new HttpError(503, 'PLAN_LIMIT_UNCHECKED', 'The plan limit could not be verified. Try again shortly')
+      }
+      const allowance = (allowanceRows ?? [])[0] as
+        | { active_clients?: number; client_limit?: number; can_add_client?: boolean }
+        | undefined
+      if (allowance && allowance.can_add_client === false) {
+        throw new HttpError(
+          409,
+          'CLIENT_LIMIT_REACHED',
+          `This plan covers ${allowance.client_limit} active clients and ${allowance.active_clients} are already active. Archive a client or upgrade to add another.`,
+        )
+      }
+    }
+
     const { data, error } = await admin.rpc('workspace_client_operation_v2', {
       p_action: action,
       p_workspace_id: workspaceId,

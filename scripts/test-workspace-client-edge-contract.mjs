@@ -307,3 +307,18 @@ assert.match(
   /update\(\{ prospect_dashboard_slug: prospectSlug, updated_at: new Date\(\)\.toISOString\(\) \}\)\s*\.eq\('id', clientId!\)\s*\.eq\('workspace_id', workspaceId\)/u,
 )
 assert.match(clientsEdge, /action: prospectSlug \? 'client\.prospect_page\.linked' : 'client\.prospect_page\.unlinked'/u)
+
+// The plan's client allowance is enforced on the server. included_active_clients
+// has existed since billing was first sketched and nothing ever read it, so the
+// cap was only a number in a column.
+assert.match(
+  clientsEdge,
+  /if \(action === 'create'\)[\s\S]*?workspace_client_allowance_v1[\s\S]*?CLIENT_LIMIT_REACHED/u,
+)
+// Only creation is gated: a limit changed after signup must never block editing
+// or reactivating a client the customer already has.
+const createGate = clientsEdge.match(/\/\/ Plan limit, checked here[\s\S]*?\n    \}\n/u)
+assert.ok(createGate, 'the plan limit gate must exist')
+assert.match(createGate[0], /if \(action === 'create'\)/u)
+// A failed limit check refuses rather than silently allowing an extra client.
+assert.match(createGate[0], /PLAN_LIMIT_UNCHECKED/u)

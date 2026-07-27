@@ -67,7 +67,9 @@ async function ensureMonthlyAllowance(
     if (insertError) {
       throw new HttpError(503, 'BILLING_UNAVAILABLE', 'Billing is temporarily unavailable')
     }
-    allowance = 25
+    // Matches the column default. A literal here that disagrees with the
+    // schema is how a workspace silently lands on the wrong plan.
+    allowance = 100
   }
   if (typeof allowance !== 'number' || allowance < 1) return
 

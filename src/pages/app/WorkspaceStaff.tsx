@@ -183,6 +183,20 @@ function confirmationCopy(
   }
 }
 
+/**
+ * Days since an invite that was never taken up, or null when the member is
+ * through the door. Credentials for admin_temporary_password accounts are
+ * handed over by a person rather than emailed, so a stalled invite is invisible
+ * unless the list says so.
+ */
+function staleInviteDays(member: { status: string; accepted_at?: string | null; invited_at?: string | null }): number | null {
+  if (member.accepted_at) return null
+  if (member.status !== 'invited' && member.status !== 'provisioning') return null
+  const invitedAt = member.invited_at ? Date.parse(member.invited_at) : Number.NaN
+  if (!Number.isFinite(invitedAt)) return null
+  return Math.max(0, Math.floor((Date.now() - invitedAt) / 86_400_000))
+}
+
 const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
   const { membership, refreshAccount, refreshSession, signOut, user, workspace } = useAuth()
   const queryClient = useQueryClient()
@@ -957,6 +971,20 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                                       : member.status}
                                 </Badge>
                                 {member.pending_review && <p className="mt-1 max-w-44 text-xs text-destructive">Provider reconciliation requires review.</p>}
+                                {/* A temporary password is handed over by a
+                                    person, so it can simply never arrive. The
+                                    row said "Password change required" whether
+                                    that was yesterday or a fortnight ago, and
+                                    nothing distinguished waiting from stuck. */}
+                                {(() => {
+                                  const stalledDays = staleInviteDays(member)
+                                  if (stalledDays === null) return null
+                                  return (
+                                    <p className="mt-1 max-w-44 text-xs font-medium text-amber-700">
+                                      Never signed in · {stalledDays === 0 ? 'invited today' : `${stalledDays} day${stalledDays === 1 ? '' : 's'} ago`}
+                                    </p>
+                                  )
+                                })()}
                               </TableCell>
                               <TableCell>{formatDate(member.accepted_at || member.invited_at)}</TableCell>
                               <TableCell className="text-right">
