@@ -43,6 +43,8 @@ export interface WorkspaceProspect {
   prospect_expertise: string[] | null
   prospect_topics: string[] | null
   prospect_target_audience: string | null
+  /** The client this prospect became, when one has been linked. */
+  linked_client?: { id: string; name: string; status: string } | null
   lifecycle_status: ProspectLifecycleStatus
   build_error: string | null
   build_started_at: string | null

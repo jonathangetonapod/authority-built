@@ -78,3 +78,12 @@ assert.match(publicFeedback, /lifecycle_status: dashboard\.lifecycle_status === 
 assert.match(publicDashboard, /brand_name: workspace\.client_brand_name \|\| workspace\.name/u)
 
 process.stdout.write('Workspace Prospect Studio Edge contract checks passed\n')
+
+// A prospect page can say which client it became. The link lives on the client,
+// so it has to be read back — and scoped to this workspace, since the slug is a
+// public capability URL.
+assert.match(
+  studio,
+  /const linkedClientsResult = slugs\.length > 0[\s\S]*?from\('clients'\)[\s\S]*?\.eq\('workspace_id', workspaceId\)[\s\S]*?\.in\('prospect_dashboard_slug', slugs\)/u,
+)
+assert.match(studio, /linked_client: clientBySlug\.get\(dashboard\.slug\) \?\? null/u)

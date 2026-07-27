@@ -27,6 +27,7 @@ import {
   Trash2,
   UserRound,
   Users,
+  UserCheck,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
@@ -477,6 +478,14 @@ function ProspectListCard({
           {lifecycleLabel(prospect.lifecycle_status)}
         </Badge>
       </div>
+      {/* The link is stored on the client, so a prospect page could not say
+          whether it converted without reading it back. */}
+      {prospect.linked_client && (
+        <p className="mt-2 flex items-center gap-1.5 truncate text-[11px] font-medium text-emerald-700">
+          <UserCheck className="h-3 w-3 shrink-0" />
+          Became {prospect.linked_client.name}
+        </p>
+      )}
       <div className="mt-2.5 flex items-center justify-between text-[11px] text-muted-foreground">
         <span>{prospect.readiness.visible_count} matches</span>
         <span>{prospect.view_count || 0} views</span>
@@ -954,6 +963,15 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                             </div>
                             <p className="mt-1 truncate text-sm text-white/75">{[selected.prospect_title, selected.prospect_company].filter(Boolean).join(' · ') || 'Prospect dashboard'}</p>
                             <p className="mt-0.5 text-xs text-white/50">Updated {formatDate(selected.updated_at)}</p>
+                            {selected.linked_client && (
+                              <Link
+                                to={`${workspaceBaseHref}/clients/${selected.linked_client.id}`}
+                                className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-200 hover:underline"
+                              >
+                                <UserCheck className="h-3.5 w-3.5" />
+                                Became the client {selected.linked_client.name}
+                              </Link>
+                            )}
                           </div>
                         </div>
                         {canManage && <Button variant="secondary" className="w-full shrink-0 sm:w-auto" onClick={openEdit}><Pencil className="mr-2 h-4 w-4" />Edit profile</Button>}

@@ -531,6 +531,25 @@ describe('WorkspaceClientDetail', () => {
     ))
   })
 
+  it('shows every match rather than truncating the list', async () => {
+    vi.mocked(getWorkspaceProspects).mockResolvedValue({
+      dashboards: Array.from({ length: 40 }, (_value, index) => ({
+        slug: `prospect-${index}`,
+        prospect_name: `Prospect ${index}`,
+        prospect_company: null,
+        prospect_email: null,
+      })),
+    } as never)
+    renderPage()
+
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: /Files/i }), { button: 0 })
+    fireEvent.click(await screen.findByRole('button', { name: /Link a prospect page/i }))
+
+    // The 26th onwards used to be unreachable behind a "narrow the search" note.
+    expect(await screen.findByText('Prospect 39')).toBeInTheDocument()
+    expect(screen.getByText('40 pages available')).toBeInTheDocument()
+  })
+
   it('explains an empty prospect list rather than showing a blank picker', async () => {
     vi.mocked(getWorkspaceProspects).mockResolvedValue({ dashboards: [] } as never)
     renderPage()

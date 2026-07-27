@@ -1110,6 +1110,27 @@ serve(async (req) => {
         bucket.push(row)
         shortlistByDashboard.set(row.prospect_dashboard_id, bucket)
       }
+      // Which client this prospect became, if any. The link is stored on the
+      // client, so without reading it back a prospect page cannot say whether
+      // it converted — the operator has to remember, or check every client.
+      const slugs = rows.map((dashboard) => dashboard.slug).filter(Boolean)
+      const linkedClientsResult = slugs.length > 0
+        ? await context.admin
+          .from('clients')
+          .select('id,name,status,prospect_dashboard_slug')
+          .eq('workspace_id', workspaceId)
+          .in('prospect_dashboard_slug', slugs)
+          .limit(1_000)
+        : { data: [], error: null }
+      const clientBySlug = new Map<string, { id: string; name: string; status: string }>()
+      for (const row of ((linkedClientsResult.error ? [] : linkedClientsResult.data ?? []) as Array<Record<string, unknown>>)) {
+        if (typeof row.prospect_dashboard_slug !== 'string') continue
+        clientBySlug.set(row.prospect_dashboard_slug, {
+          id: String(row.id),
+          name: String(row.name ?? ''),
+          status: String(row.status ?? ''),
+        })
+      }
       return jsonResponse(req, METHODS, 200, {
         workspace,
         viewer_role: access.role,
@@ -1117,6 +1138,7 @@ serve(async (req) => {
         dashboards: rows.map((dashboard) => ({
           ...dashboard,
           readiness: readinessForRows(dashboard, shortlistByDashboard.get(dashboard.id) || []),
+          linked_client: clientBySlug.get(dashboard.slug) ?? null,
         })),
       })
     }

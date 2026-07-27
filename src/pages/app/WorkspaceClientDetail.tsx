@@ -1728,7 +1728,13 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
               autoFocus
             />
           </div>
-          <div className="mt-3 space-y-2">
+          {prospectMatches.length > 0 && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {prospectMatches.length} {prospectMatches.length === 1 ? 'page' : 'pages'}
+              {prospectSearch.trim() ? ' match' : ' available'}
+            </p>
+          )}
+          <div className="mt-2 max-h-80 space-y-2 overflow-y-auto pr-1">
             {prospectsQuery.isLoading && (
               <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />Loading prospect pages…
@@ -1752,7 +1758,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                 </p>
               </div>
             )}
-            {prospectMatches.slice(0, 25).map((prospect) => {
+            {prospectMatches.map((prospect) => {
               const isCurrent = prospect.slug === client.prospect_dashboard_slug
               return (
                 <button
@@ -1776,11 +1782,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                 </button>
               )
             })}
-            {prospectMatches.length > 25 && (
-              <p className="px-1 text-xs text-muted-foreground">
-                Showing the first 25 of {prospectMatches.length}. Narrow the search to see the rest.
-              </p>
-            )}
+
           </div>
           <DialogFooter className="mt-4">
             {client.prospect_dashboard_slug && (
