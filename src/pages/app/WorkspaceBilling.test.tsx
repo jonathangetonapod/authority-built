@@ -54,7 +54,7 @@ function renderPage() {
 describe('WorkspaceBilling', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('keeps Waterfall pack selection in Settings billing', () => {
+  it('advertises only the packs the server will actually charge', async () => {
     mockedUseAuth.mockReturnValue({
       isPlatformAdmin: false,
       canManageWorkspaceStaff: true,
@@ -66,20 +66,15 @@ describe('WorkspaceBilling', () => {
 
     expect(screen.getByRole('heading', { name: 'Billing & credits' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Back to settings' })).toHaveAttribute('href', '/app/settings')
-    expect(screen.getByText('Available on Solo')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Select 100 credits for $39' })).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.getByRole('button', { name: 'Select 500 credits for $149' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Select 2,000 credits for $399' })).toHaveAttribute('aria-pressed', 'false')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Select 2,000 credits for $399' }))
-    expect(screen.getByRole('button', { name: 'Select 2,000 credits for $399' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText('High volume')).toBeInTheDocument()
-    expect(screen.queryByText(/per verified email/i)).not.toBeInTheDocument()
-    expect(screen.getByText('One-time purchase; your plan will not change')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Continue to secure checkout · $399' })).toBeInTheDocument()
-    expect(screen.getByText(/No charge for unsuccessful searches/i)).toBeInTheDocument()
-    expect(screen.getByText('Global cache first')).toBeInTheDocument()
-    expect(screen.getByText(/reuse the verified contact for 0 credits/i)).toBeInTheDocument()
+    // These mirror CREDIT_PACKS in workspace-credit-checkout. The page used to
+    // carry a second, unwired list at $0.39/credit beside a real one charging
+    // $0.98, and a button admitting checkout "will be connected".
+    expect(await screen.findByRole('button', { name: 'Buy for $29' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Buy for $69' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Buy for $149' })).toBeInTheDocument()
+    expect(screen.queryByText(/Secure checkout will be connected/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Select .* credits for/ })).not.toBeInTheDocument()
   })
 
   it('shows the live credit balance, usage, and dry-run notice', async () => {
