@@ -154,7 +154,12 @@ export async function captureHostRelationshipThread(
     campaignId?: string | null
     campaignName?: string | null
   },
-): Promise<{ podcast_id: string; relationship_created: boolean; thread_saved: boolean }> {
+): Promise<{
+  podcast_id: string
+  relationship_created: boolean
+  thread_saved: boolean
+  show_identified?: boolean
+}> {
   return await invokeHostRelationships({
     action: 'thread-capture',
     workspace_id: workspaceId.toLowerCase(),

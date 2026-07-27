@@ -313,27 +313,40 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
     || null
 
   const captureRelationshipMutation = useMutation({
-    mutationFn: (thread: WorkspaceInboxThread) => captureHostRelationshipThread(workspaceId, {
-      podcastId: thread.lead_context?.podcast_id ?? null,
-      podcastName: thread.lead_context?.podcast_name
-        || `Conversation with ${leadName}`,
-      hostName: leadFullName || thread.lead_context?.host_name || null,
-      contactEmail: leadDetail?.email || thread.lead_email || thread.from_email || null,
-      threadKey: thread.thread_key || thread.id,
-      clientId: thread.campaign?.client?.id ?? null,
-      messageId: thread.id,
-      subject: thread.subject || null,
-      fromEmail: thread.from_email || null,
-      toEmail: thread.to_email || null,
-      body: thread.body_text || null,
-      receivedAt: thread.received_at,
-      campaignId: thread.campaign?.campaign_id ?? null,
-      campaignName: thread.campaign?.campaign_name ?? null,
-    }),
+    mutationFn: (thread: WorkspaceInboxThread) => {
+      const isSelected = thread.id === selectedThread?.id
+      return captureHostRelationshipThread(workspaceId, {
+        podcastId: thread.lead_context?.podcast_id ?? null,
+        // Never a stand-in name. podcast_name is the show's identity in the
+        // relationship book and part of how it dedupes a host across clients,
+        // so a placeholder here forks one host into two rows later. Sending
+        // null lets the server resolve the show from the host's address.
+        podcastName: thread.lead_context?.podcast_name || null,
+        // leadDetail is fetched for the open conversation only, so its
+        // identity may only be stamped on that same thread.
+        hostName: (isSelected ? leadFullName : '') || thread.lead_context?.host_name || null,
+        contactEmail: (isSelected ? leadDetail?.email : null)
+          || thread.lead_email || thread.from_email || null,
+        threadKey: thread.thread_key || thread.id,
+        clientId: thread.campaign?.client?.id ?? null,
+        messageId: thread.id,
+        subject: thread.subject || null,
+        fromEmail: thread.from_email || null,
+        toEmail: thread.to_email || null,
+        body: thread.body_text || null,
+        receivedAt: thread.received_at,
+        campaignId: thread.campaign?.campaign_id ?? null,
+        campaignName: thread.campaign?.campaign_name ?? null,
+      })
+    },
     onSuccess: (result) => {
-      toast.success(result.relationship_created
-        ? 'Relationship created and conversation saved.'
-        : 'Conversation saved to the relationship book.')
+      // An unidentified row is a task, not a failure: say so, so nobody has to
+      // notice it later in a list of shows that all look named.
+      toast.success(result.show_identified === false
+        ? 'Conversation saved. The show could not be identified from this address — name it in Relationships.'
+        : result.relationship_created
+          ? 'Relationship created and conversation saved.'
+          : 'Conversation saved to the relationship book.')
       void inboxQuery.refetch()
       void queryClient.invalidateQueries({ queryKey: ['host-relationships', workspaceId] })
       void queryClient.invalidateQueries({ queryKey: ['host-relationship', workspaceId, result.podcast_id] })

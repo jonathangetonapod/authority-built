@@ -18,6 +18,10 @@ const auditRepairMigration = readFileSync(
   'supabase/migrations/20260728000800_relationship_audit_repair.sql',
   'utf8',
 )
+const emailLookupMigration = readFileSync(
+  'supabase/migrations/20260728000900_relationship_email_show_lookup.sql',
+  'utf8',
+)
 const enrollTick = readFileSync('supabase/functions/inbox-enroll-tick/index.ts', 'utf8')
 const campaignEdge = readFileSync('supabase/functions/workspace-client-campaigns/index.ts', 'utf8')
 const shortlistEdge = readFileSync('supabase/functions/workspace-client-shortlist/index.ts', 'utf8')
@@ -36,6 +40,13 @@ assert.match(edge, /requireWorkspaceFeatureAccess\(authContext, workspaceId\)/u)
 assert.match(edge, /const MANAGER_ROLES = new Set\(\['owner', 'admin', 'platform_admin'\]\)/u)
 assert.match(edge, /if \(action === 'list'\)[\s\S]*?workspace_host_relationship_book_v1/u)
 assert.match(edge, /select\('podscan_id, podcast_image_url'\)[\s\S]*?podcast_image_url:/u)
+// Hand-added and inbox-captured shows hold a generated id, so name is the only
+// remaining route to their cover art — and a duplicated name resolves to null
+// rather than putting one show's artwork on another's relationship.
+assert.match(edge, /select\('podcast_name, podcast_image_url'\)[\s\S]*?artworkByName\.has\(name\) \? null :/u)
+assert.match(edge, /podcast_image_url: byId \?\? byName/u)
+// Artwork is rendered into an <img src>; only http(s) may reach the browser.
+assert.match(edge, /function imageUrl\([\s\S]*?\^https\?:\\\/\\\/[\s\S]*?\}/u)
 assert.match(edge, /if \(action === 'detail'\)[\s\S]*?workspace_podcast_relationships_v1/u)
 
 for (const action of ['create', 'thread-capture', 'upsert', 'note-add', 'client-link', 'client-unlink']) {
@@ -63,6 +74,43 @@ assert.match(threadCaptureMigration, /PRIMARY KEY \(workspace_id, thread_key\)/u
 assert.match(threadCaptureMigration, /latest_message_body TEXT/u)
 assert.match(threadCaptureMigration, /workspace_host_relationship_threads_workspace_client_fk/u)
 assert.match(threadCaptureMigration, /ALTER TABLE public\.workspace_host_relationship_threads FORCE ROW LEVEL SECURITY/u)
+
+// A reply that arrives without campaign context is resolved to its show by
+// the host's address — book, then this workspace's targets, then the shared
+// catalog — and an ambiguous address resolves to nothing rather than a guess.
+assert.match(edge, /async function resolveShowByEmail\(/u)
+assert.match(edge, /function onlyShow\([\s\S]*?byId\.size === 1 \? \[\.\.\.byId\.values\(\)\]\[0\] : null/u)
+assert.match(
+  edge,
+  /resolveShowByEmail\([\s\S]*?from\('workspace_host_relationships'\)[\s\S]*?\.eq\('contact_email', email\)[\s\S]*?from\('workspace_client_campaign_targets'\)[\s\S]*?\.eq\('normalized_contact_email', email\)[\s\S]*?from\('podcast_direct_contacts'\)[\s\S]*?\.eq\('normalized_email', email\)/u,
+  'email resolution must try the book, then workspace targets, then the shared catalog',
+)
+assert.match(edge, /const resolved = showId \|\| !contactEmail\s+\? null\s+: await resolveShowByEmail\(admin, workspaceId, contactEmail, showName\)/u)
+assert.match(edge, /showId \?\?= resolved\?\.podcastId \?\? newManualPodcastId\(\)/u)
+// An unresolved capture stays unnamed. A placeholder show name would become
+// this host's identity and fork the book once the real name appears.
+assert.match(edge, /podcast_name: resolvedName,\s+host_name: resolvedHost,/u)
+assert.doesNotMatch(edge, /podcast_name is required when the conversation is not mapped to a show/u)
+assert.doesNotMatch(masterInbox, /Conversation with \$\{/u)
+assert.match(masterInbox, /podcastName: thread\.lead_context\?\.podcast_name \|\| null/u)
+assert.match(masterInbox, /const isSelected = thread\.id === selectedThread\?\.id/u)
+assert.match(masterInbox, /result\.show_identified === false/u)
+assert.match(edge, /show_identified: Boolean\(/u)
+assert.match(edge, /show_resolved_from_email: Boolean\(resolved\)/u)
+assert.match(page, /'Show not identified'/u)
+assert.doesNotMatch(page, /Untitled show/u)
+assert.match(
+  emailLookupMigration,
+  /ADD COLUMN IF NOT EXISTS normalized_contact_email TEXT\s+GENERATED ALWAYS AS \(lower\(btrim\(contact_email\)\)\) STORED/u,
+)
+assert.match(emailLookupMigration, /workspace_client_campaign_targets_contact_email_idx/u)
+assert.match(emailLookupMigration, /workspace_host_relationships_contact_email_idx/u)
+// The placeholder backfill must match only the machine-generated string, so an
+// operator-typed show name can never be erased by it.
+assert.match(
+  emailLookupMigration,
+  /UPDATE public\.workspace_host_relationships\s+SET podcast_name = NULL[\s\S]*?podcast_name = 'Conversation with ' \|\| contact_email/u,
+)
 
 // Upsert is a field-preserving patch. A summary-only save must not null the
 // stage or host metadata, and stage changes leave an append-only event.

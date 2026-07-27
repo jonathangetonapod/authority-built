@@ -395,7 +395,7 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
   const selectedName = decodeHtmlEntities(
     detail?.relationship?.podcast_name
     || openRow?.podcast_name
-    || 'Untitled show',
+    || 'Show not identified',
   )
   const selectedHost = decodeHtmlEntities(
     detail?.relationship?.host_name
@@ -556,9 +556,9 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
                 <CardHeader className="pb-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
-                      <PodcastArtwork imageUrl={row.podcast_image_url} name={row.podcast_name ?? 'Untitled show'} />
+                      <PodcastArtwork imageUrl={row.podcast_image_url} name={row.podcast_name ?? 'Show not identified'} />
                       <div className="min-w-0">
-                        <CardTitle className="truncate text-base">{decodeHtmlEntities(row.podcast_name ?? 'Untitled show')}</CardTitle>
+                        <CardTitle className="truncate text-base">{decodeHtmlEntities(row.podcast_name ?? 'Show not identified')}</CardTitle>
                         <CardDescription className="mt-1 truncate">
                           {decodeHtmlEntities(row.host_name || 'Host not identified')}
                           {row.contact_email ? ` · ${row.contact_email}` : ''}

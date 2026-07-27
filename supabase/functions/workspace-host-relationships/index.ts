@@ -8,6 +8,7 @@
 // written here; these actions curate only what a person decides.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
 
 import {
   errorResponse,
@@ -64,8 +65,116 @@ function optionalTimestamp(value: unknown, field: string): string | null {
   return new Date(milliseconds).toISOString()
 }
 
+// Cover art is rendered into an <img src>, so only http(s) is accepted here.
+// A catalog row carrying a javascript: or data: URL must fall back to initials.
+function imageUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const url = value.trim()
+  if (!/^https?:\/\//i.test(url)) return null
+  return url.slice(0, 2_000)
+}
+
 function newManualPodcastId(): string {
   return `manual-${crypto.randomUUID()}`
+}
+
+interface ResolvedShow {
+  podcastId: string
+  podcastName: string | null
+  hostName: string | null
+}
+
+function text(value: unknown, max: number): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null
+}
+
+// One address may have been pitched for more than one show. Picking either is
+// worse than picking neither: a conversation filed under the wrong show is a
+// lie the operator has no reason to check. Only an unambiguous match resolves.
+function onlyShow(candidates: Array<ResolvedShow | null>): ResolvedShow | null {
+  const byId = new Map<string, ResolvedShow>()
+  for (const candidate of candidates) {
+    if (candidate && !byId.has(candidate.podcastId)) byId.set(candidate.podcastId, candidate)
+  }
+  return byId.size === 1 ? [...byId.values()][0] : null
+}
+
+// An inbound reply carries an address and nothing else. What that address
+// means — which show, which host — is already recorded in the campaign that
+// pitched it, or in the shared catalog. Resolving it here is what keeps a
+// host from entering the book twice under two different names.
+//
+// `preferredName` only disambiguates rows that already share this address in
+// the book; it never invents a match.
+async function resolveShowByEmail(
+  admin: SupabaseClient,
+  workspaceId: string,
+  email: string,
+  preferredName: string | null,
+): Promise<ResolvedShow | null> {
+  // 1. The book itself. An operator-curated row outranks every derived source.
+  const { data: known, error: knownError } = await admin.from('workspace_host_relationships')
+    .select('podcast_id, podcast_name, host_name')
+    .eq('workspace_id', workspaceId).eq('contact_email', email).limit(50)
+  if (knownError) {
+    throw new HttpError(500, 'RELATIONSHIP_THREAD_FAILED', 'The conversation could not be saved')
+  }
+  const knownRows = (known ?? []) as Array<Record<string, unknown>>
+  const named = preferredName
+    ? knownRows.find((row) => (
+      typeof row.podcast_name === 'string'
+      && row.podcast_name.trim().toLowerCase() === preferredName.toLowerCase()
+    ))
+    : undefined
+  const knownMatch = named ?? (knownRows.length === 1 ? knownRows[0] : null)
+  if (knownMatch && typeof knownMatch.podcast_id === 'string') {
+    return {
+      podcastId: knownMatch.podcast_id,
+      podcastName: text(knownMatch.podcast_name, 500),
+      hostName: text(knownMatch.host_name, 300),
+    }
+  }
+
+  // 2. This workspace's own outreach. Targets carry the show the address was
+  //    pitched for, across every client, which is the strongest evidence the
+  //    workspace owns about who this person is.
+  const { data: targets, error: targetsError } = await admin.from('workspace_client_campaign_targets')
+    .select('podcast_id, podcast_name, host_name')
+    .eq('workspace_id', workspaceId).eq('normalized_contact_email', email).limit(200)
+  if (targetsError) {
+    throw new HttpError(500, 'RELATIONSHIP_THREAD_FAILED', 'The conversation could not be saved')
+  }
+  const fromTargets = onlyShow(((targets ?? []) as Array<Record<string, unknown>>).map((row) => (
+    typeof row.podcast_id === 'string' && row.podcast_id
+      ? {
+        podcastId: row.podcast_id,
+        podcastName: text(row.podcast_name, 500),
+        hostName: text(row.host_name, 300),
+      }
+      : null
+  )))
+  if (fromTargets) return fromTargets
+
+  // 3. The shared catalog. This reads identity only — the show's name and its
+  //    host — for an address the workspace already possesses in its own inbox,
+  //    so no contact data crosses a tenant boundary here.
+  const { data: contacts, error: contactsError } = await admin.from('podcast_direct_contacts')
+    .select('host_name, podcasts:podcast_id (podscan_id, podcast_name, host_name)')
+    .eq('normalized_email', email).limit(50)
+  if (contactsError) {
+    throw new HttpError(500, 'RELATIONSHIP_THREAD_FAILED', 'The conversation could not be saved')
+  }
+  return onlyShow(((contacts ?? []) as Array<Record<string, unknown>>).map((row) => {
+    const show = (Array.isArray(row.podcasts) ? row.podcasts[0] : row.podcasts) as
+      Record<string, unknown> | null | undefined
+    const podscanId = text(show?.podscan_id, 200)
+    if (!podscanId) return null
+    return {
+      podcastId: podscanId,
+      podcastName: text(show?.podcast_name, 500),
+      hostName: text(row.host_name, 300) ?? text(show?.host_name, 300),
+    }
+  }))
 }
 
 serve(async (req) => {
@@ -109,18 +218,49 @@ serve(async (req) => {
           .select('podscan_id, podcast_image_url')
           .in('podscan_id', showIds)
         for (const row of artworkRows ?? []) {
-          if (typeof row.podscan_id === 'string' && typeof row.podcast_image_url === 'string') {
-            artworkByShow.set(row.podscan_id, row.podcast_image_url)
+          const image = imageUrl(row.podcast_image_url)
+          if (typeof row.podscan_id === 'string' && image) {
+            artworkByShow.set(row.podscan_id, image)
           }
         }
       }
+
+      // A relationship added by hand, or opened from an inbound reply, carries
+      // a generated id that can never join the catalog on podscan_id, so its
+      // name is the only remaining link back to the show. Matched exactly, and
+      // only when the catalog holds a single show under that name: two shows
+      // sharing a title would otherwise put one show's cover on the other's
+      // relationship, and a wrong face is worse here than no face at all.
+      const unresolvedNames = [
+        ...new Set(relationships.flatMap((row) => (
+          typeof row.podcast_id === 'string'
+          && !artworkByShow.has(row.podcast_id)
+          && typeof row.podcast_name === 'string'
+          && row.podcast_name.trim() !== ''
+            ? [row.podcast_name.trim()]
+            : []
+        ))),
+      ]
+      const artworkByName = new Map<string, string | null>()
+      if (unresolvedNames.length > 0) {
+        const { data: namedRows } = await admin.from('podcasts')
+          .select('podcast_name, podcast_image_url')
+          .in('podcast_name', unresolvedNames)
+        for (const row of namedRows ?? []) {
+          if (typeof row.podcast_name !== 'string') continue
+          const name = row.podcast_name.trim()
+          artworkByName.set(name, artworkByName.has(name) ? null : imageUrl(row.podcast_image_url))
+        }
+      }
+
       return jsonResponse(req, METHODS, 200, {
-        relationships: relationships.map((row) => ({
-          ...row,
-          podcast_image_url: typeof row.podcast_id === 'string'
-            ? artworkByShow.get(row.podcast_id) ?? null
-            : null,
-        })),
+        relationships: relationships.map((row) => {
+          const byId = typeof row.podcast_id === 'string' ? artworkByShow.get(row.podcast_id) ?? null : null
+          const byName = typeof row.podcast_name === 'string'
+            ? artworkByName.get(row.podcast_name.trim()) ?? null
+            : null
+          return { ...row, podcast_image_url: byId ?? byName }
+        }),
       })
     }
 
@@ -396,24 +536,14 @@ serve(async (req) => {
 
       let showId = requestedPodcastId
         ?? (typeof savedThread?.podcast_id === 'string' ? savedThread.podcast_id : null)
-      if (!showId && contactEmail) {
-        const { data: matches, error: matchesError } = await admin.from('workspace_host_relationships')
-          .select('podcast_id, podcast_name')
-          .eq('workspace_id', workspaceId).eq('contact_email', contactEmail).limit(50)
-        if (matchesError) {
-          throw new HttpError(500, 'RELATIONSHIP_THREAD_FAILED', 'The conversation could not be saved')
-        }
-        const candidates = (matches ?? []) as Array<Record<string, unknown>>
-        const named = showName
-          ? candidates.find((row) => (
-            typeof row.podcast_name === 'string'
-            && row.podcast_name.trim().toLowerCase() === showName.toLowerCase()
-          ))
-          : null
-        const match = named ?? (candidates.length === 1 ? candidates[0] : null)
-        showId = typeof match?.podcast_id === 'string' ? match.podcast_id : null
-      }
-      showId ??= newManualPodcastId()
+      const resolved = showId || !contactEmail
+        ? null
+        : await resolveShowByEmail(admin, workspaceId, contactEmail, showName)
+      showId ??= resolved?.podcastId ?? newManualPodcastId()
+      // The caller's own name wins when it has one; the resolver supplies the
+      // identity for a reply that arrived with no campaign context at all.
+      const resolvedName = showName ?? resolved?.podcastName ?? null
+      const resolvedHost = hostName ?? resolved?.hostName ?? null
 
       const { data: current, error: currentError } = await admin.from('workspace_host_relationships')
         .select('podcast_id, podcast_name, host_name, contact_email')
@@ -423,14 +553,16 @@ serve(async (req) => {
       }
       let relationshipCreated = false
       if (!current) {
-        if (!showName) {
-          throw new HttpError(400, 'INVALID_FIELD', 'podcast_name is required when the conversation is not mapped to a show')
-        }
+        // An unnamed row is honest and repairable; a placeholder name is
+        // neither. podcast_name is how the book reconciles a host across
+        // clients, so a stand-in like "Conversation with <address>" would
+        // fork this host into a second row as soon as the show is known.
+        // Null leaves the identity patch below free to fill it in later.
         const { error: parentError } = await admin.from('workspace_host_relationships').insert({
           workspace_id: workspaceId,
           podcast_id: showId,
-          podcast_name: showName,
-          host_name: hostName,
+          podcast_name: resolvedName,
+          host_name: resolvedHost,
           contact_email: contactEmail,
           created_by: authContext.user.id,
         })
@@ -440,8 +572,8 @@ serve(async (req) => {
         relationshipCreated = true
       } else {
         const identityPatch: Record<string, unknown> = { updated_at: new Date().toISOString() }
-        if (!current.podcast_name && showName) identityPatch.podcast_name = showName
-        if (!current.host_name && hostName) identityPatch.host_name = hostName
+        if (!current.podcast_name && resolvedName) identityPatch.podcast_name = resolvedName
+        if (!current.host_name && resolvedHost) identityPatch.host_name = resolvedHost
         if (!current.contact_email && contactEmail) identityPatch.contact_email = contactEmail
         const { error: parentError } = await admin.from('workspace_host_relationships')
           .update(identityPatch).eq('workspace_id', workspaceId).eq('podcast_id', showId)
@@ -499,12 +631,18 @@ serve(async (req) => {
           client_id: captureClientId,
           provider,
           relationship_created: relationshipCreated,
+          show_resolved_from_email: Boolean(resolved),
         },
       })
       return jsonResponse(req, METHODS, 200, {
         podcast_id: showId,
         relationship_created: relationshipCreated,
         thread_saved: true,
+        // Lets the caller tell an operator the row still needs a show name
+        // instead of silently leaving an unidentified record in the book.
+        show_identified: Boolean(
+          (typeof current?.podcast_name === 'string' && current.podcast_name.trim()) || resolvedName,
+        ),
       })
     }
 

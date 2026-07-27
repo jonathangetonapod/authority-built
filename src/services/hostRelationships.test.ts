@@ -161,4 +161,43 @@ describe('hostRelationships service', () => {
       }),
     })
   })
+
+  it('captures a thread with no known show without inventing a name', async () => {
+    invoke.mockResolvedValueOnce({
+      data: {
+        podcast_id: 'manual-unknown',
+        relationship_created: true,
+        thread_saved: true,
+        show_identified: false,
+      },
+      error: null,
+    } as never)
+
+    // A reply with no campaign context sends podcast_name null on purpose: the
+    // server resolves the show from the address, and an unnamed row is
+    // repairable in a way a placeholder name is not.
+    await expect(captureHostRelationshipThread(workspaceId, {
+      podcastName: null,
+      hostName: null,
+      contactEmail: 'unknown-host@example.com',
+      threadKey: 'thread-two',
+    })).resolves.toEqual({
+      podcast_id: 'manual-unknown',
+      relationship_created: true,
+      thread_saved: true,
+      show_identified: false,
+    })
+
+    expect(invoke).toHaveBeenCalledWith('workspace-host-relationships', {
+      body: expect.objectContaining({
+        action: 'thread-capture',
+        workspace_id: canonicalWorkspaceId,
+        podcast_id: null,
+        podcast_name: null,
+        host_name: null,
+        contact_email: 'unknown-host@example.com',
+        thread_key: 'thread-two',
+      }),
+    })
+  })
 })
