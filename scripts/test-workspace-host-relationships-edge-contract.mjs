@@ -22,6 +22,10 @@ const emailLookupMigration = readFileSync(
   'supabase/migrations/20260728000900_relationship_email_show_lookup.sql',
   'utf8',
 )
+const manualOnlyMigration = readFileSync(
+  'supabase/migrations/20260728001700_relationship_book_manual_only.sql',
+  'utf8',
+)
 const legacyOutreachMigration = readFileSync(
   'supabase/migrations/20260728001100_relationship_legacy_outreach.sql',
   'utf8',
@@ -204,11 +208,6 @@ assert.match(
   legacyOutreachMigration,
   /COUNT\(DISTINCT l\.client_id\)::INTEGER FROM legacy l/u,
 )
-assert.match(
-  legacyOutreachMigration,
-  /WITH known AS \([\s\S]*?FROM public\.podcast_outreach_actions action_row[\s\S]*?action_row\.action = 'sent'/u,
-)
-assert.match(legacyOutreachMigration, /legacy_record\.podcast_name\) AS podcast_name/u)
 assert.match(legacyOutreachMigration, /CREATE INDEX IF NOT EXISTS podcast_outreach_actions_delivered_idx/u)
 
 // Reply attribution is client + email scoped and refuses to guess when one
@@ -340,3 +339,33 @@ assert.match(routes, /path="\/app\/relationships"/u)
 assert.match(routes, /path="\/app\/workspaces\/:workspaceId\/relationships"/u)
 
 console.log('workspace host relationships Edge contract passed')
+
+// The book is a curated list, not a log of everything touched. A show enters it
+// only when a person files it — "Add relationship", or "Save to relationships"
+// from the Master Inbox — and both write workspace_host_relationships, so that
+// single table is the membership test.
+assert.match(
+  manualOnlyMigration,
+  /WITH known AS \(\s*(?:--[^\n]*\n\s*)*SELECT DISTINCT podcast_id\s+FROM public\.workspace_host_relationships\s+WHERE workspace_id = p_workspace_id\s*\)/u,
+)
+for (const source of [
+  'workspace_client_campaign_targets',
+  'workspace_inbox_thread_state',
+  'podcast_outreach_actions',
+  'bookings',
+]) {
+  assert.doesNotMatch(
+    manualOnlyMigration.match(/WITH known AS \([\s\S]*?\n\),/u)[0],
+    new RegExp(source, 'u'),
+    `${source} must not enrol a show in the book on its own`,
+  )
+}
+// Derived state is untouched: the pitch writer and the launch gate still refuse
+// to open cold on a host the agency has already contacted, however that contact
+// was recorded. Narrowing the list must never narrow the protection.
+assert.doesNotMatch(
+  manualOnlyMigration,
+  /CREATE OR REPLACE FUNCTION public\.workspace_podcast_relationships_v1/u,
+  'the relationship STATE function must not be changed by a book-listing change',
+)
+assert.match(manualOnlyMigration, /workspace_podcast_relationships_v1\(\s*p_workspace_id,/u)
