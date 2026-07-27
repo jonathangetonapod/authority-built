@@ -46,6 +46,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { useAuth } from '@/contexts/AuthContext'
 import { decodeHtmlEntities } from '@/lib/htmlEntities'
+import { sortRelationships, type RelationshipSort } from '@/lib/relationshipSort'
 import { MY_WORKSPACE_BASE_HREF, selectedWorkspaceBaseHref } from '@/lib/workspaceRoutes'
 import { workspaceLogoUrl } from '@/lib/workspaceLogo'
 import { getAdminWorkspaceView } from '@/services/adminWorkspaces'
@@ -64,7 +65,11 @@ import {
 } from '@/services/hostRelationships'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const RELATIONSHIPS_PER_PAGE = 10
+// The book grows with every host the agency ever contacts, and folding the
+// legacy outreach ledger in took this workspace from 1 row to 106 in a day.
+// Ten large cards per page meant eleven pages to scroll; a denser row lets a
+// page hold enough to actually scan.
+const RELATIONSHIPS_PER_PAGE = 25
 
 /** How each derived state reads to an operator scanning the book. */
 const STATE_VIEW: Record<HostRelationshipDerivedState, { label: string; className: string }> = {
@@ -236,6 +241,7 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [relationshipFilter, setRelationshipFilter] = useState<RelationshipFilter>('all')
+  const [relationshipSort, setRelationshipSort] = useState<RelationshipSort>('recent')
   const [relationshipPage, setRelationshipPage] = useState(1)
   const [openPodcastId, setOpenPodcastId] = useState<string | null>(null)
   const [activeView, setActiveView] = useState<RelationshipView>('overview')
@@ -301,10 +307,11 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
       )
     ))
   }, [relationshipFilter, relationships, search])
-  const relationshipPageCount = Math.max(1, Math.ceil(filtered.length / RELATIONSHIPS_PER_PAGE))
+  const sorted = useMemo(() => sortRelationships(filtered, relationshipSort), [filtered, relationshipSort])
+  const relationshipPageCount = Math.max(1, Math.ceil(sorted.length / RELATIONSHIPS_PER_PAGE))
   const currentRelationshipPage = Math.min(relationshipPage, relationshipPageCount)
   const relationshipPageStart = (currentRelationshipPage - 1) * RELATIONSHIPS_PER_PAGE
-  const visibleRelationships = filtered.slice(
+  const visibleRelationships = sorted.slice(
     relationshipPageStart,
     relationshipPageStart + RELATIONSHIPS_PER_PAGE,
   )
@@ -547,6 +554,21 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
               <SelectItem value="do_not_contact">Do not contact</SelectItem>
             </SelectContent>
           </Select>
+          <Select
+            value={relationshipSort}
+            onValueChange={(value) => {
+              setRelationshipSort(value as RelationshipSort)
+              setRelationshipPage(1)
+              setOpenPodcastId(null)
+            }}
+          >
+            <SelectTrigger aria-label="Sort relationships" className="w-full sm:w-44"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="recent">Recent contact</SelectItem>
+              <SelectItem value="show">Show name A–Z</SelectItem>
+              <SelectItem value="host">Host name A–Z</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {bookQuery.isLoading && (
@@ -589,7 +611,7 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
                   ? 'overflow-hidden border-primary/40 ring-1 ring-primary/10 xl:col-span-2 xl:grid xl:grid-cols-[22rem_minmax(0,1fr)]'
                   : 'xl:col-start-1'}
               >
-                <CardHeader className="pb-3">
+                <CardHeader className={open ? 'pb-3' : 'p-3'}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
                       <PodcastArtwork
@@ -634,7 +656,7 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
                       </Button>
                     </div>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
                     <span>Last contact {formatDate(row.last_contacted_at)}</span>
                     <span className="inline-flex items-center gap-1"><Users className="h-3 w-3" />{row.client_count} client{row.client_count === 1 ? '' : 's'}</span>
                     <span className="inline-flex items-center gap-1"><MessageSquare className="h-3 w-3" />{row.note_count} note{row.note_count === 1 ? '' : 's'}</span>
@@ -998,13 +1020,13 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
           })}
         </div>
 
-        {filtered.length > RELATIONSHIPS_PER_PAGE && (
+        {sorted.length > RELATIONSHIPS_PER_PAGE && (
           <nav
             aria-label="Relationship pagination"
             className="flex flex-col gap-3 rounded-xl border bg-muted/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
           >
             <p className="text-sm text-muted-foreground">
-              Showing {relationshipPageStart + 1}–{Math.min(relationshipPageStart + RELATIONSHIPS_PER_PAGE, filtered.length)} of {filtered.length} relationships
+              Showing {relationshipPageStart + 1}–{Math.min(relationshipPageStart + RELATIONSHIPS_PER_PAGE, sorted.length)} of {sorted.length} relationships
             </p>
             <div className="flex items-center gap-2">
               <Button
