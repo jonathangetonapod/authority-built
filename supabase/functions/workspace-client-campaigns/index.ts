@@ -3994,6 +3994,118 @@ serve(async (req) => {
       });
     }
 
+    if (action === "unstage-podcast") {
+      requireOnlyKeys(body, [
+        "action",
+        "workspace_id",
+        "client_id",
+        "shortlist_podcast_id",
+      ]);
+      requireCampaignManager(access);
+      const shortlistPodcastId = requireUuid(
+        body.shortlist_podcast_id,
+        "shortlist_podcast_id",
+      );
+      const campaign = await readCampaign(context.admin, workspaceId, clientId);
+      if (!campaign) {
+        throw new HttpError(
+          404,
+          "CAMPAIGN_NOT_FOUND",
+          "This client has no campaign",
+        );
+      }
+      const targets = await readTargets(context.admin, workspaceId, campaign.id);
+      const target = targets.find((item) =>
+        item.shortlist_podcast_id === shortlistPodcastId
+      );
+      if (!target) {
+        throw new HttpError(
+          404,
+          "CAMPAIGN_TARGET_NOT_FOUND",
+          "Campaign podcast not found",
+        );
+      }
+      // Launched outreach is a bigger object than a staged lead: it owns
+      // approval, an activated campaign, and reply tracking. Unwinding it from
+      // here would leave launched_at pointing at a lead that no longer exists.
+      if (target.launched_at) {
+        throw new HttpError(
+          409,
+          "CAMPAIGN_TARGET_ALREADY_LAUNCHED",
+          "Outreach was started for this podcast. Pause the campaign in Client Campaigns to stop it.",
+        );
+      }
+      if (!target.instantly_lead_id) {
+        throw new HttpError(
+          409,
+          "CAMPAIGN_LEAD_NOT_STAGED",
+          "This podcast is not in the Instantly campaign",
+        );
+      }
+
+      const connection = await readConnection(context.admin, workspaceId);
+      const apiKey = await integrationApiKey(connection);
+      try {
+        await instantlyRequest<unknown>(
+          apiKey,
+          `/leads/${encodeURIComponent(target.instantly_lead_id)}`,
+          { method: "DELETE" },
+        );
+      } catch (error) {
+        // Already gone at the provider is the state we were asking for, so the
+        // local record should follow rather than strand the operator with a
+        // lead id that resolves to nothing.
+        const missing = error instanceof InstantlyApiError && error.status === 404;
+        if (!missing) throw error;
+      }
+
+      const { data, error } = await context.admin
+        .from("workspace_client_campaign_targets")
+        .update({
+          instantly_lead_id: null,
+          instantly_lead_status: null,
+          lead_staged_at: null,
+          lead_staged_campaign_status: null,
+          status: target.contact_email ? "ready" : "draft",
+          last_error: null,
+          updated_by: context.user.id,
+        })
+        .eq("id", target.id)
+        .eq("workspace_id", workspaceId)
+        .select(TARGET_COLUMNS)
+        .single();
+      if (error || !data) {
+        throw new HttpError(
+          500,
+          "CAMPAIGN_LEAD_REMOVE_FAILED",
+          "The lead was removed from Instantly but the campaign record could not be updated",
+        );
+      }
+      const updated = data as unknown as TargetRow;
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: "workspace.client_campaign.lead_removed",
+        entityType: "workspace_client_campaign_target",
+        entityId: target.id,
+        metadata: {
+          client_id: clientId,
+          podcast_id: target.podcast_id,
+          instantly_lead_id: target.instantly_lead_id,
+          // Whether this stopped something already in flight.
+          was_sending: target.lead_staged_campaign_status === 1,
+        },
+      });
+      return jsonResponse(req, METHODS, 200, {
+        removed: true,
+        campaign: campaignDto(
+          campaign,
+          targets.map((item) => (item.id === updated.id ? updated : item)),
+        ),
+        target: targetDto(updated),
+      });
+    }
+
     if (action === "upsert") {
       requireOnlyKeys(body, [
         "action",

@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertCircle,
+  Trash2,
   AlertTriangle,
   Archive,
   ArrowLeft,
@@ -58,6 +59,7 @@ import {
 import {
   getWorkspaceCampaign,
   prepareWorkspaceCampaignPodcast,
+  removeWorkspaceCampaignLead,
 } from '@/services/workspaceCampaigns'
 import {
   getWorkspaceResearchPromptOverrides,
@@ -225,7 +227,12 @@ export function ClientCampaignPrepDialog({
   // emailing a stranger, and a notification that disappears is a poor place to
   // learn that.
   const [stagedResult, setStagedResult] = useState<PrepareResult | null>(null)
+  // Held rather than toasted. Suppression, a duplicate contact, and a locked
+  // pitch are situations to act on, not notifications to catch before they
+  // fade, and the operator still has a draft on screen to fix.
+  const [prepareError, setPrepareError] = useState<string | null>(null)
   const [confirmSendOpen, setConfirmSendOpen] = useState(false)
+  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false)
   const [emailRoute, setEmailRoute] = useState<EmailRoute>('podcast')
   const [previewEmailSearchPodcastId, setPreviewEmailSearchPodcastId] = useState<string | null>(null)
   const [acknowledgedRelationshipPodcastId, setAcknowledgedRelationshipPodcastId] = useState<string | null>(null)
@@ -636,6 +643,8 @@ export function ClientCampaignPrepDialog({
     if (!open) {
       setStagedResult(null)
       setConfirmSendOpen(false)
+      setConfirmRemoveOpen(false)
+      setPrepareError(null)
     }
     if (!open || !podcast || campaignQuery.isLoading) return
     const initial = buildPodcastCampaignSequenceDraft({ podcast, clientName, clientBio })
@@ -797,6 +806,7 @@ export function ClientCampaignPrepDialog({
   const prepareMutation = useMutation({
     mutationFn: () => {
       if (!podcast) throw new Error('Choose a podcast first.')
+      setPrepareError(null)
       return prepareWorkspaceCampaignPodcast({
         workspaceId,
         clientId,
@@ -831,7 +841,27 @@ export function ClientCampaignPrepDialog({
       })
       onPrepared?.()
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : 'The pitch could not be sent to Client Campaign.'),
+    onError: (error) => setPrepareError(error instanceof Error ? error.message : 'The pitch could not be sent to Client Campaign.'),
+  })
+  const removeMutation = useMutation({
+    mutationFn: () => {
+      if (!podcast) throw new Error('Choose a podcast first.')
+      return removeWorkspaceCampaignLead({ workspaceId, clientId, shortlistPodcastId: podcast.id })
+    },
+    onSuccess: async () => {
+      setConfirmRemoveOpen(false)
+      setStagedResult(null)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: campaignQueryKey }),
+        queryClient.invalidateQueries({ queryKey: ['workspace-client-campaigns', workspaceId] }),
+      ])
+      toast.success(`${podcast?.podcast_name || 'This podcast'} was removed from the campaign.`)
+      onPrepared?.()
+    },
+    onError: (error) => {
+      setConfirmRemoveOpen(false)
+      setPrepareError(error instanceof Error ? error.message : 'The podcast could not be removed from the campaign.')
+    },
   })
 
   const submitDisabled = !podcast
@@ -894,6 +924,19 @@ export function ClientCampaignPrepDialog({
                 <Button asChild variant={stagedResult.willSend ? 'default' : 'outline'}><Link to={campaignHref}>Open Client Campaigns</Link></Button>
                 <Button type="button" variant={stagedResult.willSend ? 'outline' : 'default'} onClick={() => onOpenChange(false)}>Done</Button>
               </div>
+              {/* The undo. Most valuable in exactly the moment it is offered:
+                  right after a send the operator did not mean to make. */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="mt-3 text-destructive hover:text-destructive"
+                onClick={() => setConfirmRemoveOpen(true)}
+                disabled={removeMutation.isPending}
+              >
+                {removeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                Remove from campaign
+              </Button>
             </div>
           ) : campaignQuery.isLoading ? (
             <div className="flex min-h-96 flex-col items-center justify-center gap-3"><Loader2 className="h-7 w-7 animate-spin text-primary" /><p className="text-sm text-muted-foreground">Loading the pitch workspace…</p></div>
@@ -1738,8 +1781,46 @@ export function ClientCampaignPrepDialog({
           </DialogContent>
         </Dialog>
 
+        <Dialog open={confirmRemoveOpen} onOpenChange={(next) => !removeMutation.isPending && setConfirmRemoveOpen(next)}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Remove {podcast?.podcast_name || 'this podcast'} from the campaign?</DialogTitle>
+              <DialogDescription>
+                The lead is deleted in Instantly, so no further steps of the sequence go out and the
+                pitch returns to editable here.
+              </DialogDescription>
+            </DialogHeader>
+            {/* The one thing removal cannot do. Saying it plainly is the
+                difference between an undo and a false promise. */}
+            {target?.lead_staged_campaign_status === 1 && (
+              <p className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                This campaign was live when the lead was added, so the opening email may already have
+                reached {hostName.trim() || 'the host'}. Removing the lead stops what has not been sent
+                yet; it cannot recall what has.
+              </p>
+            )}
+            <DialogFooter className="mt-5">
+              <Button type="button" variant="outline" onClick={() => setConfirmRemoveOpen(false)} disabled={removeMutation.isPending}>Keep in campaign</Button>
+              <Button type="button" variant="destructive" onClick={() => removeMutation.mutate()} disabled={removeMutation.isPending}>
+                {removeMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Remove from campaign
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {podcast && !locked && !stagedResult && !campaignQuery.isLoading && (
           <footer aria-label="Pitch actions" className="shrink-0 border-t bg-muted/20 px-4 pb-5 pt-4 sm:px-6 sm:pb-6">
+            {prepareError && (
+              <div role="alert" className="mb-3 flex gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-destructive">This pitch was not sent to Client Campaign</p>
+                  <p className="mt-1 text-xs leading-5 text-destructive/90">{prepareError}</p>
+                </div>
+                <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => setPrepareError(null)}>Dismiss</Button>
+              </div>
+            )}
             <div className="flex flex-col gap-4 rounded-2xl border bg-background p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
               <p className="max-w-xl text-xs leading-5 text-muted-foreground">
                 {activeStep === 'email' && (!relationshipCanProceed
@@ -1770,6 +1851,11 @@ export function ClientCampaignPrepDialog({
               </p>
               <div className="grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                {activeStep === 'pitch' && alreadyStaged && (
+                  <Button type="button" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setConfirmRemoveOpen(true)}>
+                    <Trash2 className="mr-2 h-4 w-4" />Remove from campaign
+                  </Button>
+                )}
                 {activeStep !== 'email' && <Button type="button" variant="outline" onClick={() => setActiveStep(activeStep === 'pitch' ? 'research' : 'email')}><ArrowLeft className="mr-2 h-4 w-4" />Back</Button>}
                 {activeStep === 'email' && <Button type="button" disabled={!emailReady || !relationshipCanProceed} onClick={() => setActiveStep('research')}>Continue to research<ArrowRight className="ml-2 h-4 w-4" /></Button>}
                 {activeStep === 'research' && <Button type="button" disabled={!researchComplete} onClick={() => { setActiveSequenceEmail('opening'); setActiveStep('pitch') }}>Finalize selected pitch<ArrowRight className="ml-2 h-4 w-4" /></Button>}

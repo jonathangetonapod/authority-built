@@ -217,7 +217,7 @@ export async function instantlyRequest<T>(
   apiKey: string,
   path: string,
   options: {
-    method?: "GET" | "POST" | "PATCH";
+    method?: "GET" | "POST" | "PATCH" | "DELETE";
     body?: Record<string, unknown>;
     query?: URLSearchParams;
   } = {},

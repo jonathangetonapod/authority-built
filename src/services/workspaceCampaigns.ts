@@ -261,6 +261,26 @@ export async function addWorkspaceCampaignPodcasts(input: {
   }, 'The podcast could not be added to the client campaign.')
 }
 
+/**
+ * Take a staged podcast back out of the Instantly campaign.
+ *
+ * The lead is deleted at the provider and the local record forgets it, which
+ * stops any remaining sequence steps. It cannot recall an email already
+ * delivered — nothing can.
+ */
+export async function removeWorkspaceCampaignLead(input: {
+  workspaceId: string
+  clientId: string
+  shortlistPodcastId: string
+}): Promise<{ removed: boolean; campaign: WorkspaceClientCampaign; target: WorkspaceCampaignTarget }> {
+  return await invokeWorkspaceCampaigns({
+    action: 'unstage-podcast',
+    workspace_id: input.workspaceId,
+    client_id: input.clientId,
+    shortlist_podcast_id: input.shortlistPodcastId,
+  }, 'The podcast could not be removed from the client campaign.')
+}
+
 export async function prepareWorkspaceCampaignPodcast(input: {
   workspaceId: string
   clientId: string

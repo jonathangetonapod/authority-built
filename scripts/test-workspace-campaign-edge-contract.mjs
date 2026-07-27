@@ -345,3 +345,29 @@ assert.match(prepDialog, /Add and start sending/u)
 assert.match(prepDialog, /To add the lead without sending, pause/u)
 // Reopening a staged podcast says so, so a second send is an update by choice.
 assert.match(prepDialog, /const alreadyStaged = Boolean\(target\?\.lead_staged_at\) && !target\?\.launched_at/u)
+
+// Removing a staged podcast: the undo. Deleting the provider lead stops what
+// has not been sent; nothing can recall what has, and the confirmation says so.
+assert.match(edge, /action === "unstage-podcast"[\s\S]*?requireCampaignManager\(access\)/u)
+const unstageAction = edge.match(/action === "unstage-podcast"[\s\S]*?action === "upsert"/u)
+assert.ok(unstageAction, 'unstage-podcast action must exist')
+assert.match(unstageAction[0], /method: "DELETE"/u)
+assert.match(unstageAction[0], /`\/leads\/\$\{encodeURIComponent\(target\.instantly_lead_id\)\}`/u)
+// Launched outreach owns approval, an activated campaign, and reply tracking;
+// unwinding it here would leave launched_at pointing at a deleted lead.
+assert.match(unstageAction[0], /if \(target\.launched_at\)[\s\S]*?CAMPAIGN_TARGET_ALREADY_LAUNCHED/u)
+// Already gone at the provider is the state we asked for, not a failure.
+assert.match(unstageAction[0], /error instanceof InstantlyApiError && error\.status === 404[\s\S]*?if \(!missing\) throw error/u)
+assert.match(unstageAction[0], /instantly_lead_id: null,[\s\S]*?lead_staged_at: null,[\s\S]*?lead_staged_campaign_status: null/u)
+assert.match(unstageAction[0], /action: "workspace\.client_campaign\.lead_removed"/u)
+assert.match(provider, /method\?: "GET" \| "POST" \| "PATCH" \| "DELETE"/u)
+assert.match(prepDialog, /removeWorkspaceCampaignLead/u)
+assert.match(prepDialog, /cannot recall what has/u)
+// A refused send stays on screen next to the draft it refers to.
+assert.match(prepDialog, /const \[prepareError, setPrepareError\] = useState<string \| null>\(null\)/u)
+assert.match(prepDialog, /role="alert"[\s\S]*?This pitch was not sent to Client Campaign/u)
+assert.doesNotMatch(
+  prepDialog.match(/const prepareMutation = useMutation\(\{[\s\S]*?\n  \}\)/u)[0],
+  /toast\.error/u,
+  'a refused send belongs in the dialog, not in a notification that fades',
+)

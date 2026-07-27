@@ -16,7 +16,7 @@ import {
   updateClientShortlistPodcast,
   type ClientShortlistPodcast,
 } from '@/services/clientShortlist'
-import { getWorkspaceCampaign, getWorkspaceResearchPromptOverrides, prepareWorkspaceCampaignPodcast } from '@/services/workspaceCampaigns'
+import { getWorkspaceCampaign, getWorkspaceResearchPromptOverrides, prepareWorkspaceCampaignPodcast, removeWorkspaceCampaignLead } from '@/services/workspaceCampaigns'
 
 vi.mock('@/services/clientShortlist', () => ({
   addClientShortlistPodcasts: vi.fn(),
@@ -34,6 +34,7 @@ vi.mock('@/services/clientShortlist', () => ({
 vi.mock('@/services/workspaceCampaigns', () => ({
   getWorkspaceCampaign: vi.fn(),
   prepareWorkspaceCampaignPodcast: vi.fn(),
+  removeWorkspaceCampaignLead: vi.fn(),
   getWorkspaceResearchPromptOverrides: vi.fn().mockResolvedValue({}),
   setWorkspaceResearchPrompt: vi.fn().mockResolvedValue(undefined),
   resetWorkspaceResearchPrompt: vi.fn().mockResolvedValue(undefined),
@@ -175,6 +176,11 @@ describe('ClientShortlistEditor', () => {
       // without contacting anyone.
       will_send: false,
       provider_campaign_status: 2,
+    })
+    vi.mocked(removeWorkspaceCampaignLead).mockResolvedValue({
+      removed: true,
+      campaign: {} as never,
+      target: {} as never,
     })
   })
 
@@ -825,6 +831,75 @@ describe('ClientShortlistEditor', () => {
     expect(screen.getByText(/The campaign is paused, so nothing goes out until you start outreach/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Send to Client Campaign' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /goes live/i })).not.toBeInTheDocument()
+  })
+
+  it('offers an undo straight after adding, and says what removal cannot take back', async () => {
+    vi.mocked(getWorkspaceCampaign).mockResolvedValue({
+      integration: {} as never,
+      can_manage_campaigns: true,
+      campaign: {
+        id: 'campaign-one',
+        name: 'Taylor Client Podcast Outreach',
+        instantly_campaign_id: '77777777-7777-4777-8777-777777777777',
+        instantly_campaign_status: 1,
+      } as never,
+      targets: [{
+        shortlist_podcast_id: '33333333-3333-4333-8333-333333333333',
+        lead_staged_at: '2026-07-27T12:00:00.000Z',
+        lead_staged_campaign_status: 1,
+        launched_at: null,
+      }] as never,
+    })
+    vi.mocked(prepareWorkspaceCampaignPodcast).mockResolvedValue({
+      added: true,
+      campaign: { name: 'Taylor Client Podcast Outreach' } as never,
+      target: {} as never,
+      lead_staged: true,
+      will_send: true,
+      provider_campaign_status: 1,
+    })
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize selected pitch' }))
+
+    // Already in the campaign, so sending again is an update, not a duplicate.
+    expect(screen.getByRole('button', { name: /Send to Client Campaign \(goes live\)/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove from campaign' }))
+
+    // Scoped through the one control unique to the confirmation.
+    const keepButton = await screen.findByRole('button', { name: 'Keep in campaign' })
+    const confirm = within(keepButton.closest('[role="dialog"]') as HTMLElement)
+    expect(confirm.getByText(/may already have reached/i)).toBeInTheDocument()
+    expect(confirm.getByText(/cannot recall what has/i)).toBeInTheDocument()
+    expect(removeWorkspaceCampaignLead).not.toHaveBeenCalled()
+
+    fireEvent.click(confirm.getByRole('button', { name: 'Remove from campaign' }))
+    await waitFor(() => expect(removeWorkspaceCampaignLead).toHaveBeenCalledWith({
+      workspaceId,
+      clientId,
+      shortlistPodcastId: '33333333-3333-4333-8333-333333333333',
+    }))
+  })
+
+  it('keeps a refused send on screen instead of flashing it past', async () => {
+    vi.mocked(prepareWorkspaceCampaignPodcast).mockRejectedValue(
+      new Error('This host asked to stop being contacted by this workspace.'),
+    )
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize selected pitch' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Client Campaign' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByText('This pitch was not sent to Client Campaign')).toBeInTheDocument()
+    expect(within(alert).getByText(/asked to stop being contacted/i)).toBeInTheDocument()
+    // The draft is still there to fix, and the notice waits rather than fading.
+    expect(screen.getByRole('button', { name: 'Send to Client Campaign' })).toBeInTheDocument()
+
+    fireEvent.click(within(alert).getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('shows live backend research progress and holds the pitch until every stage finishes', async () => {
