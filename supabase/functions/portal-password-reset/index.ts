@@ -13,6 +13,7 @@ import {
 import { hashPortalPassword, hashPortalSessionToken } from '../_shared/portalSecurity.ts'
 import { safeWorkspaceBranding } from '../_shared/portalBranding.ts'
 import { portalResetUrl, sendPortalResetEmail } from '../_shared/portalResetEmail.ts'
+import { workspaceLinkOrigin } from '../_shared/workspaceOrigin.ts'
 
 const METHODS = ['POST'] as const
 const RESET_TOKEN_TTL_MINUTES = 60
@@ -96,11 +97,12 @@ serve(async (req) => {
 
         if (!upsertError) {
           const branding = await safeWorkspaceBranding(admin, workspace ?? {})
+          const linkOrigin = await workspaceLinkOrigin(admin, workspace?.id ?? null)
           const delivery = await sendPortalResetEmail({
             workspaceName: branding?.name || workspace?.name || 'Your agency',
             recipientName: client.name || 'there',
             recipientEmail: email,
-            url: portalResetUrl(token),
+            url: portalResetUrl(token, linkOrigin),
           })
           if (delivery.status !== 'sent') {
             console.error('[Portal Password Reset] Delivery status:', delivery.status)

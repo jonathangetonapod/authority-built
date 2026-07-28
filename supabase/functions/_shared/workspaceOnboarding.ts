@@ -1,3 +1,4 @@
+import { platformOrigin } from './workspaceOrigin.ts'
 import { HttpError } from './httpError.ts'
 
 export const ONBOARDING_QUESTION_TYPES = [
@@ -445,20 +446,9 @@ export async function verifyOnboardingCapability(token: unknown, secret: string)
   return { instanceId, generation, verifierHash: await sha256Hex(token) }
 }
 
-export function onboardingUrl(token: string): string {
-  for (const candidate of [Deno.env.get('APP_URL'), Deno.env.get('WEB_URL')]) {
-    if (!candidate?.trim()) continue
-    try {
-      const parsed = new URL(candidate)
-      const local = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
-      if (parsed.protocol === 'https:' || (local && parsed.protocol === 'http:')) {
-        return new URL(`/onboarding/${encodeURIComponent(token)}`, parsed.origin).toString()
-      }
-    } catch {
-      // Try the next configured application URL.
-    }
-  }
-  throw new HttpError(500, 'SERVER_MISCONFIGURED', 'The onboarding application URL is not configured')
+export function onboardingUrl(token: string, origin?: string): string {
+  const base = origin ?? platformOrigin()
+  return new URL(`/onboarding/${encodeURIComponent(token)}`, base).toString()
 }
 
 function escapeHtml(value: string): string {

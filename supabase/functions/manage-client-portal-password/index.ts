@@ -18,6 +18,7 @@ import {
 } from '../_shared/workspaceAuth.ts'
 import { safeWorkspaceBranding } from '../_shared/portalBranding.ts'
 import { portalLoginUrl, portalResetUrl, sendPortalInviteEmail } from '../_shared/portalResetEmail.ts'
+import { workspaceLinkOrigin } from '../_shared/workspaceOrigin.ts'
 
 const METHODS = ['POST'] as const
 const PASSWORD_MANAGER_ROLES = new Set(['owner', 'platform_admin'])
@@ -136,6 +137,8 @@ serve(async (req) => {
         throw new HttpError(403, 'WORKSPACE_OWNER_REQUIRED', 'Workspace owner access is required')
       }
       const { admin, tokenIssuedAt, user } = authContext
+      // Portal links carry the agency's own hostname when it has one.
+      const linkOrigin = await workspaceLinkOrigin(admin, workspaceId)
 
       if (action === 'set') {
         requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'password'])
@@ -227,8 +230,8 @@ serve(async (req) => {
           workspaceName,
           recipientName: typeof client.name === 'string' && client.name.trim() ? client.name : 'there',
           recipientEmail: client.email.trim().toLowerCase(),
-          url: portalResetUrl(token),
-          loginUrl: portalLoginUrl(typeof client.dashboard_slug === 'string' ? client.dashboard_slug : null),
+          url: portalResetUrl(token, linkOrigin),
+          loginUrl: portalLoginUrl(typeof client.dashboard_slug === 'string' ? client.dashboard_slug : null, linkOrigin),
         })
 
         if (delivery.status === 'sent') {
@@ -313,8 +316,8 @@ serve(async (req) => {
 
         return jsonResponse(req, METHODS, 200, {
           success: true,
-          url: portalResetUrl(token),
-          login_url: portalLoginUrl(typeof client.dashboard_slug === 'string' ? client.dashboard_slug : null),
+          url: portalResetUrl(token, linkOrigin),
+          login_url: portalLoginUrl(typeof client.dashboard_slug === 'string' ? client.dashboard_slug : null, linkOrigin),
           expires_at: expiresAt,
         })
       }

@@ -30,8 +30,30 @@ interface RailwayDomain {
   id: string
   domain: string
   status: string | null
+  dnsRecordType: string | null
   dnsRecordName: string | null
   dnsRecordValue: string | null
+}
+
+// Railway returns several DNS records per domain. Only one of them routes
+// traffic; the other is the ACME DNS-01 challenge, and handing an agency that
+// one instead would have them create a TXT record that never serves the site.
+const TRAFFIC_ROUTE = 'DNS_RECORD_PURPOSE_TRAFFIC_ROUTE'
+// The certificate enum is prefixed. There is no bare 'ISSUED'.
+const CERTIFICATE_VALID = 'CERTIFICATE_STATUS_TYPE_VALID'
+
+function trafficRecord(records: unknown): Record<string, unknown> | null {
+  if (!Array.isArray(records)) return null
+  const rows = records.filter((row): row is Record<string, unknown> =>
+    Boolean(row) && typeof row === 'object')
+  return rows.find((row) => row.purpose === TRAFFIC_ROUTE) ?? null
+}
+
+// DNS_RECORD_TYPE_CNAME -> CNAME. An apex domain gets an A record from
+// Railway, so this cannot be assumed.
+function dnsRecordType(value: unknown): string {
+  const raw = typeof value === 'string' ? value.replace(/^DNS_RECORD_TYPE_/u, '') : ''
+  return /^[A-Z]+$/u.test(raw) ? raw : 'CNAME'
 }
 
 function railwayToken(): string {
@@ -118,6 +140,7 @@ function railwayDomain(value: unknown): RailwayDomain {
     id,
     domain,
     status: typeof row.status === 'string' ? row.status : null,
+    dnsRecordType: typeof row.dnsRecordType === 'string' ? row.dnsRecordType : null,
     dnsRecordName: typeof row.dnsRecordName === 'string' ? row.dnsRecordName : null,
     dnsRecordValue: typeof row.dnsRecordValue === 'string' ? row.dnsRecordValue : null,
   }
@@ -130,21 +153,26 @@ async function createRailwayDomain(hostname: string): Promise<RailwayDomain> {
        customDomainCreate(input: $input) {
          id
          domain
-         status { dnsRecords { hostlabel requiredValue } }
+         status {
+           certificateStatus
+           dnsRecords { purpose recordType fqdn requiredValue status }
+         }
        }
      }`,
     { input: { domain: hostname, serviceId, environmentId, projectId } },
   )
   const created = (data.customDomainCreate ?? {}) as Record<string, unknown>
   const status = (created.status ?? {}) as Record<string, unknown>
-  const records = Array.isArray(status.dnsRecords) ? status.dnsRecords : []
-  const first = (records[0] ?? {}) as Record<string, unknown>
+  const record = trafficRecord(status.dnsRecords)
   return railwayDomain({
     id: created.id,
     domain: created.domain,
     status: 'awaiting_dns',
-    dnsRecordName: typeof first.hostlabel === 'string' ? first.hostlabel : hostname,
-    dnsRecordValue: typeof first.requiredValue === 'string' ? first.requiredValue : null,
+    dnsRecordType: dnsRecordType(record?.recordType),
+    // fqdn, not hostlabel: hostlabel is just the sub-label ("podcasts"), and an
+    // agency pasting that into their DNS host would create the wrong record.
+    dnsRecordName: typeof record?.fqdn === 'string' ? record.fqdn : hostname,
+    dnsRecordValue: typeof record?.requiredValue === 'string' ? record.requiredValue : null,
   })
 }
 
@@ -155,16 +183,42 @@ async function deleteRailwayDomain(providerDomainId: string): Promise<void> {
   )
 }
 
-async function railwayDomainServing(providerDomainId: string): Promise<boolean> {
+async function railwayDomainServing(
+  providerDomainId: string,
+): Promise<{ serving: boolean; error: string | null }> {
+  const { projectId } = railwayTarget()
   const data = await railwayGraphql(
-    `query CustomDomain($id: String!) {
-       customDomain(id: $id) { id status { certificateStatus dnsRecords { requiredValue currentValue } } }
+    `query CustomDomain($id: String!, $projectId: String!) {
+       customDomain(id: $id, projectId: $projectId) {
+         id
+         status {
+           certificateStatus
+           certificateErrorMessage
+           dnsRecords { purpose status }
+         }
+       }
      }`,
-    { id: providerDomainId },
+    { id: providerDomainId, projectId },
   )
   const domain = (data.customDomain ?? {}) as Record<string, unknown>
   const status = (domain.status ?? {}) as Record<string, unknown>
-  return String(status.certificateStatus ?? '').toUpperCase() === 'ISSUED'
+  const serving = status.certificateStatus === CERTIFICATE_VALID
+  if (serving) return { serving: true, error: null }
+  // Railway's own message says whether DNS is missing or the certificate is
+  // still issuing. That is the difference between "wait" and "fix your DNS",
+  // and guessing it here would be worse than saying nothing.
+  const providerMessage = typeof status.certificateErrorMessage === 'string'
+    ? status.certificateErrorMessage
+    : null
+  const record = trafficRecord(status.dnsRecords)
+  const dnsPending = record?.status === 'DNS_RECORD_STATUS_REQUIRES_UPDATE'
+  return {
+    serving: false,
+    error: providerMessage
+      ?? (dnsPending
+        ? 'The DNS record has not been created yet, or has not propagated'
+        : 'Waiting for the certificate to be issued'),
+  }
 }
 
 function normalizeHostname(value: string): string {
@@ -251,7 +305,7 @@ serve(async (req) => {
           status: 'awaiting_dns',
           provider: 'railway',
           provider_domain_id: created.id,
-          dns_record_type: 'CNAME',
+          dns_record_type: created.dnsRecordType ?? 'CNAME',
           dns_record_name: created.dnsRecordName ?? hostname,
           dns_record_value: created.dnsRecordValue,
         })
@@ -291,7 +345,7 @@ serve(async (req) => {
         throw new HttpError(409, 'DOMAIN_DISABLED', 'That domain is disabled')
       }
 
-      const serving = await railwayDomainServing(domain.provider_domain_id)
+      const { serving, error: servingError } = await railwayDomainServing(domain.provider_domain_id)
       const nextStatus = serving ? 'active' : 'awaiting_dns'
       const { error: updateError } = await admin
         .from('workspace_domains')
@@ -301,7 +355,7 @@ serve(async (req) => {
           // carries none, so the row can never claim to serve without one.
           activated_at: serving ? new Date().toISOString() : null,
           last_checked_at: new Date().toISOString(),
-          last_error: serving ? null : 'Waiting for DNS to point at Railway and the certificate to issue',
+          last_error: serving ? null : servingError,
           ...(serving ? {} : { is_primary: false }),
         })
         .eq('id', domainId)

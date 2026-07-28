@@ -148,4 +148,43 @@ for (const [label, source] of [['ProspectView', prospectView], ['ClientApprovalV
   assert.ok(source.includes('currentHostname()'), `${label} must send the hostname it was opened on`)
 }
 
+// Railway's schema, verified by introspecting the live endpoint. Every one of
+// these was wrong when written from memory, and each wrong one silently kept a
+// domain from ever reaching 'active'.
+// The certificate enum is prefixed; there is no bare 'ISSUED'.
+assert.match(admin, /const CERTIFICATE_VALID = 'CERTIFICATE_STATUS_TYPE_VALID'/u)
+assert.doesNotMatch(admin, /=== 'ISSUED'/u)
+// customDomain requires projectId. Without it the query fails validation and
+// refresh can never succeed.
+assert.match(admin, /query CustomDomain\(\$id: String!, \$projectId: String!\)/u)
+assert.match(admin, /customDomain\(id: \$id, projectId: \$projectId\)/u)
+// Several DNS records come back; only one routes traffic. The other is the
+// ACME challenge, and handing an agency that one gives them a TXT record that
+// never serves the site.
+assert.match(admin, /const TRAFFIC_ROUTE = 'DNS_RECORD_PURPOSE_TRAFFIC_ROUTE'/u)
+assert.match(admin, /rows\.find\(\(row\) => row\.purpose === TRAFFIC_ROUTE\)/u)
+// fqdn, not hostlabel: hostlabel is the sub-label alone.
+assert.match(admin, /typeof record\?\.fqdn === 'string' \? record\.fqdn : hostname/u)
+assert.doesNotMatch(admin, /record\?\.hostlabel/u)
+// An apex domain gets an A record, so the type cannot be hardcoded.
+assert.match(admin, /dnsRecordType\(record\?\.recordType\)/u)
+// Railway's own reason distinguishes "add your DNS record" from "wait".
+assert.match(admin, /certificateErrorMessage/u)
+
+// Client-facing links carry the agency's hostname; the agency's own /app does
+// not, because a client is never meant to open it.
+const linkOrigin = readFileSync('supabase/functions/_shared/workspaceOrigin.ts', 'utf8')
+const notify = readFileSync('supabase/functions/_shared/clientNotify.ts', 'utf8')
+const onboardingShared = readFileSync('supabase/functions/_shared/workspaceOnboarding.ts', 'utf8')
+const portalEmail = readFileSync('supabase/functions/_shared/portalResetEmail.ts', 'utf8')
+assert.match(linkOrigin, /workspace_primary_domain_v1/u)
+// A lookup failure falls back rather than throwing: an unbranded link that
+// works beats an invitation that never sends.
+assert.match(linkOrigin, /if \(error \|\| typeof data !== 'string' \|\| data\.length === 0\) return fallback/u)
+assert.match(onboardingShared, /export function onboardingUrl\(token: string, origin\?: string\)/u)
+assert.match(portalEmail, /export function portalResetUrl\(token: string, origin\?: string\)/u)
+assert.match(portalEmail, /export function portalLoginUrl\(brandingSlug: string \| null, origin\?: string\)/u)
+assert.match(notify, /await workspaceLinkOrigin\(admin, workspaceId\)/u)
+assert.match(notify, /\/app\/clients\/\$\{input\.clientId\}/u)
+
 process.stdout.write('Workspace domains Edge contract checks passed\n')

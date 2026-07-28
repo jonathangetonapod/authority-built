@@ -10,6 +10,7 @@
 // resolves rather than throws, and the send log carries the failure.
 
 import { whiteLabelOnboardingSender } from './workspaceOnboarding.ts'
+import { workspaceLinkOrigin } from './workspaceOrigin.ts'
 
 type AdminClient = any
 
@@ -91,7 +92,8 @@ async function resolveRecipient(
     .eq('id', workspaceId)
     .maybeSingle()
 
-  const origin = appOrigin()
+  // Client-facing, so it carries the agency's own hostname when they have one.
+  const origin = await workspaceLinkOrigin(admin, workspaceId).catch(() => appOrigin())
   const slug = typeof client.dashboard_slug === 'string' ? client.dashboard_slug : null
   // Two front doors: the portal for clients who have a password, the public
   // capability URL for everyone else. Never link to a page they cannot open.
@@ -427,6 +429,8 @@ export async function notifyWorkspaceOfApprovals(
   const approved = typeof count === 'number' ? count : 0
   if (approved < 1) return { status: 'skipped', reason: 'nothing_approved' }
   const shows = approved === 1 ? '1 show' : `${approved} shows`
+  // Deliberately the platform origin: /app is the agency's own workspace, not
+  // a page their client is ever meant to open.
   const origin = appOrigin()
   const url = origin ? `${origin}/app/clients/${input.clientId}` : null
   const { html, text } = renderEmail({

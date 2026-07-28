@@ -4,6 +4,7 @@
 
 import { HttpError } from './workspaceAuth.ts'
 import { whiteLabelOnboardingSender } from './workspaceOnboarding.ts'
+import { platformOrigin } from './workspaceOrigin.ts'
 
 export interface PortalResetEmailResult {
   status: 'sent' | 'failed' | 'skipped'
@@ -11,22 +12,10 @@ export interface PortalResetEmailResult {
   error: string | null
 }
 
-export function portalResetUrl(token: string): string {
-  for (const candidate of [Deno.env.get('APP_URL'), Deno.env.get('WEB_URL')]) {
-    if (!candidate?.trim()) continue
-    try {
-      const parsed = new URL(candidate)
-      const local = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
-      if (parsed.protocol === 'https:' || (local && parsed.protocol === 'http:')) {
-        const url = new URL('/portal/reset', parsed.origin)
-        url.searchParams.set('token', token)
-        return url.toString()
-      }
-    } catch {
-      // Try the next configured application URL.
-    }
-  }
-  throw new HttpError(500, 'SERVER_MISCONFIGURED', 'The portal application URL is not configured')
+export function portalResetUrl(token: string, origin?: string): string {
+  const url = new URL('/portal/reset', origin ?? platformOrigin())
+  url.searchParams.set('token', token)
+  return url.toString()
 }
 
 function escapeHtml(value: string): string {
@@ -81,22 +70,10 @@ export async function sendPortalInviteEmail(input: {
   }
 }
 
-export function portalLoginUrl(brandingSlug: string | null): string {
-  for (const candidate of [Deno.env.get('APP_URL'), Deno.env.get('WEB_URL')]) {
-    if (!candidate?.trim()) continue
-    try {
-      const parsed = new URL(candidate)
-      const local = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
-      if (parsed.protocol === 'https:' || (local && parsed.protocol === 'http:')) {
-        const url = new URL('/portal/login', parsed.origin)
-        if (brandingSlug) url.searchParams.set('b', brandingSlug)
-        return url.toString()
-      }
-    } catch {
-      // Try the next configured application URL.
-    }
-  }
-  throw new HttpError(500, 'SERVER_MISCONFIGURED', 'The portal application URL is not configured')
+export function portalLoginUrl(brandingSlug: string | null, origin?: string): string {
+  const url = new URL('/portal/login', origin ?? platformOrigin())
+  if (brandingSlug) url.searchParams.set('b', brandingSlug)
+  return url.toString()
 }
 
 export async function sendPortalResetEmail(input: {

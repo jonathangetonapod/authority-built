@@ -16,6 +16,7 @@ import {
 } from '../_shared/workspaceAuth.ts'
 import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
+import { workspaceLinkOrigin } from '../_shared/workspaceOrigin.ts'
 import {
   createOnboardingCapability,
   generatePitchProfile,
@@ -268,6 +269,9 @@ serve(async (req) => {
     }
     const { admin, user, tokenIssuedAt } = context
     const workspaceId = requireUuid(body.workspace_id, 'workspace_id')
+    // The origin this workspace's clients should be sent to. Branding the page
+    // means nothing while the email that delivers it names the platform.
+    const linkOrigin = await workspaceLinkOrigin(admin, workspaceId)
 
     if (action === 'list') {
       requireOnlyKeys(body, ['action', 'workspace_id'])
@@ -344,7 +348,7 @@ serve(async (req) => {
 
       return jsonResponse(req, METHODS, 200, {
         instance: await addSignedAssetUrls(admin, instance),
-        onboarding_url: onboardingUrl(capability.token),
+        onboarding_url: onboardingUrl(capability.token, linkOrigin),
       })
     }
 
@@ -484,7 +488,7 @@ serve(async (req) => {
         rpcError(error)
       }
       const instance = ensureWorkspaceResponse(data, workspaceId)
-      const link = onboardingUrl(capability.token)
+      const link = onboardingUrl(capability.token, linkOrigin)
       const delivery = sendEmail
         ? await sendOnboardingEmail({
           kind: 'invitation',
@@ -646,7 +650,7 @@ serve(async (req) => {
         capability_hash: capability.verifierHash,
         capability_expires_at: expiresAt,
       }
-      link = onboardingUrl(capability.token)
+      link = onboardingUrl(capability.token, linkOrigin)
     } else if (action === 'extend') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'instance_id', 'extension_days'])
       const extensionDays = integerValue(body.extension_days, 'extension_days', 1, 89)
@@ -666,7 +670,7 @@ serve(async (req) => {
       payload.capability_expires_at = nextExpiry.toISOString()
       const generation = integerValue(detail.capability_generation, 'capability generation', 1, 2_147_483_646)
       const capability = await createOnboardingCapability(instanceId, generation, capabilitySecret())
-      link = onboardingUrl(capability.token)
+      link = onboardingUrl(capability.token, linkOrigin)
     } else if (action === 'revoke' || action === 'archive') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'instance_id'])
     } else if (action === 'purge') {
@@ -726,7 +730,7 @@ serve(async (req) => {
     if (action === 'request_changes') {
       const generation = integerValue(instance.capability_generation, 'capability generation', 1, 2_147_483_646)
       const capability = await createOnboardingCapability(instanceId, generation, capabilitySecret())
-      link = onboardingUrl(capability.token)
+      link = onboardingUrl(capability.token, linkOrigin)
       const listResult = await admin.rpc('workspace_onboarding_staff_list_v1', {
         p_workspace_id: workspaceId,
         p_actor_user_id: user.id,
