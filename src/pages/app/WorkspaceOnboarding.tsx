@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Archive, ClipboardCheck, Clock3, Copy, ExternalLink, FilePlus2, ImagePlus, Link2, Loader2, MoreHorizontal, Palette, Plus, RefreshCw, Send, Share2, ShieldAlert, Sparkles, X } from 'lucide-react'
+import { AlertTriangle, Archive, ClipboardCheck, Clock3, Copy, ExternalLink, FilePlus2, ImagePlus, Link2, Loader2, MoreHorizontal, Palette, Plus, RefreshCw, Search, Send, Share2, ShieldAlert, Sparkles, X } from 'lucide-react'
 import { toast } from 'sonner'
 import ClientOnboardingPreview from '@/components/onboarding/ClientOnboardingPreview'
 import OnboardingReviewDialog, { type OnboardingReviewComment } from '@/components/onboarding/OnboardingReviewDialog'
@@ -24,6 +24,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useAuth } from '@/contexts/AuthContext'
 import { DEFAULT_ONBOARDING_ACCENT, renderOnboardingBrandText } from '@/lib/onboardingBrand'
 import { onboardingActivityStage, onboardingStatusLabel, type OnboardingActivityStage } from '@/lib/onboardingActivity'
+import { EXPIRING_SOON_DAYS, onboardingChaseState } from '@/lib/onboardingChase'
 import { workspaceLogoUrl } from '@/lib/workspaceLogo'
 import { selectedWorkspaceBaseHref } from '@/lib/workspaceRoutes'
 import {
@@ -165,6 +166,33 @@ function OnboardingActivity({ instance }: { instance: OnboardingInstanceSummary 
   )
 }
 
+type OnboardingTableFilter = 'all' | 'chasing' | 'review' | 'active' | 'approved' | 'expired' | 'archived'
+
+function OnboardingAge({ instance }: { instance: OnboardingInstanceSummary }) {
+  const state = onboardingChaseState(instance, Date.now())
+  if (state.ageDays === null) return null
+  const settled = ['approved', 'expired', 'revoked'].includes(instance.status) || Boolean(instance.archived_at)
+  return (
+    <div className="min-w-32 space-y-1 text-xs text-muted-foreground">
+      <p>{state.ageDays === 0 ? 'Sent today' : `Sent ${state.ageDays} day${state.ageDays === 1 ? '' : 's'} ago`}</p>
+      {!settled && state.expiresInDays !== null && (
+        <p className={state.expiresInDays <= EXPIRING_SOON_DAYS ? 'font-medium text-amber-700' : undefined}>
+          {state.expiresInDays < 0
+            ? 'Link expired'
+            : state.expiresInDays === 0
+              ? 'Link expires today'
+              : `Link expires in ${state.expiresInDays} day${state.expiresInDays === 1 ? '' : 's'}`}
+        </p>
+      )}
+      {state.reason && (
+        <p className="flex items-start gap-1 font-medium text-amber-800">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />{state.reason}
+        </p>
+      )}
+    </div>
+  )
+}
+
 function nextCopyName(template: OnboardingTemplate, templates: OnboardingTemplate[]): string {
   const names = new Set(templates.map((candidate) => candidate.name.toLowerCase()))
   let index = 1
@@ -190,6 +218,8 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null)
   const openedRequestedInstanceRef = useRef<string | null>(null)
   const [confirmation, setConfirmation] = useState<{ action: ConfirmationAction; instance: OnboardingInstanceSummary } | null>(null)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<OnboardingTableFilter>('all')
 
   const onboardingQuery = useQuery({
     queryKey,
@@ -380,15 +410,44 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Unable to update onboarding.'),
   })
 
+  // Recomputed whenever the list is refetched, which is every 30 seconds while
+  // the page is idle. A day boundary is not worth a timer of its own.
+  const chaseByInstance = useMemo(() => {
+    const now = Date.now()
+    return new Map(visibleInstances.map((instance) => [instance.id, onboardingChaseState(instance, now)]))
+  }, [visibleInstances])
+
   const counts = useMemo(() => {
     const instances = visibleInstances
     return {
+      chasing: instances.filter((instance) => chaseByInstance.get(instance.id)?.needsChasing).length,
       active: instances.filter((instance) => ['invited', 'in_progress', 'changes_requested'].includes(instance.status)).length,
       review: instances.filter((instance) => instance.status === 'submitted').length,
       approved: instances.filter((instance) => instance.status === 'approved').length,
       expired: instances.filter((instance) => instance.status === 'expired' || instance.status === 'revoked').length,
     }
-  }, [visibleInstances])
+  }, [chaseByInstance, visibleInstances])
+
+  const tableInstances = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return visibleInstances.filter((instance) => {
+      if (statusFilter === 'chasing' && !chaseByInstance.get(instance.id)?.needsChasing) return false
+      if (statusFilter === 'review' && instance.status !== 'submitted') return false
+      if (statusFilter === 'active' && !['invited', 'in_progress', 'changes_requested'].includes(instance.status)) return false
+      if (statusFilter === 'approved' && instance.status !== 'approved') return false
+      if (statusFilter === 'expired' && !['expired', 'revoked'].includes(instance.status)) return false
+      // Archived rows are the only ones a filter hides rather than selects:
+      // they are finished work and would otherwise pad every other view.
+      if (statusFilter === 'archived' ? !instance.archived_at : Boolean(instance.archived_at)) return false
+      if (!query) return true
+      return instance.client_name.toLowerCase().includes(query)
+        || instance.recipient_email.toLowerCase().includes(query)
+        || instance.recipient_name.toLowerCase().includes(query)
+        || instance.template_name.toLowerCase().includes(query)
+    })
+  }, [chaseByInstance, search, statusFilter, visibleInstances])
+  const archivedCount = visibleInstances.filter((instance) => instance.archived_at).length
+  const filtering = statusFilter !== 'all' || search.trim().length > 0
 
   const handleClientChoice = (choice: string) => {
     if (choice === 'new') {
@@ -550,30 +609,93 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
           <>
             {!canManage && <Alert><ShieldAlert className="h-4 w-4" /><AlertTitle>Assigned onboarding access</AlertTitle><AlertDescription>You can review only the onboarding records assigned to you. Owners and admins manage templates and invitations.</AlertDescription></Alert>}
 
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <Card><CardHeader className="pb-2"><CardDescription>Active intake</CardDescription><CardTitle className="text-3xl">{counts.active}</CardTitle></CardHeader><CardContent><Clock3 className="h-5 w-5 text-violet-500" /></CardContent></Card>
-              <Card><CardHeader className="pb-2"><CardDescription>Awaiting review</CardDescription><CardTitle className="text-3xl">{counts.review}</CardTitle></CardHeader><CardContent><ClipboardCheck className="h-5 w-5 text-amber-500" /></CardContent></Card>
-              <Card><CardHeader className="pb-2"><CardDescription>Approved</CardDescription><CardTitle className="text-3xl">{counts.approved}</CardTitle></CardHeader><CardContent><Sparkles className="h-5 w-5 text-emerald-500" /></CardContent></Card>
-              <Card><CardHeader className="pb-2"><CardDescription>Expired</CardDescription><CardTitle className="text-3xl">{counts.expired}</CardTitle></CardHeader><CardContent><Link2 className="h-5 w-5 text-slate-500" /></CardContent></Card>
+            {/* Each card selects the rows it counts. A number you cannot open
+                is a number you have to go looking for. */}
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+              {([
+                { key: 'chasing', label: 'Needs chasing', value: counts.chasing, icon: AlertTriangle, tone: 'text-amber-600' },
+                { key: 'active', label: 'Active intake', value: counts.active, icon: Clock3, tone: 'text-violet-500' },
+                { key: 'review', label: 'Awaiting review', value: counts.review, icon: ClipboardCheck, tone: 'text-amber-500' },
+                { key: 'approved', label: 'Approved', value: counts.approved, icon: Sparkles, tone: 'text-emerald-500' },
+                { key: 'expired', label: 'Expired', value: counts.expired, icon: Link2, tone: 'text-slate-500' },
+              ] as const).map(({ key, label, value, icon: Icon, tone }) => (
+                <Card
+                  key={key}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={statusFilter === key}
+                  onClick={() => setStatusFilter((current) => (current === key ? 'all' : key))}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return
+                    event.preventDefault()
+                    setStatusFilter((current) => (current === key ? 'all' : key))
+                  }}
+                  className={`cursor-pointer transition-colors hover:bg-muted/30 ${statusFilter === key ? 'border-primary ring-1 ring-primary' : ''}`}
+                >
+                  <CardHeader className="pb-2"><CardDescription>{label}</CardDescription><CardTitle className="text-3xl">{value}</CardTitle></CardHeader>
+                  <CardContent><Icon className={`h-5 w-5 ${tone}`} /></CardContent>
+                </Card>
+              ))}
             </div>
 
             <Tabs defaultValue="instances" className="space-y-4">
               <TabsList><TabsTrigger value="instances">Client onboarding</TabsTrigger>{canManage && <TabsTrigger value="templates">Form templates</TabsTrigger>}</TabsList>
               <TabsContent value="instances">
                 <Card>
-                  <CardHeader><CardTitle>Onboarding activity</CardTitle><CardDescription>See when the private link was first viewed, when the client first saved progress, and when they completed the form.</CardDescription></CardHeader>
+                  <CardHeader>
+                    <CardTitle>Onboarding activity</CardTitle>
+                    <CardDescription>See when the private link was first viewed, when the client first saved progress, and when they completed the form. Nothing chases a client automatically, so anything gone quiet is flagged here.</CardDescription>
+                    <div className="flex flex-col gap-2 pt-3 sm:flex-row">
+                      <div className="relative flex-1">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          value={search}
+                          onChange={(event) => setSearch(event.target.value)}
+                          placeholder="Search client, contact, or template"
+                          aria-label="Search onboarding"
+                          className="pl-9"
+                        />
+                      </div>
+                      <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as OnboardingTableFilter)}>
+                        <SelectTrigger className="sm:w-56" aria-label="Filter onboarding by status"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All active ({visibleInstances.length - archivedCount})</SelectItem>
+                          <SelectItem value="chasing">Needs chasing ({counts.chasing})</SelectItem>
+                          <SelectItem value="active">Active intake ({counts.active})</SelectItem>
+                          <SelectItem value="review">Awaiting review ({counts.review})</SelectItem>
+                          <SelectItem value="approved">Approved ({counts.approved})</SelectItem>
+                          <SelectItem value="expired">Expired ({counts.expired})</SelectItem>
+                          <SelectItem value="archived">Archived ({archivedCount})</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </CardHeader>
                   <CardContent>
                     {visibleInstances.length === 0 ? (
                       <div className="flex min-h-52 flex-col items-center justify-center gap-3 text-center"><FilePlus2 className="h-10 w-10 text-muted-foreground" /><div><p className="font-medium">No onboarding invitations yet</p><p className="text-sm text-muted-foreground">Start with an existing client or create a minimal client while inviting them.</p></div>{canManage && <Button variant="outline" onClick={() => setStartOpen(true)}><Plus className="mr-2 h-4 w-4" />Start onboarding</Button>}</div>
                     ) : (
                       <div className="overflow-x-auto">
+                        {filtering && (
+                          <p className="pb-3 text-xs text-muted-foreground">
+                            {tableInstances.length} of {visibleInstances.length} shown
+                            <button type="button" className="ml-2 font-medium underline underline-offset-2" onClick={() => { setSearch(''); setStatusFilter('all') }}>Clear</button>
+                          </p>
+                        )}
+                        {tableInstances.length === 0 ? (
+                          <p className="py-10 text-center text-sm text-muted-foreground">
+                            {statusFilter === 'chasing'
+                              ? 'Nothing has gone quiet. Every live onboarding was opened recently and has time on its link.'
+                              : 'No onboarding matches this filter.'}
+                          </p>
+                        ) : (
                         <Table>
-                          <TableHeader><TableRow><TableHead>Client</TableHead><TableHead>Template</TableHead><TableHead>Activity</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
-                          <TableBody>{visibleInstances.map((instance) => (
+                          <TableHeader><TableRow><TableHead>Client</TableHead><TableHead>Template</TableHead><TableHead>Activity</TableHead><TableHead>Timing</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                          <TableBody>{tableInstances.map((instance) => (
                             <TableRow key={instance.id} className={instance.archived_at ? 'opacity-60' : undefined}>
                               <TableCell><p className="font-medium">{instance.client_name}</p><p className="text-xs text-muted-foreground">{instance.recipient_email}</p>{instance.archived_at && <Badge variant="outline" className="mt-1">Archived</Badge>}</TableCell>
                               <TableCell><p>{instance.template_name}</p><p className="text-xs text-muted-foreground">Version {instance.template_version}</p></TableCell>
                               <TableCell><OnboardingActivity instance={instance} /></TableCell>
+                              <TableCell><OnboardingAge instance={instance} /></TableCell>
                               <TableCell><Badge variant="outline" className={statusStyles[instance.status]}>{onboardingStatusLabel(instance.status)}</Badge></TableCell>
                               <TableCell className="text-right"><div className="inline-flex items-center gap-1"><Button size="sm" variant="outline" onClick={() => setSelectedInstanceId(instance.id)}>View</Button>{canManage && <DropdownMenu><DropdownMenuTrigger asChild><Button size="icon" variant="ghost" aria-label={`More actions for ${instance.client_name}`}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end">
                                 {!['approved', 'revoked', 'submitted', 'expired'].includes(instance.status) && <DropdownMenuItem disabled={linkMutation.isPending} onClick={() => linkMutation.mutate({ action: 'get_link', instance })}><ExternalLink className="mr-2 h-4 w-4" />Open or copy current link</DropdownMenuItem>}
@@ -587,6 +709,7 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
                             </TableRow>
                           ))}</TableBody>
                         </Table>
+                        )}
                       </div>
                     )}
                   </CardContent>

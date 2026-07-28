@@ -107,3 +107,35 @@ assert.match(reviewDialog, /disabled=\{busy \|\| comments\.length === 0\}/u)
 assert.match(reviewDialog, /reopens their onboarding link/u)
 assert.match(onboardingPage, /result\.delivery\?\.status === 'sent'/u)
 assert.match(onboardingPage, /the email did not send/u)
+
+// Nothing chases a client automatically — process-onboarding-reminders is not
+// deployed and nothing schedules it (asserted above). So the page's job is to
+// stop losing track of the ones that went quiet.
+const chase = readFileSync('src/lib/onboardingChase.ts', 'utf8')
+assert.match(chase, /export const UNOPENED_CHASE_DAYS = 3/u)
+assert.match(chase, /export const UNFINISHED_CHASE_DAYS = 7/u)
+assert.match(chase, /export const EXPIRING_SOON_DAYS = 3/u)
+// A submitted form is the reviewer's move, and an archived or dead one is
+// nobody's, so none of them are chased.
+assert.match(
+  chase,
+  /\['submitted', 'approved', 'expired', 'revoked'\]\.includes\(instance\.status\)/u,
+)
+assert.match(chase, /instance\.archived_at !== null/u)
+// An unusable date produces silence rather than a guessed age.
+assert.match(chase, /if \(settled \|\| ageDays === null\)/u)
+
+// The counts select the rows they count, and the table can be searched and
+// filtered rather than rendering every instance ever created.
+assert.match(onboardingPage, /aria-pressed=\{statusFilter === key\}/u)
+assert.match(onboardingPage, /aria-label="Filter onboarding by status"/u)
+assert.match(onboardingPage, /aria-label="Search onboarding"/u)
+assert.match(onboardingPage, /tableInstances\.map\(\(instance\) =>/u)
+// Archived rows are finished work: hidden unless asked for, never padding
+// another view.
+assert.match(
+  onboardingPage,
+  /statusFilter === 'archived' \? !instance\.archived_at : Boolean\(instance\.archived_at\)/u,
+)
+// A filtered table says how much it is hiding.
+assert.match(onboardingPage, /\{tableInstances\.length\} of \{visibleInstances\.length\} shown/u)
