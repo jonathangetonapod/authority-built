@@ -292,7 +292,7 @@ function workspacePresentationBrandingDto(
     client_brand_accent_color: responseBrandColor(
       row.client_brand_accent_color,
     ),
-    booking_embed_url: responseText(row.booking_embed_url, 500),
+    booking_embed_url: responseText(row.booking_embed_url ?? null, 500, true),
     client_brand_updated_at: responseTimestamp(
       row.client_brand_updated_at,
     ) as string,
@@ -805,7 +805,7 @@ async function loadWorkspaceBranding(
       client_brand_updated_at: responseTimestamp(
         canonicalBrand.client_brand_updated_at,
       ) as string,
-      booking_embed_url: responseText(canonicalBrand.booking_embed_url, 500),
+      booking_embed_url: responseText(canonicalBrand.booking_embed_url ?? null, 500, true),
     };
   }
   if (
@@ -841,7 +841,7 @@ async function loadWorkspaceBranding(
       client_brand_primary_color: "#0D1B2A",
       client_brand_accent_color: "#C7794F",
       client_brand_updated_at: base.updated_at,
-      booking_embed_url: responseText(canonicalBrand?.booking_embed_url, 500),
+      booking_embed_url: responseText(canonicalBrand?.booking_embed_url ?? null, 500, true),
     };
   }
 
@@ -853,7 +853,7 @@ async function loadWorkspaceBranding(
     client_brand_primary_color: responseBrandColor(metadata.primary_color),
     client_brand_accent_color: responseBrandColor(metadata.accent_color),
     client_brand_updated_at: responseTimestamp(event.created_at) as string,
-    booking_embed_url: responseText(canonicalBrand?.booking_embed_url, 500),
+    booking_embed_url: responseText(canonicalBrand?.booking_embed_url ?? null, 500, true),
   };
 }
 

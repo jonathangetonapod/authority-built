@@ -257,7 +257,7 @@ describe('WorkspaceStaff', () => {
   it('takes a pasted scheduler link and says it will load on the page', async () => {
     renderPage()
 
-    const field = await screen.findByLabelText('Booking link shown to prospects')
+    const field = await screen.findByLabelText('Booking link or embed code')
     fireEvent.change(field, { target: { value: 'https://calendly.com/agency/intro' } })
     expect(screen.getByText(/Calendly loads on the page itself/)).toBeInTheDocument()
 
@@ -268,10 +268,30 @@ describe('WorkspaceStaff', () => {
     ))
   })
 
+  it('accepts the embed block a scheduler puts on the clipboard', async () => {
+    renderPage()
+
+    const field = await screen.findByLabelText('Booking link or embed code')
+    fireEvent.change(field, {
+      target: {
+        value: '<script>Cal("init", "30min", {origin:"https://app.cal.com"});'
+          + ' Cal.ns["30min"]("inline", { calLink: "agency/30min" });</script>',
+      },
+    })
+
+    // The link is taken out of the snippet rather than the paste refused.
+    expect(screen.getByText(/Saving https:\/\/cal\.com\/agency\/30min/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Save link' }))
+    await waitFor(() => expect(vi.mocked(updateWorkspaceBookingLink)).toHaveBeenCalledWith(
+      workspaceId,
+      'https://cal.com/agency/30min',
+    ))
+  })
+
   it('says a link it cannot frame will open in a new tab instead of refusing it', async () => {
     renderPage()
 
-    const field = await screen.findByLabelText('Booking link shown to prospects')
+    const field = await screen.findByLabelText('Booking link or embed code')
     fireEvent.change(field, { target: { value: 'https://book.example.com/agency' } })
 
     expect(screen.getByText(/opens in a new tab/i)).toBeInTheDocument()

@@ -25,7 +25,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
-import { schedulerName } from '@/lib/schedulerEmbed'
+import { bookingLinkFromPaste, schedulerName } from '@/lib/schedulerEmbed'
 import {
   WORKSPACE_NAV_ORGANIZE_EVENT,
   WorkspaceBrandLogo,
@@ -41,6 +41,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -293,8 +294,12 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
   )
 
   const [bookingLinkDraft, setBookingLinkDraft] = useState('')
-  const bookingLinkChanged = bookingLinkDraft.trim() !== (data?.workspace.booking_embed_url ?? '')
-  const bookingLinkPreviewName = schedulerName(bookingLinkDraft)
+  // Copying "embed code" from a scheduler gives a block of script, not a URL,
+  // so the link is taken out of whatever was pasted rather than refused.
+  const bookingLinkResolved = bookingLinkFromPaste(bookingLinkDraft)
+  const bookingLinkChanged = (bookingLinkResolved ?? bookingLinkDraft.trim())
+    !== (data?.workspace.booking_embed_url ?? '')
+  const bookingLinkPreviewName = schedulerName(bookingLinkResolved)
 
   const refreshBranding = async () => {
     await queryClient.invalidateQueries({ queryKey })
@@ -712,37 +717,46 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                             </div>
 
                             <div className="space-y-2">
-                              <Label htmlFor="workspace-booking-link">Booking link shown to prospects</Label>
-                              <div className="flex flex-col gap-2 sm:flex-row">
-                                <Input
+                              <Label htmlFor="workspace-booking-link">Booking link or embed code</Label>
+                              <div className="flex flex-col gap-2">
+                                {/* A textarea because "embed code" is a block
+                                    of script, and that is what a scheduler
+                                    puts on the clipboard. */}
+                                <Textarea
                                   id="workspace-booking-link"
-                                  type="url"
-                                  inputMode="url"
-                                  maxLength={500}
+                                  rows={2}
+                                  maxLength={6_000}
                                   value={bookingLinkDraft}
                                   disabled={!canManageClientBranding || bookingLinkMutation.isPending}
                                   onChange={(event) => setBookingLinkDraft(event.target.value)}
-                                  placeholder="https://calendly.com/your-agency/intro"
+                                  placeholder="https://calendly.com/your-agency/intro — or paste the whole embed snippet"
+                                  className="font-mono text-xs"
                                 />
                                 <Button
                                   type="button"
                                   variant="outline"
-                                  className="shrink-0"
-                                  disabled={!canManageClientBranding || bookingLinkMutation.isPending || !bookingLinkChanged}
-                                  onClick={() => bookingLinkMutation.mutate(bookingLinkDraft.trim() || null)}
+                                  className="w-fit"
+                                  disabled={!canManageClientBranding
+                                    || bookingLinkMutation.isPending
+                                    || !bookingLinkChanged
+                                    || (Boolean(bookingLinkDraft.trim()) && !bookingLinkResolved)}
+                                  onClick={() => bookingLinkMutation.mutate(bookingLinkResolved)}
                                 >
                                   {bookingLinkMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                   Save link
                                 </Button>
                               </div>
                               <p className="text-xs text-muted-foreground">
-                                Paste your scheduler link. Every prospect dashboard without a call-to-action of its own shows it
-                                under &ldquo;Ready to turn your shortlist into conversations?&rdquo; instead of asking the prospect to reply to an email.
-                                {bookingLinkPreviewName
-                                  ? ` ${bookingLinkPreviewName} loads on the page itself.`
-                                  : bookingLinkDraft.trim()
-                                    ? ' This one opens in a new tab. Calendly, Cal.com, SavvyCal, TidyCal, HubSpot, and Zcal load on the page itself.'
-                                    : ''}
+                                Paste your scheduler link, or the whole embed code it gives you. Every prospect dashboard without a
+                                call-to-action of its own shows it under &ldquo;Ready to turn your shortlist into conversations?&rdquo;
+                                instead of asking the prospect to reply to an email.
+                                {!bookingLinkDraft.trim()
+                                  ? ''
+                                  : !bookingLinkResolved
+                                    ? ' No booking link found in that. Paste the scheduler address or its embed code.'
+                                    : bookingLinkPreviewName
+                                      ? ` Saving ${bookingLinkResolved} — ${bookingLinkPreviewName} loads on the page itself.`
+                                      : ` Saving ${bookingLinkResolved} — this one opens in a new tab. Calendly, Cal.com, SavvyCal, TidyCal, HubSpot, and Zcal load on the page itself.`}
                               </p>
                             </div>
 

@@ -421,6 +421,16 @@ assert.match(bookingMigration, /actor_role NOT IN \('owner', 'admin', 'platform_
 assert.match(bookingMigration, /AND NOT workspace\.is_default/u)
 assert.match(bookingMigration, /REVOKE ALL ON FUNCTION public\.set_workspace_booking_link_v1\(UUID, TEXT, UUID, BIGINT\)\s*\n\s*FROM PUBLIC, anon, authenticated;/u)
 
+// A workspace without a booking link is the normal case, not a malformed
+// response. Reading it as non-nullable made every settings load 500.
+for (const call of source.matchAll(/booking_embed_url: responseText\(([^\n]*)\)/gu)) {
+  assert.match(
+    call[1],
+    /,\s*true$/u,
+    'the booking link must be read as nullable, or settings breaks for every workspace that has not set one',
+  )
+}
+
 assert.match(source, /action === "update_booking_link"/u)
 assert.match(source, /requireWorkspaceManager\(staff\)[\s\S]{0,400}set_workspace_booking_link_v1/u)
 assert.match(prospectPublic, /booking_embed_url/u)
@@ -429,6 +439,14 @@ assert.match(prospectPublic, /startsWith\('https:\/\/'\)/u)
 // Only schedulers that publish an embed are framed; every other link still
 // works as a button rather than being refused.
 assert.match(schedulerEmbed, /const EMBEDDABLE_HOSTS = new Set\(\[/u)
+// A scheduler's "embed code" is a block of script, so that is what gets
+// pasted. The link is taken out of it rather than the paste refused.
+assert.match(schedulerEmbed, /export function bookingLinkFromPaste\(/u)
+assert.match(schedulerEmbed, /calLink\\s\*:/u)
+assert.match(schedulerEmbed, /const EMBED_ASSET =/u)
+const staffPage = readFileSync('src/pages/app/WorkspaceStaff.tsx', 'utf8')
+assert.match(staffPage, /Booking link or embed code/u)
+assert.match(staffPage, /bookingLinkMutation\.mutate\(bookingLinkResolved\)/u)
 assert.match(schedulerEmbed, /url\.protocol === 'https:'/u)
 assert.match(prospectView, /bookingEmbedUrl && \(/u)
 assert.match(prospectView, /sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"/u)

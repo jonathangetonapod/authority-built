@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bookingLinkUrl, schedulerEmbedUrl, schedulerName } from '@/lib/schedulerEmbed'
+import { bookingLinkFromPaste, bookingLinkUrl, schedulerEmbedUrl, schedulerName } from '@/lib/schedulerEmbed'
 
 describe('bookingLinkUrl', () => {
   it('accepts an https scheduler link', () => {
@@ -54,5 +54,45 @@ describe('schedulerName', () => {
     expect(schedulerName('https://calendly.com/agency')).toBe('Calendly')
     expect(schedulerName('https://app.cal.com/agency')).toBe('Cal.com')
     expect(schedulerName('https://example.com/book')).toBeNull()
+  })
+})
+
+describe('bookingLinkFromPaste', () => {
+  // What Cal.com's "embed code" button actually puts on the clipboard.
+  const calSnippet = `<!-- Cal inline embed code begins -->
+<div style="width:100%;height:100%;overflow:scroll" id="my-cal-inline-30min"></div>
+<script type="text/javascript">
+  (function (C, A, L) { let p = function (a, ar) { a.q.push(ar); }; })(window, "https://app.cal.com/embed/embed.js", "init");
+Cal("init", "30min", {origin:"https://app.cal.com"});
+  Cal.ns["30min"]("inline", {
+    elementOrSelector:"#my-cal-inline-30min",
+    config: {"layout":"month_view"},
+    calLink: "jonathan-garces-x5v8tl/30min",
+  });
+  </script>
+  <!-- Cal inline embed code ends -->`
+
+  it('takes the booking link out of a Cal.com embed block', () => {
+    // Not app.cal.com/embed/embed.js, which is the first https URL in it.
+    expect(bookingLinkFromPaste(calSnippet)).toBe('https://cal.com/jonathan-garces-x5v8tl/30min')
+    expect(schedulerEmbedUrl(bookingLinkFromPaste(calSnippet))).toBe('https://cal.com/jonathan-garces-x5v8tl/30min')
+  })
+
+  it('takes it out of a Calendly widget too', () => {
+    const calendly = '<div class="calendly-inline-widget" data-url="https://calendly.com/agency/intro" style="min-width:320px"></div>'
+      + '<script src="https://assets.calendly.com/assets/external/widget.js"></script>'
+    expect(bookingLinkFromPaste(calendly)).toBe('https://calendly.com/agency/intro')
+  })
+
+  it('passes a plain URL straight through', () => {
+    expect(bookingLinkFromPaste('https://cal.com/agency/30min')).toBe('https://cal.com/agency/30min')
+    expect(bookingLinkFromPaste('  https://savvycal.com/agency/chat ')).toBe('https://savvycal.com/agency/chat')
+  })
+
+  it('finds nothing in text that has no booking link', () => {
+    expect(bookingLinkFromPaste('book a call with me')).toBeNull()
+    expect(bookingLinkFromPaste('<script src="https://example.com/widget.js"></script>')).toBeNull()
+    expect(bookingLinkFromPaste('')).toBeNull()
+    expect(bookingLinkFromPaste(null)).toBeNull()
   })
 })
