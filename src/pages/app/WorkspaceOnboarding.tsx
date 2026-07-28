@@ -732,14 +732,18 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
       </div>
 
       <Dialog open={startOpen} onOpenChange={setStartOpen}>
-        <DialogContent className="max-h-[92vh] max-w-7xl overflow-y-auto p-0">
+        <DialogContent className="max-h-[92vh] w-[calc(100vw-1rem)] max-w-7xl overflow-x-hidden overflow-y-auto p-0 sm:w-[96vw] sm:max-w-7xl">
           <DialogHeader className="border-b px-6 pb-5 pt-6">
             <DialogTitle>Start client onboarding</DialogTitle>
             <DialogDescription>Choose the client and personalize the exact branded experience they will receive.</DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-6 px-6 py-5 lg:grid-cols-[minmax(0,.9fr)_minmax(440px,1.1fr)]">
-            <div className="space-y-6">
+          {/* The preview column carried a hard 440px floor from the lg
+              breakpoint up. At 1024–1280px that floor plus the form column
+              exceeded the dialog, and the dialog scrolls vertically only, so
+              the excess simply spilled. Both tracks shrink now. */}
+          <div className="grid gap-6 px-6 py-5 lg:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]">
+            <div className="min-w-0 space-y-6">
               <section className="space-y-4">
                 <div><h3 className="font-semibold">Client and form</h3><p className="text-sm text-muted-foreground">Create one private intake link for this client. The questions stay pinned to this published template version.</p></div>
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -772,7 +776,7 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
               </section>
             </div>
 
-            <aside className="lg:sticky lg:top-0 lg:self-start">
+            <aside className="min-w-0 lg:sticky lg:top-0 lg:self-start">
               {selectedStartTemplate ? (
                 <ClientOnboardingPreview
                   key={selectedStartTemplate.id}

@@ -112,9 +112,6 @@ const WorkspaceBilling = () => {
 
   const usageEntries = Object.entries(overview?.usage_this_month ?? {})
     .sort((left, right) => right[1].total - left[1].total)
-  const priceEntries = Object.entries(overview?.prices ?? {})
-    .filter(([type]) => type !== 'other')
-    .sort((left, right) => (OPERATION_LABELS[left[0]] || left[0]).localeCompare(OPERATION_LABELS[right[0]] || right[0]))
 
   return (
     <WorkspaceLayout>
@@ -207,7 +204,7 @@ const WorkspaceBilling = () => {
               </CardContent>
             </Card>
 
-            <div className="grid items-start gap-4 lg:grid-cols-2">
+            <div className="grid items-start gap-4">
               <Card>
                 <CardHeader><CardTitle className="text-lg">Usage this month</CardTitle><CardDescription>Operations recorded across your workspace. Runs on your own API keys are free.</CardDescription></CardHeader>
                 <CardContent>
@@ -226,19 +223,6 @@ const WorkspaceBilling = () => {
                       ))}
                     </ul>
                   )}
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader><CardTitle className="text-lg">Credit prices</CardTitle><CardDescription>What each operation costs when it runs on platform keys.</CardDescription></CardHeader>
-                <CardContent>
-                  <ul className="divide-y">
-                    {priceEntries.map(([type, cost]) => (
-                      <li key={type} className="flex items-center justify-between gap-3 py-2.5 text-sm">
-                        <span>{OPERATION_LABELS[type] || type}</span>
-                        <span className="font-medium">{cost === 0 ? 'Free' : `${cost} ${cost === 1 ? 'credit' : 'credits'}`}</span>
-                      </li>
-                    ))}
-                  </ul>
                 </CardContent>
               </Card>
             </div>
