@@ -3876,6 +3876,108 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, { success: true, booking_id: bookingId });
     }
 
+    // Workspace-wide: this refreshes totals for every campaign on the key and
+    // takes no client. It sat below the client_id gate, so it answered every
+    // call with a complaint about a field it does not accept.
+    if (action === "refresh-analytics") {
+      requireOnlyKeys(body, ["action", "workspace_id"]);
+      requireCampaignManager(access);
+      const connection = await readConnection(context.admin, workspaceId);
+      if (!connection) {
+        throw new HttpError(
+          409,
+          "INSTANTLY_NOT_CONNECTED",
+          "Connect Instantly before refreshing campaign totals",
+        );
+      }
+      const { data, error } = await context.admin
+        .from("workspace_client_campaigns")
+        .select(CAMPAIGN_COLUMNS)
+        .eq("workspace_id", workspaceId)
+        .not("instantly_campaign_id", "is", null)
+        // A campaign the provider is mid-write on is left alone: its own sync
+        // is the authority until it finishes.
+        .in("provider_sync_state", ["idle", "error"])
+        .limit(MAX_ANALYTICS_REFRESH_CAMPAIGNS);
+      if (error) {
+        throw new HttpError(
+          500,
+          "CAMPAIGN_ANALYTICS_REFRESH_FAILED",
+          "Client campaigns could not be loaded",
+        );
+      }
+      const campaigns = (data || []) as unknown as CampaignRow[];
+      if (campaigns.length === 0) {
+        return jsonResponse(req, METHODS, 200, {
+          requested: 0,
+          refreshed: 0,
+          missing: 0,
+        });
+      }
+      // One request for the whole workspace, where the per-campaign sync costs
+      // a round trip each.
+      const analyticsById = await listInstantlyCampaignAnalytics(
+        await integrationApiKey(connection),
+        campaigns.flatMap((campaign) =>
+          campaign.instantly_campaign_id ? [campaign.instantly_campaign_id] : []
+        ),
+      );
+      let refreshed = 0;
+      let missing = 0;
+      for (let offset = 0; offset < campaigns.length; offset += 25) {
+        await Promise.all(
+          campaigns.slice(offset, offset + 25).map(async (campaign) => {
+            const fresh = campaign.instantly_campaign_id
+              ? analyticsById.get(campaign.instantly_campaign_id)
+              : undefined;
+            if (!fresh) {
+              missing += 1;
+              return;
+            }
+            const { error: updateError } = await context.admin
+              .from("workspace_client_campaigns")
+              .update({
+                analytics: withStoredOpportunityCounts(
+                  fresh.analytics,
+                  campaign.analytics,
+                ),
+                ...(fresh.status === null ? {} : {
+                  instantly_campaign_status: fresh.status,
+                  status: localCampaignStatus(fresh.status),
+                }),
+                // last_synced_at and last_error are deliberately untouched.
+                // This refreshes totals, not the per-recipient state a full
+                // sync reads, and stamping it would claim work not done.
+                updated_by: context.user.id,
+              })
+              .eq("id", campaign.id)
+              .eq("workspace_id", workspaceId);
+            if (updateError) {
+              throw new HttpError(
+                500,
+                "CAMPAIGN_ANALYTICS_REFRESH_FAILED",
+                "Campaign totals could not be saved",
+              );
+            }
+            refreshed += 1;
+          }),
+        );
+      }
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: "workspace.client_campaign.analytics_refreshed",
+        entityType: "workspace_client_campaign",
+        entityId: null,
+        metadata: { requested: campaigns.length, refreshed, missing },
+      });
+      return jsonResponse(req, METHODS, 200, {
+        requested: campaigns.length,
+        refreshed,
+        missing,
+      });
+    }
+
     const clientId = requireUuid(body.client_id, "client_id");
     const client = await requireWorkspaceClient(
       context.admin,
@@ -5246,104 +5348,6 @@ serve(async (req) => {
       });
     }
 
-    if (action === "refresh-analytics") {
-      requireOnlyKeys(body, ["action", "workspace_id"]);
-      requireCampaignManager(access);
-      const connection = await readConnection(context.admin, workspaceId);
-      if (!connection) {
-        throw new HttpError(
-          409,
-          "INSTANTLY_NOT_CONNECTED",
-          "Connect Instantly before refreshing campaign totals",
-        );
-      }
-      const { data, error } = await context.admin
-        .from("workspace_client_campaigns")
-        .select(CAMPAIGN_COLUMNS)
-        .eq("workspace_id", workspaceId)
-        .not("instantly_campaign_id", "is", null)
-        // A campaign the provider is mid-write on is left alone: its own sync
-        // is the authority until it finishes.
-        .in("provider_sync_state", ["idle", "error"])
-        .limit(MAX_ANALYTICS_REFRESH_CAMPAIGNS);
-      if (error) {
-        throw new HttpError(
-          500,
-          "CAMPAIGN_ANALYTICS_REFRESH_FAILED",
-          "Client campaigns could not be loaded",
-        );
-      }
-      const campaigns = (data || []) as unknown as CampaignRow[];
-      if (campaigns.length === 0) {
-        return jsonResponse(req, METHODS, 200, {
-          requested: 0,
-          refreshed: 0,
-          missing: 0,
-        });
-      }
-      // One request for the whole workspace, where the per-campaign sync costs
-      // a round trip each.
-      const analyticsById = await listInstantlyCampaignAnalytics(
-        await integrationApiKey(connection),
-        campaigns.flatMap((campaign) =>
-          campaign.instantly_campaign_id ? [campaign.instantly_campaign_id] : []
-        ),
-      );
-      let refreshed = 0;
-      let missing = 0;
-      for (let offset = 0; offset < campaigns.length; offset += 25) {
-        await Promise.all(
-          campaigns.slice(offset, offset + 25).map(async (campaign) => {
-            const fresh = campaign.instantly_campaign_id
-              ? analyticsById.get(campaign.instantly_campaign_id)
-              : undefined;
-            if (!fresh) {
-              missing += 1;
-              return;
-            }
-            const { error: updateError } = await context.admin
-              .from("workspace_client_campaigns")
-              .update({
-                analytics: withStoredOpportunityCounts(
-                  fresh.analytics,
-                  campaign.analytics,
-                ),
-                ...(fresh.status === null ? {} : {
-                  instantly_campaign_status: fresh.status,
-                  status: localCampaignStatus(fresh.status),
-                }),
-                // last_synced_at and last_error are deliberately untouched.
-                // This refreshes totals, not the per-recipient state a full
-                // sync reads, and stamping it would claim work not done.
-                updated_by: context.user.id,
-              })
-              .eq("id", campaign.id)
-              .eq("workspace_id", workspaceId);
-            if (updateError) {
-              throw new HttpError(
-                500,
-                "CAMPAIGN_ANALYTICS_REFRESH_FAILED",
-                "Campaign totals could not be saved",
-              );
-            }
-            refreshed += 1;
-          }),
-        );
-      }
-      await writeAudit(context.admin, {
-        workspaceId,
-        actorUserId: context.user.id,
-        action: "workspace.client_campaign.analytics_refreshed",
-        entityType: "workspace_client_campaign",
-        entityId: null,
-        metadata: { requested: campaigns.length, refreshed, missing },
-      });
-      return jsonResponse(req, METHODS, 200, {
-        requested: campaigns.length,
-        refreshed,
-        missing,
-      });
-    }
 
     if (action === "pause" || action === "resume") {
       requireOnlyKeys(body, ["action", "workspace_id", "client_id"]);

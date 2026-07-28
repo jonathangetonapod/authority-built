@@ -226,6 +226,41 @@ export async function searchClientPodcastCatalog(
   return data.podcasts || []
 }
 
+// The exact keys the add endpoint accepts. Catalog search answers with two
+// extras — already_added and existing_visibility — and the endpoint rejects any
+// key it did not ask for, so passing a search result straight back failed the
+// whole batch. TypeScript cannot catch it: the catalog type extends this one,
+// and excess-property checking does not apply to values passed in an array.
+const SHORTLIST_INPUT_KEYS = [
+  'podcast_id',
+  'podscan_podcast_id',
+  'podcast_name',
+  'podcast_description',
+  'podcast_image_url',
+  'podcast_url',
+  'publisher_name',
+  'itunes_rating',
+  'episode_count',
+  'audience_size',
+  'last_posted_at',
+  'podcast_categories',
+  'language',
+  'region',
+  'podcast_email',
+  'rss_feed',
+  'compatibility_score',
+  'compatibility_reasoning',
+] as const
+
+function shortlistInput(podcast: ClientShortlistPodcastInput): ClientShortlistPodcastInput {
+  const source = podcast as unknown as Record<string, unknown>
+  const trimmed: Record<string, unknown> = {}
+  for (const key of SHORTLIST_INPUT_KEYS) {
+    if (source[key] !== undefined) trimmed[key] = source[key]
+  }
+  return trimmed as unknown as ClientShortlistPodcastInput
+}
+
 export async function addClientShortlistPodcasts(
   workspaceId: string,
   clientId: string,
@@ -237,7 +272,7 @@ export async function addClientShortlistPodcasts(
       action: 'add',
       workspace_id: workspaceId,
       client_id: clientId,
-      podcasts: podcasts.slice(offset, offset + 50),
+      podcasts: podcasts.slice(offset, offset + 50).map(shortlistInput),
     })
     combined.added += result.added
     combined.skipped += result.skipped

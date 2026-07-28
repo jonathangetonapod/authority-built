@@ -548,8 +548,10 @@ assert.match(
   /export function withStoredOpportunityCounts[\s\S]*?total_meeting_booked: fresh\.total_meeting_booked \|\|\s*previous\.total_meeting_booked/u,
 )
 
+// Sliced to the next action rather than to one named handler, so moving this
+// block does not silently widen the slice over unrelated code.
 const refreshAnalyticsAction = edge.match(
-  /action === "refresh-analytics"[\s\S]*?action === "pause" \|\| action === "resume"/u,
+  /action === "refresh-analytics"[\s\S]*?\n {4}if \(action ===/u,
 )
 assert.ok(refreshAnalyticsAction, 'refresh-analytics action must exist')
 assert.match(refreshAnalyticsAction[0], /requireOnlyKeys\(body, \["action", "workspace_id"\]\)/u)
@@ -602,7 +604,8 @@ assert.ok(mailboxesAction, 'mailboxes action must exist')
 // record of ownership that could disagree with what actually sends.
 assert.match(mailboxesAction[0], /campaigns: linksByEmail\.get\(account\.email\) \?\? \[\]/u)
 
-const assignAction = edge.match(/action === "mailbox-assign"[\s\S]*?action === "refresh-analytics"/u)
+// Same reason as above: sliced to the next action, not to a named neighbour.
+const assignAction = edge.match(/action === "mailbox-assign"[\s\S]*?\n {4}if \(action ===/u)
 assert.ok(assignAction, 'mailbox-assign action must exist')
 assert.match(assignAction[0], /requireCampaignManager\(access\)/u)
 assert.match(assignAction[0], /verifySelectedAccounts\(/u)
