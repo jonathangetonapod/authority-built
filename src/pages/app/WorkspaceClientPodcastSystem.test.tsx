@@ -236,6 +236,21 @@ describe('WorkspaceClientPodcastSystem', () => {
     mockedGetSystem.mockResolvedValue(response)
   })
 
+  it('keeps a long client bio from pushing the whole workspace off screen', async () => {
+    const bio = 'Positioning paragraph. '.repeat(30)
+    mockedGetSystem.mockResolvedValue({
+      ...response,
+      clients: [{ ...response.clients[0], bio, profile: { ...response.clients[0].profile, positioning: null } }],
+    } as never)
+
+    renderPage(`/app/client-podcast-system?client=${clientId}`)
+
+    const positioning = await screen.findByText(bio.trim())
+    expect(positioning.className).toContain('line-clamp-3')
+    fireEvent.click(screen.getByRole('button', { name: 'Show more' }))
+    expect(screen.getByText(bio.trim()).className).not.toContain('line-clamp-3')
+  })
+
   it('opens the host conversation from a placement instead of the whole inbox', async () => {
     mockedGetSystem.mockResolvedValue({
       ...response,

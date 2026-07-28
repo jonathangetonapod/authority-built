@@ -174,6 +174,32 @@ function ConversationBadge({ item }: { item: ClientPodcastSystemItem }) {
   )
 }
 
+function ClientPositioning({ text }: { text: string | null }) {
+  const [expanded, setExpanded] = useState(false)
+  if (!text?.trim()) {
+    return <p className="mt-1 text-sm text-muted-foreground">Host-ready positioning has not been added yet.</p>
+  }
+  // Only long text is worth collapsing; a one-line positioning statement with
+  // a "Show more" under it reads as broken.
+  const longEnoughToCollapse = text.length > 320
+  return (
+    <div className="mt-1">
+      <p className={`max-w-3xl whitespace-pre-line text-sm text-muted-foreground ${expanded || !longEnoughToCollapse ? '' : 'line-clamp-3'}`}>
+        {text}
+      </p>
+      {longEnoughToCollapse && (
+        <button
+          type="button"
+          onClick={() => setExpanded((current) => !current)}
+          className="mt-1 text-xs font-semibold text-primary hover:underline"
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
+    </div>
+  )
+}
+
 function StageBadge({ stage }: { stage: ClientPodcastLifecycleStage }) {
   const meta = stageMeta[stage]
   return <Badge variant="outline" className={meta.className}>{meta.shortLabel}</Badge>
@@ -713,7 +739,10 @@ function SelectedClientView({
                 <h2 className="text-2xl font-bold tracking-tight">{client.name}</h2>
                 <Badge variant="outline" className={statusClassName(client.status)}>{client.status}</Badge>
               </div>
-              <p className="mt-1 text-sm text-muted-foreground">{client.profile.positioning || client.bio || 'Host-ready positioning has not been added yet.'}</p>
+              {/* A full bio can run to several paragraphs, which pushed the
+                  whole client workspace below the fold. Three lines is enough
+                  to recognise the positioning; the rest opens in place. */}
+              <ClientPositioning text={client.profile.positioning || client.bio} />
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                 {client.email && <span>{client.email}</span>}
                 {website && <a href={website} target="_blank" rel="noreferrer" className="inline-flex items-center text-primary hover:underline">{client.website}<ExternalLink className="ml-1 h-3 w-3" /></a>}

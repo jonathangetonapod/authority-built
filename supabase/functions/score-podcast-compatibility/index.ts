@@ -143,14 +143,22 @@ serve(async (req) => {
           .select('id,workspace_id,bio,status')
           .eq('id', clientId)
           .eq('workspace_id', workspaceId)
-          .eq('status', 'active')
           .maybeSingle()
 
         if (scopedClientError) {
           throw new HttpError(500, 'CLIENT_CONTEXT_UNAVAILABLE', 'The client profile could not be loaded')
         }
         if (!scopedClient || scopedClient.workspace_id !== workspaceId) {
-          throw new HttpError(404, 'CLIENT_NOT_FOUND', 'Active workspace client not found')
+          throw new HttpError(404, 'CLIENT_NOT_FOUND', 'This client is not in this workspace')
+        }
+        // Named rather than folded into "not found": a paused client is a
+        // state the operator can change, a missing one is not.
+        if (scopedClient.status !== 'active') {
+          throw new HttpError(
+            409,
+            'CLIENT_NOT_ACTIVE',
+            `This client is ${scopedClient.status}. Reactivate them to run this.`,
+          )
         }
         clientBio = scopedClient.bio
         prospectBio = undefined

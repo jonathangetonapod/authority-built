@@ -860,19 +860,29 @@ serve(async (req) => {
 
     if (action === 'research-get') {
       const access = await requireWorkspaceFeatureAccess(authContext, workspaceId)
+      // Read without the status filter so the two failures can be told apart.
+      // Filtering in the query made a paused client indistinguishable from one
+      // that does not exist, and "Active workspace client not found" gave the
+      // operator nothing to act on.
       const { data: client, error: clientError } = await admin
         .from('clients')
         .select('id,workspace_id,name,email,website,status,bio,photo_url,updated_at')
         .eq('id', clientId!)
         .eq('workspace_id', workspaceId)
-        .eq('status', 'active')
         .maybeSingle()
 
       if (clientError) {
         throw new HttpError(500, 'CLIENT_OPERATION_FAILED', 'The workspace client could not be loaded')
       }
       if (!client || client.workspace_id !== workspaceId) {
-        throw new HttpError(404, 'CLIENT_NOT_FOUND', 'Active workspace client not found')
+        throw new HttpError(404, 'CLIENT_NOT_FOUND', 'This client is not in this workspace')
+      }
+      if (client.status !== 'active') {
+        throw new HttpError(
+          409,
+          'CLIENT_NOT_ACTIVE',
+          `Research is only available for active clients. ${client.name} is ${client.status}.`,
+        )
       }
 
       const historyTables = [
