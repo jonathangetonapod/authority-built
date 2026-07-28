@@ -534,3 +534,47 @@ const settingsEntry = readFileSync('src/pages/app/MyWorkspaceSettings.tsx', 'utf
 assert.match(settingsEntry, /isPlatformAdmin && workspace\?\.is_default/u)
 assert.match(staffPage, /const platformRoster = data\?\.workspace\.is_default === true/u)
 assert.match(staffPage, /\/app\/manage-workspaces/u)
+
+// The roster parser must admit every provisioning method the database can
+// store. It knew two of the three, and the third — 'platform_bootstrap', which
+// the default workspace's own memberships were backfilled with — made the
+// settings page answer 500 the moment that workspace was first served. Derive
+// the list from the constraint instead of restating it, so the next value added
+// in SQL fails here rather than in production.
+const manualAccountsMigration = readFileSync(
+  'supabase/migrations/20260721000100_manual_workspace_accounts.sql',
+  'utf8',
+)
+const provisioningCheck = manualAccountsMigration.match(
+  /workspace_memberships_provisioning_method_check CHECK \(\s*provisioning_method IN \(([\s\S]*?)\)\s*\)/u,
+)
+assert.ok(provisioningCheck, 'provisioning_method CHECK constraint not found')
+const allowedProvisioningMethods = [...provisioningCheck[1].matchAll(/'([a-z_]+)'/gu)]
+  .map((match) => match[1])
+assert.deepEqual(
+  allowedProvisioningMethods,
+  ['platform_bootstrap', 'email_invite', 'admin_temporary_password'],
+)
+const provisioningEnum = source.match(/const PROVISIONING_METHODS = \[([\s\S]*?)\] as const;/u)
+assert.ok(provisioningEnum, 'PROVISIONING_METHODS not found in the edge function')
+for (const method of allowedProvisioningMethods) {
+  assert.match(provisioningEnum[1], new RegExp(`"${method}"`, 'u'))
+}
+// Admitting it is a read-only widening: every mutation still demands an invite
+// or a temporary password by name, so a bootstrapped row reaches none of them.
+assert.match(source, /membership\.provisioning_method !== "email_invite"/u)
+assert.match(source, /membership\.provisioning_method !== "admin_temporary_password"/u)
+
+// The frontend carries the same three values.
+const staffService = readFileSync('src/services/workspaceStaff.ts', 'utf8')
+assert.match(
+  staffService,
+  /export type WorkspaceStaffSetupMethod = 'platform_bootstrap' \| 'email_invite' \| 'admin_temporary_password'/u,
+)
+
+// A rejected response names the failing check in the logs. Every validator
+// raised one indistinguishable message, so an invalid roster could not be told
+// from invalid branding without querying the database by hand.
+assert.match(source, /function invalidRpcResponse\(where\?: string\): never \{/u)
+assert.match(source, /console\.error\(`\[manage-workspace-staff\] invalid RPC response: \$\{where\}`\)/u)
+assert.match(source, /"member\.setup_method",/u)

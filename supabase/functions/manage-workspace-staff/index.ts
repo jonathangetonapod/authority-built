@@ -46,7 +46,12 @@ const PUBLIC_ACTIONS = [
   "reactivate",
   "revoke",
 ] as const;
+// The database allows three, not two. 'platform_bootstrap' is what the default
+// workspace's own memberships were backfilled with, and every mutation below
+// refuses anything that is not an invite or a temporary password, so admitting
+// it here only lets the roster be read.
 const PROVISIONING_METHODS = [
+  "platform_bootstrap",
   "email_invite",
   "admin_temporary_password",
 ] as const;
@@ -185,7 +190,14 @@ interface WorkspaceNameDto {
   updated_at: string;
 }
 
-function invalidRpcResponse(): never {
+// Every validator in this file raised the same opaque message, so a rejected
+// roster row could not be told from a rejected brand without querying the
+// database by hand. The label names the failing check in the logs; the caller
+// still sees one message, and only enum names and shapes are ever logged.
+function invalidRpcResponse(where?: string): never {
+  if (where) {
+    console.error(`[manage-workspace-staff] invalid RPC response: ${where}`);
+  }
   throw new HttpError(
     500,
     "INVALID_STAFF_RESPONSE",
@@ -333,9 +345,16 @@ function workspaceNameDto(
 function responseEnum<T extends string>(
   value: unknown,
   allowed: readonly T[],
+  field?: string,
 ): T {
   if (typeof value !== "string" || !allowed.includes(value as T)) {
-    invalidRpcResponse();
+    invalidRpcResponse(
+      field
+        ? `${field} was ${
+          typeof value === "string" ? JSON.stringify(value) : typeof value
+        }, expected one of ${allowed.join("|")}`
+        : undefined,
+    );
   }
   return value as T;
 }
@@ -356,7 +375,9 @@ function responseActions(value: unknown): PublicAction[] {
   if (!Array.isArray(value) || value.length > PUBLIC_ACTIONS.length) {
     invalidRpcResponse();
   }
-  const actions = value.map((action) => responseEnum(action, PUBLIC_ACTIONS));
+  const actions = value.map((action) =>
+    responseEnum(action, PUBLIC_ACTIONS, "member.allowed_actions[]")
+  );
   if (new Set(actions).size !== actions.length) invalidRpcResponse();
   return actions;
 }
@@ -367,6 +388,7 @@ function responseSetupMethod(
   return responseEnum(
     row.setup_method ?? row.provisioning_method ?? "email_invite",
     PROVISIONING_METHODS,
+    "member.setup_method",
   );
 }
 
@@ -400,8 +422,8 @@ function memberDto(value: unknown, useRpcCapabilities = true): StaffMemberDto {
     id: responseUuid(row.id),
     email: responseEmail(emailValue),
     full_name: responseText(row.full_name, 120, true),
-    role: responseEnum(row.role, STAFF_ROLES),
-    status: responseEnum(row.status, STAFF_STATUSES),
+    role: responseEnum(row.role, STAFF_ROLES, "member.role"),
+    status: responseEnum(row.status, STAFF_STATUSES, "member.status"),
     setup_method: setupMethod,
     invited_at: responseTimestamp(row.invited_at) as string,
     invite_expires_at: responseTimestamp(row.invite_expires_at, true),
@@ -427,6 +449,7 @@ function internalMembership(value: unknown): InternalMembership {
     provisioning_method: responseEnum(
       row.provisioning_method,
       PROVISIONING_METHODS,
+      "membership.provisioning_method",
     ),
     password_change_required: (() => {
       if (typeof row.password_change_required !== "boolean") {
@@ -520,7 +543,11 @@ function staffViewDto(value: unknown): StaffViewDto {
     invalidRpcResponse();
   }
 
-  const workspaceStatus = responseEnum(workspace.status, ["active"] as const);
+  const workspaceStatus = responseEnum(
+    workspace.status,
+    ["active"] as const,
+    "workspace.status",
+  );
   return {
     workspace: {
       id: responseUuid(workspace.id),

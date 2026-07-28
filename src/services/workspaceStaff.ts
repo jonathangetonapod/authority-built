@@ -4,7 +4,7 @@ import { WORKSPACE_LOGO_MAX_BYTES, WORKSPACE_LOGO_MIME_TYPES } from '@/lib/works
 
 export type WorkspaceStaffRole = 'owner' | 'admin' | 'member'
 export type WorkspaceStaffStatus = 'provisioning' | 'invited' | 'active' | 'suspended' | 'revoked'
-export type WorkspaceStaffSetupMethod = 'email_invite' | 'admin_temporary_password'
+export type WorkspaceStaffSetupMethod = 'platform_bootstrap' | 'email_invite' | 'admin_temporary_password'
 export type WorkspaceStaffAction =
   | 'retry_invite'
   | 'retry_password'
