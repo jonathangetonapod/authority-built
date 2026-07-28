@@ -114,8 +114,10 @@ describe('OnboardingReviewDialog', () => {
         busy={false}
         onOpenChange={vi.fn()}
         onApprove={onApprove}
+        onRequestChanges={vi.fn()}
       />,
     )
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
 
     expect(screen.getByText('Awaiting review')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Submitted answers' })).toBeInTheDocument()
@@ -133,5 +135,62 @@ describe('OnboardingReviewDialog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Approve onboarding' }))
     expect(onApprove).toHaveBeenCalledTimes(1)
+  })
+
+  function renderDialog(onRequestChanges = vi.fn()) {
+    render(
+      <OnboardingReviewDialog
+        open
+        detail={detail}
+        canManage
+        busy={false}
+        onOpenChange={vi.fn()}
+        onApprove={vi.fn()}
+        onRequestChanges={onRequestChanges}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Request changes/u }))
+    return onRequestChanges
+  }
+
+  it('sends back only the answers that were noted', () => {
+    const onRequestChanges = renderDialog()
+
+    fireEvent.change(screen.getByLabelText('Change requested for Website'), {
+      target: { value: 'Please give the full legal name.' },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send 1 change back' }))
+    expect(onRequestChanges).toHaveBeenCalledWith([
+      { question_id: 'website', body: 'Please give the full legal name.' },
+    ])
+  })
+
+  it('will not send an empty request', () => {
+    renderDialog()
+    // The edge action refuses fewer than one note, so an empty send would be a
+    // round trip that only produces an error.
+    expect(screen.getByRole('button', { name: 'Note at least one answer' })).toBeDisabled()
+  })
+
+  it('ignores a note that is only whitespace', () => {
+    const onRequestChanges = renderDialog()
+
+    fireEvent.change(screen.getByLabelText('Change requested for Website'), {
+      target: { value: '   ' },
+    })
+
+    expect(screen.getByRole('button', { name: 'Note at least one answer' })).toBeDisabled()
+    expect(onRequestChanges).not.toHaveBeenCalled()
+  })
+
+  it('says that sending emails the client and reopens their link', () => {
+    renderDialog()
+    expect(screen.getByRole('status')).toHaveTextContent(/emails Jonathan and reopens their onboarding link/u)
+  })
+
+  it('leaves approval out of reach while changes are being written', () => {
+    renderDialog()
+    expect(screen.getByRole('button', { name: 'Approve onboarding' })).toBeDisabled()
   })
 })

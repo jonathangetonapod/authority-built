@@ -1,10 +1,16 @@
-import { useMemo } from 'react'
-import { CheckCircle2, ExternalLink, Loader2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { CheckCircle2, ExternalLink, Loader2, MessageSquareWarning } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
 import { onboardingStatusLabel } from '@/lib/onboardingActivity'
 import type { OnboardingInstanceDetail, OnboardingQuestion } from '@/services/workspaceOnboarding'
+
+export interface OnboardingReviewComment {
+  question_id: string
+  body: string
+}
 
 interface Props {
   open: boolean
@@ -13,6 +19,7 @@ interface Props {
   busy: boolean
   onOpenChange: (open: boolean) => void
   onApprove: () => void
+  onRequestChanges: (comments: OnboardingReviewComment[]) => void
 }
 
 function emptyAnswer(answer: unknown): boolean {
@@ -35,11 +42,25 @@ function displayAnswer(question: OnboardingQuestion, answer: unknown): string {
   return String(answer)
 }
 
-const OnboardingReviewDialog = ({ open, detail, canManage, busy, onOpenChange, onApprove }: Props) => {
+const OnboardingReviewDialog = ({ open, detail, canManage, busy, onOpenChange, onApprove, onRequestChanges }: Props) => {
   const assetByQuestion = useMemo(
     () => new Map(detail?.assets.map((asset) => [asset.question_id, asset]) ?? []),
     [detail?.assets],
   )
+  const [reviewing, setReviewing] = useState(false)
+  const [notes, setNotes] = useState<Record<string, string>>({})
+
+  // Notes belong to the submission that was open, never to the next one.
+  useEffect(() => {
+    if (!open) {
+      setReviewing(false)
+      setNotes({})
+    }
+  }, [open])
+
+  const comments = Object.entries(notes)
+    .map(([question_id, body]) => ({ question_id, body: body.trim() }))
+    .filter((comment) => comment.body.length > 0 && comment.body.length <= 2000)
 
   if (!detail) return null
 
@@ -66,10 +87,21 @@ const OnboardingReviewDialog = ({ open, detail, canManage, busy, onOpenChange, o
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold">Submitted answers</h2>
-            <p className="mt-1 text-sm text-muted-foreground">The client’s completed form, shown exactly as submitted.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {reviewing
+                ? 'Write a note under each answer you want redone. Only the answers you note are sent back.'
+                : 'The client’s completed form, shown exactly as submitted.'}
+            </p>
           </div>
           <Badge variant="secondary">{answeredCount} of {questions.length} answered</Badge>
         </div>
+
+        {reviewing && (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">
+            Sending these notes emails {detail.recipient_name} and reopens their onboarding link so they can edit and
+            resubmit. Their current answers are kept as a revision.
+          </p>
+        )}
 
         <div className="space-y-5">
           {detail.definition.sections.map((section) => (
@@ -93,6 +125,17 @@ const OnboardingReviewDialog = ({ open, detail, canManage, busy, onOpenChange, o
                           <span className="text-muted-foreground">{asset.original_name} · preview unavailable</span>
                         ) : displayAnswer(question, answer)}
                       </dd>
+                      {reviewing && (
+                        <Textarea
+                          className="mt-3 bg-background"
+                          rows={2}
+                          maxLength={2000}
+                          placeholder="What needs changing? Leave empty to accept this answer."
+                          aria-label={`Change requested for ${question.label}`}
+                          value={notes[question.id] ?? ''}
+                          onChange={(event) => setNotes((current) => ({ ...current, [question.id]: event.target.value }))}
+                        />
+                      )}
                     </div>
                   )
                 })}
@@ -102,12 +145,28 @@ const OnboardingReviewDialog = ({ open, detail, canManage, busy, onOpenChange, o
         </div>
 
         <DialogFooter className="flex-col gap-2 border-t pt-5 sm:flex-row sm:justify-between">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+          <Button type="button" variant="outline" onClick={() => (reviewing ? setReviewing(false) : onOpenChange(false))}>
+            {reviewing ? 'Cancel' : 'Close'}
+          </Button>
           {canManage && detail.status === 'submitted' && (
-            <Button type="button" disabled={busy} onClick={onApprove}>
-              {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-              Approve onboarding
-            </Button>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              {reviewing ? (
+                <Button type="button" variant="destructive" disabled={busy || comments.length === 0} onClick={() => onRequestChanges(comments)}>
+                  {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageSquareWarning className="mr-2 h-4 w-4" />}
+                  {comments.length === 0
+                    ? 'Note at least one answer'
+                    : `Send ${comments.length} change${comments.length === 1 ? '' : 's'} back`}
+                </Button>
+              ) : (
+                <Button type="button" variant="outline" disabled={busy} onClick={() => setReviewing(true)}>
+                  <MessageSquareWarning className="mr-2 h-4 w-4" />Request changes
+                </Button>
+              )}
+              <Button type="button" disabled={busy || reviewing} onClick={onApprove}>
+                {busy && !reviewing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                Approve onboarding
+              </Button>
+            </div>
           )}
         </DialogFooter>
       </DialogContent>

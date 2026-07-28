@@ -88,3 +88,22 @@ assert.ok(routes.includes('path="/app/onboarding"'))
 assert.ok(routes.includes('path="/admin/workspaces/:workspaceId/onboarding"'))
 
 console.log('Workspace onboarding Edge and browser contracts passed')
+
+// The change-request loop is reachable. The action, the status, and the email
+// all existed; nothing in the UI called them, so a thin answer could only be
+// approved or left sitting.
+const reviewDialog = readFileSync('src/components/onboarding/OnboardingReviewDialog.tsx', 'utf8')
+const onboardingPage = readFileSync('src/pages/app/WorkspaceOnboarding.tsx', 'utf8')
+assert.match(onboardingPage, /requestOnboardingChanges\(workspaceId, selectedInstanceId, comments\)/u)
+assert.match(reviewDialog, /onRequestChanges\(comments\)/u)
+// Only noted answers are sent, and a blank or whitespace note is not one.
+assert.match(reviewDialog, /body: body\.trim\(\)/u)
+assert.match(reviewDialog, /comment\.body\.length > 0 && comment\.body\.length <= 2000/u)
+// The edge action refuses fewer than one note, so the button cannot offer a
+// round trip that only produces an error.
+assert.match(reviewDialog, /disabled=\{busy \|\| comments\.length === 0\}/u)
+// This reaches the client's inbox and reopens their link, so the dialog says so
+// before it is pressed and the page says so if the send fails.
+assert.match(reviewDialog, /reopens their onboarding link/u)
+assert.match(onboardingPage, /result\.delivery\?\.status === 'sent'/u)
+assert.match(onboardingPage, /the email did not send/u)

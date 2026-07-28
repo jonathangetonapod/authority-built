@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { Archive, ClipboardCheck, Clock3, Copy, ExternalLink, FilePlus2, ImagePlus, Link2, Loader2, MoreHorizontal, Palette, Plus, RefreshCw, Send, Share2, ShieldAlert, Sparkles, X } from 'lucide-react'
 import { toast } from 'sonner'
 import ClientOnboardingPreview from '@/components/onboarding/ClientOnboardingPreview'
-import OnboardingReviewDialog from '@/components/onboarding/OnboardingReviewDialog'
+import OnboardingReviewDialog, { type OnboardingReviewComment } from '@/components/onboarding/OnboardingReviewDialog'
 import OnboardingTemplateBuilder, { type OnboardingTemplateDraft } from '@/components/onboarding/OnboardingTemplateBuilder'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -28,6 +28,7 @@ import { workspaceLogoUrl } from '@/lib/workspaceLogo'
 import { selectedWorkspaceBaseHref } from '@/lib/workspaceRoutes'
 import {
   approveOnboardingAnswers,
+  requestOnboardingChanges,
   archiveOnboardingInstance,
   archiveOnboardingTemplate,
   duplicateOnboardingTemplate,
@@ -316,6 +317,23 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
       toast.success('Onboarding approved.')
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Unable to approve onboarding.'),
+  })
+
+  const requestChangesMutation = useMutation({
+    mutationFn: async (comments: OnboardingReviewComment[]) => {
+      if (!selectedInstanceId) throw new Error('No onboarding is selected.')
+      return requestOnboardingChanges(workspaceId, selectedInstanceId, comments)
+    },
+    onSuccess: async (result) => {
+      await refresh()
+      await detailQuery.refetch()
+      setSelectedInstanceId(null)
+      // The client is emailed here, so a failed send has to be said out loud:
+      // the link reopened either way and they are not expecting it.
+      if (result.delivery?.status === 'sent') toast.success('Changes requested. The client has been emailed their reopened link.')
+      else toast.warning('Changes recorded and the link reopened, but the email did not send. Share the link from the onboarding row.')
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Unable to request changes.'),
   })
 
   const linkMutation = useMutation({
@@ -681,9 +699,10 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
         open={Boolean(selectedInstanceId)}
         detail={detailQuery.data ?? null}
         canManage={canManage}
-        busy={approveMutation.isPending || detailQuery.isFetching}
+        busy={approveMutation.isPending || requestChangesMutation.isPending || detailQuery.isFetching}
         onOpenChange={(open) => { if (!open) setSelectedInstanceId(null) }}
         onApprove={() => approveMutation.mutate()}
+        onRequestChanges={(comments) => requestChangesMutation.mutate(comments)}
       />
 
       {selectedInstanceId && detailQuery.isLoading && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/20"><div className="rounded-xl bg-background p-6 shadow-xl"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div></div>}
