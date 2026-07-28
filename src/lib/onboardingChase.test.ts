@@ -18,6 +18,7 @@ function instance(overrides: Partial<OnboardingChaseInput> = {}): OnboardingChas
     viewed_at: null,
     started_at: null,
     submitted_at: null,
+    changes_requested_at: null,
     capability_expires_at: daysAhead(13),
     archived_at: null,
     ...overrides,
@@ -71,6 +72,53 @@ describe('onboardingChaseState', () => {
     const state = onboardingChaseState(instance({ capability_expires_at: daysAgo(1) }), NOW)
     expect(state.reason).toBe('The link has expired')
     expect(state.expiresInDays).toBe(-1)
+  })
+
+  it('puts a dead link ahead of a nudge the client could not act on', () => {
+    // Telling somebody to chase is wrong when the form cannot be opened.
+    const state = onboardingChaseState(instance({
+      invited_at: daysAgo(20),
+      capability_expires_at: daysAgo(2),
+    }), NOW)
+    expect(state.reason).toBe('The link has expired')
+  })
+
+  it('keeps chasing a change request the client never answered', () => {
+    // The database leaves submitted_at set when answers are sent back, so a
+    // check on submitted_at alone would call this finished forever.
+    const state = onboardingChaseState(instance({
+      status: 'changes_requested',
+      invited_at: daysAgo(30),
+      viewed_at: daysAgo(30),
+      started_at: daysAgo(29),
+      submitted_at: daysAgo(20),
+      changes_requested_at: daysAgo(9),
+    }), NOW)
+    expect(state.needsChasing).toBe(true)
+    expect(state.reason).toBe('Changes requested 9 days ago with no reply')
+  })
+
+  it('stops once the client resubmits after a change request', () => {
+    const state = onboardingChaseState(instance({
+      status: 'changes_requested',
+      invited_at: daysAgo(30),
+      viewed_at: daysAgo(30),
+      started_at: daysAgo(29),
+      changes_requested_at: daysAgo(9),
+      submitted_at: daysAgo(1),
+    }), NOW)
+    expect(state.needsChasing).toBe(false)
+  })
+
+  it('gives a fresh change request the same grace as a new invitation', () => {
+    const state = onboardingChaseState(instance({
+      status: 'changes_requested',
+      invited_at: daysAgo(30),
+      viewed_at: daysAgo(30),
+      submitted_at: daysAgo(20),
+      changes_requested_at: daysAgo(2),
+    }), NOW)
+    expect(state.needsChasing).toBe(false)
   })
 
   it('stops chasing once the client has submitted', () => {

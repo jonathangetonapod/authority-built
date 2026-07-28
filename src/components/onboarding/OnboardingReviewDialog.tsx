@@ -51,12 +51,14 @@ const OnboardingReviewDialog = ({ open, detail, canManage, busy, onOpenChange, o
   const [notes, setNotes] = useState<Record<string, string>>({})
 
   // Notes belong to the submission that was open, never to the next one.
+  // Keyed on the instance as well as the dialog: templates are reused, so the
+  // question ids match across clients, and a note left behind would reappear
+  // pre-filled under somebody else's answer.
+  const detailId = detail?.id ?? null
   useEffect(() => {
-    if (!open) {
-      setReviewing(false)
-      setNotes({})
-    }
-  }, [open])
+    setReviewing(false)
+    setNotes({})
+  }, [open, detailId])
 
   const comments = Object.entries(notes)
     .map(([question_id, body]) => ({ question_id, body: body.trim() }))

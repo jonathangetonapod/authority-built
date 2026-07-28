@@ -354,8 +354,15 @@ function parseView(value: unknown, expectedWorkspaceId: string): WorkspaceStaffV
   if (new Set(members.map((member) => member.id)).size !== members.length) {
     throw new Error('The workspace staff response was invalid.')
   }
+  // Exactly one live owner is a private-workspace invariant that the database
+  // deliberately does not apply to the default workspace. The edge function's
+  // validator already carves it out; this one did not, so a platform workspace
+  // with two owners would have failed the settings page it exists to serve.
+  const isDefaultWorkspace = value.workspace?.is_default === true
   const liveOwners = members.filter((member) => member.role === 'owner' && member.status !== 'revoked')
-  if (liveOwners.length !== 1) throw new Error('The workspace staff response was invalid.')
+  if (!isDefaultWorkspace && liveOwners.length !== 1) {
+    throw new Error('The workspace staff response was invalid.')
+  }
 
   const capabilities = parseCapabilities(value.capabilities)
   const branding = parseBranding({

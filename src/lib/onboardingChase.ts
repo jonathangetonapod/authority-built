@@ -21,6 +21,8 @@ export interface OnboardingChaseInput {
   viewed_at: string | null
   started_at: string | null
   submitted_at: string | null
+  /** Set when a reviewer sent answers back. The ball is with the client again. */
+  changes_requested_at: string | null
   capability_expires_at: string
   archived_at: string | null
 }
@@ -64,23 +66,52 @@ export function onboardingChaseState(
     return { ageDays, expiresInDays, needsChasing: false, reason: null }
   }
 
-  if (!instance.viewed_at && ageDays >= UNOPENED_CHASE_DAYS) {
-    return {
-      ageDays,
-      expiresInDays,
-      needsChasing: true,
-      reason: `Sent ${dayLabel(ageDays)} ago and never opened`,
-    }
+  // A dead link outranks everything. Telling somebody to nudge their client is
+  // wrong when the client cannot open the form at all — the operator has to
+  // extend or rotate it first.
+  if (expiresInDays !== null && expiresInDays < 0) {
+    return { ageDays, expiresInDays, needsChasing: true, reason: 'The link has expired' }
   }
 
-  if (!instance.submitted_at && ageDays >= UNFINISHED_CHASE_DAYS) {
-    return {
-      ageDays,
-      expiresInDays,
-      needsChasing: true,
-      reason: instance.started_at
-        ? `Started ${dayLabel(ageDays)} ago and not finished`
-        : `Opened ${dayLabel(ageDays)} ago and not started`,
+  // When changes were requested, the wait restarts from that moment. The
+  // database does not clear submitted_at when it sends answers back, so keying
+  // off submitted_at alone would mark a client who never responds as finished
+  // forever — exactly the silence this is supposed to catch.
+  const requestedAt = instance.changes_requested_at
+  const awaitingChanges = instance.status === 'changes_requested' && requestedAt !== null
+  const waitingDays = awaitingChanges ? wholeDaysBetween(requestedAt, now) : ageDays
+  const responded = awaitingChanges
+    ? Boolean(instance.submitted_at) && Date.parse(instance.submitted_at as string) > Date.parse(requestedAt)
+    : Boolean(instance.submitted_at)
+
+  if (awaitingChanges) {
+    if (!responded && waitingDays !== null && waitingDays >= UNFINISHED_CHASE_DAYS) {
+      return {
+        ageDays,
+        expiresInDays,
+        needsChasing: true,
+        reason: `Changes requested ${dayLabel(waitingDays)} ago with no reply`,
+      }
+    }
+  } else {
+    if (!instance.viewed_at && ageDays >= UNOPENED_CHASE_DAYS) {
+      return {
+        ageDays,
+        expiresInDays,
+        needsChasing: true,
+        reason: `Sent ${dayLabel(ageDays)} ago and never opened`,
+      }
+    }
+
+    if (!responded && ageDays >= UNFINISHED_CHASE_DAYS) {
+      return {
+        ageDays,
+        expiresInDays,
+        needsChasing: true,
+        reason: instance.started_at
+          ? `Started ${dayLabel(ageDays)} ago and not finished`
+          : `Opened ${dayLabel(ageDays)} ago and not started`,
+      }
     }
   }
 
@@ -91,9 +122,7 @@ export function onboardingChaseState(
       ageDays,
       expiresInDays,
       needsChasing: true,
-      reason: expiresInDays < 0
-        ? 'The link has expired'
-        : `The link expires in ${dayLabel(expiresInDays)}`,
+      reason: `The link expires in ${dayLabel(expiresInDays)}`,
     }
   }
 
