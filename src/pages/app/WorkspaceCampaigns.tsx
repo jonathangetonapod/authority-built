@@ -33,7 +33,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { InstantlyAccountPicker } from '@/components/workspace/InstantlyAccountPicker'
+import { InstantlyAccountPicker, type InstantlyAccountClientLink } from '@/components/workspace/InstantlyAccountPicker'
 import {
   Dialog,
   DialogContent,
@@ -247,6 +247,23 @@ const WorkspaceCampaigns = ({
     () => new Map(clients.map((client) => [client.id, client])),
     [clients],
   )
+  // A mailbox belongs to a client by being on that client's campaign, so the
+  // picker's client filter is derived from the campaign sender lists already
+  // loaded here rather than a second record of ownership that could disagree.
+  const mailboxAssignments = useMemo(() => {
+    const byEmail = new Map<string, InstantlyAccountClientLink[]>()
+    for (const campaign of campaignOverviewQuery.data?.campaigns || []) {
+      const client = clientById.get(campaign.client_id)
+      if (!client) continue
+      for (const email of campaign.sender_accounts || []) {
+        const links = byEmail.get(email) || []
+        if (links.some((link) => link.client_id === client.id)) continue
+        links.push({ client_id: client.id, client_name: client.name })
+        byEmail.set(email, links)
+      }
+    }
+    return byEmail
+  }, [campaignOverviewQuery.data?.campaigns, clientById])
   const campaignEntries = useMemo(() => providerBackedCampaigns.flatMap((campaign) => {
     const client = clientById.get(campaign.client_id)
     return client ? [{ campaign, client }] : []
@@ -813,6 +830,8 @@ const WorkspaceCampaigns = ({
                 connected={Boolean(integration?.connected)}
                 selected={selectedSenderAccounts}
                 onChange={setSelectedSenderAccounts}
+                assignments={mailboxAssignments}
+                defaultClientId={selectedClientId || null}
                 className="max-h-52"
               />
               </>}
