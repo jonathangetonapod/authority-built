@@ -15,20 +15,22 @@ interface ClippingPackage {
   id: string
   name: string
   clipCount: string
-  price: string
   description: string
   highlights: string[]
   featured?: boolean
 }
 
-// Front-end only for now: pricing is a placeholder and no payment is taken —
-// a request simply signals interest to the workspace team.
+// No prices here, deliberately. This page is shown to the clients of every
+// agency on the platform, the copy says "we" meaning their agency, and the
+// request takes no payment — it signals interest to that agency's team, who
+// quote their own rates. Printing a number here quoted the platform's rates as
+// theirs, to their own client. Until a package price is something a workspace
+// sets, the packages describe what is delivered and nothing else.
 const CLIPPING_PACKAGES: ClippingPackage[] = [
   {
     id: 'starter',
     name: 'Starter',
     clipCount: '3 clips',
-    price: '$297',
     description: 'A taste of what one great episode can do on social.',
     highlights: ['3 short-form clips from one episode', 'Captions and clean framing', 'Ready for LinkedIn, Reels, and Shorts'],
   },
@@ -36,7 +38,6 @@ const CLIPPING_PACKAGES: ClippingPackage[] = [
     id: 'growth',
     name: 'Growth',
     clipCount: '10 clips',
-    price: '$797',
     description: 'A full content drop from your strongest appearance.',
     highlights: ['10 clips from one episode', 'Hook-first editing and captions', 'Thumbnail frames for each clip', 'Posting guide included'],
     featured: true,
@@ -45,7 +46,6 @@ const CLIPPING_PACKAGES: ClippingPackage[] = [
     id: 'authority',
     name: 'Authority',
     clipCount: '20 clips / month',
-    price: '$1,497/mo',
     description: 'Every appearance turned into an always-on clip engine.',
     highlights: ['Clips from every new episode', 'Monthly highlight reel', 'Priority turnaround', 'Dedicated editor'],
   },
@@ -142,8 +142,7 @@ export default function PortalAddOns() {
                         <Badge className="bg-primary/10 text-primary hover:bg-primary/10"><Sparkles className="mr-1 h-3 w-3" />Most popular</Badge>
                       )}
                     </div>
-                    <p className="mt-2 text-2xl font-bold">{pkg.price}</p>
-                    <p className="text-sm text-muted-foreground">{pkg.clipCount}</p>
+                    <p className="mt-2 text-2xl font-bold">{pkg.clipCount}</p>
                     <p className="mt-2 text-sm text-muted-foreground">{pkg.description}</p>
                     <ul className="mt-3 space-y-1.5">
                       {pkg.highlights.map((highlight) => (

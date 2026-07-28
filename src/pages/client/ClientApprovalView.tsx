@@ -305,7 +305,7 @@ function ClientApprovalViewContent() {
   })
 
   // React Query: Fetch podcasts (enabled when dashboard is ready)
-  const { data: podcasts = [], isLoading: podcastsLoading, error: podcastsError } = useQuery({
+  const { data: podcasts = [], isLoading: podcastsLoading, error: podcastsError, refetch: refetchPodcasts } = useQuery({
     queryKey: ['client-podcasts', dashboard?.id],
     queryFn: async () => {
       if (!dashboard?.id || !slug) return []
@@ -369,7 +369,12 @@ function ClientApprovalViewContent() {
   // Derived state
   const loading = dashboardLoading
   const loadingPodcasts = podcastsLoading
-  const error = dashboardError?.message || podcastsError?.message || feedbackError?.message || null
+  // Only the dashboard itself can take over the page. A podcast or feedback
+  // query that fails is shown in place, with a way to retry — losing the whole
+  // page because a secondary list failed leaves the client staring at a red
+  // card about a page that actually loaded.
+  const error = dashboardError?.message || null
+  const secondaryError = podcastsError?.message || feedbackError?.message || null
 
   // Debounce search query for better performance
   useEffect(() => {
@@ -679,6 +684,7 @@ function ClientApprovalViewContent() {
               <h2 className="text-xl font-semibold">Dashboard Not Available</h2>
               <p className="text-muted-foreground">{error || 'This dashboard could not be found.'}</p>
             </div>
+            <Button variant="outline" onClick={() => window.location.reload()}>Try again</Button>
           </CardContent>
         </Card>
       </div>
@@ -1268,6 +1274,20 @@ function ClientApprovalViewContent() {
               </button>
             </div>
           ) : null}
+
+          {secondaryError && !loadingPodcasts && (
+            <div className="mt-7 flex flex-col items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+              <p>Your shows could not be loaded just now. Everything you have already approved is safe.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => { void refetchPodcasts() }}
+              >
+                Try again
+              </Button>
+            </div>
+          )}
 
           {loadingPodcasts ? (
             <div className="mt-7 grid gap-4 lg:grid-cols-2">

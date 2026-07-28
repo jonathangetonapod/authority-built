@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Copy, Globe, Loader2, RefreshCw, Star, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -42,6 +43,10 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
   const queryClient = useQueryClient()
   const [workspaceId, setWorkspaceId] = useState('')
   const [hostname, setHostname] = useState('')
+  // Removing a domain deletes it at Railway too. Recovery means a new
+  // certificate, a new DNS value, and the agency redoing their DNS — so it
+  // does not happen straight off a trash icon.
+  const [pendingRemoval, setPendingRemoval] = useState<WorkspaceDomain | null>(null)
 
   const domainsQuery = useQuery({
     queryKey: ['workspace-domains'],
@@ -188,7 +193,7 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
                       variant="ghost"
                       className="text-destructive"
                       disabled={busy}
-                      onClick={() => removeMutation.mutate(domain.id)}
+                      onClick={() => setPendingRemoval(domain)}
                       aria-label={`Remove ${domain.hostname}`}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -231,6 +236,31 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
           </ul>
         )}
       </CardContent>
+
+      <AlertDialog open={Boolean(pendingRemoval)} onOpenChange={(open) => { if (!open) setPendingRemoval(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {pendingRemoval?.hostname}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This deletes the domain at Railway as well as here. Any link already sent on this address stops working,
+              and getting it back means a new certificate and a new DNS record for {pendingRemoval?.workspace?.name || 'this workspace'} to create.
+              {pendingRemoval?.is_primary && ' This is the domain their client links are built from — new links will go out on getonapod.com instead.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (pendingRemoval) removeMutation.mutate(pendingRemoval.id)
+                setPendingRemoval(null)
+              }}
+            >
+              Remove domain
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   )
 }

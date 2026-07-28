@@ -22,6 +22,14 @@ export interface CompatibilityScore {
  * Score multiple podcasts in parallel batches for client OR prospect
  * Processes in chunks to avoid rate limits and improve UX
  */
+/** Thrown when the workspace has no credits left, so the caller can stop. */
+export class InsufficientCreditsError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'InsufficientCreditsError'
+  }
+}
+
 export async function scoreCompatibilityBatch(
   bio: string,
   podcasts: PodcastForScoring[],
@@ -77,8 +85,13 @@ export async function scoreCompatibilityBatch(
       })
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to score podcasts')
+        const error = await response.json().catch(() => ({})) as { error?: string }
+        const message = error.error || 'Failed to score podcasts'
+        // Running out of credits is not a batch that happened to fail. Every
+        // remaining batch will fail the same way, and swallowing it here left
+        // the caller reporting a complete ranking built from nulls.
+        if (response.status === 402) throw new InsufficientCreditsError(message)
+        throw new Error(message)
       }
 
       const data = await response.json()
@@ -94,6 +107,7 @@ export async function scoreCompatibilityBatch(
         await new Promise(resolve => setTimeout(resolve, 500))
       }
     } catch (error) {
+      if (error instanceof InsufficientCreditsError) throw error
       console.error('Error scoring batch:', error)
       // Add null scores for failed batch
       batch.forEach(podcast => {

@@ -71,6 +71,8 @@ type ScanPhase = 'idle' | 'strategy' | 'search' | 'score' | 'done'
 const MAX_QUERIES = 6
 const PAGES_PER_QUERY = 3
 const MAX_SCORED = 100
+// Matches the server's per-request cap; anything smaller costs extra credits.
+const SCORING_BATCH_SIZE = 20
 const SEARCH_SPACING_MS = 525
 
 function fromPodscan(podcast: PodcastData): ScanPodcast {
@@ -397,9 +399,10 @@ const WorkspaceSmartPodcastFinder = () => {
         }
       }
       if (scanRunId.current !== runId) return
-      const candidates = [...collected.values()]
+      const fresh = [...collected.values()]
         .filter((podcast) => !existingPodcastIds.has(podcast.podcast_id.toLowerCase()))
-        .slice(0, MAX_SCORED)
+      const candidates = fresh.slice(0, MAX_SCORED)
+      const droppedCount = fresh.length - candidates.length
       if (candidates.length === 0) {
         setPhase('done')
         setStatusMessage('')
@@ -409,7 +412,9 @@ const WorkspaceSmartPodcastFinder = () => {
 
       setPhase('score')
       setProgress({ completed: 0, total: candidates.length })
-      setStatusMessage(`Comparing ${candidates.length} podcasts against ${selectedClient.name}’s profile…`)
+      setStatusMessage(droppedCount > 0
+        ? `Comparing the first ${candidates.length} of ${fresh.length} new podcasts against ${selectedClient.name}’s profile…`
+        : `Comparing ${candidates.length} podcasts against ${selectedClient.name}’s profile…`)
       const scores = await scoreCompatibilityBatch(
         clientBio,
         candidates.map((podcast) => ({
@@ -421,7 +426,9 @@ const WorkspaceSmartPodcastFinder = () => {
           audience_size: podcast.audience_size ?? undefined,
           episode_count: podcast.episode_count ?? undefined,
         })),
-        10,
+        // The endpoint scores up to 20 per request and charges one credit per
+        // request, so sending tens paid twice for the same work.
+        SCORING_BATCH_SIZE,
         (completed, total) => {
           setProgress({ completed, total })
           setStatusMessage(`Scored ${completed} of ${total} podcasts…`)
@@ -444,7 +451,16 @@ const WorkspaceSmartPodcastFinder = () => {
       setResults(ranked)
       setPhase('done')
       setStatusMessage('')
-      toast.success(`${ranked.length} podcasts ranked for ${selectedClient.name}.`)
+      // An unscored row is not a low score, and a truncated list is not the
+      // whole market. Saying "ranked" for either would be a claim the scan
+      // did not earn.
+      const unscored = ranked.filter((result) => result.score === null).length
+      const notes = [
+        unscored > 0 ? `${unscored} could not be scored` : null,
+        droppedCount > 0 ? `${droppedCount} more found but not scored` : null,
+      ].filter(Boolean).join(', ')
+      if (notes) toast.warning(`${ranked.length - unscored} ranked for ${selectedClient.name} — ${notes}.`)
+      else toast.success(`${ranked.length} podcasts ranked for ${selectedClient.name}.`)
     } catch (error) {
       setPhase('idle')
       setStatusMessage('')

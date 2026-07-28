@@ -1330,7 +1330,7 @@ export function ClientCampaignPrepDialog({
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <Badge variant="secondary">Step 2</Badge>
-                            <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800"><CheckCircle2 className="mr-1 h-3 w-3" />Included with your plan</Badge>
+                            <Badge variant="outline" className="border-border bg-muted text-muted-foreground">2 credits per run</Badge>
                           </div>
                           <h3 id="campaign-research-heading" className="mt-2 text-xl font-semibold">Research and Pitch</h3>
                           <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">Review the show, its audience, and the strongest reasons to feature {clientName} before choosing the angle for the pitch.</p>

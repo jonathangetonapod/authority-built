@@ -414,7 +414,10 @@ describe('ClientShortlistEditor', () => {
     fireEvent.click(continueButton)
 
     expect(screen.getByRole('heading', { name: 'Research and Pitch' })).toBeInTheDocument()
-    expect(screen.getByText('Included with your plan')).toBeInTheDocument()
+    // A run charges research credits, so the step says so. It used to claim
+    // the opposite to a customer who was being billed for it.
+    expect(screen.getByText('2 credits per run')).toBeInTheDocument()
+    expect(screen.queryByText('Included with your plan')).not.toBeInTheDocument()
     expect(screen.getByText('Research ready · 6 of 6 steps complete')).toBeInTheDocument()
     const researchStepsButton = screen.getByRole('button', { name: 'View steps' })
     expect(researchStepsButton).toHaveAttribute('aria-expanded', 'false')
