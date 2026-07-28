@@ -1,9 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import {
-  ClientActivityCalendar,
-  activitiesFromItems,
-} from '@/components/workspace/ClientActivityCalendar'
+import { ClientActivityCalendar } from '@/components/workspace/ClientActivityCalendar'
+import { activitiesFromItems } from '@/components/workspace/clientActivity'
 import type { ClientPodcastSystemItem } from '@/services/clientPodcastSystem'
 
 const item = (overrides: Partial<ClientPodcastSystemItem> = {}): ClientPodcastSystemItem => ({
@@ -38,6 +36,10 @@ const item = (overrides: Partial<ClientPodcastSystemItem> = {}): ClientPodcastSy
   last_activity_at: null,
   ...overrides,
 } as ClientPodcastSystemItem)
+
+// The grid only draws the month it is anchored on, so anything that has to be
+// clicked has to fall inside it.
+const todayIso = () => new Date().toISOString().slice(0, 10)
 
 const booking = (overrides: Record<string, unknown> = {}) => ({
   id: 'booking-one',
@@ -139,6 +141,94 @@ describe('ClientActivityCalendar', () => {
 
     expect(screen.getByText('Nothing scheduled this month')).toBeInTheDocument()
     expect(screen.getByText('Nothing scheduled ahead')).toBeInTheDocument()
+  })
+
+  it('opens an entry on the grid and states what that day is', () => {
+    render(<ClientActivityCalendar items={[item({
+      booking: booking({ recording_date: todayIso(), publish_date: null, notes: 'Bring the founding story.' }) as never,
+    })]} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Recording: Founder & Operator for Dallas Fontaine/i }))
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('Founder & Operator')).toBeInTheDocument()
+    expect(within(dialog).getByText('Hosted by Morgan Host')).toBeInTheDocument()
+    expect(within(dialog).getByText('Dallas Fontaine')).toBeInTheDocument()
+    expect(within(dialog).getByText('Bring the founding story.')).toBeInTheDocument()
+  })
+
+  it('offers both calendars from the detail, with a file for the ones Google is not', () => {
+    render(<ClientActivityCalendar items={[item({
+      booking: booking({ recording_date: todayIso(), publish_date: null }) as never,
+    })]} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Recording: Founder & Operator/i }))
+    const dialog = screen.getByRole('dialog')
+
+    expect(within(dialog).getByRole('link', { name: /Google Calendar/i }).getAttribute('href'))
+      .toContain('calendar.google.com')
+    const download = within(dialog).getByRole('link', { name: /Download .ics/i })
+    expect(download.getAttribute('href')).toContain('data:text/calendar')
+    expect(download.getAttribute('download')).toMatch(/\.ics$/u)
+    expect(decodeURIComponent(download.getAttribute('href') as string)).toContain('BEGIN:VEVENT')
+  })
+
+  it('does not offer a cancelled date to a calendar, and says why', () => {
+    render(<ClientActivityCalendar items={[item({
+      booking: booking({ recording_date: todayIso(), publish_date: null, status: 'cancelled' }) as never,
+    })]} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Recording: Founder & Operator/i }))
+    const dialog = screen.getByRole('dialog')
+
+    expect(within(dialog).queryByRole('link', { name: /Google Calendar/i })).toBeNull()
+    expect(within(dialog).queryByRole('link', { name: /Download .ics/i })).toBeNull()
+    expect(within(dialog).getByText(/kept for the record/i)).toBeInTheDocument()
+  })
+
+  it('hands the placement back to the page rather than restating it', () => {
+    const opened: string[] = []
+    render(<ClientActivityCalendar
+      items={[item({ booking: booking({ recording_date: todayIso(), publish_date: null }) as never })]}
+      onOpenItem={(itemId) => opened.push(itemId)}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Recording: Founder & Operator/i }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Open placement/i }))
+
+    expect(opened).toEqual(['item-one'])
+    // The dialog closes, so the sheet it just opened is not behind it.
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('reaches the entries a day is too small to show', () => {
+    const day = todayIso()
+    const items = Array.from({ length: 5 }, (_value, index) => item({
+      id: `item-${index}`,
+      client: { id: `client-${index}`, name: `Client ${index}`, status: 'active', photo_url: null },
+      booking: booking({ id: `booking-${index}`, recording_date: day, publish_date: null }) as never,
+    }))
+    render(<ClientActivityCalendar items={items} />)
+
+    // Three fit in the cell; the rest are only reachable through the overflow.
+    fireEvent.click(screen.getByRole('button', { name: '+2 more' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('Client 3')).toBeInTheDocument()
+
+    // And every other entry that day can be walked from there.
+    fireEvent.click(within(dialog).getByRole('button', { name: /Recording · Client 4/i }))
+    expect(within(screen.getByRole('dialog')).getByText('Client 4')).toBeInTheDocument()
+  })
+
+  it('opens an entry from Next up as well as from the grid', () => {
+    render(<ClientActivityCalendar items={[item({
+      booking: booking({ recording_date: '2099-08-12', publish_date: null }) as never,
+    })]} />)
+
+    const upcoming = screen.getByText('Next up').closest('div')?.parentElement as HTMLElement
+    fireEvent.click(within(upcoming).getByRole('button', { name: /Founder & Operator/i }))
+
+    expect(within(screen.getByRole('dialog')).getByText('August 12, 2099', { exact: false })).toBeInTheDocument()
   })
 
   it('moves between months and back to today', () => {

@@ -409,11 +409,13 @@ function AllClientsView({
   items,
   baseHref,
   onChooseClient,
+  onOpenItem,
 }: {
   rollups: ClientRollup[]
   items: ClientPodcastSystemItem[]
   baseHref: string
   onChooseClient: (clientId: string) => void
+  onOpenItem: (itemId: string) => void
 }) {
   const [portfolioView, setPortfolioView] = useState<'clients' | 'calendar'>('clients')
   const [search, setSearch] = useState('')
@@ -449,7 +451,7 @@ function AllClientsView({
         </TabsList>
 
         <TabsContent value="calendar" className="mt-5">
-          <ClientActivityCalendar items={items} />
+          <ClientActivityCalendar items={items} onOpenItem={onOpenItem} />
         </TabsContent>
 
         <TabsContent value="clients" className="mt-5">
@@ -972,7 +974,7 @@ const WorkspaceClientPodcastSystem = ({ platformWorkspaceId }: WorkspaceClientPo
             {selectedRollup ? (
               <SelectedClientView rollup={selectedRollup} baseHref={baseHref} canManage={canManage} onOpenItem={setSelectedItemId} />
             ) : (
-              <AllClientsView rollups={rollups} items={system?.items || []} baseHref={baseHref} onChooseClient={chooseClient} />
+              <AllClientsView rollups={rollups} items={system?.items || []} baseHref={baseHref} onChooseClient={chooseClient} onOpenItem={setSelectedItemId} />
             )}
           </>
         )}

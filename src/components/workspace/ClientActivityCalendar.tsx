@@ -1,11 +1,21 @@
 import { useMemo, useState } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight, ExternalLink, Mic, Radio, Send } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ActivityDetailDialog } from '@/components/workspace/ActivityDetailDialog'
+import {
+  activitiesFromItems,
+  activityCalendarEvent,
+  DAY_LABEL,
+  formatDay,
+  KIND_VIEW,
+  MONTH_LABEL,
+  type ActivityKind,
+  type CalendarActivity,
+} from '@/components/workspace/clientActivity'
 import { googleCalendarUrl } from '@/lib/calendarLinks'
-import { decodeHtmlEntities } from '@/lib/htmlEntities'
 import type { ClientPodcastSystemItem } from '@/services/clientPodcastSystem'
 
 /**
@@ -20,111 +30,24 @@ import type { ClientPodcastSystemItem } from '@/services/clientPodcastSystem'
  * so this adds a view, not a round trip.
  */
 
-export type ActivityKind = 'recording' | 'release' | 'outreach'
-
-export interface CalendarActivity {
-  id: string
-  kind: ActivityKind
-  /** Calendar day, YYYY-MM-DD. */
-  day: string
-  clientName: string
-  clientId: string
-  podcastName: string
-  podcastUrl: string | null
-  hostName: string | null
-  cancelled: boolean
-}
-
-const KIND_VIEW: Record<ActivityKind, { label: string; className: string; dot: string; Icon: typeof Mic }> = {
-  recording: {
-    label: 'Recording',
-    className: 'border-sky-200 bg-sky-50 text-sky-900',
-    dot: 'bg-sky-500',
-    Icon: Mic,
-  },
-  release: {
-    label: 'Goes live',
-    className: 'border-emerald-200 bg-emerald-50 text-emerald-900',
-    dot: 'bg-emerald-500',
-    Icon: Radio,
-  },
-  outreach: {
-    label: 'Outreach sent',
-    className: 'border-violet-200 bg-violet-50 text-violet-900',
-    dot: 'bg-violet-500',
-    Icon: Send,
-  },
-}
-
-const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/u
-
-/** A date-only key from either a date column or a timestamp. */
-function dayKey(value: string | null | undefined): string | null {
-  if (typeof value !== 'string' || !value.trim()) return null
-  const candidate = value.slice(0, 10)
-  return DAY_KEY.test(candidate) ? candidate : null
-}
-
-export function activitiesFromItems(items: ClientPodcastSystemItem[]): CalendarActivity[] {
-  return items.flatMap((item) => {
-    const base = {
-      clientName: item.client.name,
-      clientId: item.client.id,
-      podcastName: decodeHtmlEntities(item.podcast.name || 'Untitled show'),
-      podcastUrl: item.podcast.url,
-      hostName: item.booking?.host_name ?? item.podcast.host_name ?? null,
-      // A cancelled placement keeps its dates in the record. Showing them
-      // unmarked would put a recording on the calendar that is not happening.
-      cancelled: item.booking?.status === 'cancelled',
-    }
-    const entries: CalendarActivity[] = []
-    // Recording day: the scheduled date is the fallback, since an early-stage
-    // booking often has only that.
-    const recording = dayKey(item.booking?.recording_date) ?? dayKey(item.booking?.scheduled_date)
-    if (recording) entries.push({ ...base, id: `${item.id}:recording`, kind: 'recording', day: recording })
-    const release = dayKey(item.booking?.publish_date)
-    if (release) entries.push({ ...base, id: `${item.id}:release`, kind: 'release', day: release })
-    // When outreach actually reached the host, from either the campaign or the
-    // pre-campaign admin tool.
-    const outreach = dayKey(item.campaign?.launched_at) ?? dayKey(item.legacy_outreach_at)
-    if (outreach) {
-      entries.push({ ...base, id: `${item.id}:outreach`, kind: 'outreach', day: outreach, cancelled: false })
-    }
-    return entries
-  })
-}
-
-const MONTH_LABEL = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
-const DAY_LABEL = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 function todayKey(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-function calendarEventFor(activity: CalendarActivity): string | null {
-  const view = KIND_VIEW[activity.kind]
-  return googleCalendarUrl({
-    title: `${view.label}: ${activity.podcastName} — ${activity.clientName}`,
-    day: activity.day,
-    details: [
-      `Client: ${activity.clientName}`,
-      activity.hostName ? `Host: ${activity.hostName}` : '',
-      activity.podcastUrl ? `Show: ${activity.podcastUrl}` : '',
-    ].filter(Boolean).join('\n'),
-    location: activity.podcastUrl ?? undefined,
-  })
-}
-
 interface ClientActivityCalendarProps {
   items: ClientPodcastSystemItem[]
+  /** Opens the full placement record for a day the operator clicked into. */
+  onOpenItem?: (itemId: string) => void
 }
 
-export const ClientActivityCalendar = ({ items }: ClientActivityCalendarProps) => {
+export const ClientActivityCalendar = ({ items, onOpenItem }: ClientActivityCalendarProps) => {
   const activities = useMemo(() => activitiesFromItems(items), [items])
   const [monthOffset, setMonthOffset] = useState(0)
   const [clientFilter, setClientFilter] = useState('all')
   const [kindFilter, setKindFilter] = useState<'all' | ActivityKind>('all')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const clientOptions = useMemo(() => {
     const byId = new Map<string, string>()
@@ -174,6 +97,10 @@ export const ClientActivityCalendar = ({ items }: ClientActivityCalendarProps) =
 
   const monthKey = anchor.toISOString().slice(0, 7)
   const monthCount = visible.filter((activity) => activity.day.startsWith(monthKey)).length
+  // Selection survives a filter change only while the entry is still shown;
+  // a dialog describing something the operator has just filtered away is a
+  // detail view of nothing.
+  const selected = visible.find((activity) => activity.id === selectedId) ?? null
 
   return (
     <div className="space-y-4">
@@ -184,6 +111,7 @@ export const ClientActivityCalendar = ({ items }: ClientActivityCalendarProps) =
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             Recordings, release dates, and the day outreach went out — across every client in one place.
+            Select any entry for the detail and a way into your own calendar.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -260,18 +188,26 @@ export const ClientActivityCalendar = ({ items }: ClientActivityCalendarProps) =
                         {dayActivities.slice(0, 3).map((activity) => {
                           const view = KIND_VIEW[activity.kind]
                           return (
-                            <div
+                            <button
                               key={activity.id}
-                              title={`${view.label} · ${activity.podcastName} · ${activity.clientName}`}
-                              className={`flex items-center gap-1 rounded border px-1 py-0.5 text-[10px] leading-3 ${view.className} ${activity.cancelled ? 'opacity-50 line-through' : ''}`}
+                              type="button"
+                              onClick={() => setSelectedId(activity.id)}
+                              aria-label={`${view.label}: ${activity.podcastName} for ${activity.clientName} on ${formatDay(activity.day, DAY_LABEL)}`}
+                              className={`flex w-full items-center gap-1 rounded border px-1 py-0.5 text-left text-[10px] leading-3 hover:brightness-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${view.className} ${activity.cancelled ? 'opacity-50 line-through' : ''}`}
                             >
                               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${view.dot}`} />
                               <span className="truncate">{activity.clientName}</span>
-                            </div>
+                            </button>
                           )
                         })}
                         {dayActivities.length > 3 && (
-                          <p className="px-1 text-[10px] text-muted-foreground">+{dayActivities.length - 3} more</p>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedId(dayActivities[3].id)}
+                            className="w-full px-1 text-left text-[10px] text-muted-foreground hover:text-foreground hover:underline"
+                          >
+                            +{dayActivities.length - 3} more
+                          </button>
                         )}
                       </div>
                     </div>
@@ -304,20 +240,24 @@ export const ClientActivityCalendar = ({ items }: ClientActivityCalendarProps) =
               </div>
             ) : upcoming.map((activity) => {
               const view = KIND_VIEW[activity.kind]
-              const calendarUrl = calendarEventFor(activity)
+              const calendarUrl = googleCalendarUrl(activityCalendarEvent(activity))
               return (
                 <div key={activity.id} className="rounded-xl border p-3">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{activity.podcastName}</p>
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{activity.clientName}</p>
-                    </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(activity.id)}
+                    className="flex w-full flex-wrap items-start justify-between gap-2 text-left"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">{activity.podcastName}</span>
+                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">{activity.clientName}</span>
+                    </span>
                     <Badge variant="outline" className={view.className}>
                       <view.Icon className="mr-1 h-3 w-3" />{view.label}
                     </Badge>
-                  </div>
+                  </button>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    {DAY_LABEL.format(new Date(`${activity.day}T00:00:00Z`))}
+                    {formatDay(activity.day, DAY_LABEL)}
                   </p>
                   {calendarUrl && (
                     <a
@@ -336,6 +276,14 @@ export const ClientActivityCalendar = ({ items }: ClientActivityCalendarProps) =
           </CardContent>
         </Card>
       </div>
+
+      <ActivityDetailDialog
+        activity={selected}
+        sameDay={selected ? byDay.get(selected.day) ?? [] : []}
+        onSelect={(activity) => setSelectedId(activity.id)}
+        onOpenChange={(open) => { if (!open) setSelectedId(null) }}
+        onOpenPlacement={onOpenItem}
+      />
     </div>
   )
 }
