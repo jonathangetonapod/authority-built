@@ -63,6 +63,7 @@ import {
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { bookingLinkUrl, schedulerEmbedUrl, schedulerName } from '@/lib/schedulerEmbed'
 import type { PodcastDemographics } from '@/services/podscan'
 import { cn } from '@/lib/utils'
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts'
@@ -109,6 +110,8 @@ interface ProspectWorkspaceBrand {
   logo_url: string | null
   primary_color: string | null
   accent_color: string | null
+  /** Workspace scheduler link, used when this dashboard sets no CTA. */
+  booking_url?: string | null
 }
 
 interface PodcastCategory {
@@ -311,6 +314,12 @@ function ProspectViewContent() {
 
   const dashboard = dashboardResponse?.dashboard ?? null
   const workspaceBrand = dashboardResponse?.workspace ?? null
+  // The agency's own scheduler, pasted once in workspace settings. A dashboard
+  // with its own call-to-action still wins; this is what the page falls back to
+  // instead of "reply to the email that brought you here".
+  const bookingLink = bookingLinkUrl(workspaceBrand?.booking_url)
+  const bookingEmbedUrl = schedulerEmbedUrl(workspaceBrand?.booking_url)
+  const bookingProvider = schedulerName(workspaceBrand?.booking_url)
 
   // Fetch the shortlist in parallel with the dashboard so a slow request cannot block both.
   const {
@@ -1644,6 +1653,17 @@ function ProspectViewContent() {
                   {dashboard.cta_type === 'book_call' ? <Calendar className="mr-2 h-4 w-4" /> : <ExternalLink className="mr-2 h-4 w-4" />}
                   {dashboard.cta_label}
                 </Button>
+              ) : bookingEmbedUrl ? null : bookingLink ? (
+                // A booking link this build will not frame still gets a real
+                // button, rather than being refused for not being Calendly.
+                <Button
+                  variant="secondary"
+                  size="xl"
+                  className="min-h-[52px] rounded-full bg-white px-7 text-[#0d1b2a] hover:bg-white/90"
+                  onClick={() => openExternalUrl(bookingLink)}
+                >
+                  <Calendar className="mr-2 h-4 w-4" />Book a call
+                </Button>
               ) : (
                 <div className="flex max-w-sm items-start gap-3 rounded-[22px] border border-white/14 bg-white/8 px-5 py-4">
                   <MessageSquare className="mt-0.5 h-5 w-5 flex-shrink-0 text-white/80" />
@@ -1651,6 +1671,35 @@ function ProspectViewContent() {
                     <p className="font-semibold">{dashboard.cta_label || 'Reply to move forward'}</p>
                     <p className="mt-1 text-sm leading-6 text-white/65">Reply to the email that brought you here and we will take care of the next step.</p>
                   </div>
+                </div>
+              )}
+
+              {bookingEmbedUrl && (
+                // Under the copy and across the section, because a scheduler
+                // beside a paragraph is too narrow to pick a time in.
+                <div className="lg:col-span-2">
+                  <div className="overflow-hidden rounded-[22px] border border-white/14 bg-white">
+                    <iframe
+                      src={bookingEmbedUrl}
+                      title={`Book a call${bookingProvider ? ` on ${bookingProvider}` : ''}`}
+                      loading="lazy"
+                      className="h-[640px] w-full border-0 sm:h-[700px]"
+                      // Only what a scheduler needs: it may run and navigate
+                      // itself, and nothing here can reach this page.
+                      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+                    />
+                  </div>
+                  <p className="mt-3 text-sm text-white/60">
+                    Trouble loading?{' '}
+                    <button
+                      type="button"
+                      onClick={() => openExternalUrl(bookingLink!)}
+                      className="font-semibold text-white underline underline-offset-4"
+                    >
+                      Open the scheduler in a new tab
+                    </button>
+                    .
+                  </p>
                 </div>
               )}
             </div>

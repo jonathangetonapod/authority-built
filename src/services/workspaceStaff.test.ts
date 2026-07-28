@@ -67,7 +67,8 @@ function ownerView(overrides: Partial<WorkspaceStaffView> = {}): WorkspaceStaffV
       client_brand_name: 'Acme Agency',
       client_brand_primary_color: '#0D1B2A',
       client_brand_accent_color: '#C7794F',
-      client_brand_updated_at: '2026-07-22T00:30:00.000Z',
+      booking_embed_url: null,
+    client_brand_updated_at: '2026-07-22T00:30:00.000Z',
     },
     capabilities: {
       read_only: false,

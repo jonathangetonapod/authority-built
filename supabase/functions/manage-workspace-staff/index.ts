@@ -169,6 +169,8 @@ interface WorkspacePresentationBrandingDto extends WorkspaceBrandingDto {
   client_brand_primary_color: string;
   client_brand_accent_color: string;
   client_brand_updated_at: string;
+  /** Scheduler link offered to prospects. Null until an agency sets one. */
+  booking_embed_url: string | null;
 }
 
 interface WorkspaceSettingsBrandingDto extends WorkspacePresentationBrandingDto {
@@ -290,6 +292,7 @@ function workspacePresentationBrandingDto(
     client_brand_accent_color: responseBrandColor(
       row.client_brand_accent_color,
     ),
+    booking_embed_url: responseText(row.booking_embed_url, 500),
     client_brand_updated_at: responseTimestamp(
       row.client_brand_updated_at,
     ) as string,
@@ -782,7 +785,7 @@ async function loadWorkspaceBranding(
   };
   const { data: canonicalBrand, error: canonicalBrandError } = await admin
     .from("workspaces")
-    .select("id,client_brand_name,client_brand_primary_color,client_brand_accent_color,client_brand_updated_at")
+    .select("id,client_brand_name,client_brand_primary_color,client_brand_accent_color,client_brand_updated_at,booking_embed_url")
     .eq("id", workspaceId)
     .maybeSingle();
 
@@ -802,6 +805,7 @@ async function loadWorkspaceBranding(
       client_brand_updated_at: responseTimestamp(
         canonicalBrand.client_brand_updated_at,
       ) as string,
+      booking_embed_url: responseText(canonicalBrand.booking_embed_url, 500),
     };
   }
   if (
@@ -837,6 +841,7 @@ async function loadWorkspaceBranding(
       client_brand_primary_color: "#0D1B2A",
       client_brand_accent_color: "#C7794F",
       client_brand_updated_at: base.updated_at,
+      booking_embed_url: responseText(canonicalBrand?.booking_embed_url, 500),
     };
   }
 
@@ -848,6 +853,7 @@ async function loadWorkspaceBranding(
     client_brand_primary_color: responseBrandColor(metadata.primary_color),
     client_brand_accent_color: responseBrandColor(metadata.accent_color),
     client_brand_updated_at: responseTimestamp(event.created_at) as string,
+    booking_embed_url: responseText(canonicalBrand?.booking_embed_url, 500),
   };
 }
 
@@ -2977,6 +2983,60 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, {
         success: true,
         workspace: updatedWorkspace,
+      });
+    }
+
+    if (action === "update_booking_link") {
+      requireOnlyKeys(body, ["action", "workspace_id", "booking_embed_url"]);
+      // Null clears it. Anything else has to be an https URL this build would
+      // also be willing to render, so a link cannot be saved here and then
+      // silently refused on the page that shows it.
+      const rawBookingUrl = body.booking_embed_url === null
+        ? null
+        : requireString(body.booking_embed_url, "booking_embed_url", { max: 500 }).trim();
+      if (rawBookingUrl !== null && !/^https:\/\/[^\s]+$/u.test(rawBookingUrl)) {
+        throw new HttpError(
+          400,
+          "INVALID_FIELD",
+          "The booking link must be a full https address",
+        );
+      }
+      const staff = await listWorkspaceStaff(
+        admin,
+        workspaceId,
+        user.id,
+        tokenIssuedAt,
+      );
+      if (staff.capabilities.read_only) invalidRpcResponse();
+      requireWorkspaceManager(staff);
+      const { error: bookingError } = await admin.rpc(
+        "set_workspace_booking_link_v1",
+        {
+          p_workspace_id: workspaceId,
+          p_booking_embed_url: rawBookingUrl,
+          p_actor_user_id: user.id,
+          p_token_issued_at: tokenIssuedAt,
+        },
+      );
+      if (bookingError) {
+        rpcFailure(
+          bookingError,
+          "BOOKING_LINK_UPDATE_FAILED",
+          "The booking link could not be saved",
+        );
+      }
+      await writeAudit(admin, {
+        workspaceId,
+        actorUserId: user.id,
+        action: rawBookingUrl
+          ? "workspace.booking_link.set"
+          : "workspace.booking_link.cleared",
+        entityType: "workspace",
+        entityId: workspaceId,
+        metadata: {},
+      });
+      return jsonResponse(req, METHODS, 200, {
+        branding: await loadWorkspaceBranding(admin, workspaceId),
       });
     }
 

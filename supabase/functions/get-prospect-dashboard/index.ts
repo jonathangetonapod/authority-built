@@ -108,7 +108,7 @@ serve(async (req) => {
         .eq('prospect_dashboard_id', dashboardRow.id),
       admin
         .from('workspaces')
-        .select('name,logo_path,client_brand_name,client_brand_primary_color,client_brand_accent_color')
+        .select('name,logo_path,client_brand_name,client_brand_primary_color,client_brand_accent_color,booking_embed_url')
         .eq('id', dashboardRow.workspace_id)
         .eq('status', 'active')
         .maybeSingle(),
@@ -141,6 +141,13 @@ serve(async (req) => {
         logo_url: publicLogoUrl(Deno.env.get('SUPABASE_URL') || '', workspace.logo_path),
         primary_color: workspace.client_brand_primary_color,
         accent_color: workspace.client_brand_accent_color,
+        // The workspace booking link, used when this dashboard has no
+        // call-to-action of its own. https only at the column constraint, so
+        // a link that cannot be framed never reaches the page.
+        booking_url: typeof workspace.booking_embed_url === 'string'
+          && workspace.booking_embed_url.startsWith('https://')
+          ? workspace.booking_embed_url
+          : null,
       },
     })
   } catch (error) {

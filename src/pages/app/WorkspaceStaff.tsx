@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
+import { schedulerName } from '@/lib/schedulerEmbed'
 import {
   WORKSPACE_NAV_ORGANIZE_EVENT,
   WorkspaceBrandLogo,
@@ -55,6 +56,7 @@ import {
   retryWorkspaceStaffTemporaryPassword,
   removeWorkspaceLogo,
   updateWorkspaceLogo,
+  updateWorkspaceBookingLink,
   updateWorkspaceClientBranding,
   updateWorkspaceName,
   updateWorkspaceStaffRole,
@@ -274,6 +276,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
   useEffect(() => {
     if (!data) return
     setWorkspaceNameDraft(data.workspace.name)
+    setBookingLinkDraft(data.workspace.booking_embed_url ?? '')
     setClientBrandDraft({
       client_brand_name: data.workspace.client_brand_name,
       client_brand_primary_color: data.workspace.client_brand_primary_color,
@@ -288,6 +291,10 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
     || clientBrandDraft.client_brand_primary_color.toUpperCase() !== data?.workspace.client_brand_primary_color
     || clientBrandDraft.client_brand_accent_color.toUpperCase() !== data?.workspace.client_brand_accent_color
   )
+
+  const [bookingLinkDraft, setBookingLinkDraft] = useState('')
+  const bookingLinkChanged = bookingLinkDraft.trim() !== (data?.workspace.booking_embed_url ?? '')
+  const bookingLinkPreviewName = schedulerName(bookingLinkDraft)
 
   const refreshBranding = async () => {
     await queryClient.invalidateQueries({ queryKey })
@@ -321,6 +328,15 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
       toast.success('Workspace logo removed.')
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'The workspace logo could not be removed.'),
+  })
+
+  const bookingLinkMutation = useMutation({
+    mutationFn: (nextUrl: string | null) => updateWorkspaceBookingLink(workspaceId, nextUrl),
+    onSuccess: async (_result, nextUrl) => {
+      await refreshBranding()
+      toast.success(nextUrl ? 'Booking link saved.' : 'Booking link removed.')
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'The booking link could not be saved.'),
   })
 
   const clientBrandMutation = useMutation({
@@ -693,6 +709,41 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                                 placeholder={data.workspace.name}
                               />
                               <p className="text-xs text-muted-foreground">Use the agency or consultant name your clients recognize.</p>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="workspace-booking-link">Booking link shown to prospects</Label>
+                              <div className="flex flex-col gap-2 sm:flex-row">
+                                <Input
+                                  id="workspace-booking-link"
+                                  type="url"
+                                  inputMode="url"
+                                  maxLength={500}
+                                  value={bookingLinkDraft}
+                                  disabled={!canManageClientBranding || bookingLinkMutation.isPending}
+                                  onChange={(event) => setBookingLinkDraft(event.target.value)}
+                                  placeholder="https://calendly.com/your-agency/intro"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="shrink-0"
+                                  disabled={!canManageClientBranding || bookingLinkMutation.isPending || !bookingLinkChanged}
+                                  onClick={() => bookingLinkMutation.mutate(bookingLinkDraft.trim() || null)}
+                                >
+                                  {bookingLinkMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                  Save link
+                                </Button>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                Paste your scheduler link. Every prospect dashboard without a call-to-action of its own shows it
+                                under &ldquo;Ready to turn your shortlist into conversations?&rdquo; instead of asking the prospect to reply to an email.
+                                {bookingLinkPreviewName
+                                  ? ` ${bookingLinkPreviewName} loads on the page itself.`
+                                  : bookingLinkDraft.trim()
+                                    ? ' This one opens in a new tab. Calendly, Cal.com, SavvyCal, TidyCal, HubSpot, and Zcal load on the page itself.'
+                                    : ''}
+                              </p>
                             </div>
 
                             <div className="grid gap-4 sm:grid-cols-2">

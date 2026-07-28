@@ -53,6 +53,8 @@ export interface WorkspaceStaffView {
     client_brand_primary_color: string
     client_brand_accent_color: string
     client_brand_updated_at: string | null
+    /** Scheduler prospects are offered when a dashboard sets no CTA. */
+    booking_embed_url: string | null
   }
   capabilities: WorkspaceStaffCapabilities
   members: WorkspaceStaffMember[]
@@ -397,6 +399,10 @@ function parseView(value: unknown, expectedWorkspaceId: string): WorkspaceStaffV
       client_brand_primary_color: clientBrandPrimaryColor,
       client_brand_accent_color: clientBrandAccentColor,
       client_brand_updated_at: clientBrandUpdatedAt,
+      booking_embed_url: typeof value.workspace.booking_embed_url === 'string'
+        && value.workspace.booking_embed_url.startsWith('https://')
+        ? value.workspace.booking_embed_url
+        : null,
     },
     capabilities,
     members,
@@ -502,6 +508,29 @@ export async function updateWorkspaceName(
     workspace_name: name,
   }, 'Workspace name could not be updated.')
   return parseWorkspaceNameMutation(data, canonicalWorkspaceId)
+}
+
+/**
+ * The scheduler prospects are offered when a dashboard sets no call-to-action
+ * of its own. Pass null to clear it.
+ */
+export async function updateWorkspaceBookingLink(
+  workspaceId: string,
+  bookingEmbedUrl: string | null,
+): Promise<void> {
+  const canonicalWorkspaceId = canonicalUuid(workspaceId, 'Workspace ID')
+  const trimmed = bookingEmbedUrl?.trim() || null
+  if (trimmed !== null && !/^https:\/\/\S+$/u.test(trimmed)) {
+    throw new Error('The booking link must be a full https address.')
+  }
+  if (trimmed !== null && trimmed.length > 500) {
+    throw new Error('The booking link is too long.')
+  }
+  await invoke({
+    action: 'update_booking_link',
+    workspace_id: canonicalWorkspaceId,
+    booking_embed_url: trimmed,
+  }, 'The booking link could not be saved.')
 }
 
 export async function updateWorkspaceClientBranding(

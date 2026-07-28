@@ -401,3 +401,38 @@ assert.match(workspaceAuth, /if \(!context\.platformAdmin \|\| workspace\.is_def
 // Defence in depth: the anchor workspace is re-checked explicitly after the
 // join, so a filter change alone cannot admit a non-default workspace.
 assert.match(workspaceAuth, /homeWorkspaceData\.is_default !== true/u)
+
+// One booking link per workspace, pasted in settings, offered to every
+// prospect dashboard that has no call-to-action of its own.
+const bookingMigration = readFileSync(
+  'supabase/migrations/20260728002000_workspace_booking_link.sql',
+  'utf8',
+)
+const prospectPublic = readFileSync('supabase/functions/get-prospect-dashboard/index.ts', 'utf8')
+const prospectView = readFileSync('src/pages/prospect/ProspectView.tsx', 'utf8')
+const schedulerEmbed = readFileSync('src/lib/schedulerEmbed.ts', 'utf8')
+
+assert.match(bookingMigration, /ADD COLUMN IF NOT EXISTS booking_embed_url TEXT/u)
+// https only at the column, so a link that cannot be framed never gets saved.
+assert.match(bookingMigration, /booking_embed_url ~ '\^https:/u)
+assert.match(bookingMigration, /CREATE OR REPLACE FUNCTION public\.set_workspace_booking_link_v1/u)
+assert.match(bookingMigration, /actor_role NOT IN \('owner', 'admin', 'platform_admin'\)/u)
+// Never the default platform workspace, like every other workspace setting.
+assert.match(bookingMigration, /AND NOT workspace\.is_default/u)
+assert.match(bookingMigration, /REVOKE ALL ON FUNCTION public\.set_workspace_booking_link_v1\(UUID, TEXT, UUID, BIGINT\)\s*\n\s*FROM PUBLIC, anon, authenticated;/u)
+
+assert.match(source, /action === "update_booking_link"/u)
+assert.match(source, /requireWorkspaceManager\(staff\)[\s\S]{0,400}set_workspace_booking_link_v1/u)
+assert.match(prospectPublic, /booking_embed_url/u)
+assert.match(prospectPublic, /startsWith\('https:\/\/'\)/u)
+
+// Only schedulers that publish an embed are framed; every other link still
+// works as a button rather than being refused.
+assert.match(schedulerEmbed, /const EMBEDDABLE_HOSTS = new Set\(\[/u)
+assert.match(schedulerEmbed, /url\.protocol === 'https:'/u)
+assert.match(prospectView, /bookingEmbedUrl && \(/u)
+assert.match(prospectView, /sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"/u)
+// The embed spans the section, under the copy: a scheduler beside a paragraph
+// is too narrow to pick a time in.
+assert.match(prospectView, /lg:col-span-2/u)
+assert.match(prospectView, /Open the scheduler in a new tab/u)

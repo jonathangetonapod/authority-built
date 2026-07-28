@@ -12,6 +12,7 @@ import {
   resetWorkspaceStaffTemporaryPassword,
   retryWorkspaceStaffTemporaryPassword,
   removeWorkspaceLogo,
+  updateWorkspaceBookingLink,
   updateWorkspaceClientBranding,
   updateWorkspaceLogo,
   updateWorkspaceName,
@@ -46,6 +47,7 @@ vi.mock('@/services/workspaceStaff', () => ({
   resetWorkspaceStaffTemporaryPassword: vi.fn(),
   retryWorkspaceStaffTemporaryPassword: vi.fn(),
   removeWorkspaceLogo: vi.fn(),
+  updateWorkspaceBookingLink: vi.fn().mockResolvedValue(undefined),
   updateWorkspaceClientBranding: vi.fn(),
   updateWorkspaceLogo: vi.fn(),
   updateWorkspaceName: vi.fn(),
@@ -114,6 +116,7 @@ const ownerView: WorkspaceStaffView = {
     client_brand_name: 'Acme Agency',
     client_brand_primary_color: '#0D1B2A',
     client_brand_accent_color: '#C7794F',
+    booking_embed_url: null,
     client_brand_updated_at: '2026-07-22T00:30:00.000Z',
   },
   capabilities: {
@@ -249,6 +252,30 @@ describe('WorkspaceStaff', () => {
     })
     mockedMutate.mockResolvedValue({ ...admin, role: 'owner', allowed_actions: [] })
     mockedUpdateRole.mockResolvedValue({ ...admin, role: 'member' })
+  })
+
+  it('takes a pasted scheduler link and says it will load on the page', async () => {
+    renderPage()
+
+    const field = await screen.findByLabelText('Booking link shown to prospects')
+    fireEvent.change(field, { target: { value: 'https://calendly.com/agency/intro' } })
+    expect(screen.getByText(/Calendly loads on the page itself/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save link' }))
+    await waitFor(() => expect(vi.mocked(updateWorkspaceBookingLink)).toHaveBeenCalledWith(
+      workspaceId,
+      'https://calendly.com/agency/intro',
+    ))
+  })
+
+  it('says a link it cannot frame will open in a new tab instead of refusing it', async () => {
+    renderPage()
+
+    const field = await screen.findByLabelText('Booking link shown to prospects')
+    fireEvent.change(field, { target: { value: 'https://book.example.com/agency' } })
+
+    expect(screen.getByText(/opens in a new tab/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save link' })).not.toBeDisabled()
   })
 
   it('renders the owner roster and only server-authorized controls for the signed-in workspace', async () => {
