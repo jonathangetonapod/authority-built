@@ -70,7 +70,15 @@ function requireSlug(value: unknown): string {
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return optionsResponse(req, METHODS)
+  if (req.method === 'OPTIONS') {
+    // The preflight has to answer with the tenant's own origin, and it is the
+    // only request the browser sends before it will send anything else. Warming
+    // after this point would deadlock: a cold isolate rejects the preflight,
+    // the POST that would have warmed it is never sent, and the domain never
+    // works. So the preflight warms the cache itself.
+    await ensureWorkspaceOriginAllowed(createAdminClient(), req)
+    return optionsResponse(req, METHODS)
+  }
 
   try {
     if (req.method !== 'POST') {

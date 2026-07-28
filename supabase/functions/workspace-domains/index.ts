@@ -236,7 +236,11 @@ function normalizeHostname(value: string): string {
   ) {
     throw new HttpError(400, 'INVALID_HOSTNAME', 'Enter a hostname such as podcasts.agency.com')
   }
-  if (hostname === 'getonapod.com' || hostname === 'www.getonapod.com') {
+  // Must match workspace_domains_not_platform_origin exactly. When it did not,
+  // a platform subdomain passed here, registered a real domain at Railway, and
+  // only then failed on the constraint — a wasted provider call and a generic
+  // 500 in place of a clear refusal.
+  if (hostname === 'getonapod.com' || hostname.endsWith('.getonapod.com')) {
     throw new HttpError(400, 'RESERVED_HOSTNAME', 'That hostname belongs to the platform')
   }
   return hostname

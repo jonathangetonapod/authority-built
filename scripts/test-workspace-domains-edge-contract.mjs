@@ -208,4 +208,22 @@ for (const [label, source] of [['get-prospect-dashboard', prospect], ['public-cl
 // let a varying Origin header drive unlimited database reads.
 assert.match(cors, /const stale = Date\.now\(\) - workspaceOriginsFetchedAt > WORKSPACE_ORIGIN_TTL_MS\n  if \(!stale\) return/u)
 
+// The preflight is the only request a browser sends before it will send any
+// other, and it must answer with the tenant's own origin. Warming after it
+// returns deadlocks: a cold isolate rejects the preflight, so the request that
+// would have warmed the cache never arrives and the domain never works.
+for (const [label, source] of [
+  ['get-prospect-dashboard', prospect],
+  ['public-client-dashboard', clientDashboard],
+  ['resolve-workspace-domain', resolver],
+]) {
+  assert.ok(
+    /if \(req\.method === 'OPTIONS'\) \{[\s\S]{0,600}?ensureWorkspaceOriginAllowed\(createAdminClient\(\), req\)[\s\S]{0,200}?return optionsResponse/u.test(source),
+    `${label} must warm the tenant CORS allowlist before answering the preflight`,
+  )
+}
+// The application guard and the database constraint must refuse the same set,
+// or a platform subdomain registers a real domain at Railway before failing.
+assert.match(admin, /hostname === 'getonapod\.com' \|\| hostname\.endsWith\('\.getonapod\.com'\)/u)
+
 process.stdout.write('Workspace domains Edge contract checks passed\n')
