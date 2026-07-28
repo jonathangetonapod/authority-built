@@ -732,8 +732,11 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
       </div>
 
       <Dialog open={startOpen} onOpenChange={setStartOpen}>
-        <DialogContent className="max-h-[92vh] w-[calc(100vw-1rem)] max-w-7xl overflow-x-hidden overflow-y-auto p-0 sm:w-[96vw] sm:max-w-7xl">
-          <DialogHeader className="border-b px-6 pb-5 pt-6">
+        {/* Header and footer are pinned and the body is the only thing that
+            scrolls, so the actions stay put and no dead band opens up around a
+            body that is shorter or taller than the dialog. */}
+        <DialogContent className="flex max-h-[92vh] w-[calc(100vw-1rem)] max-w-7xl flex-col gap-0 overflow-hidden p-0 sm:w-[96vw] sm:max-w-7xl">
+          <DialogHeader className="shrink-0 border-b px-6 pb-5 pt-6">
             <DialogTitle>Start client onboarding</DialogTitle>
             <DialogDescription>Choose the client and personalize the exact branded experience they will receive.</DialogDescription>
           </DialogHeader>
@@ -742,7 +745,7 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
               breakpoint up. At 1024–1280px that floor plus the form column
               exceeded the dialog, and the dialog scrolls vertically only, so
               the excess simply spilled. Both tracks shrink now. */}
-          <div className="grid gap-6 px-6 py-5 lg:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]">
+          <div className="grid min-h-0 flex-1 gap-6 overflow-y-auto px-6 py-5 lg:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]">
             <div className="min-w-0 space-y-6">
               <section className="space-y-4">
                 <div><h3 className="font-semibold">Client and form</h3><p className="text-sm text-muted-foreground">Create one private intake link for this client. The questions stay pinned to this published template version.</p></div>
@@ -790,7 +793,6 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
                   workspaceLogoUrl={activePreviewLogoUrl}
                   accentColor={startForm.accent_color}
                   recipientName={startForm.recipient_name}
-                  className="max-h-[72vh] overflow-y-auto"
                 />
               ) : (
                 <Card><CardHeader><CardTitle className="text-base">Choose a template to preview</CardTitle><CardDescription>The complete client experience will appear here.</CardDescription></CardHeader></Card>
@@ -798,7 +800,7 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
             </aside>
           </div>
 
-          <DialogFooter className="border-t bg-background px-6 py-4"><Button variant="outline" onClick={() => setStartOpen(false)}>Cancel</Button><Button disabled={startMutation.isPending} onClick={submitStart}>{startMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Create secure link</Button></DialogFooter>
+          <DialogFooter className="shrink-0 border-t bg-background px-6 py-4"><Button variant="outline" onClick={() => setStartOpen(false)}>Cancel</Button><Button disabled={startMutation.isPending} onClick={submitStart}>{startMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Create secure link</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
