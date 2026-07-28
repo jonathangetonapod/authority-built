@@ -10,6 +10,7 @@ import {
   requireOnlyKeys,
   requireString,
 } from '../_shared/workspaceAuth.ts'
+import { requireServedByHost, resolveHostWorkspaceId } from '../_shared/workspaceDomain.ts'
 
 const METHODS = ['POST'] as const
 const DASHBOARD_FIELDS = [
@@ -76,9 +77,12 @@ serve(async (req) => {
     }
 
     const body = await parseJsonObject(req)
-    requireOnlyKeys(body, ['slug'])
+    requireOnlyKeys(body, ['slug', 'hostname'])
     const slug = requireSlug(body.slug)
     const admin = createAdminClient()
+    // Which workspace's domain this was asked for on. Null on the platform
+    // origin, where every slug has always been valid.
+    const hostWorkspaceId = await resolveHostWorkspaceId(admin, body.hostname)
 
     const { data: dashboard, error: dashboardError } = await admin
       .from('prospect_dashboards')
@@ -96,6 +100,13 @@ serve(async (req) => {
       throw new HttpError(404, 'DASHBOARD_NOT_FOUND', 'Dashboard not found')
     }
     const dashboardRow = dashboard as unknown as ProspectDashboardRow
+    // On an agency's own hostname, another agency's dashboard does not exist.
+    requireServedByHost(
+      hostWorkspaceId,
+      dashboardRow.workspace_id,
+      'DASHBOARD_NOT_FOUND',
+      'Dashboard not found',
+    )
 
     const [
       { data: feedback, error: feedbackError },

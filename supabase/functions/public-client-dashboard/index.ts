@@ -10,6 +10,7 @@ import {
   requireOnlyKeys,
   requireString,
 } from '../_shared/workspaceAuth.ts'
+import { requireServedByHost, resolveHostWorkspaceId } from '../_shared/workspaceDomain.ts'
 import { loadWorkspacePresentation } from '../_shared/portalBranding.ts'
 import { notifyWorkspaceOfApprovals } from '../_shared/clientNotify.ts'
 
@@ -78,6 +79,7 @@ function requireSlug(value: unknown): string {
 async function findDashboard(
   admin: ReturnType<typeof createAdminClient>,
   slug: string,
+  hostWorkspaceId: string | null,
 ) {
   const { data, error } = await admin
     .from('clients')
@@ -93,6 +95,13 @@ async function findDashboard(
   if (!row.workspace || row.workspace.status !== 'active') {
     throw new HttpError(404, 'DASHBOARD_NOT_FOUND', 'Dashboard not found')
   }
+  // On an agency's own hostname, another agency's client does not exist.
+  requireServedByHost(
+    hostWorkspaceId,
+    typeof row.workspace.id === 'string' ? row.workspace.id : null,
+    'DASHBOARD_NOT_FOUND',
+    'Dashboard not found',
+  )
   const { workspace, ...dashboard } = row
   return {
     ...dashboard,
@@ -111,10 +120,11 @@ serve(async (req) => {
     const body = await parseJsonObject(req)
     const action = typeof body.action === 'string' ? body.action : ''
     const admin = createAdminClient()
+    const hostWorkspaceId = await resolveHostWorkspaceId(admin, body.hostname)
 
     if (action === 'metadata') {
-      requireOnlyKeys(body, ['action', 'slug'])
-      const dashboard = await findDashboard(admin, requireSlug(body.slug))
+      requireOnlyKeys(body, ['action', 'slug', 'hostname'])
+      const dashboard = await findDashboard(admin, requireSlug(body.slug), hostWorkspaceId)
       return jsonResponse(req, METHODS, 200, {
         metadata: {
           name: dashboard.name,
@@ -125,9 +135,9 @@ serve(async (req) => {
     }
 
     if (action === 'get') {
-      requireOnlyKeys(body, ['action', 'slug'])
+      requireOnlyKeys(body, ['action', 'slug', 'hostname'])
       const slug = requireSlug(body.slug)
-      const dashboard = await findDashboard(admin, slug)
+      const dashboard = await findDashboard(admin, slug, hostWorkspaceId)
 
       const { error: viewError } = await admin.rpc('record_public_client_dashboard_view', {
         p_client_id: dashboard.id,
@@ -138,8 +148,8 @@ serve(async (req) => {
     }
 
     if (action === 'feedback_list') {
-      requireOnlyKeys(body, ['action', 'slug'])
-      const dashboard = await findDashboard(admin, requireSlug(body.slug))
+      requireOnlyKeys(body, ['action', 'slug', 'hostname'])
+      const dashboard = await findDashboard(admin, requireSlug(body.slug), hostWorkspaceId)
       const { data: visiblePodcasts, error: podcastsError } = await admin
         .from('client_dashboard_podcasts')
         .select('podcast_id')
@@ -164,8 +174,8 @@ serve(async (req) => {
     }
 
     if (action === 'feedback_upsert') {
-      requireOnlyKeys(body, ['action', 'slug', 'podcast_id', 'podcast_name', 'status', 'notes'])
-      const dashboard = await findDashboard(admin, requireSlug(body.slug))
+      requireOnlyKeys(body, ['action', 'slug', 'hostname', 'podcast_id', 'podcast_name', 'status', 'notes'])
+      const dashboard = await findDashboard(admin, requireSlug(body.slug), hostWorkspaceId)
       const podcastId = requireString(body.podcast_id, 'podcast_id', { max: 300 })
       const notes = body.notes === null || body.notes === undefined || body.notes === ''
         ? null

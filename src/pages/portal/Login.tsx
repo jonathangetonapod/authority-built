@@ -9,6 +9,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import PageSEO from '@/components/seo/PageSEO'
 import { supabase } from '@/lib/supabase'
 import { safeExternalUrl } from '@/lib/externalUrl'
+import { currentHostname } from '@/lib/workspaceHost'
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/i
 
@@ -37,7 +38,7 @@ export default function PortalLogin() {
     if (!brandingSlug || !SLUG_PATTERN.test(brandingSlug) || brandingSlug.length > 180) return
     let cancelled = false
     supabase.functions
-      .invoke('public-client-dashboard', { body: { action: 'metadata', slug: brandingSlug.toLowerCase() } })
+      .invoke('public-client-dashboard', { body: { action: 'metadata', slug: brandingSlug.toLowerCase(), hostname: currentHostname() } })
       .then(({ data, error: metadataError }) => {
         if (cancelled || metadataError) return
         const workspace = data?.metadata?.workspace

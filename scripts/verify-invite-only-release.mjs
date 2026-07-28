@@ -25,7 +25,7 @@ const EXPECTED_COUNTS = Object.freeze({
   excludedFunctions: 2,
   retiredFunctions: 17,
   unauthenticatedTombstones: 5,
-  edgeTypeScriptFiles: 140,
+  edgeTypeScriptFiles: 141,
 })
 
 const EXPECTED_PHASE_KEYS = Object.freeze([

@@ -71,6 +71,7 @@ import { FeatureDetailModal } from '@/components/pricing/FeatureDetailModal'
 import { PricingFAQ } from '@/components/pricing/PricingFAQ'
 import PageSEO from '@/components/seo/PageSEO'
 import { openExternalUrl } from '@/lib/externalUrl'
+import { currentHostname } from '@/lib/workspaceHost'
 
 export default function ProspectView() {
   return (
@@ -298,7 +299,7 @@ function ProspectViewContent() {
         dashboard: ProspectDashboard
         feedback: PodcastFeedback[]
         workspace: ProspectWorkspaceBrand
-      }>('get-prospect-dashboard', { slug })
+      }>('get-prospect-dashboard', { slug, hostname: currentHostname() })
 
       if (!result.success) {
         throw new PublicReadError(result.error || 'Dashboard not found', 400)

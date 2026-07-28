@@ -106,4 +106,46 @@ assert.match(resolver, /requireOnlyKeys\(body, \['hostname'\]\)/u)
 assert.match(resolver, /success: true, workspace: null/u)
 assert.doesNotMatch(resolver, /\bclients\b/u)
 
+
+// A domain serves its own workspace's pages and nobody else's. Without this,
+// a link built for one agency renders on every other agency's hostname,
+// wearing that agency's brand.
+const domainHelper = readFileSync('supabase/functions/_shared/workspaceDomain.ts', 'utf8')
+const prospect = readFileSync('supabase/functions/get-prospect-dashboard/index.ts', 'utf8')
+const clientDashboard = readFileSync('supabase/functions/public-client-dashboard/index.ts', 'utf8')
+
+// The platform origin resolves to no workspace, so every link that already
+// exists keeps working exactly as it did.
+assert.match(domainHelper, /if \(!hostWorkspaceId\) return/u)
+// A failed lookup must not widen the page to every workspace.
+assert.match(domainHelper, /if \(error \|\| !data \|\| typeof data !== 'object'\) return null/u)
+// 404, not 403: on somebody else's domain this page does not exist, and a
+// more precise answer would confirm the slug is real.
+assert.match(domainHelper, /throw new HttpError\(404, notFoundCode, notFoundMessage\)/u)
+
+for (const [label, source] of [['get-prospect-dashboard', prospect], ['public-client-dashboard', clientDashboard]]) {
+  assert.ok(
+    source.includes('resolveHostWorkspaceId(admin, body.hostname)'),
+    `${label} must resolve the host it was asked on`,
+  )
+  assert.ok(
+    source.includes('requireServedByHost('),
+    `${label} must refuse a slug belonging to another workspace`,
+  )
+  assert.ok(
+    /requireOnlyKeys\(body, \[[^\]]*'hostname'/u.test(source),
+    `${label} must accept the hostname it checks`,
+  )
+}
+// Every action on the client dashboard funnels through findDashboard, so the
+// check sits there rather than at four call sites that could drift apart.
+assert.match(clientDashboard, /async function findDashboard\([\s\S]*?hostWorkspaceId: string \| null,\n\) \{/u)
+
+const prospectView = readFileSync('src/pages/prospect/ProspectView.tsx', 'utf8')
+const approvalView = readFileSync('src/pages/client/ClientApprovalView.tsx', 'utf8')
+const portalLogin = readFileSync('src/pages/portal/Login.tsx', 'utf8')
+for (const [label, source] of [['ProspectView', prospectView], ['ClientApprovalView', approvalView], ['portal Login', portalLogin]]) {
+  assert.ok(source.includes('currentHostname()'), `${label} must send the hostname it was opened on`)
+}
+
 process.stdout.write('Workspace domains Edge contract checks passed\n')

@@ -75,6 +75,7 @@ import { toast } from 'sonner'
 import PageSEO from '@/components/seo/PageSEO'
 import { openExternalUrl } from '@/lib/externalUrl'
 import { onboardingWorkspaceInitials } from '@/lib/onboardingBrand'
+import { currentHostname } from '@/lib/workspaceHost'
 
 export default function ClientApprovalView() {
   return <ClientApprovalViewContent />
@@ -178,7 +179,7 @@ async function invokePublicClientDashboard<T>(body: Record<string, unknown>): Pr
       'Content-Type': 'application/json',
       'apikey': SUPABASE_ANON_KEY,
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, hostname: currentHostname() }),
   })
   const payload = await response.json().catch(() => ({})) as { error?: string }
   if (!response.ok) throw new Error(payload.error || 'Dashboard request failed')
