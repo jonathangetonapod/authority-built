@@ -201,7 +201,7 @@ function staleInviteDays(member: { status: string; accepted_at?: string | null; 
 }
 
 const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
-  const { membership, refreshAccount, refreshSession, signOut, user, workspace } = useAuth()
+  const { isPlatformAdmin, membership, refreshAccount, refreshSession, signOut, user, workspace } = useAuth()
   const queryClient = useQueryClient()
   const [inviteOpen, setInviteOpen] = useState(false)
   const [invite, setInvite] = useState<WorkspaceStaffInviteInput>(emptyInvite)
@@ -220,11 +220,17 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
   const isPlatformWorkspace = platformWorkspaceId !== undefined
   const workspaceId = (isPlatformWorkspace ? platformWorkspaceId : workspace?.id || '').toLowerCase()
   const validWorkspaceId = UUID_PATTERN.test(workspaceId)
+  // A platform admin sitting on the default workspace owns it in every sense
+  // that matters here, whatever their membership row says: platform admin is
+  // decided by admin_users, not by a role on that membership.
+  const onOwnPlatformWorkspace = !isPlatformWorkspace
+    && isPlatformAdmin
+    && Boolean(workspace?.is_default)
   const canOrganizeSidebar = !isPlatformWorkspace
-    && membership?.role === 'owner'
+    && (membership?.role === 'owner' || onOwnPlatformWorkspace)
     && validWorkspaceId
   const canManageAiKeys = validWorkspaceId
-    && (isPlatformWorkspace || membership?.role === 'owner')
+    && (isPlatformWorkspace || membership?.role === 'owner' || onOwnPlatformWorkspace)
   const queryKey = [
     isPlatformWorkspace ? 'platform' : 'tenant',
     user?.id || 'unknown',
@@ -258,6 +264,9 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
   const capabilities = data?.capabilities
   const canInvite = Boolean(capabilities?.invite_roles.length)
   const canGeneratePassword = capabilities?.can_generate_password === true
+  // The default workspace's members are platform operators; the settings are
+  // its own, the roster is not editable from here.
+  const platformRoster = data?.workspace.is_default === true
   const canManageBranding = capabilities?.can_manage_branding === true
   const canManageClientBranding = capabilities?.can_manage_client_branding === true
   const canManageWorkspaceName = capabilities?.can_manage_workspace_name === true
@@ -975,16 +984,22 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                             : 'Manage the people who can access your workspace.'}
                         </p>
                       </div>
-                      <Button
-                        disabled={!canInvite}
-                        onClick={() => {
-                          setInvite({ ...emptyInvite, role: allowedInviteRoles[0] || 'member' })
-                          setInviteMethod('email_invite')
-                          setInviteOpen(true)
-                        }}
-                      >
-                        <UserPlus className="mr-2 h-4 w-4" />Invite user
-                      </Button>
+                      {platformRoster ? (
+                        <Button variant="outline" asChild>
+                          <Link to="/app/manage-workspaces"><Users className="mr-2 h-4 w-4" />Manage workspaces</Link>
+                        </Button>
+                      ) : (
+                        <Button
+                          disabled={!canInvite}
+                          onClick={() => {
+                            setInvite({ ...emptyInvite, role: allowedInviteRoles[0] || 'member' })
+                            setInviteMethod('email_invite')
+                            setInviteOpen(true)
+                          }}
+                        >
+                          <UserPlus className="mr-2 h-4 w-4" />Invite user
+                        </Button>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-3 divide-x overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
@@ -1005,7 +1020,11 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                     <Card className="min-w-0 max-w-full overflow-hidden border-border/70 shadow-sm">
                       <CardHeader className="border-b border-border/70 bg-muted/15">
                         <CardTitle className="flex items-center gap-2 text-lg"><Users className="h-5 w-5" />Agency team</CardTitle>
-                        <CardDescription>Workspace users are separate from client portal users, which are managed inside each client.</CardDescription>
+                        <CardDescription>
+                          {platformRoster
+                            ? <>These are platform operator accounts, listed here for reference. They are managed by the platform allowlist rather than invited into a workspace — open <Link to="/app/manage-workspaces" className="font-medium underline underline-offset-2">Manage workspaces</Link> to create a workspace or change a tenant owner's access.</>
+                            : 'Workspace users are separate from client portal users, which are managed inside each client.'}
+                        </CardDescription>
                       </CardHeader>
                       <CardContent className="min-w-0 p-0">
                         <div className="max-w-full overflow-hidden">

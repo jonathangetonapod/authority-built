@@ -454,3 +454,83 @@ assert.match(prospectView, /sandbox="allow-scripts allow-same-origin allow-forms
 // is too narrow to pick a time in.
 assert.match(prospectView, /lg:col-span-2/u)
 assert.match(prospectView, /Open the scheduler in a new tab/u)
+
+// The default platform workspace runs real clients, so it holds the same
+// settings surface as a tenant workspace: name, client-facing brand, logo, and
+// booking link. The opening is narrow on purpose.
+const defaultWorkspaceSettings = readFileSync(
+  'supabase/migrations/20260728002100_default_workspace_settings.sql',
+  'utf8',
+)
+assert.match(
+  defaultWorkspaceSettings,
+  /CREATE OR REPLACE FUNCTION public\.workspace_settings_actor_role_v1\(/u,
+)
+// A private workspace is authorized exactly as before — the settings gate
+// delegates rather than reimplementing the staff rules.
+assert.match(
+  defaultWorkspaceSettings,
+  /IF NOT workspace_is_default THEN\s+RETURN public\.workspace_staff_actor_role_v1\(/u,
+)
+// Platform admin is decided by admin_users plus an active default-workspace
+// membership, never by the role that membership happens to carry.
+assert.match(
+  defaultWorkspaceSettings,
+  /IF public\.is_platform_admin_identity\(p_actor_user_id, actor_email\) THEN\s+RETURN 'platform_admin';/u,
+)
+
+// Every settings entry point moves to the new gate...
+for (const settingsFunction of [
+  'workspace_staff_list_v1',
+  'set_workspace_name_v1',
+  'set_workspace_logo_v1',
+  'set_workspace_client_brand_v1',
+  'set_workspace_booking_link_v1',
+]) {
+  const body = defaultWorkspaceSettings.slice(
+    defaultWorkspaceSettings.indexOf(`CREATE OR REPLACE FUNCTION public.${settingsFunction}(`),
+  )
+  const scoped = body.slice(0, body.indexOf('\n$$;'))
+  assert.ok(
+    scoped.includes('public.workspace_settings_actor_role_v1('),
+    `${settingsFunction} must authorize through the settings gate`,
+  )
+  // ...and stops repeating the predicate that shut the default workspace out.
+  assert.ok(
+    !scoped.includes('NOT workspace.is_default'),
+    `${settingsFunction} must not exclude the default workspace`,
+  )
+}
+
+// Staff MUTATIONS stay closed to it. enforce_private_workspace_staff_invariants
+// skips the default workspace, so there is no last-owner protection there, and
+// platform admin identity is anchored on an active membership in it: removing
+// the wrong row would take away the access that authorizes removing it.
+assert.doesNotMatch(
+  defaultWorkspaceSettings,
+  /FUNCTION public\.(begin_workspace_staff_invite_v1|workspace_staff_update_role_v1|workspace_staff_transfer_owner_v1)\(/u,
+)
+// The roster the default workspace serves carries no action at all, so the page
+// never offers a button whose mutation would be refused underneath it.
+assert.match(defaultWorkspaceSettings, /WHEN workspace_is_default THEN '\[\]'::JSONB/u)
+assert.match(defaultWorkspaceSettings, /'can_update_roles', NOT workspace_is_default/u)
+assert.match(defaultWorkspaceSettings, /'can_transfer_owner', NOT workspace_is_default/u)
+
+// The edge function refuses a default-workspace response that claims otherwise.
+assert.match(source, /const isDefaultWorkspace = workspace\.is_default === true;/u)
+assert.match(
+  source,
+  /isDefaultWorkspace &&\s+\(inviteRoles\.length > 0 \|\|[\s\S]*?allowed_actions\.length > 0\)\)/u,
+)
+// Exactly one live owner mirrors a private-workspace invariant the database
+// does not apply to the default workspace, so the assertion follows it.
+assert.match(source, /!isDefaultWorkspace && members\.filter\(/u)
+// The branding read and the name fallback no longer exclude it.
+assert.doesNotMatch(source, /\.eq\("is_default", false\)/u)
+
+// The settings page is reached on the default workspace, and says where the
+// platform operator accounts are actually managed.
+const settingsEntry = readFileSync('src/pages/app/MyWorkspaceSettings.tsx', 'utf8')
+assert.match(settingsEntry, /isPlatformAdmin && workspace\?\.is_default/u)
+assert.match(staffPage, /const platformRoster = data\?\.workspace\.is_default === true/u)
+assert.match(staffPage, /\/app\/manage-workspaces/u)

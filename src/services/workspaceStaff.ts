@@ -47,6 +47,8 @@ export interface WorkspaceStaffView {
     name: string
     updated_at: string | null
     status: 'active'
+    /** The platform workspace: settings apply, staff is managed elsewhere. */
+    is_default: boolean
     logo_path: string | null
     logo_updated_at: string | null
     client_brand_name: string
@@ -393,6 +395,7 @@ function parseView(value: unknown, expectedWorkspaceId: string): WorkspaceStaffV
       name: value.workspace.name,
       updated_at: workspaceUpdatedAt,
       status: 'active',
+      is_default: value.workspace.is_default === true,
       logo_path: branding.logo_path,
       logo_updated_at: branding.logo_updated_at,
       client_brand_name: clientBrandName,

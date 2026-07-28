@@ -62,6 +62,7 @@ function ownerView(overrides: Partial<WorkspaceStaffView> = {}): WorkspaceStaffV
       name: 'Acme Workspace',
       updated_at: '2026-07-22T00:25:00.000Z',
       status: 'active',
+      is_default: false,
       logo_path: null,
       logo_updated_at: null,
       client_brand_name: 'Acme Agency',

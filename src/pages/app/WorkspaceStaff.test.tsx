@@ -111,6 +111,7 @@ const ownerView: WorkspaceStaffView = {
     name: 'Acme Workspace',
     updated_at: '2026-07-22T00:25:00.000Z',
     status: 'active',
+    is_default: false,
     logo_path: null,
     logo_updated_at: null,
     client_brand_name: 'Acme Agency',
@@ -760,5 +761,66 @@ describe('WorkspaceStaff', () => {
 
     expect(screen.getByText('The workspace address is invalid.')).toBeInTheDocument()
     expect(mockedList).not.toHaveBeenCalled()
+  })
+
+  describe('on the default platform workspace', () => {
+    const platformView: WorkspaceStaffView = {
+      ...ownerView,
+      workspace: { ...ownerView.workspace, is_default: true, name: 'Get On A Pod' },
+      capabilities: {
+        ...ownerView.capabilities,
+        invite_roles: [],
+        can_update_roles: false,
+        can_transfer_owner: false,
+      },
+      members: [
+        { ...owner, allowed_actions: [] },
+        { ...admin, allowed_actions: [] },
+      ],
+    }
+
+    beforeEach(() => {
+      mockedUseAuth.mockReturnValue({
+        user: { id: userId, email: 'owner@example.com', user_metadata: { full_name: 'Workspace Owner' } },
+        workspace: {
+          id: workspaceId,
+          name: 'Get On A Pod',
+          slug: 'get-on-a-pod',
+          status: 'active',
+          is_default: true,
+        },
+        isPlatformAdmin: true,
+        membership: { id: ownerId, full_name: 'Workspace Owner', role: 'owner' },
+        refreshAccount,
+        refreshSession,
+        signOut,
+      } as never)
+      mockedList.mockResolvedValue(platformView)
+    })
+
+    it('lets the platform workspace set its own client-facing brand', async () => {
+      renderPage()
+      // The workspace runs real clients, so the identity its prospects see is
+      // its own to set rather than a platform default.
+      expect(await screen.findByRole('heading', { name: 'Client-facing brand' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'General' })).toBeInTheDocument()
+    })
+
+    it('sends the platform roster to the platform tools instead of offering an invite', async () => {
+      renderPage()
+      await screen.findByRole('heading', { name: 'Workspace users' })
+      expect(screen.queryByRole('button', { name: /Invite user/ })).not.toBeInTheDocument()
+      const links = screen.getAllByRole('link', { name: /Manage workspaces/ })
+      expect(links.length).toBeGreaterThan(0)
+      for (const link of links) expect(link).toHaveAttribute('href', '/app/manage-workspaces')
+    })
+
+    it('offers no action on a platform operator account', async () => {
+      renderPage()
+      await screen.findByRole('heading', { name: 'Workspace users' })
+      // Staff mutations are refused at the SQL root for this workspace, so a
+      // button here would be a promise the database will not keep.
+      expect(screen.queryByRole('button', { name: /More actions/ })).not.toBeInTheDocument()
+    })
   })
 })

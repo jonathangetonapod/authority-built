@@ -138,6 +138,7 @@ interface StaffViewDto {
     name: string;
     updated_at: string | null;
     status: "active";
+    is_default: boolean;
     logo_path: string | null;
     logo_updated_at: string | null;
     client_brand_name: string;
@@ -458,12 +459,18 @@ function staffViewDto(value: unknown): StaffViewDto {
   }
 
   const members = row.members.map((member) => memberDto(member));
+  if (typeof workspace.is_default !== "boolean") invalidRpcResponse();
+  const isDefaultWorkspace = workspace.is_default === true;
+  // Exactly one live owner is a private-workspace invariant, enforced by
+  // enforce_private_workspace_staff_invariants — which skips the default
+  // workspace on purpose. Asserting it there would reject a roster the database
+  // considers perfectly valid, so the assertion follows the invariant.
   if (
     new Set(members.map((member) => member.id)).size !== members.length ||
     new Set(members.map((member) => member.email)).size !== members.length ||
-    members.filter((member) =>
+    (!isDefaultWorkspace && members.filter((member) =>
         member.role === "owner" && member.status !== "revoked"
-      ).length !== 1
+      ).length !== 1)
   ) {
     invalidRpcResponse();
   }
@@ -499,6 +506,20 @@ function staffViewDto(value: unknown): StaffViewDto {
     invalidRpcResponse();
   }
 
+  // The default workspace gets the settings sections and a read-only roster.
+  // Its staff mutations are still refused at the SQL root, so a capability that
+  // said otherwise would render a button that cannot work. Refuse the response
+  // instead of showing it.
+  if (
+    isDefaultWorkspace &&
+    (inviteRoles.length > 0 ||
+      capabilities.can_update_roles ||
+      capabilities.can_transfer_owner ||
+      members.some((member) => member.allowed_actions.length > 0))
+  ) {
+    invalidRpcResponse();
+  }
+
   const workspaceStatus = responseEnum(workspace.status, ["active"] as const);
   return {
     workspace: {
@@ -506,6 +527,7 @@ function staffViewDto(value: unknown): StaffViewDto {
       name: responseText(workspace.name, 120) as string,
       updated_at: null,
       status: workspaceStatus,
+      is_default: isDefaultWorkspace,
       logo_path: null,
       logo_updated_at: null,
       client_brand_name: responseText(workspace.name, 120) as string,
@@ -767,7 +789,6 @@ async function loadWorkspaceBranding(
     .select("id,name,updated_at,logo_path,logo_updated_at")
     .eq("id", workspaceId)
     .eq("status", "active")
-    .eq("is_default", false)
     .maybeSingle();
   if (workspaceError || !workspaceData) {
     throw new HttpError(
@@ -1137,7 +1158,6 @@ async function setWorkspaceName(
     .update({ name: input.workspaceName })
     .eq("id", input.workspaceId)
     .eq("status", "active")
-    .eq("is_default", false)
     .eq("updated_at", input.expectedUpdatedAt)
     .select("id,name,updated_at")
     .maybeSingle();
