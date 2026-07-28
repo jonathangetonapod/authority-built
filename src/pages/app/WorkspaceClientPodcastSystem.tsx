@@ -151,6 +151,29 @@ function contactLabel(item: ClientPodcastSystemItem): string {
   return 'No email'
 }
 
+/**
+ * Master Inbox, opened on the thread that belongs to this host where one is
+ * known. The client-scoped link was the only route, which meant landing in a
+ * hundred conversations and searching for the show already on screen.
+ */
+function inboxHref(baseHref: string, item: ClientPodcastSystemItem): string {
+  const params = new URLSearchParams({ client: item.client.id })
+  if (item.conversation?.thread_key) params.set('thread', item.conversation.thread_key)
+  return `${baseHref}/master-inbox?${params.toString()}`
+}
+
+function ConversationBadge({ item }: { item: ClientPodcastSystemItem }) {
+  if (!item.conversation?.replied) return null
+  return (
+    <Badge variant="outline" className="border-fuchsia-200 bg-fuchsia-50 text-fuchsia-800">
+      <Inbox className="mr-1 h-3 w-3" />
+      {/* A reply can be known from a campaign sync before the inbox has read
+          the thread, and only one of those can be opened. */}
+      {item.conversation.thread_key ? 'Host replied' : 'Reply not read in yet'}
+    </Badge>
+  )
+}
+
 function StageBadge({ stage }: { stage: ClientPodcastLifecycleStage }) {
   const meta = stageMeta[stage]
   return <Badge variant="outline" className={meta.className}>{meta.shortLabel}</Badge>
@@ -568,7 +591,7 @@ function OpportunityList({
       {items.map((item) => (
         <button key={item.id} type="button" onClick={() => onOpen(item)} className="flex w-full flex-col gap-3 rounded-xl border p-3 text-left transition-colors hover:border-primary/40 sm:flex-row sm:items-center">
           <div className="min-w-0 flex-1"><PodcastIdentity item={item} /></div>
-          <div className="flex flex-wrap gap-1.5"><StageBadge stage={item.stage} />{item.has_conflict && <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">Check history</Badge>}</div>
+          <div className="flex flex-wrap gap-1.5"><StageBadge stage={item.stage} /><ConversationBadge item={item} />{item.has_conflict && <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">Check history</Badge>}</div>
           <p className="w-full text-xs text-muted-foreground sm:w-52">{item.next_action || 'No action required'}</p>
           <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
         </button>
@@ -610,7 +633,7 @@ function PodcastTable({
           {items.map((item) => (
             <TableRow key={item.id} className={item.has_conflict ? 'bg-amber-50/40' : undefined}>
               <TableCell><PodcastIdentity item={item} /></TableCell>
-              <TableCell><div className="flex flex-wrap gap-1.5"><StageBadge stage={item.stage} /><OutcomeBadge outcome={item.outcome} /></div></TableCell>
+              <TableCell><div className="flex flex-wrap gap-1.5"><StageBadge stage={item.stage} /><OutcomeBadge outcome={item.outcome} /><ConversationBadge item={item} /></div></TableCell>
               <TableCell><span className="inline-flex items-center gap-1.5 text-sm"><Mail className={`h-3.5 w-3.5 ${item.contact.available ? 'text-emerald-600' : 'text-muted-foreground'}`} />{contactLabel(item)}</span></TableCell>
               <TableCell className="text-sm">{item.next_action || 'No action required'}</TableCell>
               <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{formattedDate(item.last_activity_at)}</TableCell>
@@ -828,7 +851,7 @@ function SelectedClientView({
               {placementItems.length === 0 ? (
                 <div className="flex min-h-60 flex-col items-center justify-center rounded-xl border border-dashed text-center"><CalendarDays className="h-10 w-10 text-muted-foreground/50" /><p className="mt-3 font-medium">No confirmed placements yet</p><p className="mt-1 text-sm text-muted-foreground">Bookings will appear here once a host confirms an appearance.</p></div>
               ) : (
-                <div className="overflow-x-auto rounded-xl border"><Table><TableHeader><TableRow><TableHead className="min-w-64">Podcast</TableHead><TableHead>Status</TableHead><TableHead>Recording</TableHead><TableHead>Publication</TableHead><TableHead>Episode</TableHead><TableHead className="text-right"><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader><TableBody>{placementItems.map((item) => <TableRow key={item.id}><TableCell><PodcastIdentity item={item} /></TableCell><TableCell><div className="flex flex-wrap gap-1.5"><StageBadge stage={item.stage} /><OutcomeBadge outcome={item.outcome} /></div></TableCell><TableCell className="whitespace-nowrap text-sm">{formattedDate(item.booking?.recording_date)}</TableCell><TableCell className="whitespace-nowrap text-sm">{formattedDate(item.booking?.publish_date)}</TableCell><TableCell>{safeExternalUrl(item.booking?.episode_url) ? <a href={safeExternalUrl(item.booking?.episode_url) || undefined} target="_blank" rel="noreferrer" className="inline-flex items-center text-sm text-primary hover:underline">Listen<ExternalLink className="ml-1 h-3.5 w-3.5" /></a> : <span className="text-sm text-muted-foreground">Not live</span>}</TableCell><TableCell className="text-right"><Button type="button" variant="ghost" size="sm" onClick={() => onOpenItem(item.id)}>Open<ArrowRight className="ml-2 h-4 w-4" /></Button></TableCell></TableRow>)}</TableBody></Table></div>
+                <div className="overflow-x-auto rounded-xl border"><Table><TableHeader><TableRow><TableHead className="min-w-64">Podcast</TableHead><TableHead>Status</TableHead><TableHead>Recording</TableHead><TableHead>Publication</TableHead><TableHead>Episode</TableHead><TableHead className="text-right"><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader><TableBody>{placementItems.map((item) => <TableRow key={item.id}><TableCell><PodcastIdentity item={item} /></TableCell><TableCell><div className="flex flex-wrap gap-1.5"><StageBadge stage={item.stage} /><OutcomeBadge outcome={item.outcome} /><ConversationBadge item={item} /></div></TableCell><TableCell className="whitespace-nowrap text-sm">{formattedDate(item.booking?.recording_date)}</TableCell><TableCell className="whitespace-nowrap text-sm">{formattedDate(item.booking?.publish_date)}</TableCell><TableCell>{safeExternalUrl(item.booking?.episode_url) ? <a href={safeExternalUrl(item.booking?.episode_url) || undefined} target="_blank" rel="noreferrer" className="inline-flex items-center text-sm text-primary hover:underline">Listen<ExternalLink className="ml-1 h-3.5 w-3.5" /></a> : <span className="text-sm text-muted-foreground">Not live</span>}</TableCell><TableCell className="text-right"><Button type="button" variant="ghost" size="sm" onClick={() => onOpenItem(item.id)}>Open<ArrowRight className="ml-2 h-4 w-4" /></Button></TableCell></TableRow>)}</TableBody></Table></div>
               )}
             </CardContent>
           </Card>
@@ -852,7 +875,7 @@ function OpportunityDetail({
   return (
     <>
       <SheetHeader className="border-b p-5 pr-12 sm:p-6 sm:pr-12">
-        <div className="flex flex-wrap gap-2"><StageBadge stage={item.stage} /><OutcomeBadge outcome={item.outcome} />{item.has_conflict && <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">History conflict</Badge>}</div>
+        <div className="flex flex-wrap gap-2"><StageBadge stage={item.stage} /><OutcomeBadge outcome={item.outcome} /><ConversationBadge item={item} />{item.has_conflict && <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">History conflict</Badge>}</div>
         <SheetTitle className="text-2xl">{item.podcast.name}</SheetTitle>
         <SheetDescription>{item.client.name} · {stageMeta[item.stage].label}</SheetDescription>
       </SheetHeader>
@@ -867,7 +890,7 @@ function OpportunityDetail({
         <section><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">Host-ready research</h2><Badge variant="outline">{item.analysis.source === 'normalized' ? 'Current analysis' : item.analysis.source === 'legacy_cache' ? 'Legacy analysis' : 'Not researched'}</Badge></div>{item.analysis.clean_description ? <p className="mt-3 rounded-xl border bg-muted/15 p-4 text-sm leading-6 text-muted-foreground">{item.analysis.clean_description}</p> : <div className="mt-3 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No client-specific research is available yet.</div>}{item.analysis.fit_reasons.length > 0 && <div className="mt-4"><h3 className="text-sm font-semibold">Why the guest fits</h3><ul className="mt-2 space-y-2">{item.analysis.fit_reasons.map((reason, index) => <li key={`${reason}-${index}`} className="flex gap-2 text-sm leading-6 text-muted-foreground"><CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-emerald-600" /><span>{reason}</span></li>)}</ul></div>}</section>
         {item.booking && <section><h2 className="text-lg font-semibold">Booking milestones</h2><div className="mt-3 grid gap-3 sm:grid-cols-3"><div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Scheduled</p><p className="mt-1 text-sm font-semibold">{formattedDate(item.booking.scheduled_date)}</p></div><div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Recording</p><p className="mt-1 text-sm font-semibold">{formattedDate(item.booking.recording_date)}</p></div><div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Publication</p><p className="mt-1 text-sm font-semibold">{formattedDate(item.booking.publish_date)}</p></div></div></section>}
         <Separator />
-        <div className="flex flex-wrap gap-2"><Button asChild variant="outline"><Link to={`${baseHref}/clients/${encodeURIComponent(item.client.id)}?tab=approval`}><UserRound className="mr-2 h-4 w-4" />Client shortlist</Link></Button><Button asChild variant="outline"><Link to={`${baseHref}/client-campaigns/${encodeURIComponent(item.client.id)}`}><Megaphone className="mr-2 h-4 w-4" />Client campaign</Link></Button><Button asChild variant="outline"><Link to={`${baseHref}/master-inbox?client=${encodeURIComponent(item.client.id)}`}><Inbox className="mr-2 h-4 w-4" />Master Inbox</Link></Button>{canManage && <Button type="button" onClick={onLogPlacement}><CalendarPlus className="mr-2 h-4 w-4" />{item.booking ? 'Update placement' : 'Log placement'}</Button>}{safeExternalUrl(item.podcast.url) && <Button asChild variant="ghost"><a href={safeExternalUrl(item.podcast.url) || undefined} target="_blank" rel="noreferrer">Podcast page<ExternalLink className="ml-2 h-4 w-4" /></a></Button>}{safeExternalUrl(item.booking?.episode_url) && <Button asChild><a href={safeExternalUrl(item.booking?.episode_url) || undefined} target="_blank" rel="noreferrer">Listen to episode<ExternalLink className="ml-2 h-4 w-4" /></a></Button>}</div>
+        <div className="flex flex-wrap gap-2"><Button asChild variant="outline"><Link to={`${baseHref}/clients/${encodeURIComponent(item.client.id)}?tab=approval`}><UserRound className="mr-2 h-4 w-4" />Client shortlist</Link></Button><Button asChild variant="outline"><Link to={`${baseHref}/client-campaigns/${encodeURIComponent(item.client.id)}`}><Megaphone className="mr-2 h-4 w-4" />Client campaign</Link></Button><Button asChild variant={item.conversation?.thread_key ? 'default' : 'outline'}><Link to={inboxHref(baseHref, item)}><Inbox className="mr-2 h-4 w-4" />{item.conversation?.thread_key ? 'Open conversation' : 'Master Inbox'}</Link></Button>{canManage && <Button type="button" onClick={onLogPlacement}><CalendarPlus className="mr-2 h-4 w-4" />{item.booking ? 'Update placement' : 'Log placement'}</Button>}{safeExternalUrl(item.podcast.url) && <Button asChild variant="ghost"><a href={safeExternalUrl(item.podcast.url) || undefined} target="_blank" rel="noreferrer">Podcast page<ExternalLink className="ml-2 h-4 w-4" /></a></Button>}{safeExternalUrl(item.booking?.episode_url) && <Button asChild><a href={safeExternalUrl(item.booking?.episode_url) || undefined} target="_blank" rel="noreferrer">Listen to episode<ExternalLink className="ml-2 h-4 w-4" /></a></Button>}</div>
         {!canManage && <div className="flex gap-3 rounded-xl border border-dashed p-4 text-sm text-muted-foreground"><XCircle className="mt-0.5 h-4 w-4 shrink-0" /><p>You can view this client overview. Owners and admins manage client decisions, campaign preparation, and delivery actions.</p></div>}
       </div>
     </>
@@ -910,7 +933,19 @@ const WorkspaceClientPodcastSystem = ({ platformWorkspaceId }: WorkspaceClientPo
   const selectedRollup = UUID_PATTERN.test(requestedClientId)
     ? rollups.find((rollup) => rollup.client.id === requestedClientId) || null
     : null
-  const selectedItem = system?.items.find((item) => item.id === selectedItemId) || null
+  // Arriving from a reply in Master Inbox: open the placement that reply
+  // belongs to, resolved by the show, since the inbox knows the podcast and
+  // not the shortlist row.
+  const requestedPodcastId = (searchParams.get('podcast') || '').trim().toLowerCase()
+  const linkedItem = requestedPodcastId && requestedClientId
+    ? system?.items.find((item) => (
+      item.client.id === requestedClientId
+      && item.podcast.podscan_id.trim().toLowerCase() === requestedPodcastId
+    )) || null
+    : null
+  const selectedItem = system?.items.find((item) => item.id === selectedItemId)
+    || linkedItem
+    || null
 
   const platformWorkspace: PlatformWorkspaceConfig | undefined = isPlatformWorkspace
     ? { workspaceName: system?.workspace.name || 'Client workspace', logoUrl: null, baseHref }
@@ -980,7 +1015,19 @@ const WorkspaceClientPodcastSystem = ({ platformWorkspaceId }: WorkspaceClientPo
         )}
       </div>
 
-      <Sheet open={Boolean(selectedItem)} onOpenChange={(open) => { if (!open) setSelectedItemId(null) }}>
+      <Sheet
+        open={Boolean(selectedItem)}
+        onOpenChange={(open) => {
+          if (open) return
+          setSelectedItemId(null)
+          // Without this the linked placement reopens on every render.
+          if (requestedPodcastId) {
+            const next = new URLSearchParams(searchParams)
+            next.delete('podcast')
+            setSearchParams(next, { replace: true })
+          }
+        }}
+      >
         <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:max-w-2xl lg:max-w-3xl">
           {selectedItem && (
             <OpportunityDetail

@@ -277,6 +277,42 @@ async function loadDirectContacts(
   return rows
 }
 
+interface ThreadStateRow {
+  thread_key: string
+  client_id: string
+  podcast_id: string | null
+  status: string | null
+  updated_at: string | null
+}
+
+/**
+ * What is known about the conversation with this host.
+ *
+ * Two independent signals, and they answer different questions. A thread row
+ * means the reply has been read into the inbox and can be opened directly. A
+ * campaign reply count means the last Instantly sync saw a reply, which can be
+ * true before anyone has opened Master Inbox — so a placement can honestly
+ * report "the host replied" while having no thread to link to yet.
+ */
+function conversationFor(
+  thread: ThreadStateRow | null,
+  target: CampaignTargetRow | null | undefined,
+): {
+  thread_key: string | null
+  status: string | null
+  replied: boolean
+  updated_at: string | null
+} | null {
+  const replyCount = target?.email_reply_count ?? 0
+  if (!thread && replyCount < 1) return null
+  return {
+    thread_key: thread?.thread_key ?? null,
+    status: thread?.status ?? null,
+    replied: replyCount > 0 || Boolean(thread),
+    updated_at: thread?.updated_at ?? target?.last_activity_at ?? null,
+  }
+}
+
 function recordKey(clientId: string, podcastId: string): string {
   return `${clientId}:${podcastId.trim().toLowerCase()}`
 }
@@ -515,6 +551,25 @@ serve(async (req) => {
       )),
     ])
 
+    // The conversation each placement already has in Master Inbox. Threads
+    // record the show they came from at ingestion, so this is a join rather
+    // than a provider call — and it is what turns "open the client's inbox and
+    // hunt" into opening the one thread that belongs to this host.
+    const { data: threadStateRows } = await context.admin
+      .from('workspace_inbox_thread_state')
+      .select('thread_key,client_id,podcast_id,status,updated_at')
+      .eq('workspace_id', workspaceId)
+      .not('podcast_id', 'is', null)
+      .order('updated_at', { ascending: false })
+      .limit(5_000)
+    const threadByClientPodcast = new Map<string, ThreadStateRow>()
+    for (const row of (threadStateRows || []) as unknown as ThreadStateRow[]) {
+      if (!row.podcast_id) continue
+      // Ordered newest first, so the first row for a pair is the live one.
+      const key = recordKey(row.client_id, row.podcast_id)
+      if (!threadByClientPodcast.has(key)) threadByClientPodcast.set(key, row)
+    }
+
     const uniquePodcastIds = Array.from(new Set([
       ...shortlist.map((podcast) => podcast.podcast_id),
       ...bookings.flatMap((booking) => booking.podcast_id ? [booking.podcast_id] : []),
@@ -665,6 +720,10 @@ serve(async (req) => {
           last_error: target.last_error,
         } : null,
         legacy_outreach_at: legacyOutreachRow?.webhook_sent_at || legacyOutreachRow?.created_at || null,
+        conversation: conversationFor(
+          threadByClientPodcast.get(recordKey(row.client_id, row.podcast_id)) || null,
+          target,
+        ),
         booking: booking && bookingMatch ? presentedBooking(booking, bookingMatch) : null,
         operator_notes: row.operator_notes,
         shortlist_created_at: row.created_at,

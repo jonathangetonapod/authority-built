@@ -108,6 +108,17 @@ export interface ClientPodcastSystemItem {
     last_error: string | null
   } | null
   legacy_outreach_at: string | null
+  /**
+   * The Master Inbox conversation with this host, when there is one.
+   * thread_key is null when a reply is known from a campaign sync but the
+   * inbox has not read the thread in yet, so there is nothing to open.
+   */
+  conversation: {
+    thread_key: string | null
+    status: string | null
+    replied: boolean
+    updated_at: string | null
+  } | null
   booking: {
     id: string
     match: 'podcast_id' | 'podcast_name'

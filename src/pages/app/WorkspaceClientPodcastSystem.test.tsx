@@ -56,6 +56,7 @@ const awaitingReview: ClientPodcastSystemItem = {
   },
   campaign: null,
   legacy_outreach_at: null,
+  conversation: null,
   booking: null,
   operator_notes: null,
   shortlist_created_at: '2026-07-20T12:00:00.000Z',
@@ -212,11 +213,11 @@ const response: ClientPodcastSystemResponse = {
   items: [awaitingReview, ready, published],
 }
 
-function renderPage() {
+function renderPage(path = '/app/client-podcast-system') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/app/client-podcast-system']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter initialEntries={[path]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <WorkspaceClientPodcastSystem />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -233,6 +234,35 @@ describe('WorkspaceClientPodcastSystem', () => {
       isPlatformAdmin: false,
     } as never)
     mockedGetSystem.mockResolvedValue(response)
+  })
+
+  it('opens the host conversation from a placement instead of the whole inbox', async () => {
+    mockedGetSystem.mockResolvedValue({
+      ...response,
+      items: [{
+        ...ready,
+        conversation: { thread_key: 'thread-42', status: 'needs_reply', replied: true, updated_at: '2026-07-27T10:00:00Z' },
+      }],
+    } as never)
+
+    renderPage(`/app/client-podcast-system?client=${clientId}`)
+
+    // The reply is visible without opening anything.
+    expect((await screen.findAllByText('Host replied')).length).toBeGreaterThan(0)
+  })
+
+  it('opens the placement a reply belongs to when Master Inbox links back', async () => {
+    mockedGetSystem.mockResolvedValue({
+      ...response,
+      items: [{ ...ready, conversation: null }],
+    } as never)
+
+    renderPage(`/app/client-podcast-system?client=${clientId}&podcast=${ready.podcast.podscan_id}`)
+
+    // Resolved by show, because a thread knows the podcast and not the
+    // shortlist row it came from.
+    const sheet = await screen.findByRole('dialog')
+    expect(within(sheet).getByText(ready.podcast.name)).toBeInTheDocument()
   })
 
   it('starts with every client, then switches into one complete client overview', async () => {

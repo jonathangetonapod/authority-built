@@ -14,6 +14,7 @@ import {
   Megaphone,
   Globe,
   MessageSquare,
+  Mic2,
   Phone,
   Search,
   Send,
@@ -265,6 +266,9 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
   const threads = useMemo(() => inboxQuery.data?.threads ?? [], [inboxQuery.data?.threads])
   const [showFullThread, setShowFullThread] = useState(false)
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null)
+  // Arriving from a placement: open that host's conversation rather than
+  // dropping the operator into the client's whole inbox to search for it.
+  const requestedThreadKey = searchParams.get('thread') || ''
   const [draftBody, setDraftBody] = useState('')
   const [draftedForThread, setDraftedForThread] = useState<string | null>(null)
   const [draftClassification, setDraftClassification] = useState<WorkspaceInboxReplyClassification | null>(null)
@@ -304,8 +308,12 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
       return true
     })
   }, [threads, scope, search, selectedClient, filter, sentThreadIds])
+  const linkedThread = requestedThreadKey
+    ? threads.find((thread) => thread.thread_key === requestedThreadKey) || null
+    : null
   const selectedThread = visibleThreads.find((thread) => thread.id === selectedThreadId)
     || threads.find((thread) => thread.id === selectedThreadId)
+    || linkedThread
     || null
   // Both sides of the conversation. Loaded on request rather than with the
   // list: it is one provider call per thread, and most triage never needs it.
@@ -1233,7 +1241,20 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                 </div>
 
                 {selectedThread.campaign?.client && (
-                  <div className="border-t p-4">
+                  <div className="space-y-2 border-t p-4">
+                    {/* Back to the placement this reply belongs to. The inbox
+                        could reach the client but never the show, so the
+                        stage, pitch, and dates behind a reply were a search
+                        away. */}
+                    {selectedThread.relationship?.podcast_id && (
+                      <Button asChild variant="outline" size="sm" className="w-full">
+                        <Link
+                          to={`${baseHref}/client-podcast-system?client=${encodeURIComponent(selectedThread.campaign.client.id)}&podcast=${encodeURIComponent(selectedThread.relationship.podcast_id)}`}
+                        >
+                          <Mic2 className="mr-2 h-4 w-4" />Open this placement
+                        </Link>
+                      </Button>
+                    )}
                     <Button asChild variant="outline" size="sm" className="w-full">
                       <Link to={`${baseHref}/clients/${encodeURIComponent(selectedThread.campaign.client.id)}`}>
                         Open {selectedThread.campaign.client.name.split(' ')[0]}&rsquo;s page
