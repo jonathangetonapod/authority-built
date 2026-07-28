@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { PlatformCreditTopUp } from '@/components/workspace/PlatformCreditTopUp'
 import { getWorkspaceBillingOverview,
   createWorkspaceCreditCheckout,
 } from '@/services/workspaceStaff'
@@ -253,6 +254,8 @@ const WorkspaceBilling = () => {
             )}
           </section>
         ) : null}
+
+        {isPlatformAdmin && <PlatformCreditTopUp actorEmail={user?.email || 'Platform administrator'} />}
 
         <ol aria-label="Credit purchase steps" className="grid overflow-hidden rounded-2xl border bg-card sm:grid-cols-3">
           <li className="flex items-center gap-3 border-b bg-violet-50/60 px-4 py-3.5 sm:border-b-0 sm:border-r">

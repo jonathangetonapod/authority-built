@@ -4,15 +4,23 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuth } from '@/contexts/AuthContext'
 import { getWorkspaceBillingOverview } from '@/services/workspaceStaff'
+import { listAdminWorkspaces } from '@/services/adminWorkspaces'
 import WorkspaceBilling from '@/pages/app/WorkspaceBilling'
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('@/components/workspace/WorkspaceLayout', () => ({ WorkspaceLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
-vi.mock('@/services/workspaceStaff', () => ({ getWorkspaceBillingOverview: vi.fn() }))
+vi.mock('@/services/workspaceStaff', () => ({
+  getWorkspaceBillingOverview: vi.fn(),
+  createWorkspaceCreditCheckout: vi.fn(),
+  listWorkspaceStaff: vi.fn(),
+  grantWorkspaceCredits: vi.fn(),
+}))
+vi.mock('@/services/adminWorkspaces', () => ({ listAdminWorkspaces: vi.fn() }))
 
 const mockedUseAuth = vi.mocked(useAuth)
 const mockedOverview = vi.mocked(getWorkspaceBillingOverview)
+const mockedWorkspaces = vi.mocked(listAdminWorkspaces)
 
 const overviewFixture = {
   plan_key: 'founding_member',
@@ -111,6 +119,40 @@ describe('WorkspaceBilling', () => {
     expect(screen.getByText('Founding member')).toBeInTheDocument()
     expect(screen.getAllByText('Credits added').length).toBeGreaterThan(1)
     expect(screen.getByText('+25')).toBeInTheDocument()
+  })
+
+  it('offers a platform administrator the workspace top-up', async () => {
+    mockedUseAuth.mockReturnValue({
+      isPlatformAdmin: true,
+      canManageWorkspaceStaff: true,
+      user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', email: 'jonathan@getonapod.com' },
+      workspace: { id: '11111111-1111-4111-8111-111111111111' },
+    } as never)
+    mockedOverview.mockResolvedValue(overviewFixture as never)
+    mockedWorkspaces.mockResolvedValue([
+      { id: '22222222-2222-4222-8222-222222222222', name: 'Northwind Agency', slug: 'northwind', status: 'active', is_default: false },
+    ] as never)
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: 'Top up a workspace' })).toBeInTheDocument()
+    expect(mockedWorkspaces).toHaveBeenCalled()
+  })
+
+  // The grant is refused for anyone but a platform admin at the edge function,
+  // so offering it to a workspace owner would only render a button that 403s.
+  it('never offers the top-up to a workspace owner who is not a platform admin', async () => {
+    mockedUseAuth.mockReturnValue({
+      isPlatformAdmin: false,
+      canManageWorkspaceStaff: true,
+      user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', email: 'owner@example.com' },
+      workspace: { id: '11111111-1111-4111-8111-111111111111' },
+    } as never)
+    mockedOverview.mockResolvedValue(overviewFixture as never)
+    renderPage()
+
+    expect(await screen.findByText('42')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Top up a workspace' })).not.toBeInTheDocument()
+    expect(mockedWorkspaces).not.toHaveBeenCalled()
   })
 
   it('returns members without Settings access to clients', () => {
