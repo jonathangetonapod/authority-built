@@ -121,6 +121,12 @@ verify_jwt = true
 [functions.workspace-clients]
 verify_jwt = true
 
+[functions.workspace-domains]
+verify_jwt = true
+
+[functions.resolve-workspace-domain]
+verify_jwt = false
+
 [functions.workspace-client-shortlist]
 verify_jwt = true
 

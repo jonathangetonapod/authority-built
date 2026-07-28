@@ -20,12 +20,12 @@ const CONFIG_PATH = path.join(REPOSITORY_ROOT, 'supabase', 'config.toml')
 const FUNCTIONS_ROOT = path.join(REPOSITORY_ROOT, 'supabase', 'functions')
 
 const EXPECTED_COUNTS = Object.freeze({
-  changedFunctions: 109,
-  deployedFunctions: 107,
+  changedFunctions: 111,
+  deployedFunctions: 109,
   excludedFunctions: 2,
   retiredFunctions: 17,
   unauthenticatedTombstones: 5,
-  edgeTypeScriptFiles: 138,
+  edgeTypeScriptFiles: 140,
 })
 
 const EXPECTED_PHASE_KEYS = Object.freeze([
@@ -92,6 +92,10 @@ const EXPECTED_PUBLIC_NON_JWT_FUNCTIONS = Object.freeze([
   'portal-password-reset',
   'public-client-dashboard',
   'resend-webhook',
+  // The first call a stranger's browser makes on a workspace's own hostname,
+  // before any slug or token is in play. It answers with the public branding
+  // that page is about to show and nothing else.
+  'resolve-workspace-domain',
   'validate-portal-session',
 ])
 
