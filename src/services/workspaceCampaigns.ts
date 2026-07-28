@@ -34,6 +34,20 @@ export interface WorkspaceMailboxTag {
   description: string | null
 }
 
+export interface WorkspaceMailboxSendDay {
+  date: string
+  sent: number
+}
+
+/** A client whose outreach this mailbox sends, via that client's campaign. */
+export interface WorkspaceMailboxCampaignLink {
+  campaign_id: string
+  campaign_name: string
+  campaign_status: string
+  client_id: string
+  client_name: string | null
+}
+
 export interface WorkspaceMailboxAccount {
   email: string
   first_name: string | null
@@ -43,16 +57,20 @@ export interface WorkspaceMailboxAccount {
   warmup_status: number | null
   daily_limit: number | null
   sent_today: number | null
+  send_history?: WorkspaceMailboxSendDay[]
   warmup_emails: number | null
   warmup_limit: number | null
   health_score: number | null
   tags: WorkspaceMailboxTag[]
+  campaigns?: WorkspaceMailboxCampaignLink[]
 }
 
 export interface WorkspaceMailboxesResponse {
   connected: boolean
   reason?: 'key_rejected' | 'scope_missing'
   provider_workspace_name: string | null
+  /** The zone the sending day is measured in, never the viewer's. */
+  send_day_timezone?: string
   accounts: WorkspaceMailboxAccount[]
   last_synced_at: string | null
   analytics_errors: string[]
@@ -202,6 +220,28 @@ export async function getWorkspaceMailboxes(workspaceId: string): Promise<Worksp
     action: 'mailboxes',
     workspace_id: workspaceId,
   }, 'Mailboxes could not be loaded.')
+}
+
+/**
+ * Connect a mailbox to a client, or take it off them.
+ *
+ * A mailbox belongs to a client by sending that client's campaign, so this
+ * writes the campaign's sender list rather than inventing a second record of
+ * who owns what.
+ */
+export async function setWorkspaceMailboxClient(input: {
+  workspaceId: string
+  clientId: string
+  email: string
+  assigned: boolean
+}): Promise<{ sender_accounts: string[] }> {
+  return await invokeWorkspaceCampaigns<{ sender_accounts: string[] }>({
+    action: 'mailbox-assign',
+    workspace_id: input.workspaceId,
+    client_id: input.clientId,
+    email: input.email,
+    assigned: input.assigned,
+  }, 'The mailbox assignment could not be saved.')
 }
 
 export async function getWorkspaceCampaign(
@@ -440,6 +480,28 @@ export async function syncWorkspaceCampaign(
     workspace_id: workspaceId,
     client_id: clientId,
   }, 'The Instantly campaign could not be synced.')
+}
+
+export interface WorkspaceCampaignAnalyticsRefresh {
+  /** Launched campaigns the refresh asked the provider about. */
+  requested: number
+  refreshed: number
+  /** Asked for, not answered for — usually deleted inside Instantly. */
+  missing: number
+}
+
+/**
+ * Totals for every launched campaign in the workspace, in one provider call.
+ * Per-recipient state still comes from a campaign's own sync; this is the
+ * numbers on the list, which otherwise cost a round trip per client.
+ */
+export async function refreshWorkspaceCampaignAnalytics(
+  workspaceId: string,
+): Promise<WorkspaceCampaignAnalyticsRefresh> {
+  return await invokeWorkspaceCampaigns<WorkspaceCampaignAnalyticsRefresh>({
+    action: 'refresh-analytics',
+    workspace_id: workspaceId,
+  }, 'Campaign totals could not be refreshed.')
 }
 
 export async function setWorkspaceCampaignRunning(

@@ -507,7 +507,6 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
                         ) : (
                           <p className="text-sm text-muted-foreground">No usable public email yet</p>
                         )}
-                        <p className="mt-1 text-xs text-muted-foreground">Last episode: {formattedDate(podcast.last_posted_at)}</p>
                       </div>
                       <div className="flex shrink-0 gap-2">
                         {primaryEmail && <Button variant="outline" size="sm" onClick={() => void copyEmail(primaryEmail)}><Copy className="mr-2 h-3.5 w-3.5" />Copy</Button>}

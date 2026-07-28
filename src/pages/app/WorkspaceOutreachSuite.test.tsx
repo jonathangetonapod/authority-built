@@ -11,10 +11,12 @@ import {
   getWorkspaceInboxThreads,
   getWorkspaceMailboxes,
   getWorkspaceInboxThreadMessages,
+  setWorkspaceMailboxClient,
   sendWorkspaceInboxReply,
   setWorkspaceInboxLeadInterest,
 } from '@/services/workspaceCampaigns'
 import { addOutreachSuppression, captureHostRelationshipThread } from '@/services/hostRelationships'
+import { getMailboxInfraOverview } from '@/services/mailboxInfra'
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('@/services/adminWorkspaces', () => ({ getAdminWorkspaceView: vi.fn() }))
@@ -29,8 +31,9 @@ vi.mock('@/services/hostRelationships', () => ({
   captureHostRelationshipThread: vi.fn(),
 }))
 vi.mock('@/services/mailboxInfra', () => ({
-  getMailboxInfraOverview: vi.fn().mockResolvedValue({ domains: [], orders: [] }),
+  getMailboxInfraOverview: vi.fn().mockResolvedValue({ winnr_connected: true, domains: [], orders: [] }),
   getMailboxOrderStatus: vi.fn(),
+  retryMailboxWarming: vi.fn(),
   searchMailboxDomains: vi.fn(),
   createMailboxOrder: vi.fn(),
   exportMailboxesForInstantly: vi.fn(),
@@ -49,6 +52,7 @@ vi.mock('@/services/workspaceCampaigns', () => ({
   sendWorkspaceInboxReply: vi.fn(),
   refreshWorkspaceInstantly: vi.fn(),
   saveWorkspaceCampaign: vi.fn(),
+  setWorkspaceMailboxClient: vi.fn().mockResolvedValue({ sender_accounts: [] }),
 }))
 vi.mock('@/components/workspace/WorkspaceLayout', () => ({
   WorkspaceLayout: ({ children, platformWorkspace }: {
@@ -170,6 +174,7 @@ describe('WorkspaceOutreachSuite', () => {
     mockedMailboxes.mockResolvedValue({
       connected: true,
       provider_workspace_name: 'Solar workspace',
+      send_day_timezone: 'America/Chicago',
       accounts: mailboxes.map(([email, status, warmupEmails, healthScore], index) => ({
         email,
         first_name: null,
@@ -179,10 +184,20 @@ describe('WorkspaceOutreachSuite', () => {
         warmup_status: 1,
         daily_limit: 15,
         sent_today: 0,
+        send_history: [],
         warmup_emails: warmupEmails,
         warmup_limit: 70,
         health_score: healthScore,
         tags: [{ id: `tag-${index}`, label: 'Solar - CI 04/23/2026', description: null }],
+        campaigns: email === 'admin@solaraccountreview.help'
+          ? [{
+            campaign_id: 'campaign-one',
+            campaign_name: 'Dallas Fontaine podcast outreach',
+            campaign_status: 'active',
+            client_id: 'client-one',
+            client_name: 'Dallas Fontaine',
+          }]
+          : [],
       })),
       last_synced_at: '2026-07-24T12:00:00.000Z',
       analytics_errors: [],
@@ -232,7 +247,8 @@ describe('WorkspaceOutreachSuite', () => {
     expect(screen.queryByTestId('instantly-connection-state')).not.toBeInTheDocument()
     const table = screen.getByRole('table', { name: 'Mailbox accounts' })
     expect(within(table).getByRole('columnheader', { name: 'Email' })).toBeInTheDocument()
-    expect(within(table).getByRole('columnheader', { name: 'Emails sent' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Sent today' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Client' })).toBeInTheDocument()
     expect(within(table).getByRole('columnheader', { name: 'Warmup emails' })).toBeInTheDocument()
     expect(within(table).getByRole('columnheader', { name: 'Health score' })).toBeInTheDocument()
     await within(table).findByText('admin@solaraccountreview.help')
@@ -249,6 +265,122 @@ describe('WorkspaceOutreachSuite', () => {
     expect(screen.queryByText('Mailbox health signals')).not.toBeInTheDocument()
     expect(screen.queryByText(/layout preview/i)).not.toBeInTheDocument()
     expect(mockedMailboxes).toHaveBeenCalledWith(defaultWorkspaceId)
+  })
+
+  it('puts the mailboxes that cannot send at the top, and says why on the row', async () => {
+    renderPage('mailboxes')
+
+    const table = await screen.findByRole('table', { name: 'Mailbox accounts' })
+    const rows = within(table).getAllByRole('row').slice(1)
+    // Three accounts are in a hard sending error. They used to sit in provider
+    // order, which buried them among healthy ones.
+    expect(rows.slice(0, 3).every((row) => within(row).queryByText('Sending error'))).toBe(true)
+    // The SMTP failure was a title attribute — invisible without a mouse.
+    expect(within(rows[0]).getByText('SMTP send failed')).toBeInTheDocument()
+  })
+
+  it('sums the sending capacity and names the day it belongs to', async () => {
+    renderPage('mailboxes')
+
+    // Seven of ten accounts are active at 15/day.
+    const summary = await screen.findByTestId('mailbox-capacity')
+    expect(summary).toHaveTextContent('0 of 105 daily capacity used (America/Chicago)')
+    expect(summary).toHaveTextContent('3 mailboxes cannot send')
+    expect(summary).toHaveTextContent('9 not connected to any client')
+  })
+
+  it('filters down to the mailboxes that need attention', async () => {
+    renderPage('mailboxes')
+    await screen.findByRole('table', { name: 'Mailbox accounts' })
+
+    fireEvent.click(screen.getByLabelText('Filter mailboxes'))
+    fireEvent.click(await screen.findByRole('option', { name: /Needs attention/ }))
+
+    const rows = within(screen.getByRole('table', { name: 'Mailbox accounts' })).getAllByRole('row').slice(1)
+    expect(rows).toHaveLength(3)
+  })
+
+  it('shows which client a mailbox sends for, and connects it to another', async () => {
+    mockedClients.mockResolvedValue([
+      { id: 'client-one', name: 'Dallas Fontaine', status: 'active' },
+      { id: 'client-two', name: 'Rae Whitfield', status: 'active' },
+    ] as never)
+
+    renderPage('mailboxes')
+
+    const table = await screen.findByRole('table', { name: 'Mailbox accounts' })
+    const assigned = within(table).getByText('admin@solaraccountreview.help').closest('tr') as HTMLElement
+    expect(within(assigned).getByText('Dallas Fontaine')).toBeInTheDocument()
+
+    // Dallas is already connected, so only the other client is offered.
+    fireEvent.click(within(assigned).getByLabelText('Connect admin@solaraccountreview.help to a client'))
+    fireEvent.click(await screen.findByRole('option', { name: 'Rae Whitfield' }))
+
+    await waitFor(() => expect(vi.mocked(setWorkspaceMailboxClient)).toHaveBeenCalledWith({
+      workspaceId: defaultWorkspaceId,
+      clientId: 'client-two',
+      email: 'admin@solaraccountreview.help',
+      assigned: true,
+    }))
+  })
+
+  it('takes a mailbox back off a client from the badge that says it is on them', async () => {
+    mockedClients.mockResolvedValue([
+      { id: 'client-one', name: 'Dallas Fontaine', status: 'active' },
+    ] as never)
+
+    renderPage('mailboxes')
+
+    const table = await screen.findByRole('table', { name: 'Mailbox accounts' })
+    const assigned = within(table).getByText('admin@solaraccountreview.help').closest('tr') as HTMLElement
+    fireEvent.click(within(assigned).getByLabelText('Disconnect Dallas Fontaine from admin@solaraccountreview.help'))
+
+    await waitFor(() => expect(vi.mocked(setWorkspaceMailboxClient)).toHaveBeenCalledWith({
+      workspaceId: defaultWorkspaceId,
+      clientId: 'client-one',
+      email: 'admin@solaraccountreview.help',
+      assigned: false,
+    }))
+  })
+
+  it('states that buying mailboxes needs Winnr instead of offering a wizard that cannot run', async () => {
+    vi.mocked(getMailboxInfraOverview).mockResolvedValue({
+      winnr_connected: false,
+      domains: [],
+      orders: [],
+    } as never)
+
+    renderPage('mailboxes')
+
+    expect(await screen.findByRole('heading', { name: /A Winnr account is required to buy sending domains/i }))
+      .toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Connect Winnr' })).toHaveAttribute('href', '/app/settings')
+    // The purchase flow is not offered at all until Winnr is connected.
+    expect(screen.queryByLabelText('What is the client-facing brand or agency name?')).not.toBeInTheDocument()
+  })
+
+  it('offers no purchase flow to a member who could not complete one', async () => {
+    mockedUseAuth.mockReturnValue({
+      user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+      membership: { role: 'member' },
+      isPlatformAdmin: false,
+      workspace: {
+        id: defaultWorkspaceId,
+        name: 'Get On A Pod',
+        slug: 'get-on-a-pod',
+        status: 'active',
+        is_default: true,
+        logo_path: null,
+        logo_updated_at: null,
+      },
+    } as never)
+
+    renderPage('mailboxes')
+
+    expect(await screen.findByText(/A workspace owner or admin manages them/i)).toBeInTheDocument()
+    expect(screen.queryByText('Buy new sending domains')).not.toBeInTheDocument()
+    // And the overview is never requested, because the edge refuses it anyway.
+    expect(vi.mocked(getMailboxInfraOverview)).not.toHaveBeenCalled()
   })
 
   it('shows the workspace-safe disconnected mailbox state', async () => {

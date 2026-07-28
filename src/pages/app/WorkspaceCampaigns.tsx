@@ -3,6 +3,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import {
   AlertCircle,
   ArrowRight,
+  BarChart3,
   CheckCircle2,
   KeyRound,
   Loader2,
@@ -51,6 +52,7 @@ import {
   connectWorkspaceInstantly,
   disconnectWorkspaceInstantly,
   getWorkspaceCampaignOverview,
+  refreshWorkspaceCampaignAnalytics,
   refreshWorkspaceInstantly,
   saveWorkspaceCampaign,
   type WorkspaceClientCampaign,
@@ -306,6 +308,25 @@ const WorkspaceCampaigns = ({
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Instantly could not be refreshed.'),
   })
+  const refreshAnalyticsMutation = useMutation({
+    mutationFn: () => refreshWorkspaceCampaignAnalytics(workspaceId),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ['workspace-client-campaigns', workspaceId] })
+      if (result.requested === 0) {
+        toast.info('No launched campaigns to refresh yet.')
+        return
+      }
+      // A campaign Instantly no longer answers for is named as unrefreshed
+      // rather than counted as done — its numbers on this page are the last
+      // ones anybody saw.
+      toast.success(
+        result.missing > 0
+          ? `Totals refreshed for ${result.refreshed} of ${result.requested} campaigns. ${result.missing} could not be found in Instantly.`
+          : `Totals refreshed for ${result.refreshed} campaign${result.refreshed === 1 ? '' : 's'}.`,
+      )
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Campaign totals could not be refreshed.'),
+  })
   const disconnectMutation = useMutation({
     mutationFn: () => disconnectWorkspaceInstantly(workspaceId),
     onSuccess: async () => {
@@ -512,9 +533,22 @@ const WorkspaceCampaigns = ({
           <p className="mt-1 text-sm text-muted-foreground">Every row is a real Instantly campaign assigned to one client.</p>
         </div>
         {canManageCampaigns && (
-          <Button onClick={() => setCreateOpen(true)} disabled={clientsLoading || campaignOverviewQuery.isLoading || !integration?.connected || availableCampaignClients.length === 0}>
-            <Plus className="mr-2 h-4 w-4" />New campaign
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {integration?.connected && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={refreshAnalyticsMutation.isPending}
+                onClick={() => refreshAnalyticsMutation.mutate()}
+              >
+                <BarChart3 className={`mr-2 h-4 w-4 ${refreshAnalyticsMutation.isPending ? 'animate-pulse' : ''}`} />
+                Refresh totals
+              </Button>
+            )}
+            <Button onClick={() => setCreateOpen(true)} disabled={clientsLoading || campaignOverviewQuery.isLoading || !integration?.connected || availableCampaignClients.length === 0}>
+              <Plus className="mr-2 h-4 w-4" />New campaign
+            </Button>
+          </div>
         )}
       </div>
 

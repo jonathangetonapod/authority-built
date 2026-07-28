@@ -1,9 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 import {
+  type AccountSendDay,
   decryptInstantlyApiKey,
   encryptInstantlyApiKey,
-  getInstantlyDailyAccountSends,
+  getInstantlyAccountSendHistory,
   getInstantlyWarmupAnalytics,
   getInstantlyWorkspace,
   type InstantlyAccountSummary,
@@ -12,10 +13,12 @@ import {
   instantlyRequest,
   type InstantlyWarmupAccountAnalytics,
   listInstantlyAccounts,
+  listInstantlyCampaignAnalytics,
   localCampaignStatus,
   safeInstantlyAccount,
   safeInstantlyAnalytics,
   safeInstantlyError,
+  withStoredOpportunityCounts,
 } from "../_shared/instantly.ts";
 import {
   detectDeterministicReply,
@@ -44,6 +47,8 @@ import {
 const METHODS = ["POST"] as const;
 const CAMPAIGN_MANAGER_ROLES = new Set(["owner", "admin", "platform_admin"]);
 const MAX_PROVIDER_CAMPAIGN_PAGES = 10;
+const MAX_ANALYTICS_REFRESH_CAMPAIGNS = 200;
+const SEND_HISTORY_DAYS = 7;
 const RESEARCH_PROMPT_IDS = [
   "podcast_research",
   "host_info",
@@ -416,6 +421,55 @@ async function readTargets(
       `${target.client_id}:${target.podcast_id}`,
     ) || null,
   }));
+}
+
+async function readClientNames(
+  admin: ReturnType<typeof createAdminClient>,
+  workspaceId: string,
+  clientIds: string[],
+): Promise<Map<string, string>> {
+  const unique = Array.from(new Set(clientIds.filter(Boolean)));
+  if (unique.length === 0) return new Map();
+  const { data } = await admin
+    .from("clients")
+    .select("id, name")
+    .eq("workspace_id", workspaceId)
+    .in("id", unique)
+    .limit(unique.length);
+  return new Map(
+    ((data || []) as Array<{ id: string; name: string }>).map((client) => [
+      client.id,
+      client.name,
+    ]),
+  );
+}
+
+/**
+ * The zone a workspace's sending day is measured in.
+ *
+ * Campaigns carry their own timezone and a workspace is normally run out of
+ * one. The most common wins; a tie falls back to UTC rather than picking an
+ * arbitrary client's zone and quietly labelling every number with it.
+ */
+function commonCampaignTimeZone(zones: Array<string | null>): string {
+  const counts = new Map<string, number>();
+  for (const zone of zones) {
+    if (typeof zone !== "string" || !zone.trim()) continue;
+    counts.set(zone, (counts.get(zone) ?? 0) + 1);
+  }
+  let winner = "UTC";
+  let best = 0;
+  let tied = false;
+  for (const [zone, count] of counts) {
+    if (count > best) {
+      winner = zone;
+      best = count;
+      tied = false;
+    } else if (count === best) {
+      tied = true;
+    }
+  }
+  return tied && best > 0 ? "UTC" : winner;
 }
 
 function accountsFromSnapshot(value: unknown): InstantlyAccountSummary[] {
@@ -2377,13 +2431,60 @@ serve(async (req) => {
         });
       }
       const emails = accounts.map((account) => account.email);
+      // Which client each mailbox actually sends for, and the timezone its day
+      // is measured in. Both come from campaign rows this workspace already
+      // owns, so neither costs a provider call.
+      const { data: senderRows } = await context.admin
+        .from("workspace_client_campaigns")
+        .select("id, client_id, name, status, sender_accounts, timezone, daily_limit")
+        .eq("workspace_id", workspaceId)
+        .limit(MAX_ANALYTICS_REFRESH_CAMPAIGNS);
+      const campaignRows = (senderRows || []) as unknown as Array<{
+        id: string;
+        client_id: string;
+        name: string;
+        status: string;
+        sender_accounts: string[] | null;
+        timezone: string | null;
+        daily_limit: number | null;
+      }>;
+      const clientNames = await readClientNames(
+        context.admin,
+        workspaceId,
+        campaignRows.map((campaign) => campaign.client_id),
+      );
+      const linksByEmail = new Map<string, Array<Record<string, unknown>>>();
+      for (const campaign of campaignRows) {
+        for (const sender of campaign.sender_accounts || []) {
+          const email = typeof sender === "string"
+            ? sender.trim().toLowerCase()
+            : "";
+          if (!email) continue;
+          linksByEmail.set(email, [
+            ...(linksByEmail.get(email) || []),
+            {
+              campaign_id: campaign.id,
+              campaign_name: campaign.name,
+              campaign_status: campaign.status,
+              client_id: campaign.client_id,
+              client_name: clientNames.get(campaign.client_id) ?? null,
+            },
+          ]);
+        }
+      }
+      const workspaceTimeZone = commonCampaignTimeZone(
+        campaignRows.map((campaign) => campaign.timezone),
+      );
       const [dailyResult, warmupResult] = await Promise.allSettled([
-        getInstantlyDailyAccountSends(apiKey, emails),
+        getInstantlyAccountSendHistory(apiKey, emails, {
+          days: SEND_HISTORY_DAYS,
+          timeZone: workspaceTimeZone,
+        }),
         getInstantlyWarmupAnalytics(apiKey, emails),
       ]);
-      const dailySends = dailyResult.status === "fulfilled"
+      const sendHistory = dailyResult.status === "fulfilled"
         ? dailyResult.value
-        : new Map<string, number>();
+        : new Map<string, AccountSendDay[]>();
       const warmupAnalytics = warmupResult.status === "fulfilled"
         ? warmupResult.value
         : new Map<string, InstantlyWarmupAccountAnalytics>();
@@ -2400,8 +2501,12 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, {
         connected: true,
         provider_workspace_name: connection.provider_workspace_name,
+        // The zone the sending day is measured in, so the page can say whose
+        // "today" the numbers describe rather than implying the viewer's.
+        send_day_timezone: workspaceTimeZone,
         accounts: accounts.map((account) => {
           const warmup = warmupAnalytics.get(account.email);
+          const history = sendHistory.get(account.email) ?? [];
           return {
             email: account.email,
             first_name: account.first_name,
@@ -2411,11 +2516,15 @@ serve(async (req) => {
               account.status_message?.response || null,
             warmup_status: account.warmup_status,
             daily_limit: account.daily_limit,
-            sent_today: dailySends.get(account.email) ?? null,
+            sent_today: history.length
+              ? history[history.length - 1].sent
+              : null,
+            send_history: history,
             warmup_emails: warmup?.sent ?? null,
             warmup_limit: account.warmup_limit,
             health_score: warmup?.health_score ?? account.stat_warmup_score,
             tags: account.tags,
+            campaigns: linksByEmail.get(account.email) ?? [],
           };
         }),
         last_synced_at: lastSyncedAt,
@@ -5021,6 +5130,204 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, {
         campaign: updated ? campaignDto(updated, targets) : null,
         targets: targets.map(targetDto),
+      });
+    }
+
+    if (action === "mailbox-assign") {
+      requireOnlyKeys(body, [
+        "action",
+        "workspace_id",
+        "client_id",
+        "email",
+        "assigned",
+      ]);
+      requireCampaignManager(access);
+      if (typeof body.assigned !== "boolean") {
+        throw new HttpError(400, "INVALID_FIELD", "assigned must be a boolean");
+      }
+      const email = requireString(body.email, "email", { max: 254 })
+        .trim()
+        .toLowerCase();
+      const campaign = await readCampaign(context.admin, workspaceId, clientId);
+      if (!campaign) {
+        throw new HttpError(
+          404,
+          "CAMPAIGN_NOT_FOUND",
+          "Create the client campaign before assigning a mailbox to it",
+        );
+      }
+      const connection = await readConnection(context.admin, workspaceId);
+      const current = campaign.sender_accounts || [];
+      const next = body.assigned
+        ? emailList([...new Set([...current, email])])
+        : emailList(current.filter((account) => account !== email));
+      if (body.assigned) {
+        // The mailbox has to be one this workspace's key can actually send
+        // from, or the campaign would be pointed at an address that does not
+        // exist.
+        verifySelectedAccounts(
+          next,
+          accountsFromSnapshot(connection?.accounts_snapshot),
+        );
+      } else if (next.length === 0 && campaign.instantly_campaign_id) {
+        // A launched campaign with no sender is a campaign that has silently
+        // stopped. Removing the last one has to be a deliberate pause, not a
+        // side effect of tidying mailboxes.
+        throw new HttpError(
+          409,
+          "CAMPAIGN_NEEDS_SENDER",
+          "This is the only mailbox sending for that client. Assign another before removing it.",
+        );
+      }
+      let providerStatus = campaign.instantly_campaign_status;
+      if (campaign.instantly_campaign_id) {
+        const apiKey = await integrationApiKey(connection);
+        const updated = providerCampaign(
+          await instantlyRequest<unknown>(
+            apiKey,
+            `/campaigns/${encodeURIComponent(campaign.instantly_campaign_id)}`,
+            {
+              method: "PATCH",
+              body: campaignConfiguration({
+                ...campaign,
+                sender_accounts: next,
+              }),
+            },
+          ),
+        );
+        providerStatus = updated.status;
+      }
+      const { error } = await context.admin
+        .from("workspace_client_campaigns")
+        .update({
+          sender_accounts: next,
+          instantly_campaign_status: providerStatus,
+          status: localCampaignStatus(providerStatus),
+          updated_by: context.user.id,
+        })
+        .eq("id", campaign.id)
+        .eq("workspace_id", workspaceId);
+      if (error) {
+        throw new HttpError(
+          500,
+          "CAMPAIGN_SETTINGS_SAVE_FAILED",
+          "The mailbox assignment could not be saved",
+        );
+      }
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: body.assigned
+          ? "workspace.client_campaign.mailbox_assigned"
+          : "workspace.client_campaign.mailbox_unassigned",
+        entityType: "workspace_client_campaign",
+        entityId: campaign.id,
+        metadata: { client_id: clientId, email, sender_count: next.length },
+      });
+      return jsonResponse(req, METHODS, 200, {
+        email,
+        client_id: clientId,
+        assigned: body.assigned,
+        sender_accounts: next,
+      });
+    }
+
+    if (action === "refresh-analytics") {
+      requireOnlyKeys(body, ["action", "workspace_id"]);
+      requireCampaignManager(access);
+      const connection = await readConnection(context.admin, workspaceId);
+      if (!connection) {
+        throw new HttpError(
+          409,
+          "INSTANTLY_NOT_CONNECTED",
+          "Connect Instantly before refreshing campaign totals",
+        );
+      }
+      const { data, error } = await context.admin
+        .from("workspace_client_campaigns")
+        .select(CAMPAIGN_COLUMNS)
+        .eq("workspace_id", workspaceId)
+        .not("instantly_campaign_id", "is", null)
+        // A campaign the provider is mid-write on is left alone: its own sync
+        // is the authority until it finishes.
+        .in("provider_sync_state", ["idle", "error"])
+        .limit(MAX_ANALYTICS_REFRESH_CAMPAIGNS);
+      if (error) {
+        throw new HttpError(
+          500,
+          "CAMPAIGN_ANALYTICS_REFRESH_FAILED",
+          "Client campaigns could not be loaded",
+        );
+      }
+      const campaigns = (data || []) as unknown as CampaignRow[];
+      if (campaigns.length === 0) {
+        return jsonResponse(req, METHODS, 200, {
+          requested: 0,
+          refreshed: 0,
+          missing: 0,
+        });
+      }
+      // One request for the whole workspace, where the per-campaign sync costs
+      // a round trip each.
+      const analyticsById = await listInstantlyCampaignAnalytics(
+        await integrationApiKey(connection),
+        campaigns.flatMap((campaign) =>
+          campaign.instantly_campaign_id ? [campaign.instantly_campaign_id] : []
+        ),
+      );
+      let refreshed = 0;
+      let missing = 0;
+      for (let offset = 0; offset < campaigns.length; offset += 25) {
+        await Promise.all(
+          campaigns.slice(offset, offset + 25).map(async (campaign) => {
+            const fresh = campaign.instantly_campaign_id
+              ? analyticsById.get(campaign.instantly_campaign_id)
+              : undefined;
+            if (!fresh) {
+              missing += 1;
+              return;
+            }
+            const { error: updateError } = await context.admin
+              .from("workspace_client_campaigns")
+              .update({
+                analytics: withStoredOpportunityCounts(
+                  fresh.analytics,
+                  campaign.analytics,
+                ),
+                ...(fresh.status === null ? {} : {
+                  instantly_campaign_status: fresh.status,
+                  status: localCampaignStatus(fresh.status),
+                }),
+                // last_synced_at and last_error are deliberately untouched.
+                // This refreshes totals, not the per-recipient state a full
+                // sync reads, and stamping it would claim work not done.
+                updated_by: context.user.id,
+              })
+              .eq("id", campaign.id)
+              .eq("workspace_id", workspaceId);
+            if (updateError) {
+              throw new HttpError(
+                500,
+                "CAMPAIGN_ANALYTICS_REFRESH_FAILED",
+                "Campaign totals could not be saved",
+              );
+            }
+            refreshed += 1;
+          }),
+        );
+      }
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: "workspace.client_campaign.analytics_refreshed",
+        entityType: "workspace_client_campaign",
+        entityId: null,
+        metadata: { requested: campaigns.length, refreshed, missing },
+      });
+      return jsonResponse(req, METHODS, 200, {
+        requested: campaigns.length,
+        refreshed,
+        missing,
       });
     }
 

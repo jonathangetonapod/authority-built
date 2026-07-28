@@ -526,3 +526,110 @@ assert.match(masterInbox, /setSelectedThreadId\(threadId\)[\s\S]{0,220}setShowFu
 // "Not ready" now names the fields, instead of sending the operator to hunt.
 assert.match(masterInbox, /missingSdrFields/u)
 assert.match(masterInbox, /threadClient\?\.ai_sdr_profile_ready === false/u)
+
+// Campaign totals refresh: one provider call for the whole workspace, using
+// the list analytics endpoint rather than one overview call per client.
+const campaignsPage = readFileSync('src/pages/app/WorkspaceCampaigns.tsx', 'utf8')
+const campaignService = readFileSync('src/services/workspaceCampaigns.ts', 'utf8')
+
+assert.match(provider, /"\/campaigns\/analytics"/u)
+assert.match(provider, /query\.append\("ids", id\)/u)
+assert.match(provider, /exclude_total_leads_count/u)
+// Only campaigns that were asked for may be written back: dropping the filter
+// makes the endpoint answer for every campaign on the API key.
+assert.match(provider, /if \(!requested\.has\(campaignId\)\) continue;/u)
+// The list endpoint does not report these, so a bulk refresh must not zero them.
+assert.match(
+  provider,
+  /export function withStoredOpportunityCounts[\s\S]*?total_interested: fresh\.total_interested \|\| previous\.total_interested/u,
+)
+assert.match(
+  provider,
+  /export function withStoredOpportunityCounts[\s\S]*?total_meeting_booked: fresh\.total_meeting_booked \|\|\s*previous\.total_meeting_booked/u,
+)
+
+const refreshAnalyticsAction = edge.match(
+  /action === "refresh-analytics"[\s\S]*?action === "pause" \|\| action === "resume"/u,
+)
+assert.ok(refreshAnalyticsAction, 'refresh-analytics action must exist')
+assert.match(refreshAnalyticsAction[0], /requireOnlyKeys\(body, \["action", "workspace_id"\]\)/u)
+assert.match(refreshAnalyticsAction[0], /requireCampaignManager\(access\)/u)
+assert.match(refreshAnalyticsAction[0], /INSTANTLY_NOT_CONNECTED/u)
+// A campaign mid-sync is left to its own writer.
+assert.match(refreshAnalyticsAction[0], /\.in\("provider_sync_state", \["idle", "error"\]\)/u)
+assert.match(refreshAnalyticsAction[0], /listInstantlyCampaignAnalytics\(/u)
+assert.match(refreshAnalyticsAction[0], /withStoredOpportunityCounts\(/u)
+// Totals are not per-recipient state: stamping last_synced_at here would claim
+// a full sync that never ran.
+assert.doesNotMatch(
+  refreshAnalyticsAction[0],
+  /last_synced_at:/u,
+  'a totals refresh must not claim a full campaign sync',
+)
+assert.match(refreshAnalyticsAction[0], /workspace\.client_campaign\.analytics_refreshed/u)
+// A campaign the provider no longer answers for keeps its last known numbers.
+assert.match(refreshAnalyticsAction[0], /if \(!fresh\) \{\s*missing \+= 1;\s*return;\s*\}/u)
+
+assert.match(campaignService, /action: 'refresh-analytics'/u)
+assert.match(campaignsPage, /refreshWorkspaceCampaignAnalytics\(workspaceId\)/u)
+assert.match(campaignsPage, /Refresh totals/u)
+// The count that could not be refreshed is reported, not folded into success.
+assert.match(campaignsPage, /result\.missing > 0/u)
+
+// Mailboxes: the sending day is the campaign's day, mailboxes carry the client
+// they send for, and connecting one writes the campaign that does the sending.
+const mailboxInfra = readFileSync('supabase/functions/workspace-mailbox-infra/index.ts', 'utf8')
+const mailboxesTable = readFileSync('src/components/workspace/MailboxesTable.tsx', 'utf8')
+const infraCard = readFileSync('src/components/workspace/MailboxInfraCard.tsx', 'utf8')
+
+// A UTC day rolls over during the American sending window, so an afternoon of
+// sending read as zero from late afternoon onwards.
+assert.match(provider, /export function localCalendarDay\(timeZone: string/u)
+assert.match(provider, /new Intl\.DateTimeFormat\("en-CA", \{\s*timeZone,/u)
+assert.match(provider, /export async function getInstantlyAccountSendHistory/u)
+assert.doesNotMatch(
+  provider,
+  /getInstantlyDailyAccountSends/u,
+  'the UTC-day send counter must not come back',
+)
+assert.match(edge, /const workspaceTimeZone = commonCampaignTimeZone\(/u)
+assert.match(edge, /send_day_timezone: workspaceTimeZone/u)
+assert.match(edge, /send_history: history/u)
+
+const mailboxesAction = edge.match(/action === "mailboxes"[\s\S]*?action === "overview"/u)
+assert.ok(mailboxesAction, 'mailboxes action must exist')
+// Who a mailbox sends for comes from campaign rows already held, not a second
+// record of ownership that could disagree with what actually sends.
+assert.match(mailboxesAction[0], /campaigns: linksByEmail\.get\(account\.email\) \?\? \[\]/u)
+
+const assignAction = edge.match(/action === "mailbox-assign"[\s\S]*?action === "refresh-analytics"/u)
+assert.ok(assignAction, 'mailbox-assign action must exist')
+assert.match(assignAction[0], /requireCampaignManager\(access\)/u)
+assert.match(assignAction[0], /verifySelectedAccounts\(/u)
+// Emptying a launched campaign's sender list stops it without saying so.
+assert.match(assignAction[0], /CAMPAIGN_NEEDS_SENDER/u)
+assert.match(assignAction[0], /mailbox_assigned|mailbox_unassigned/u)
+
+// Winnr: credits come back when the provider refuses, orders move on without
+// somebody watching, and a failed warmup start is recorded rather than hidden.
+assert.match(mailboxInfra, /async function refundMailboxCredits\(/u)
+assert.match(mailboxInfra, /await refundMailboxCredits\(authContext, workspaceId, orders, creditsCharged\)\s*\n\s*throw error/u)
+assert.match(mailboxInfra, /async function advanceMailboxOrder\(/u)
+assert.match(mailboxInfra, /advanceMailboxOrder\(authContext, winnrKey\.apiKey, order\)\s*\n\s*\.catch/u)
+assert.match(mailboxInfra, /warmingError = 'Mailboxes were created but warmup could not be started/u)
+assert.match(mailboxInfra, /warming_enabled_at: warmingError \? null : warmingEnabledAt/u)
+assert.match(mailboxInfra, /action === 'warming-retry'/u)
+
+// The page states the Winnr requirement instead of offering a wizard that
+// cannot run, and never offers the purchase flow to a non-manager.
+assert.match(infraCard, /A Winnr account is required to buy sending domains/u)
+assert.match(infraCard, /if \(!canManage\) \{/u)
+assert.match(infraCard, /enabled: Boolean\(workspaceId\) && canManage/u)
+assert.match(infraCard, /In Instantly/u)
+assert.doesNotMatch(infraCard, /window\.open\(/u, 'a post-await window.open is eaten by popup blockers')
+
+// Problems first, and the SMTP reason on the row rather than in a hover title.
+assert.match(mailboxesTable, /function severity\(account: WorkspaceMailboxAccount\)/u)
+assert.match(mailboxesTable, /severity\(left\) - severity\(right\) \|\| left\.email\.localeCompare/u)
+assert.match(mailboxesTable, /\{account\.status_message\}/u)
+assert.match(mailboxesTable, /daily capacity used/u)

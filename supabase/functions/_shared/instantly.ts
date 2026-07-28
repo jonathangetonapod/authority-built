@@ -7,6 +7,9 @@ const MAX_PROVIDER_RESPONSE_BYTES = 2_000_000;
 const MAX_ACCOUNT_PAGES = 10;
 const MAX_DAILY_ANALYTICS_EMAILS = 200;
 const MAX_WARMUP_ANALYTICS_EMAILS = 100;
+// Campaign ids are repeated in the query string, so the batch is bounded by URL
+// length rather than by anything the provider documents.
+const MAX_CAMPAIGN_ANALYTICS_IDS = 40;
 
 export interface EncryptedCredential {
   ciphertext: string;
@@ -455,23 +458,69 @@ export async function listInstantlyAccounts(
   );
 }
 
-export async function getInstantlyDailyAccountSends(
+export interface AccountSendDay {
+  /** Calendar day, YYYY-MM-DD, as the provider labelled it. */
+  date: string;
+  sent: number;
+}
+
+/**
+ * The calendar day in a given zone.
+ *
+ * A UTC day is the wrong basis for "today": campaigns send 09:00-17:00 in the
+ * campaign's own timezone, and for every American zone the UTC day rolls over
+ * during or just after that window. Deriving today from UTC made an afternoon
+ * of sending read as zero from late afternoon onwards — the exact moment an
+ * operator checks whether the day went out.
+ */
+export function localCalendarDay(timeZone: string, now = new Date()): string {
+  try {
+    // en-CA formats as YYYY-MM-DD, which is the shape the provider uses.
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+  } catch {
+    // An unknown zone must not take the page down with it.
+    return now.toISOString().slice(0, 10);
+  }
+}
+
+function previousDay(day: string): string {
+  const date = new Date(`${day}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Daily campaign sends per account over a window ending today.
+ *
+ * A window rather than a single day, because one number cannot be read: zero
+ * sends is normal on a Sunday, alarming on a Tuesday, and meaningless at 09:00.
+ * The series makes the difference visible, and it costs the same request.
+ */
+export async function getInstantlyAccountSendHistory(
   apiKey: string,
   accountEmails: string[],
-  date = new Date(),
-): Promise<Map<string, number>> {
+  options: { days?: number; timeZone?: string; now?: Date } = {},
+): Promise<Map<string, AccountSendDay[]>> {
   const emails = normalizedAccountEmails(accountEmails);
-  const sentByEmail = new Map(emails.map((email) => [email, 0]));
-  if (emails.length === 0) return sentByEmail;
+  const days = Math.min(Math.max(options.days ?? 7, 1), 30);
+  const endDate = localCalendarDay(options.timeZone ?? "UTC", options.now);
+  const window: string[] = [endDate];
+  while (window.length < days) window.unshift(previousDay(window[0]));
 
-  const endDate = date.toISOString().slice(0, 10);
-  const start = new Date(`${endDate}T00:00:00.000Z`);
-  start.setUTCDate(start.getUTCDate() - 1);
-  const startDate = start.toISOString().slice(0, 10);
+  const historyByEmail = new Map<string, AccountSendDay[]>(
+    emails.map((email) => [email, window.map((date) => ({ date, sent: 0 }))]),
+  );
+  if (emails.length === 0) return historyByEmail;
+
   const responses = await Promise.all(
     batches(emails, MAX_DAILY_ANALYTICS_EMAILS).map(async (batch) => {
       const query = new URLSearchParams({
-        start_date: startDate,
+        start_date: window[0],
         end_date: endDate,
       });
       for (const email of batch) query.append("emails", email);
@@ -491,23 +540,25 @@ export async function getInstantlyDailyAccountSends(
     }),
   );
 
+  const dayIndex = new Map(window.map((date, index) => [date, index]));
   for (const response of responses) {
     for (const item of response) {
       const analytics = record(item);
       const email = typeof analytics?.email_account === "string"
         ? analytics.email_account.trim().toLowerCase()
         : "";
+      const history = historyByEmail.get(email);
+      const index = typeof analytics?.date === "string"
+        ? dayIndex.get(analytics.date)
+        : undefined;
       if (
-        analytics?.date !== endDate || !sentByEmail.has(email) ||
+        !history || index === undefined ||
         optionalFiniteInteger(analytics?.sent) === null
       ) continue;
-      sentByEmail.set(
-        email,
-        (sentByEmail.get(email) || 0) + finiteInteger(analytics?.sent),
-      );
+      history[index].sent += finiteInteger(analytics?.sent);
     }
   }
-  return sentByEmail;
+  return historyByEmail;
 }
 
 export async function getInstantlyWarmupAnalytics(
@@ -562,6 +613,95 @@ export function safeInstantlyAnalytics(
     unsubscribed_count: finiteInteger(analytics?.unsubscribed_count),
     total_interested: finiteInteger(analytics?.total_interested),
     total_meeting_booked: finiteInteger(analytics?.total_meeting_booked),
+  };
+}
+
+export interface InstantlyCampaignAnalytics {
+  campaignId: string;
+  status: number | null;
+  analytics: InstantlyAnalyticsSummary;
+}
+
+/**
+ * Analytics for many campaigns in one request.
+ *
+ * The per-campaign overview endpoint answers for one campaign at a time, so
+ * refreshing a workspace costs one round trip per client. This is the list
+ * form: every campaign asked for comes back in a single response, keyed by id.
+ *
+ * A campaign the provider does not return is simply absent from the map —
+ * usually because it was deleted in Instantly. The caller decides what that
+ * means; inventing a zeroed row here would overwrite real numbers.
+ */
+export async function listInstantlyCampaignAnalytics(
+  apiKey: string,
+  campaignIds: string[],
+): Promise<Map<string, InstantlyCampaignAnalytics>> {
+  const requested = new Set(
+    campaignIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0),
+  );
+  const byCampaignId = new Map<string, InstantlyCampaignAnalytics>();
+  if (requested.size === 0) return byCampaignId;
+
+  const responses = await Promise.all(
+    batches([...requested], MAX_CAMPAIGN_ANALYTICS_IDS).map(async (batch) => {
+      const query = new URLSearchParams();
+      for (const id of batch) query.append("ids", id);
+      // The lead total is a count the provider itself warns is slow, and
+      // nothing here reads it.
+      query.set("exclude_total_leads_count", "true");
+      const response = await instantlyRequest<unknown>(
+        apiKey,
+        "/campaigns/analytics",
+        { query },
+      );
+      if (!Array.isArray(response)) {
+        throw new InstantlyApiError(
+          502,
+          "INSTANTLY_RESPONSE_INVALID",
+          "Instantly returned invalid campaign analytics",
+        );
+      }
+      return response;
+    }),
+  );
+
+  for (const response of responses) {
+    for (const item of response) {
+      const row = record(item);
+      const campaignId = typeof row?.campaign_id === "string"
+        ? row.campaign_id.trim()
+        : "";
+      // Only what was asked for: the endpoint answers for every campaign in
+      // the workspace when the filter is dropped, and a mistake there would
+      // write another agency's numbers onto these rows.
+      if (!requested.has(campaignId)) continue;
+      byCampaignId.set(campaignId, {
+        campaignId,
+        status: instantlyCampaignStatus(row?.campaign_status),
+        analytics: safeInstantlyAnalytics(row),
+      });
+    }
+  }
+  return byCampaignId;
+}
+
+/**
+ * The list endpoint does not report interested or meeting-booked counts —
+ * only the per-campaign overview does. Both are zero on every row it returns,
+ * so a bulk refresh has to carry forward what the last full sync established
+ * rather than write those zeroes over it.
+ */
+export function withStoredOpportunityCounts(
+  fresh: InstantlyAnalyticsSummary,
+  stored: unknown,
+): InstantlyAnalyticsSummary {
+  const previous = safeInstantlyAnalytics(stored);
+  return {
+    ...fresh,
+    total_interested: fresh.total_interested || previous.total_interested,
+    total_meeting_booked: fresh.total_meeting_booked ||
+      previous.total_meeting_booked,
   };
 }
 

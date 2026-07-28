@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { CheckCircle2, Download, Flame, Globe, Loader2, Plus, Search, X } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Download, Flame, Globe, Loader2, Plus, Search, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -13,6 +13,7 @@ import {
   exportMailboxesForInstantly,
   getMailboxInfraOverview,
   getMailboxOrderStatus,
+  retryMailboxWarming,
   searchMailboxDomains,
   type MailboxDomainSearchResult,
   type MailboxOrderInput,
@@ -40,15 +41,19 @@ function usernameFromName(name: string): string {
 
 interface MailboxInfraCardProps {
   workspaceId: string
+  /** Buying domains is manager-only at the edge; the wizard follows it. */
+  canManage: boolean
+  /** Addresses already sending in Instantly, to reconcile the two lists. */
+  instantlyAddresses?: string[]
 }
 
-export const MailboxInfraCard = ({ workspaceId }: MailboxInfraCardProps) => {
+export const MailboxInfraCard = ({ workspaceId, canManage, instantlyAddresses = [] }: MailboxInfraCardProps) => {
   const queryClient = useQueryClient()
   const overviewKey = ['mailbox-infra', workspaceId]
   const overviewQuery = useQuery({
     queryKey: overviewKey,
     queryFn: () => getMailboxInfraOverview(workspaceId),
-    enabled: Boolean(workspaceId),
+    enabled: Boolean(workspaceId) && canManage,
     retry: false,
     staleTime: 30_000,
   })
@@ -58,6 +63,11 @@ export const MailboxInfraCard = ({ workspaceId }: MailboxInfraCardProps) => {
   // false means "no Winnr account connected".
   const winnrConnected = overviewQuery.data?.winnr_connected
   const processingOrder = orders.find((order) => order.status === 'processing') ?? null
+  const failedOrder = orders.find((order) => order.status === 'failed') ?? null
+  // Provisioned but never warmed: the provider accepted the mailboxes and the
+  // warmup call did not land. Three silent weeks unless it is said out loud.
+  const warmingStalled = orders.find((order) => order.status === 'warming' && !order.warming_enabled_at) ?? null
+  const liveInInstantly = new Set(instantlyAddresses.map((address) => address.trim().toLowerCase()))
 
   useQuery({
     queryKey: ['mailbox-infra-order', workspaceId, processingOrder?.id ?? 'none'],
@@ -85,6 +95,21 @@ export const MailboxInfraCard = ({ workspaceId }: MailboxInfraCardProps) => {
   const [selectedDomains, setSelectedDomains] = useState<Set<string>>(new Set())
   const [ordering, setOrdering] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [retryingWarmup, setRetryingWarmup] = useState(false)
+
+  const retryWarmup = async (orderId: string) => {
+    if (retryingWarmup) return
+    setRetryingWarmup(true)
+    try {
+      await retryMailboxWarming(workspaceId, orderId)
+      void queryClient.invalidateQueries({ queryKey: overviewKey })
+      toast.success('Warmup started. Give these mailboxes 2-3 weeks before they send anything real.')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Warmup could not be started.')
+    } finally {
+      setRetryingWarmup(false)
+    }
+  }
 
   const runSearch = async () => {
     const candidates = domainCandidates(baseName)
@@ -160,7 +185,16 @@ export const MailboxInfraCard = ({ workspaceId }: MailboxInfraCardProps) => {
     setExporting(true)
     try {
       const result = await exportMailboxesForInstantly(workspaceId)
-      window.open(result.download_url, '_blank', 'noopener')
+      // A window.open after an await is not a user gesture any more, so popup
+      // blockers ate the file silently. An anchor click is still a download.
+      const link = document.createElement('a')
+      link.href = result.download_url
+      link.rel = 'noopener'
+      link.target = '_blank'
+      link.download = 'instantly-mailboxes.csv'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
       toast.success(`Instantly import file ready${result.user_count ? ` — ${result.user_count} mailboxes` : ''}. Import it in Instantly, then connect the account here.`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'The Instantly export could not be generated.')
@@ -169,13 +203,28 @@ export const MailboxInfraCard = ({ workspaceId }: MailboxInfraCardProps) => {
     }
   }
 
+  if (!canManage) {
+    // Buying is manager-only at the edge. Rendering the wizard to everyone
+    // else offered a purchase flow that failed on its first request.
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg"><Globe className="h-5 w-5 text-primary" />Sending infrastructure</CardTitle>
+          <CardDescription className="mt-1 max-w-2xl">
+            Sending domains and mailboxes are bought and warmed through Winnr. A workspace owner or admin manages them.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    )
+  }
+
   return (
     <Card>
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
           <CardTitle className="flex items-center gap-2 text-lg"><Globe className="h-5 w-5 text-primary" />Sending infrastructure</CardTitle>
           <CardDescription className="mt-1 max-w-2xl">
-            No mailboxes yet? Buy dedicated sending domains with warmed mailboxes through your connected Winnr account — provisioning, DNS, and warmup are handled for you. Warm for 2–3 weeks, then export to Instantly.
+            Dedicated sending domains with warmed mailboxes, bought and provisioned through <span className="font-medium text-foreground">Winnr</span> — this section needs a connected Winnr account. Registration, DNS, and warmup are handled there. Warm for 2–3 weeks, then export to Instantly.
           </CardDescription>
         </div>
         {domains.length > 0 && (
@@ -186,10 +235,66 @@ export const MailboxInfraCard = ({ workspaceId }: MailboxInfraCardProps) => {
         )}
       </CardHeader>
       <CardContent className="space-y-5">
+        {overviewQuery.isLoading && (
+          <div className="flex items-center gap-2 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />Loading your sending infrastructure
+          </div>
+        )}
+
+        {overviewQuery.error && (
+          <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-900">
+            <span className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              {overviewQuery.error instanceof Error
+                ? overviewQuery.error.message
+                : 'Your sending infrastructure could not be loaded.'}
+            </span>
+            <Button size="sm" variant="outline" className="border-amber-300 bg-background" onClick={() => void overviewQuery.refetch()}>
+              Try again
+            </Button>
+          </div>
+        )}
+
+        {failedOrder && (
+          <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50/70 px-4 py-3 text-sm text-red-900">
+            <span className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                <span className="font-semibold">
+                  Order failed for {failedOrder.domains.map((entry) => entry.domain).join(', ')}.
+                </span>{' '}
+                {failedOrder.error_message || 'The provider could not complete provisioning.'} Any credits charged were returned.
+              </span>
+            </span>
+          </div>
+        )}
+
+        {warmingStalled && (
+          <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-900">
+            <span className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                <span className="font-semibold">Mailboxes are live but not warming.</span>{' '}
+                {warmingStalled.error_message || 'Warmup could not be started at the provider.'} Sending from a mailbox that never warmed is how a domain gets burned.
+              </span>
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-amber-300 bg-background"
+              disabled={retryingWarmup}
+              onClick={() => void retryWarmup(warmingStalled.id)}
+            >
+              {retryingWarmup ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Flame className="mr-2 h-3.5 w-3.5" />}
+              Start warmup
+            </Button>
+          </div>
+        )}
+
         {processingOrder && (
           <div role="status" className="flex items-center gap-3 rounded-xl border border-sky-200 bg-sky-50/70 px-4 py-3 text-sm text-sky-950">
             <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-            Provisioning {processingOrder.domains.map((entry) => entry.domain).join(', ')} — registration, DNS, and mailboxes usually take a few minutes.
+            Provisioning {processingOrder.domains.map((entry) => entry.domain).join(', ')} — registration, DNS, and mailboxes usually take a few minutes. This continues if you leave the page.
           </div>
         )}
 
@@ -211,6 +316,12 @@ export const MailboxInfraCard = ({ workspaceId }: MailboxInfraCardProps) => {
                     {domain.mailboxes.map((mailbox) => (
                       <li key={mailbox.full_address} className="flex flex-wrap items-center gap-2 text-sm">
                         <span className="font-mono text-xs">{mailbox.full_address}</span>
+                        {/* Bought here, sending there — or not yet imported. */}
+                        {liveInInstantly.has(mailbox.full_address.toLowerCase()) ? (
+                          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800"><CheckCircle2 className="mr-1 h-3 w-3" />In Instantly</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground">Not in Instantly</Badge>
+                        )}
                         {mailbox.warming_status === 'active' && (
                           <Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-800"><Flame className="mr-1 h-3 w-3" />Warming</Badge>
                         )}
@@ -229,19 +340,28 @@ export const MailboxInfraCard = ({ workspaceId }: MailboxInfraCardProps) => {
           </ul>
         )}
 
+        {winnrConnected === false ? (
+          // Stated instead of the wizard, not above it. The wizard used to
+          // render anyway and fail on its first request.
+          <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-5">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-amber-950">
+              <AlertCircle className="h-4 w-4" />A Winnr account is required to buy sending domains
+            </h3>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-900">
+              Winnr is the provider that registers the domain, configures DNS, creates each mailbox, and runs
+              warmup. Get On A Pod does not resell mailboxes — it drives your Winnr account. Connect a Winnr
+              API key in workspace settings and this section becomes a buy-and-warm flow.
+            </p>
+            <p className="mt-2 text-xs leading-5 text-amber-900">
+              Already have mailboxes elsewhere? You do not need Winnr at all — connect Instantly instead, and
+              they appear in Sending accounts above.
+            </p>
+            <Button asChild size="sm" className="mt-4">
+              <Link to="/app/settings">Connect Winnr</Link>
+            </Button>
+          </div>
+        ) : (
         <div className="rounded-xl border border-dashed p-4">
-          {winnrConnected === false && (
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs leading-5 text-amber-900">
-              <span>
-                <span className="font-semibold">A Winnr account is required to buy domains.</span>{' '}
-                Winnr provisions the domains, DNS, and warmed mailboxes. Connect your Winnr API key in
-                workspace settings, then come back to run this wizard.
-              </span>
-              <Button asChild size="sm" variant="outline" className="border-amber-300 bg-background">
-                <Link to="/app/settings">Connect Winnr</Link>
-              </Button>
-            </div>
-          )}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-semibold">Buy new sending domains</p>
             <ol className="flex items-center gap-1" aria-label="Purchase steps">
@@ -402,6 +522,7 @@ export const MailboxInfraCard = ({ workspaceId }: MailboxInfraCardProps) => {
             </div>
           )}
         </div>
+        )}
       </CardContent>
     </Card>
   )

@@ -6,6 +6,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 import {
+  type AuthContext,
   errorResponse,
   HttpError,
   jsonResponse,
@@ -104,6 +105,21 @@ interface WinnrEmailUser {
   status: string
 }
 
+interface MailboxOrderRow {
+  id: string
+  winnr_job_id: string | null
+  status: 'processing' | 'provisioned' | 'warming' | 'failed'
+  domains: unknown
+  mailbox_count: number
+  credits_charged: number
+  warming_enabled_at: string | null
+  error_message: string | null
+  created_at: string
+}
+
+const ORDER_COLUMNS =
+  'id, winnr_job_id, status, domains, mailbox_count, credits_charged, warming_enabled_at, error_message, created_at'
+
 async function listWorkspaceDomains(token: string, workspaceId: string, scopeToTag: boolean): Promise<WinnrDomain[]> {
   const tag = workspaceTag(workspaceId)
   const domains: WinnrDomain[] = []
@@ -121,6 +137,119 @@ async function listWorkspaceDomains(token: string, workspaceId: string, scopeToT
     break
   }
   return domains
+}
+
+async function mailboxUserIds(apiKey: string, domainNames: string[]): Promise<string[]> {
+  const userIds: string[] = []
+  for (const domainName of domainNames) {
+    const users = await winnrRequest<WinnrEmailUser[] | { data?: WinnrEmailUser[] }>(apiKey, '/email-users', {
+      query: new URLSearchParams({ domain: domainName, limit: '25' }),
+    })
+    const rows = Array.isArray(users) ? users : (users as { data?: WinnrEmailUser[] }).data ?? []
+    userIds.push(...rows.map((user) => user.id))
+  }
+  return userIds
+}
+
+/**
+ * Give back credits spent on an order the provider refused.
+ *
+ * Granted rather than reversed: the ledger has no refund source, and a grant
+ * with a deterministic key is idempotent, so a retried failure cannot hand out
+ * the credits twice. A failure to refund must not mask the provider error that
+ * caused it, so this never throws.
+ */
+async function refundMailboxCredits(
+  authContext: AuthContext,
+  workspaceId: string,
+  orders: Array<{ domain: string }>,
+  creditsCharged: number,
+): Promise<void> {
+  if (creditsCharged < 1) return
+  const key = `mailbox-refund:${workspaceId}:${orders.map((order) => order.domain).sort().join(',')}`
+  const { error } = await authContext.admin.rpc('grant_workspace_credits_v1', {
+    p_workspace_id: workspaceId,
+    p_source: 'admin_grant',
+    p_amount: creditsCharged,
+    p_expires_at: null,
+    p_reference_kind: 'mailbox_order_refund',
+    p_reference_id: orders.map((order) => order.domain).sort().join(','),
+    p_actor_user_id: authContext.user.id,
+    p_idempotency_key: key,
+  })
+  if (error) {
+    console.error('[Mailbox Infra] Refund failed for a rejected order')
+    return
+  }
+  await writeAudit(authContext.admin, {
+    workspaceId,
+    actorUserId: authContext.user.id,
+    action: 'workspace.mailbox_infra.refunded',
+    entityType: 'mailbox_order',
+    entityId: null,
+    metadata: { domains: orders.map((order) => order.domain), credits: creditsCharged },
+  }).catch(() => undefined)
+}
+
+/**
+ * Move a processing order forward: check the provider job, and on completion
+ * turn warming on for the mailboxes it created.
+ *
+ * This used to live only in the status poll, which runs while somebody has the
+ * page open. An operator who placed an order and closed the tab left the
+ * mailboxes provisioned but never warming — and the order copy promises
+ * warming starts automatically.
+ */
+async function advanceMailboxOrder(
+  authContext: AuthContext,
+  apiKey: string,
+  order: MailboxOrderRow,
+): Promise<MailboxOrderRow> {
+  if (order.status !== 'processing' || !order.winnr_job_id) return order
+  const job = await winnrRequest<{ status?: string; progress?: Record<string, unknown> }>(
+    apiKey,
+    `/jobs/${encodeURIComponent(order.winnr_job_id)}`,
+  )
+  if (job.status === 'failed') {
+    await authContext.admin.from('workspace_mailbox_orders')
+      .update({ status: 'failed', error_message: 'Provisioning failed at the provider', updated_at: new Date().toISOString() })
+      .eq('id', order.id)
+    return { ...order, status: 'failed', error_message: 'Provisioning failed at the provider' }
+  }
+  if (job.status !== 'completed') return order
+
+  const userIds = await mailboxUserIds(
+    apiKey,
+    (order.domains as Array<{ domain: string }>).map((entry) => entry.domain),
+  )
+  let warmingError: string | null = null
+  if (userIds.length === 0) {
+    warmingError = 'The provider reported no mailboxes for these domains, so warmup could not be started'
+  } else {
+    await winnrRequest(apiKey, '/warming/enable-async', {
+      method: 'POST',
+      body: { user_ids: userIds, settings: { emails_per_day: 20, rampup_speed: 'normal' } },
+    }).catch(() => {
+      // Recorded rather than swallowed. An order that reads "warming" while
+      // nothing is warming costs three silent weeks before anyone notices.
+      warmingError = 'Mailboxes were created but warmup could not be started. Retry warmup from this order.'
+    })
+  }
+  const warmingEnabledAt = new Date().toISOString()
+  await authContext.admin.from('workspace_mailbox_orders')
+    .update({
+      status: 'warming',
+      warming_enabled_at: warmingError ? null : warmingEnabledAt,
+      error_message: warmingError,
+      updated_at: warmingEnabledAt,
+    })
+    .eq('id', order.id)
+  return {
+    ...order,
+    status: 'warming',
+    warming_enabled_at: warmingError ? null : warmingEnabledAt,
+    error_message: warmingError,
+  }
 }
 
 serve(async (req) => {
@@ -237,21 +366,33 @@ serve(async (req) => {
         }
       }
 
-      const purchase = await winnrRequest<{ job_id?: string; status?: string }>(winnrKey.apiKey, '/domains/purchase', {
-        method: 'POST',
-        body: {
-          async: true,
-          domains: orders.map((order) => ({
-            domain: order.domain,
-            register: true,
-            setup_dns: true,
-            setup_email: true,
-            users: order.mailboxes,
-            tags: [workspaceTag(workspaceId)],
-          })),
-        },
-      })
+      // Credits are spent before the provider is called, so an order the
+      // provider never accepted has to give them back. Without this, a Winnr
+      // outage charges for infrastructure that does not exist, and picking a
+      // different domain on the retry charges again — the idempotency keys
+      // above only protect a retry of the very same domain.
+      let purchase: { job_id?: string; status?: string }
+      try {
+        purchase = await winnrRequest<{ job_id?: string; status?: string }>(winnrKey.apiKey, '/domains/purchase', {
+          method: 'POST',
+          body: {
+            async: true,
+            domains: orders.map((order) => ({
+              domain: order.domain,
+              register: true,
+              setup_dns: true,
+              setup_email: true,
+              users: order.mailboxes,
+              tags: [workspaceTag(workspaceId)],
+            })),
+          },
+        })
+      } catch (error) {
+        await refundMailboxCredits(authContext, workspaceId, orders, creditsCharged)
+        throw error
+      }
       if (!purchase.job_id) {
+        await refundMailboxCredits(authContext, workspaceId, orders, creditsCharged)
         throw new HttpError(502, 'WINNR_ERROR', 'The provider did not accept the order')
       }
 
@@ -295,52 +436,67 @@ serve(async (req) => {
       const orderId = requireUuid(body.order_id, 'order_id')
       const { data: order } = await authContext.admin
         .from('workspace_mailbox_orders')
-        .select('id, winnr_job_id, status, domains, mailbox_count, credits_charged, warming_enabled_at, error_message, created_at')
+        .select(ORDER_COLUMNS)
         .eq('workspace_id', workspaceId)
         .eq('id', orderId)
         .maybeSingle()
       if (!order) throw new HttpError(404, 'ORDER_NOT_FOUND', 'Order not found')
 
-      let progress: Record<string, unknown> | null = null
-      if (order.status === 'processing' && order.winnr_job_id) {
-        const job = await winnrRequest<{ status?: string; progress?: Record<string, unknown>; error?: { message?: string } | null }>(
-          winnrKey.apiKey,
-          `/jobs/${encodeURIComponent(order.winnr_job_id)}`,
+      const advanced = await advanceMailboxOrder(
+        authContext,
+        winnrKey.apiKey,
+        order as unknown as MailboxOrderRow,
+      )
+      return jsonResponse(req, METHODS, 200, { order: advanced, progress: null })
+    }
+
+    if (action === 'warming-retry') {
+      requireOnlyKeys(body, ['action', 'workspace_id', 'order_id'])
+      const orderId = requireUuid(body.order_id, 'order_id')
+      const { data: order } = await authContext.admin
+        .from('workspace_mailbox_orders')
+        .select(ORDER_COLUMNS)
+        .eq('workspace_id', workspaceId)
+        .eq('id', orderId)
+        .maybeSingle()
+      if (!order) throw new HttpError(404, 'ORDER_NOT_FOUND', 'Order not found')
+      if (order.status !== 'warming' || order.warming_enabled_at) {
+        throw new HttpError(
+          409,
+          'WARMING_NOT_PENDING',
+          'This order does not have warmup waiting to be started',
         )
-        progress = job.progress ?? null
-        if (job.status === 'failed') {
-          await authContext.admin.from('workspace_mailbox_orders')
-            .update({ status: 'failed', error_message: 'Provisioning failed at the provider', updated_at: new Date().toISOString() })
-            .eq('id', order.id)
-          order.status = 'failed'
-        } else if (job.status === 'completed') {
-          // Collect the freshly created mailboxes and start warming them.
-          const domainNames = (order.domains as Array<{ domain: string }>).map((entry) => entry.domain)
-          const userIds: string[] = []
-          for (const domainName of domainNames) {
-            const users = await winnrRequest<WinnrEmailUser[] | { data?: WinnrEmailUser[] }>(winnrKey.apiKey, '/email-users', {
-              query: new URLSearchParams({ domain: domainName, limit: '25' }),
-            })
-            const rows = Array.isArray(users) ? users : (users as { data?: WinnrEmailUser[] }).data ?? []
-            userIds.push(...rows.map((user) => user.id))
-          }
-          if (userIds.length > 0) {
-            await winnrRequest(winnrKey.apiKey, '/warming/enable-async', {
-              method: 'POST',
-              body: { user_ids: userIds, settings: { emails_per_day: 20, rampup_speed: 'normal' } },
-            }).catch(() => {
-              console.error('[Mailbox Infra] Warming enable failed; will require manual retry')
-            })
-          }
-          const warmingEnabledAt = new Date().toISOString()
-          await authContext.admin.from('workspace_mailbox_orders')
-            .update({ status: 'warming', warming_enabled_at: warmingEnabledAt, updated_at: warmingEnabledAt })
-            .eq('id', order.id)
-          order.status = 'warming'
-          order.warming_enabled_at = warmingEnabledAt
-        }
       }
-      return jsonResponse(req, METHODS, 200, { order, progress })
+      const userIds = await mailboxUserIds(
+        winnrKey.apiKey,
+        (order.domains as Array<{ domain: string }>).map((entry) => entry.domain),
+      )
+      if (userIds.length === 0) {
+        throw new HttpError(
+          409,
+          'NO_MAILBOXES',
+          'The provider reports no mailboxes on these domains yet',
+        )
+      }
+      await winnrRequest(winnrKey.apiKey, '/warming/enable-async', {
+        method: 'POST',
+        body: { user_ids: userIds, settings: { emails_per_day: 20, rampup_speed: 'normal' } },
+      })
+      const warmingEnabledAt = new Date().toISOString()
+      await authContext.admin.from('workspace_mailbox_orders')
+        .update({ warming_enabled_at: warmingEnabledAt, error_message: null, updated_at: warmingEnabledAt })
+        .eq('id', order.id)
+      await writeAudit(authContext.admin, {
+        workspaceId,
+        actorUserId: authContext.user.id,
+        action: 'workspace.mailbox_infra.warming_started',
+        entityType: 'mailbox_order',
+        entityId: order.id,
+        metadata: { mailboxes: userIds.length },
+      })
+      return jsonResponse(req, METHODS, 200, {
+        order: { ...order, warming_enabled_at: warmingEnabledAt, error_message: null },
+      })
     }
 
     if (action === 'infra-overview') {
@@ -349,11 +505,19 @@ serve(async (req) => {
         listWorkspaceDomains(winnrKey.apiKey, workspaceId, !usingWorkspaceKey),
         authContext.admin
           .from('workspace_mailbox_orders')
-          .select('id, status, domains, mailbox_count, credits_charged, warming_enabled_at, error_message, created_at')
+          .select(ORDER_COLUMNS)
           .eq('workspace_id', workspaceId)
           .order('created_at', { ascending: false })
           .limit(10),
       ])
+      // Any order left mid-provision is moved on here, so closing the tab
+      // during an order no longer strands its mailboxes unwarmed.
+      const orders = await Promise.all(
+        ((ordersResult.data ?? []) as unknown as MailboxOrderRow[]).map((order) => (
+          advanceMailboxOrder(authContext, winnrKey.apiKey, order)
+            .catch(() => order)
+        )),
+      )
       const warming = await winnrRequest<{ data?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>>(winnrKey.apiKey, '/warming', {
         query: new URLSearchParams({ per_page: '200' }),
       }).catch(() => [])
@@ -396,7 +560,11 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, {
         winnr_connected: true,
         domains: detailed,
-        orders: ordersResult.data ?? [],
+        // Detail is fetched for the first few domains only. Saying so beats a
+        // list that silently stops at six.
+        domain_count: domains.length,
+        detailed_domain_count: detailed.length,
+        orders,
       })
     }
 

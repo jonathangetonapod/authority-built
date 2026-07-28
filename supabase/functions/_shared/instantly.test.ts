@@ -1,11 +1,13 @@
 import {
   decryptInstantlyApiKey,
   encryptInstantlyApiKey,
-  getInstantlyDailyAccountSends,
+  getInstantlyAccountSendHistory,
   getInstantlyWarmupAnalytics,
+  listInstantlyCampaignAnalytics,
   localCampaignStatus,
   safeInstantlyAccount,
   safeInstantlyAnalytics,
+  withStoredOpportunityCounts,
 } from "./instantly.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -166,10 +168,10 @@ Deno.test("Instantly mailbox analytics use the documented account endpoints", as
 
   try {
     const emails = ["admin@solaraccountreview.help"];
-    const daily = await getInstantlyDailyAccountSends(
+    const daily = await getInstantlyAccountSendHistory(
       "server-side-key",
       emails,
-      new Date("2026-07-24T12:00:00.000Z"),
+      { days: 2, timeZone: "UTC", now: new Date("2026-07-24T12:00:00.000Z") },
     );
     const warmup = await getInstantlyWarmupAnalytics(
       "server-side-key",
@@ -178,8 +180,8 @@ Deno.test("Instantly mailbox analytics use the documented account endpoints", as
 
     assertEquals(
       daily.get(emails[0]),
-      3,
-      "only today's campaign sends should be shown",
+      [{ date: "2026-07-23", sent: 99 }, { date: "2026-07-24", sent: 3 }],
+      "each day in the window should be reported on its own date",
     );
     assertEquals(
       warmup.get(emails[0]),
@@ -215,6 +217,218 @@ Deno.test("Instantly mailbox analytics use the documented account endpoints", as
       JSON.parse(String(requests[1].init?.body)),
       { emails },
       "warmup analytics should send the bounded email batch",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("Campaign analytics are fetched for every campaign in one request", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async (input: string | URL | Request): Promise<Response> => {
+    requests.push(input.toString());
+    return new Response(
+      JSON.stringify([
+        {
+          campaign_id: "11111111-1111-4111-8111-111111111111",
+          campaign_status: 1,
+          emails_sent_count: 40,
+          contacted_count: 20,
+          open_count_unique: 12,
+          reply_count_unique: 3,
+          bounced_count: 1,
+          unsubscribed_count: 0,
+        },
+        // A campaign belonging to somebody else, which the caller never asked
+        // for and must not be able to write onto its own rows.
+        {
+          campaign_id: "99999999-9999-4999-8999-999999999999",
+          campaign_status: 1,
+          emails_sent_count: 9_000,
+        },
+      ]),
+      { status: 200 },
+    );
+  };
+
+  try {
+    const analytics = await listInstantlyCampaignAnalytics("server-side-key", [
+      "11111111-1111-4111-8111-111111111111",
+      // Deleted in Instantly: asked for, never answered.
+      "22222222-2222-4222-8222-222222222222",
+      "  ",
+    ]);
+
+    assertEquals(requests.length, 1, "one batch should cost one request");
+    const url = new URL(requests[0]);
+    assertEquals(
+      url.pathname,
+      "/api/v2/campaigns/analytics",
+      "the documented list endpoint should be used",
+    );
+    assertEquals(
+      url.searchParams.getAll("ids"),
+      [
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+      ],
+      "blank ids should be dropped and the rest repeated",
+    );
+    assertEquals(
+      url.searchParams.get("exclude_total_leads_count"),
+      "true",
+      "the slow lead count should be excluded",
+    );
+    assertEquals(
+      analytics.get("11111111-1111-4111-8111-111111111111")?.analytics,
+      {
+        emails_sent_count: 40,
+        contacted_count: 20,
+        open_count_unique: 12,
+        reply_count_unique: 3,
+        bounced_count: 1,
+        unsubscribed_count: 0,
+        total_interested: 0,
+        total_meeting_booked: 0,
+      },
+      "the campaign row should map onto the stored analytics shape",
+    );
+    assertEquals(
+      analytics.get("11111111-1111-4111-8111-111111111111")?.status,
+      1,
+      "the provider status should come across",
+    );
+    assert(
+      !analytics.has("22222222-2222-4222-8222-222222222222"),
+      "a campaign the provider did not answer for must be absent, not zeroed",
+    );
+    assert(
+      !analytics.has("99999999-9999-4999-8999-999999999999"),
+      "a campaign that was never requested must be ignored",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("Campaign analytics batches stay inside the id limit", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async (input: string | URL | Request): Promise<Response> => {
+    requests.push(input.toString());
+    return new Response(JSON.stringify([]), { status: 200 });
+  };
+
+  try {
+    const ids = Array.from(
+      { length: 41 },
+      (_value, index) => `${index}`.padStart(8, "0") + "-0000-4000-8000-000000000000",
+    );
+    await listInstantlyCampaignAnalytics("server-side-key", ids);
+
+    assertEquals(requests.length, 2, "41 ids should split into two batches");
+    assertEquals(
+      new URL(requests[0]).searchParams.getAll("ids").length,
+      40,
+      "the first batch should be full",
+    );
+    assertEquals(
+      new URL(requests[1]).searchParams.getAll("ids").length,
+      1,
+      "the remainder should follow in a second request",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("A bulk refresh keeps the counts its endpoint does not report", () => {
+  const fresh = safeInstantlyAnalytics({
+    emails_sent_count: 40,
+    reply_count_unique: 3,
+  });
+  const stored = {
+    emails_sent_count: 30,
+    reply_count_unique: 2,
+    total_interested: 4,
+    total_meeting_booked: 1,
+  };
+
+  assertEquals(
+    withStoredOpportunityCounts(fresh, stored),
+    {
+      emails_sent_count: 40,
+      contacted_count: 0,
+      open_count_unique: 0,
+      reply_count_unique: 3,
+      bounced_count: 0,
+      unsubscribed_count: 0,
+      // Only the overview endpoint reports these; the list form leaves them at
+      // zero, and zeroing a real number would read as lost interest.
+      total_interested: 4,
+      total_meeting_booked: 1,
+    },
+    "interested and meeting counts should survive a totals-only refresh",
+  );
+});
+
+Deno.test("The sending day is the campaign's day, not UTC's", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async (input: string | URL | Request): Promise<Response> => {
+    requests.push(input.toString());
+    return new Response(
+      JSON.stringify([
+        { date: "2026-07-27", email_account: "sender@example.com", sent: 40 },
+      ]),
+      { status: 200 },
+    );
+  };
+
+  try {
+    // 01:00 UTC on the 28th is still the evening of the 27th in Los Angeles —
+    // right after a 09:00-17:00 send window closed. Reading the day off UTC
+    // reported that afternoon's sending as zero.
+    const evening = new Date("2026-07-28T01:00:00.000Z");
+    const local = await getInstantlyAccountSendHistory(
+      "server-side-key",
+      ["sender@example.com"],
+      { days: 2, timeZone: "America/Los_Angeles", now: evening },
+    );
+    const today = local.get("sender@example.com")?.at(-1);
+    assertEquals(
+      today,
+      { date: "2026-07-27", sent: 40 },
+      "today should be the local day, and should carry the day's sends",
+    );
+    assertEquals(
+      new URL(requests[0]).searchParams.get("end_date"),
+      "2026-07-27",
+      "the range should end on the local day",
+    );
+
+    const utc = await getInstantlyAccountSendHistory(
+      "server-side-key",
+      ["sender@example.com"],
+      { days: 2, timeZone: "UTC", now: evening },
+    );
+    assertEquals(
+      utc.get("sender@example.com")?.at(-1),
+      { date: "2026-07-28", sent: 0 },
+      "the UTC day is a day ahead there, which is what used to be reported",
+    );
+
+    // An unusable zone must degrade, not throw.
+    const broken = await getInstantlyAccountSendHistory(
+      "server-side-key",
+      ["sender@example.com"],
+      { days: 1, timeZone: "Not/AZone", now: evening },
+    );
+    assertEquals(
+      broken.get("sender@example.com")?.length,
+      1,
+      "an invalid timezone should fall back rather than fail the page",
     );
   } finally {
     globalThis.fetch = originalFetch;

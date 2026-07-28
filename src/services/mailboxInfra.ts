@@ -82,6 +82,22 @@ export async function getMailboxOrderStatus(
   }, 'The order status could not be loaded.')
 }
 
+/**
+ * Start warmup for an order whose mailboxes were created but never warmed.
+ * The provider call can fail after provisioning succeeds, and a mailbox that
+ * skips warmup burns its domain the first time it sends.
+ */
+export async function retryMailboxWarming(
+  workspaceId: string,
+  orderId: string,
+): Promise<{ order: MailboxOrder }> {
+  return await invokeMailboxInfra({
+    action: 'warming-retry',
+    workspace_id: workspaceId,
+    order_id: orderId,
+  }, 'Warmup could not be started.')
+}
+
 export async function getMailboxInfraOverview(
   workspaceId: string,
 ): Promise<{ domains: InfraDomain[]; orders: MailboxOrder[]; winnr_connected?: boolean }> {
