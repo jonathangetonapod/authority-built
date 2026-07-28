@@ -565,12 +565,23 @@ for (const method of allowedProvisioningMethods) {
 assert.match(source, /membership\.provisioning_method !== "email_invite"/u)
 assert.match(source, /membership\.provisioning_method !== "admin_temporary_password"/u)
 
-// The frontend carries the same three values.
+// The frontend carries the same three values — in the type AND in the array
+// that actually runs. Widening only the type left the client rejecting the
+// roster the edge function had just been fixed to serve: the annotation
+// `WorkspaceStaffSetupMethod[]` accepts a subset, so nothing failed to compile.
 const staffService = readFileSync('src/services/workspaceStaff.ts', 'utf8')
-assert.match(
-  staffService,
-  /export type WorkspaceStaffSetupMethod = 'platform_bootstrap' \| 'email_invite' \| 'admin_temporary_password'/u,
+const setupMethodType = staffService.match(
+  /export type WorkspaceStaffSetupMethod = ([^\n]+)/u,
 )
+assert.ok(setupMethodType, 'WorkspaceStaffSetupMethod not found')
+const setupMethodConst = staffService.match(
+  /const SETUP_METHODS: WorkspaceStaffSetupMethod\[\] = \[([^\]]*)\]/u,
+)
+assert.ok(setupMethodConst, 'SETUP_METHODS not found')
+for (const method of allowedProvisioningMethods) {
+  assert.match(setupMethodType[1], new RegExp(`'${method}'`, 'u'))
+  assert.match(setupMethodConst[1], new RegExp(`'${method}'`, 'u'))
+}
 
 // A rejected response names the failing check in the logs. Every validator
 // raised one indistinguishable message, so an invalid roster could not be told

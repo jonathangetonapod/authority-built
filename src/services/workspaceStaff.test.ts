@@ -150,6 +150,38 @@ describe('workspaceStaff', () => {
     })
   })
 
+  // The default workspace's own memberships were backfilled with a third
+  // provisioning method no private workspace carries. The parser listed two of
+  // them, so the settings page rejected the only roster it exists to serve.
+  it('parses the platform workspace roster its memberships were bootstrapped with', async () => {
+    const view = ownerView()
+    invoke.mockResolvedValueOnce({
+      data: {
+        ...view,
+        workspace: { ...view.workspace, is_default: true },
+        members: [
+          { ...owner, setup_method: 'platform_bootstrap', allowed_actions: [] },
+          { ...admin, setup_method: 'platform_bootstrap', allowed_actions: [] },
+        ],
+        capabilities: {
+          ...view.capabilities,
+          invite_roles: [],
+          can_update_roles: false,
+          can_transfer_owner: false,
+        },
+      },
+      error: null,
+    })
+
+    await expect(listWorkspaceStaff(workspaceId)).resolves.toMatchObject({
+      workspace: { is_default: true },
+      members: [
+        { id: ownerId, setup_method: 'platform_bootstrap', allowed_actions: [] },
+        { id: staffId, setup_method: 'platform_bootstrap', allowed_actions: [] },
+      ],
+    })
+  })
+
   it('uploads and removes only the exact workspace logo state', async () => {
     const logoPath = `${workspaceId}/66666666-6666-4666-8666-666666666666.png`
     const updatedAt = '2026-07-22T01:00:00.000Z'

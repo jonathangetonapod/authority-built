@@ -110,7 +110,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const ROLES: WorkspaceStaffRole[] = ['owner', 'admin', 'member']
 const STATUSES: WorkspaceStaffStatus[] = ['provisioning', 'invited', 'active', 'suspended', 'revoked']
-const SETUP_METHODS: WorkspaceStaffSetupMethod[] = ['email_invite', 'admin_temporary_password']
+const SETUP_METHODS: WorkspaceStaffSetupMethod[] = ['platform_bootstrap', 'email_invite', 'admin_temporary_password']
 const ACTIONS: WorkspaceStaffAction[] = [
   'retry_invite',
   'retry_password',
