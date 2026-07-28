@@ -37,7 +37,9 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { WorkspaceLayout, type PlatformWorkspaceConfig } from '@/components/workspace/WorkspaceLayout'
+import { ClientActivityCalendar } from '@/components/workspace/ClientActivityCalendar'
 import { ClientBookingDialog } from '@/components/workspace/ClientBookingDialog'
+import { activitiesFromBookings } from '@/components/workspace/clientActivity'
 import { ClientInstantlyCampaignsCard } from '@/components/workspace/ClientInstantlyCampaignsCard'
 import { ClientSdrPromptsCard } from '@/components/workspace/ClientSdrPromptsCard'
 import { ClientShortlistEditor } from '@/components/workspace/ClientShortlistEditor'
@@ -84,7 +86,7 @@ import {
 } from '@/lib/clientSdrProfile'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const CLIENT_DETAIL_TABS = new Set(['overview', 'ai-sdr', 'approval', 'portal', 'podcasts', 'files'])
+const CLIENT_DETAIL_TABS = new Set(['overview', 'ai-sdr', 'approval', 'portal', 'podcasts', 'calendar', 'files'])
 
 interface WorkspaceClientDetailProps {
   platformWorkspaceId?: string
@@ -365,6 +367,14 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
       new Date(left.publish_date || '').getTime() - new Date(right.publish_date || '').getTime()
     )).slice(0, 4),
     [bookings],
+  )
+  // Built from the bookings this page already holds, so the calendar costs no
+  // request of its own.
+  const clientActivities = useMemo(
+    () => (detail?.client
+      ? activitiesFromBookings(bookings, { id: detail.client.id, name: detail.client.name })
+      : []),
+    [bookings, detail?.client],
   )
   const progress = useMemo(() => ({
     booked: bookings.filter((booking) => booking.status === 'booked').length,
@@ -819,6 +829,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
               <TabsTrigger value="approval">Approval dashboard</TabsTrigger>
               <TabsTrigger value="portal">Client portal</TabsTrigger>
               <TabsTrigger value="podcasts">Podcast activity</TabsTrigger>
+              <TabsTrigger value="calendar">Calendar</TabsTrigger>
               <TabsTrigger value="files">Onboarding &amp; files</TabsTrigger>
             </TabsList>
           </div>
@@ -1268,6 +1279,15 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="calendar" className="mt-0 space-y-6">
+            <ClientActivityCalendar
+              activities={clientActivities}
+              showClientFilter={false}
+              title={`${client.name}'s schedule`}
+              description="Every recording and release date on this client's placements. Select one for the detail, and to put it in your own calendar."
+            />
           </TabsContent>
 
           <TabsContent value="files" className="mt-0 space-y-6">

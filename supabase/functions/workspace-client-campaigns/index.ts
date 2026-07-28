@@ -84,6 +84,7 @@ const CAMPAIGN_COLUMNS = [
   "daily_limit",
   "provider_schedule",
   "provider_email_gap",
+  "provider_not_sending_status",
   "analytics",
   "provider_sync_state",
   "provider_sync_started_at",
@@ -179,6 +180,7 @@ interface CampaignRow {
   daily_limit: number;
   provider_schedule: Record<string, unknown> | null;
   provider_email_gap: number | null;
+  provider_not_sending_status: number | null;
   analytics: unknown;
   provider_sync_state: "idle" | "creating" | "syncing" | "error";
   provider_sync_started_at: string | null;
@@ -259,6 +261,8 @@ interface ProviderCampaign {
   dailyLimit: number;
   /** Minutes between sends, as configured at the provider. */
   emailGap: number | null;
+  /** Why the provider is not sending right now, when it says. */
+  notSendingStatus: number | null;
   schedule: ProviderSchedule | null;
   timestampCreated: string | null;
   timestampUpdated: string | null;
@@ -553,6 +557,7 @@ function campaignDto(campaign: CampaignRow, targets: TargetRow[] = []) {
     daily_limit: campaign.daily_limit,
     provider_schedule: campaign.provider_schedule ?? null,
     provider_email_gap: campaign.provider_email_gap ?? null,
+    provider_not_sending_status: campaign.provider_not_sending_status ?? null,
     analytics: safeInstantlyAnalytics(campaign.analytics),
     target_counts: targetCounts(targets),
     target_shortlist_podcast_ids: targets.map((target) =>
@@ -808,6 +813,13 @@ function providerCampaign(value: unknown): ProviderCampaign {
         ? candidate
         : null
     );
+  // Answers "active, but why is nothing going out". Kept as the provider's own
+  // integer rather than a phrase, so a code this build does not recognise
+  // still arrives instead of being dropped in translation.
+  const notSendingStatus = typeof item.not_sending_status === "number" &&
+      Number.isInteger(item.not_sending_status)
+    ? item.not_sending_status
+    : null;
   return {
     id,
     status,
@@ -816,6 +828,7 @@ function providerCampaign(value: unknown): ProviderCampaign {
     timezone,
     dailyLimit,
     emailGap,
+    notSendingStatus,
     schedule: providerSchedule,
     timestampCreated: timestamp(item.timestamp_created),
     timestampUpdated: timestamp(item.timestamp_updated),
@@ -2286,6 +2299,7 @@ async function syncProviderCampaign(
       // state the real window without a round trip on every open.
       provider_schedule: provider.schedule,
       provider_email_gap: provider.emailGap,
+      provider_not_sending_status: provider.notSendingStatus,
       analytics,
       provider_sync_state: "idle",
       provider_sync_started_at: null,
@@ -5360,6 +5374,7 @@ serve(async (req) => {
         .update({
           instantly_campaign_status: provider.status,
           status: localCampaignStatus(provider.status),
+          provider_not_sending_status: provider.notSendingStatus,
           last_synced_at: new Date().toISOString(),
           last_error: null,
           updated_by: context.user.id,

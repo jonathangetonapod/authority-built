@@ -633,3 +633,33 @@ assert.match(mailboxesTable, /function severity\(account: WorkspaceMailboxAccoun
 assert.match(mailboxesTable, /severity\(left\) - severity\(right\) \|\| left\.email\.localeCompare/u)
 assert.match(mailboxesTable, /\{account\.status_message\}/u)
 assert.match(mailboxesTable, /daily capacity used/u)
+
+// Why a campaign is not sending. The provider reports it on every sync and it
+// used to be discarded, so an Active campaign that sent nothing all day
+// explained itself nowhere short of opening Instantly.
+const notSendingMigration = readFileSync(
+  'supabase/migrations/20260728001900_campaign_not_sending_status.sql',
+  'utf8',
+)
+const campaignDetailPage = readFileSync('src/pages/app/WorkspaceCampaignDetail.tsx', 'utf8')
+
+assert.match(notSendingMigration, /ADD COLUMN IF NOT EXISTS provider_not_sending_status INTEGER/u)
+assert.match(edge, /const notSendingStatus = typeof item\.not_sending_status === "number"/u)
+assert.match(edge, /provider_not_sending_status: campaign\.provider_not_sending_status \?\? null/u)
+assert.match(edge, /provider_not_sending_status: provider\.notSendingStatus/u)
+assert.match(campaignDetailPage, /function notSendingStatusLabel\(status: number \| null\)/u)
+// Every documented code, and an unrecognised one said out loud rather than
+// swallowed by a build that predates it.
+for (const phrase of [
+  /outside its sending window/u,
+  /Waiting for a lead to process/u,
+  /reached its daily sending limit/u,
+  /hit its own daily limit/u,
+  /reason code \$\{status\}/u,
+]) assert.match(campaignDetailPage, phrase)
+
+// Bounces and unsubscribes were synced on every campaign and shown nowhere.
+assert.match(campaignsPage, /label="Bounce rate"/u)
+assert.match(campaignsPage, /bounced · \$\{unsubscribedCount\} unsubscribed/u)
+// A percentage of nothing must not read as a reassuring zero.
+assert.match(campaignsPage, /whole > 0 \? `\$\{Math\.round\(\(part \/ whole\) \* 100\)\}%` : '—'/u)

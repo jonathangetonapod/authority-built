@@ -294,6 +294,19 @@ describe('WorkspaceClientDetail', () => {
     expect(mockedDetail).toHaveBeenCalledWith(workspaceId, clientId)
   })
 
+  it('gives one client their own calendar, built from the bookings already loaded', async () => {
+    renderPage(`/app/clients/${clientId}?tab=calendar`)
+
+    expect(await screen.findByRole('tab', { name: 'Calendar' })).toHaveAttribute('data-state', 'active')
+    expect(screen.getByRole('grid', { name: 'Client activity calendar' })).toBeInTheDocument()
+    // Every entry is this client, so the client filter is not offered.
+    expect(screen.queryByLabelText('Filter by client')).not.toBeInTheDocument()
+    // A booking with only a scheduled date still lands on the calendar.
+    expect(screen.getByText(/Founder Stories/)).toBeInTheDocument()
+    // No extra request: the page's own bookings feed it.
+    expect(mockedDetail).toHaveBeenCalledTimes(1)
+  })
+
   it('edits each client-scoped AI SDR section in a focused modal for Master Inbox', async () => {
     renderPage()
     await screen.findByRole('heading', { name: 'Taylor Client' })

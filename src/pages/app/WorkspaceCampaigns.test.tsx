@@ -132,6 +132,7 @@ const persistedCampaign = {
   target_counts: { total: 2, needs_contact: 1, needs_pitch: 0, ready: 0, in_outreach: 1, replied: 1, failed: 0, staged: 0, staged_sending: 0 },
   provider_schedule: null,
   provider_email_gap: null,
+  provider_not_sending_status: null,
   target_shortlist_podcast_ids: ['shortlist-one', 'shortlist-two'],
   last_synced_at: '2026-07-23T12:00:00Z',
   last_error: null,
@@ -202,9 +203,54 @@ describe('WorkspaceCampaigns', () => {
     expect(within(table).getByRole('columnheader', { name: 'Positive replies' })).toBeInTheDocument()
     expect(within(table).getByText('12')).toBeInTheDocument()
     expect(within(table).queryByText('active@example.com')).not.toBeInTheDocument()
-    expect(screen.getByText('Replies marked interested')).toBeInTheDocument()
+    expect(screen.getByText(/Replies marked interested · 22% of 9 contacted replied/)).toBeInTheDocument()
     expect(screen.queryByText('Ready to launch')).not.toBeInTheDocument()
     expect(screen.queryByText(/Feb 16–22|podcasts in view|Current wave/i)).not.toBeInTheDocument()
+  })
+
+  it('shows the bounce rate that says a sending domain is burning', async () => {
+    mockedOverview.mockResolvedValue({
+      ...campaignOverview,
+      integration: connectedIntegration,
+      campaigns: [{
+        ...persistedCampaign,
+        analytics: {
+          ...persistedCampaign.analytics,
+          emails_sent_count: 100,
+          bounced_count: 9,
+          unsubscribed_count: 2,
+        },
+      }],
+    })
+    renderCampaigns()
+
+    // Collected on every sync and previously shown nowhere.
+    expect(await screen.findByText('Bounce rate')).toBeInTheDocument()
+    expect(screen.getByText('9%')).toBeInTheDocument()
+    expect(screen.getByText('9 bounced · 2 unsubscribed')).toBeInTheDocument()
+  })
+
+  it('does not turn no sending into a zero percent rate', async () => {
+    mockedOverview.mockResolvedValue({
+      ...campaignOverview,
+      integration: connectedIntegration,
+      campaigns: [{
+        ...persistedCampaign,
+        analytics: {
+          ...persistedCampaign.analytics,
+          emails_sent_count: 0,
+          contacted_count: 0,
+          reply_count_unique: 0,
+          bounced_count: 0,
+        },
+      }],
+    })
+    renderCampaigns()
+
+    expect(await screen.findByText('Bounce rate')).toBeInTheDocument()
+    // A percentage of nothing would read as a real, reassuring zero.
+    expect(screen.getByText('No bounces recorded')).toBeInTheDocument()
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0)
   })
 
   it('distinguishes pitches waiting in Instantly from pitches already sending', async () => {

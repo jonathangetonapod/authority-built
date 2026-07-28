@@ -107,6 +107,20 @@ describe('WorkspaceCampaignDetail', () => {
     mockedRunning.mockResolvedValue({ ...activeCampaign, status: 'paused' })
   })
 
+  it('says why an active campaign is sending nothing', async () => {
+    mockedCampaign.mockResolvedValue({
+      ...campaignState,
+      campaign: { ...activeCampaign, provider_not_sending_status: 3 },
+    } as never)
+
+    renderPage()
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Schedule' }), { button: 0 })
+
+    // The provider reports this on every sync and it used to be discarded, so
+    // a live campaign with no sends explained itself nowhere.
+    expect(await screen.findByText(/reached its daily sending limit/i)).toBeInTheDocument()
+  })
+
   it('opens with campaign analytics and keeps the saved sequence under Podcasts', async () => {
     renderPage()
 
@@ -307,6 +321,7 @@ describe('WorkspaceCampaignDetail', () => {
         timezone: 'America/Bogota',
         last_synced_at: '2026-07-27T12:00:00Z',
         provider_email_gap: 15,
+        provider_not_sending_status: null,
         provider_schedule: {
           name: 'Weekdays',
           from: '09:00',

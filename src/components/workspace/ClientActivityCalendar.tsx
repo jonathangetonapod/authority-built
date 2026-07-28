@@ -37,13 +37,29 @@ function todayKey(): string {
 }
 
 interface ClientActivityCalendarProps {
-  items: ClientPodcastSystemItem[]
+  items?: ClientPodcastSystemItem[]
+  /** Pre-built entries, for a surface that already holds its own dates. */
+  activities?: CalendarActivity[]
   /** Opens the full placement record for a day the operator clicked into. */
   onOpenItem?: (itemId: string) => void
+  /** Dropped on a single-client calendar, where every row is that client. */
+  showClientFilter?: boolean
+  title?: string
+  description?: string
 }
 
-export const ClientActivityCalendar = ({ items, onOpenItem }: ClientActivityCalendarProps) => {
-  const activities = useMemo(() => activitiesFromItems(items), [items])
+export const ClientActivityCalendar = ({
+  items,
+  activities: providedActivities,
+  onOpenItem,
+  showClientFilter = true,
+  title = 'Everything scheduled',
+  description = 'Recordings, release dates, and the day outreach went out — across every client in one place. Select any entry for the detail and a way into your own calendar.',
+}: ClientActivityCalendarProps) => {
+  const activities = useMemo(
+    () => providedActivities ?? activitiesFromItems(items ?? []),
+    [providedActivities, items],
+  )
   const [monthOffset, setMonthOffset] = useState(0)
   const [clientFilter, setClientFilter] = useState('all')
   const [kindFilter, setKindFilter] = useState<'all' | ActivityKind>('all')
@@ -107,21 +123,20 @@ export const ClientActivityCalendar = ({ items, onOpenItem }: ClientActivityCale
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h2 className="flex items-center gap-2 text-lg font-semibold">
-            <CalendarDays className="h-5 w-5 text-primary" />Everything scheduled
+            <CalendarDays className="h-5 w-5 text-primary" />{title}
           </h2>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Recordings, release dates, and the day outreach went out — across every client in one place.
-            Select any entry for the detail and a way into your own calendar.
-          </p>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Select value={clientFilter} onValueChange={setClientFilter}>
-            <SelectTrigger aria-label="Filter by client" className="w-full sm:w-52"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All clients</SelectItem>
-              {clientOptions.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          {showClientFilter && (
+            <Select value={clientFilter} onValueChange={setClientFilter}>
+              <SelectTrigger aria-label="Filter by client" className="w-full sm:w-52"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All clients</SelectItem>
+                {clientOptions.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
           <Select value={kindFilter} onValueChange={(value) => setKindFilter(value as 'all' | ActivityKind)}>
             <SelectTrigger aria-label="Filter by activity" className="w-full sm:w-44"><SelectValue /></SelectTrigger>
             <SelectContent>

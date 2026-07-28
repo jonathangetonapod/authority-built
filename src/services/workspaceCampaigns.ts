@@ -126,6 +126,12 @@ export interface WorkspaceClientCampaign {
   provider_schedule: WorkspaceCampaignProviderSchedule | null
   /** Minutes between sends at the provider, null when it reported none. */
   provider_email_gap: number | null
+  /**
+   * Why the provider is not sending, observed on the last sync. 1 outside the
+   * schedule, 2 waiting for a lead, 3 daily limit reached, 4 every sending
+   * account at its limit, 99 a provider error. Null means no reason given.
+   */
+  provider_not_sending_status: number | null
   analytics: WorkspaceCampaignAnalytics
   target_counts: WorkspaceCampaignTargetCounts
   target_shortlist_podcast_ids: string[]

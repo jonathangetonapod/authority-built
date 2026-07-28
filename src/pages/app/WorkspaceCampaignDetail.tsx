@@ -142,6 +142,24 @@ function Metric({ label, value, detail, icon: Icon }: { label: string; value: nu
  */
 const SCHEDULE_DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
+/**
+ * Why Instantly says nothing is going out.
+ *
+ * Reported by the provider on every sync and, until now, discarded — so a
+ * campaign could read Active, send nothing all day, and offer no explanation
+ * short of opening Instantly.
+ */
+function notSendingStatusLabel(status: number | null): string | null {
+  if (status === 1) return 'The campaign is outside its sending window.'
+  if (status === 2) return 'Waiting for a lead to process. Nothing is queued to send.'
+  if (status === 3) return 'The campaign has reached its daily sending limit.'
+  if (status === 4) return 'Every sending account on this campaign has hit its own daily limit.'
+  if (status === 99) return 'Instantly reports an error on this campaign. Their support can say what it is.'
+  // A code this build predates is still worth saying out loud.
+  if (typeof status === 'number') return `Instantly reports reason code ${status}, which this build does not recognise.`
+  return null
+}
+
 function scheduleDaysLabel(schedule: WorkspaceCampaignProviderSchedule | null): string {
   const days = schedule?.days ?? []
   const active = days.map((enabled, index) => (enabled ? SCHEDULE_DAY_NAMES[index] : null))
@@ -357,6 +375,7 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
           ? 'Campaign inactive · Completed'
           : 'Campaign inactive · Not launched'
   const providerSchedule = campaign?.provider_schedule ?? null
+  const notSendingReason = notSendingStatusLabel(campaign?.provider_not_sending_status ?? null)
   const providerScheduleDays = scheduleDaysLabel(providerSchedule)
   const providerScheduleWindow = scheduleWindowLabel(providerSchedule)
   const providerTimezoneMismatch = Boolean(
@@ -621,6 +640,14 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  {notSendingReason && (
+                    // Independent of whether a schedule has been read: an
+                    // active campaign sending nothing used to give no reason
+                    // at all, and the reason is the provider's to give.
+                    <p className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs leading-5 text-sky-950">
+                      <strong className="font-semibold">Not sending right now.</strong> {notSendingReason}
+                    </p>
+                  )}
                   {providerSchedule ? (
                     <>
                       <div className="flex items-center justify-between gap-3 rounded-xl border p-3"><span className="text-sm text-muted-foreground">Sending days</span><strong className="text-right text-sm">{providerScheduleDays}</strong></div>

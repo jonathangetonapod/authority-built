@@ -196,21 +196,24 @@ function SummaryMetric({
   value,
   detail,
   icon: Icon,
+  tone,
 }: {
   label: string
   value: number | string
   detail: string
   icon: typeof Mail
+  /** 'alarm' marks a number that should stop somebody, not just inform them. */
+  tone?: 'alarm'
 }) {
   return (
-    <Card className="border-border/70 shadow-none">
+    <Card className={tone === 'alarm' ? 'border-red-200 bg-red-50/40 shadow-none' : 'border-border/70 shadow-none'}>
       <CardContent className="flex items-start justify-between gap-3 p-4 sm:p-5">
         <div>
           <p className="text-sm font-medium text-muted-foreground">{label}</p>
-          <p className="mt-2 text-2xl font-bold tracking-tight">{value}</p>
+          <p className={`mt-2 text-2xl font-bold tracking-tight ${tone === 'alarm' ? 'text-red-700' : ''}`}>{value}</p>
           <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
         </div>
-        <Icon className="h-4 w-4 text-muted-foreground/60" />
+        <Icon className={`h-4 w-4 ${tone === 'alarm' ? 'text-red-500' : 'text-muted-foreground/60'}`} />
       </CardContent>
     </Card>
   )
@@ -308,6 +311,31 @@ const WorkspaceCampaigns = ({
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Instantly could not be refreshed.'),
   })
+  const analyticsTotals = summaries.reduce((totals, summary) => {
+    const analytics = summary.campaign?.analytics
+    if (!analytics) return totals
+    return {
+      contacted: totals.contacted + analytics.contacted_count,
+      replies: totals.replies + analytics.reply_count_unique,
+      bounced: totals.bounced + analytics.bounced_count,
+      unsubscribed: totals.unsubscribed + analytics.unsubscribed_count,
+      sent: totals.sent + analytics.emails_sent_count,
+    }
+  }, { contacted: 0, replies: 0, bounced: 0, unsubscribed: 0, sent: 0 })
+  const contactedCount = analyticsTotals.contacted
+  const replyCount = analyticsTotals.replies
+  const bouncedCount = analyticsTotals.bounced
+  const unsubscribedCount = analyticsTotals.unsubscribed
+  // Rates are only meaningful once something has actually been attempted; a
+  // percentage of nothing reads as a real zero.
+  const percent = (part: number, whole: number): string => (
+    whole > 0 ? `${Math.round((part / whole) * 100)}%` : '—'
+  )
+  const replyRate = percent(replyCount, contactedCount)
+  const bounceRate = percent(bouncedCount, analyticsTotals.sent)
+  const bounceAlarm = analyticsTotals.sent >= 20
+    && bouncedCount / analyticsTotals.sent > 0.03
+
   const refreshAnalyticsMutation = useMutation({
     mutationFn: () => refreshWorkspaceCampaignAnalytics(workspaceId),
     onSuccess: async (result) => {
@@ -552,10 +580,31 @@ const WorkspaceCampaigns = ({
         )}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryMetric label="Active campaigns" value={activeCount} detail="Currently sending outreach" icon={CheckCircle2} />
         <SummaryMetric label="Emails sent" value={sentCount} detail="Synced campaign outreach" icon={Mail} />
-        <SummaryMetric label="Positive replies" value={integration?.connected ? positiveReplyCount : '—'} detail={integration?.connected ? 'Replies marked interested' : 'Available after Instantly sync'} icon={MessageSquare} />
+        <SummaryMetric
+          label="Positive replies"
+          value={integration?.connected ? positiveReplyCount : '—'}
+          detail={integration?.connected
+            ? `Replies marked interested · ${replyRate} of ${contactedCount} contacted replied`
+            : 'Available after Instantly sync'}
+          icon={MessageSquare}
+        />
+        {/* Bounces and unsubscribes were collected on every sync and shown
+            nowhere. A rising bounce rate is the signal that a sending domain
+            is burning, and it arrives before Instantly disables anything. */}
+        <SummaryMetric
+          label="Bounce rate"
+          value={integration?.connected ? bounceRate : '—'}
+          detail={integration?.connected
+            ? bouncedCount === 0 && unsubscribedCount === 0
+              ? 'No bounces recorded'
+              : `${bouncedCount} bounced · ${unsubscribedCount} unsubscribed`
+            : 'Available after Instantly sync'}
+          icon={AlertCircle}
+          tone={bounceAlarm ? 'alarm' : undefined}
+        />
       </div>
 
       <Card className="overflow-hidden">

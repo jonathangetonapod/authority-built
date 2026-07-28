@@ -1,6 +1,7 @@
 import { Mic, Radio, Send } from 'lucide-react'
 import type { CalendarEventInput } from '@/lib/calendarLinks'
 import { decodeHtmlEntities } from '@/lib/htmlEntities'
+import type { WorkspaceClientBooking } from '@/services/clients'
 import type { ClientPodcastSystemItem } from '@/services/clientPodcastSystem'
 
 /**
@@ -107,6 +108,44 @@ export function activitiesFromItems(items: ClientPodcastSystemItem[]): CalendarA
     if (outreach) {
       entries.push({ ...base, id: `${item.id}:outreach`, kind: 'outreach', day: outreach, cancelled: false })
     }
+    return entries
+  })
+}
+
+/**
+ * The same calendar, built from a single client's bookings.
+ *
+ * The client page already holds these; going back for the workspace-wide
+ * payload to draw one client's dates would be a round trip for data it has.
+ * Outreach is absent here by nature — a booking is what happened after it.
+ */
+export function activitiesFromBookings(
+  bookings: WorkspaceClientBooking[],
+  client: { id: string; name: string },
+): CalendarActivity[] {
+  return bookings.flatMap((booking) => {
+    const base = {
+      itemId: booking.id,
+      clientName: client.name,
+      clientId: client.id,
+      podcastName: decodeHtmlEntities(booking.podcast_name || 'Untitled show'),
+      podcastUrl: booking.podcast_url,
+      podcastImage: null,
+      hostName: booking.host_name,
+      cancelled: booking.status === 'cancelled',
+      stage: booking.status,
+      bookingStatus: booking.status,
+      episodeUrl: booking.episode_url,
+      notes: booking.notes,
+      nextAction: null,
+      audienceSize: null,
+      campaign: null,
+    }
+    const entries: CalendarActivity[] = []
+    const recording = dayKey(booking.recording_date) ?? dayKey(booking.scheduled_date)
+    if (recording) entries.push({ ...base, id: `${booking.id}:recording`, kind: 'recording', day: recording })
+    const release = dayKey(booking.publish_date)
+    if (release) entries.push({ ...base, id: `${booking.id}:release`, kind: 'release', day: release })
     return entries
   })
 }
