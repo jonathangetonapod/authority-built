@@ -10,7 +10,8 @@ import {
   requireOnlyKeys,
   requireString,
 } from '../_shared/workspaceAuth.ts'
-import { requireServedByHost, resolveHostWorkspaceId } from '../_shared/workspaceDomain.ts'
+import { ensureWorkspaceOriginAllowed } from '../_shared/cors.ts'
+import { requestHostname, requireServedByHost, resolveHostWorkspaceId } from '../_shared/workspaceDomain.ts'
 import { loadWorkspacePresentation } from '../_shared/portalBranding.ts'
 import { notifyWorkspaceOfApprovals } from '../_shared/clientNotify.ts'
 
@@ -120,7 +121,8 @@ serve(async (req) => {
     const body = await parseJsonObject(req)
     const action = typeof body.action === 'string' ? body.action : ''
     const admin = createAdminClient()
-    const hostWorkspaceId = await resolveHostWorkspaceId(admin, body.hostname)
+    await ensureWorkspaceOriginAllowed(admin, req)
+    const hostWorkspaceId = await resolveHostWorkspaceId(admin, requestHostname(req, body.hostname))
 
     if (action === 'metadata') {
       requireOnlyKeys(body, ['action', 'slug', 'hostname'])

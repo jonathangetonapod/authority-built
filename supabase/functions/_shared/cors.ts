@@ -97,8 +97,12 @@ export async function ensureWorkspaceOriginAllowed(
 ): Promise<void> {
   const origin = req?.headers?.get('origin') || ''
   if (!origin || ALLOWED_ORIGINS.includes(origin)) return
+  // Staleness alone decides this. Refreshing on every *miss* would let anyone
+  // force an unlimited number of database reads from an unauthenticated
+  // endpoint just by varying the Origin header — a known origin is cheap, an
+  // unknown one must be too.
   const stale = Date.now() - workspaceOriginsFetchedAt > WORKSPACE_ORIGIN_TTL_MS
-  if (!stale && workspaceOrigins.has(origin)) return
+  if (!stale) return
   await loadWorkspaceOrigins(admin)
 }
 

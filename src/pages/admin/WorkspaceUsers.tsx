@@ -14,6 +14,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { selectedWorkspaceBaseHref, workspaceModuleHref } from '@/lib/workspaceRoutes'
 import { resetWorkspaceStaffTemporaryPassword } from '@/services/workspaceStaff'
+import { WorkspaceDomainsCard } from '@/components/workspace/WorkspaceDomainsCard'
+import { listAdminWorkspaces } from '@/services/adminWorkspaces'
 import {
   inviteWorkspaceUser,
   createManualWorkspaceAccount,
@@ -75,6 +77,8 @@ const WorkspaceUsers = () => {
   const queryKey = ['platform', 'workspace-users'] as const
 
   const usersQuery = useQuery({ queryKey, queryFn: listWorkspaceUsers })
+  // Tenant workspaces, for attaching a custom domain to one of them.
+  const workspacesQuery = useQuery({ queryKey: ['admin-workspaces'], queryFn: listAdminWorkspaces, retry: false })
 
   const inviteMutation = useMutation({
     mutationFn: () => inviteWorkspaceUser({
@@ -226,6 +230,9 @@ const WorkspaceUsers = () => {
   }
 
   const users = (usersQuery.data || []).filter((managedUser) => managedUser.status !== 'revoked')
+  const domainWorkspaces = (workspacesQuery.data || [])
+    .map((workspace) => ({ id: workspace.id, name: workspace.name }))
+    .sort((left, right) => left.name.localeCompare(right.name))
 
   return (
     <WorkspaceLayout>
@@ -320,6 +327,8 @@ const WorkspaceUsers = () => {
             )}
           </CardContent>
         </Card>
+
+        <WorkspaceDomainsCard workspaces={domainWorkspaces} />
       </div>
 
       <Dialog

@@ -9,11 +9,16 @@ import { HttpError } from './httpError.ts'
  * agency also renders on every other agency's domain, wearing that agency's
  * brand. This is what stops that.
  *
- * To be precise about what it is and is not: the hostname comes from the
- * browser and is not a credential, so this is not an additional authorization
- * check on top of the slug. It is the guarantee that a domain only ever shows
- * its own workspace's pages — so a shared link works exactly where it should,
- * and the brand around it is never somebody else's.
+ * To be precise about what it is and is not. The Origin header is set by the
+ * browser and cannot be changed by script on the page, so for a real visitor
+ * this is authoritative. A non-browser client can send whatever it likes — but
+ * it could equally fetch the slug from the platform origin and re-render the
+ * result anywhere, so no check here could have stopped that. The slug remains
+ * the only credential.
+ *
+ * What this does guarantee is the thing the feature exists for: a browser on
+ * an agency's domain only ever sees that agency's pages, so a shared link
+ * works where it should and the brand around it is never somebody else's.
  */
 
 const MAX_HOSTNAME_LENGTH = 253
@@ -39,6 +44,22 @@ export function normalizeHostname(value: unknown): string | null {
     .replace(/\.$/u, '')
   if (!hostname || hostname.length > MAX_HOSTNAME_LENGTH) return null
   return HOSTNAME_PATTERN.test(hostname) ? hostname : null
+}
+
+/**
+ * The hostname a request genuinely came from.
+ *
+ * The Origin header wins whenever the browser sent one, because page script
+ * cannot forge it. The body value is only a fallback for callers that have no
+ * Origin at all, and is never trusted over one that is present.
+ */
+export function requestHostname(req: Request | undefined, bodyHostname: unknown): string | null {
+  const origin = req?.headers?.get('origin')
+  if (origin && origin !== 'null') {
+    const fromOrigin = normalizeHostname(origin)
+    if (fromOrigin) return fromOrigin
+  }
+  return normalizeHostname(bodyHostname)
 }
 
 /**

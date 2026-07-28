@@ -29,7 +29,7 @@ assert.match(
 // meant to match and resolve to nothing without saying so.
 assert.match(migration, /CHECK \(hostname = lower\(btrim\(hostname\)\)\)/u)
 // The platform's own origins are not claimable.
-assert.match(migration, /hostname NOT IN \('getonapod\.com', 'www\.getonapod\.com'\)/u)
+assert.match(migration, /hostname <> 'getonapod\.com'\s+AND hostname NOT LIKE '%\.getonapod\.com'/u)
 // A status that disagrees with itself is unrepresentable: only a serving
 // domain carries an activation date, and only a serving domain can be primary.
 assert.match(migration, /CHECK \(\(status = 'active'\) = \(activated_at IS NOT NULL\)\)/u)
@@ -125,7 +125,7 @@ assert.match(domainHelper, /throw new HttpError\(404, notFoundCode, notFoundMess
 
 for (const [label, source] of [['get-prospect-dashboard', prospect], ['public-client-dashboard', clientDashboard]]) {
   assert.ok(
-    source.includes('resolveHostWorkspaceId(admin, body.hostname)'),
+    source.includes('resolveHostWorkspaceId(admin, requestHostname(req, body.hostname))'),
     `${label} must resolve the host it was asked on`,
   )
   assert.ok(
@@ -186,5 +186,26 @@ assert.match(portalEmail, /export function portalResetUrl\(token: string, origin
 assert.match(portalEmail, /export function portalLoginUrl\(brandingSlug: string \| null, origin\?: string\)/u)
 assert.match(notify, /await workspaceLinkOrigin\(admin, workspaceId\)/u)
 assert.match(notify, /\/app\/clients\/\$\{input\.clientId\}/u)
+
+// The Origin header is browser-set and cannot be forged by page script, so it
+// wins over anything the caller put in the body.
+assert.match(domainHelper, /export function requestHostname\(req: Request \| undefined, bodyHostname: unknown\)/u)
+assert.match(domainHelper, /const origin = req\?\.headers\?\.get\('origin'\)/u)
+for (const [label, source] of [['get-prospect-dashboard', prospect], ['public-client-dashboard', clientDashboard]]) {
+  assert.ok(
+    source.includes('requestHostname(req, body.hostname)'),
+    `${label} must prefer the Origin header over the body hostname`,
+  )
+  // Each function is its own isolate with its own cache. Warming it anywhere
+  // else does not reach here, and an unwarmed cache CORS-blocks every browser
+  // on a tenant domain — the exact request this feature exists to serve.
+  assert.ok(
+    source.includes('ensureWorkspaceOriginAllowed(admin, req)'),
+    `${label} must warm the tenant CORS allowlist in its own isolate`,
+  )
+}
+// Refresh on staleness, never on a miss: an endpoint anyone can call must not
+// let a varying Origin header drive unlimited database reads.
+assert.match(cors, /const stale = Date\.now\(\) - workspaceOriginsFetchedAt > WORKSPACE_ORIGIN_TTL_MS\n  if \(!stale\) return/u)
 
 process.stdout.write('Workspace domains Edge contract checks passed\n')

@@ -5,13 +5,16 @@
 -- is the one piece of chrome a client cannot help reading. This table is what
 -- lets a workspace answer on its own hostname.
 --
--- A hostname belongs to exactly one workspace, globally. That is not a
--- convenience — it is the whole security model. The public pages authenticate
--- by unguessable slug alone, so once two workspaces can answer on the same
--- host, one agency's client can open another agency's prospect dashboard on a
--- domain that looks like their own. The unique index below is what makes that
--- unrepresentable; the resolved workspace is what the public functions check a
--- slug against.
+-- A hostname belongs to exactly one workspace, globally, and the unique index
+-- below makes a second claim on it unrepresentable rather than merely rejected
+-- by application code.
+--
+-- Be precise about what that buys. The public pages authenticate by unguessable
+-- slug alone, and the slug remains the only credential; this adds no
+-- authorization on top of it. What it gives is that a browser on an agency's
+-- hostname only ever renders that agency's pages, because the Origin a browser
+-- sends cannot be forged by script on the page and resolves to one workspace,
+-- and the public functions refuse a slug belonging to any other.
 --
 -- Rows are written by service-role edge functions only, driven by a platform
 -- administrator. No tenant policy is granted because nothing in the tenant app
@@ -54,10 +57,14 @@ CREATE TABLE public.workspace_domains (
       AND hostname ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'
       AND hostname !~ '\.\.'
     ),
-  -- The platform's own origins are not claimable. A workspace holding
-  -- getonapod.com would inherit its CORS entry and its branding.
+  -- The platform's own domain is not claimable, at the apex or on any
+  -- subdomain. A workspace holding one would inherit the platform's CORS entry
+  -- and answer for it.
   CONSTRAINT workspace_domains_not_platform_origin
-    CHECK (hostname NOT IN ('getonapod.com', 'www.getonapod.com')),
+    CHECK (
+      hostname <> 'getonapod.com'
+      AND hostname NOT LIKE '%.getonapod.com'
+    ),
   CONSTRAINT workspace_domains_status_vocabulary
     CHECK (status IN ('awaiting_dns', 'provisioning', 'active', 'failed', 'disabled')),
   -- Only a serving domain carries an activation date, and only a failed one

@@ -10,7 +10,8 @@ import {
   requireOnlyKeys,
   requireString,
 } from '../_shared/workspaceAuth.ts'
-import { requireServedByHost, resolveHostWorkspaceId } from '../_shared/workspaceDomain.ts'
+import { ensureWorkspaceOriginAllowed } from '../_shared/cors.ts'
+import { requestHostname, requireServedByHost, resolveHostWorkspaceId } from '../_shared/workspaceDomain.ts'
 
 const METHODS = ['POST'] as const
 const DASHBOARD_FIELDS = [
@@ -82,7 +83,8 @@ serve(async (req) => {
     const admin = createAdminClient()
     // Which workspace's domain this was asked for on. Null on the platform
     // origin, where every slug has always been valid.
-    const hostWorkspaceId = await resolveHostWorkspaceId(admin, body.hostname)
+    await ensureWorkspaceOriginAllowed(admin, req)
+    const hostWorkspaceId = await resolveHostWorkspaceId(admin, requestHostname(req, body.hostname))
 
     const { data: dashboard, error: dashboardError } = await admin
       .from('prospect_dashboards')

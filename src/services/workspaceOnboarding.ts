@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { toFunctionError } from '@/lib/functionErrors'
+import { currentHostname } from '@/lib/workspaceHost'
 
 export const onboardingQuestionTypes = [
   'short_text',
@@ -573,7 +574,11 @@ export const purgeOnboardingInstance = (workspaceId: string, instanceId: string)
   instanceAction(workspaceId, instanceId, 'purge', { confirmation: 'PURGE' })
 
 async function clientInvoke<T>(body: Record<string, unknown>, fallback: string): Promise<T> {
-  const { data, error } = await supabase.functions.invoke('client-onboarding', { body })
+  // The hostname the client opened their link on, so the server can refuse an
+  // onboarding belonging to a different workspace than the domain serving it.
+  const { data, error } = await supabase.functions.invoke('client-onboarding', {
+    body: { ...body, hostname: currentHostname() },
+  })
   if (error) throw await toFunctionError(error, fallback)
   return data as T
 }

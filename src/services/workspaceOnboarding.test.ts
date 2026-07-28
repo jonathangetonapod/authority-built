@@ -239,7 +239,8 @@ describe('workspaceOnboarding service', () => {
     await saveClientOnboarding('private-capability', { full_name: 'Casey Client' }, 0, 2)
 
     expect(invoke).toHaveBeenNthCalledWith(1, 'client-onboarding', {
-      body: { action: 'get', token: 'private-capability' },
+      // The hostname the link was opened on travels with every client call.
+      body: { action: 'get', token: 'private-capability', hostname: 'localhost' },
     })
     expect(invoke).toHaveBeenNthCalledWith(2, 'client-onboarding', {
       body: {
@@ -248,6 +249,7 @@ describe('workspaceOnboarding service', () => {
         answers: { full_name: 'Casey Client' },
         current_section: 0,
         expected_lock_version: 2,
+        hostname: 'localhost',
       },
     })
   })

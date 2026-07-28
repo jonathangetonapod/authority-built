@@ -11,6 +11,8 @@ import {
   requireString,
   requireUuid,
 } from '../_shared/workspaceAuth.ts'
+import { ensureWorkspaceOriginAllowed } from '../_shared/cors.ts'
+import { requestHostname, requireServedByHost, resolveHostWorkspaceId } from '../_shared/workspaceDomain.ts'
 import { logOperationCost } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 import {
@@ -282,8 +284,26 @@ serve(async (req) => {
     })
     if (initial.error) clientRpcError(initial.error)
 
+    // Which workspace's domain this was opened on. Null on the platform
+    // origin, where every onboarding link has always worked.
+    await ensureWorkspaceOriginAllowed(admin, req)
+    const hostWorkspaceId = await resolveHostWorkspaceId(admin, requestHostname(req, body.hostname))
+    if (hostWorkspaceId) {
+      const { data: instanceWorkspace } = await admin
+        .from('workspace_onboarding_instances')
+        .select('workspace_id')
+        .eq('id', capability.instanceId)
+        .maybeSingle()
+      requireServedByHost(
+        hostWorkspaceId,
+        typeof instanceWorkspace?.workspace_id === 'string' ? instanceWorkspace.workspace_id : null,
+        'ONBOARDING_NOT_FOUND',
+        'This onboarding link is invalid or unavailable',
+      )
+    }
+
     if (action === 'metadata') {
-      requireOnlyKeys(body, ['action', 'token'])
+      requireOnlyKeys(body, ['action', 'token', 'hostname'])
       const brand = await presentClientBrand(admin, capability.instanceId, initial.data)
       return jsonResponse(req, METHODS, 200, {
         metadata: {
@@ -296,7 +316,7 @@ serve(async (req) => {
     const initialView = await presentClientView(admin, capability.instanceId, initial.data)
 
     if (action === 'get') {
-      requireOnlyKeys(body, ['action', 'token'])
+      requireOnlyKeys(body, ['action', 'token', 'hostname'])
       if (!['expired', 'revoked', 'approved', 'submitted'].includes(String(initialView.status))) {
         validateOnboardingDefinition(initialView.definition)
       }
@@ -313,7 +333,7 @@ serve(async (req) => {
     const assets = assetReferences(initialView.assets)
 
     if (action === 'save') {
-      requireOnlyKeys(body, ['action', 'token', 'answers', 'current_section', 'expected_lock_version'])
+      requireOnlyKeys(body, ['action', 'token', 'hostname', 'answers', 'current_section', 'expected_lock_version'])
       const currentSection = integerValue(body.current_section, 'current_section', 0, definition.sections.length - 1)
       const expectedLock = integerValue(body.expected_lock_version, 'expected_lock_version', 0, Number.MAX_SAFE_INTEGER)
       const answers = validateOnboardingAnswers(definition, body.answers, {
@@ -337,7 +357,7 @@ serve(async (req) => {
     }
 
     if (action === 'submit') {
-      requireOnlyKeys(body, ['action', 'token', 'expected_lock_version'])
+      requireOnlyKeys(body, ['action', 'token', 'hostname', 'expected_lock_version'])
       const expectedLock = integerValue(body.expected_lock_version, 'expected_lock_version', 0, Number.MAX_SAFE_INTEGER)
       const answers = validateOnboardingAnswers(definition, initialView.answers, {
         requireComplete: true,
@@ -405,6 +425,7 @@ serve(async (req) => {
       requireOnlyKeys(body, [
         'action',
         'token',
+        'hostname',
         'question_id',
         'filename',
         'mime_type',
@@ -473,7 +494,7 @@ serve(async (req) => {
     }
 
     if (action === 'delete_upload') {
-      requireOnlyKeys(body, ['action', 'token', 'asset_id', 'expected_lock_version'])
+      requireOnlyKeys(body, ['action', 'token', 'hostname', 'asset_id', 'expected_lock_version'])
       const assetId = requireUuid(body.asset_id, 'asset_id')
       const expectedLock = integerValue(body.expected_lock_version, 'expected_lock_version', 0, Number.MAX_SAFE_INTEGER)
       const deleted = await admin.rpc('workspace_onboarding_client_operation_v1', {

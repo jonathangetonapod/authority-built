@@ -22,6 +22,18 @@ vi.mock('@/services/workspaceUsers', () => ({
   rotateManualWorkspacePassword: vi.fn(),
   updateWorkspaceUserStatus: vi.fn(),
 }))
+vi.mock('@/services/adminWorkspaces', () => ({
+  listAdminWorkspaces: vi.fn().mockResolvedValue([
+    { id: '11111111-1111-4111-8111-111111111111', name: 'Acme Agency' },
+  ]),
+}))
+vi.mock('@/services/workspaceDomains', () => ({
+  listWorkspaceDomains: vi.fn().mockResolvedValue([]),
+  addWorkspaceDomain: vi.fn(),
+  refreshWorkspaceDomain: vi.fn(),
+  setPrimaryWorkspaceDomain: vi.fn(),
+  removeWorkspaceDomain: vi.fn(),
+}))
 vi.mock('@/services/workspaceStaff', () => ({
   resetWorkspaceStaffTemporaryPassword: vi.fn(),
 }))
