@@ -27,6 +27,7 @@ const expectedNavigation = [
   'Relationships',
   'Master Inbox',
   'Mailboxes',
+  'Billing & credits',
   'Settings',
 ]
 
@@ -57,6 +58,27 @@ describe('WorkspaceLayout', () => {
     } as never)
   })
 
+  it('puts buying credits one click away, not behind a settings sub-page', () => {
+    renderLayout()
+
+    const navigation = screen.getByRole('navigation', { name: 'Workspace navigation' })
+    expect(within(navigation).getByRole('link', { name: 'Billing & credits' }))
+      .toHaveAttribute('href', '/app/settings/billing')
+  })
+
+  it('drops billing while a platform admin is viewing somebody else\'s workspace', () => {
+    renderLayout({
+      baseHref: `/app/workspaces/${workspaceId}`,
+      workspaceName: 'Acme Workspace',
+      logoUrl: null,
+    } as never)
+
+    const navigation = screen.getByRole('navigation', { name: 'Workspace navigation' })
+    // That route is not workspace-scoped, so showing it would link to a page
+    // that does not exist for the workspace being viewed.
+    expect(within(navigation).queryByRole('link', { name: 'Billing & credits' })).toBeNull()
+  })
+
   it('matches the complete navigation order and enables settings for an owner', () => {
     renderLayout()
 
@@ -68,7 +90,7 @@ describe('WorkspaceLayout', () => {
     expect(labels).toEqual(expectedNavigation)
 
     const links = within(navigation).getAllByRole('link')
-    expect(links).toHaveLength(11)
+    expect(links).toHaveLength(12)
     expect(within(navigation).getByRole('link', { name: 'Settings' })).toHaveAttribute(
       'href',
       '/app/settings',

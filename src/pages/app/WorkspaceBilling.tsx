@@ -38,16 +38,28 @@ function formatShortDate(value: string | null): string {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(value))
 }
 
+// How long a purchased balance is given to arrive before the page stops
+// claiming it is on its way. The webhook is normally seconds; a minute means
+// something is wrong with it rather than slow.
+const CREDIT_ARRIVAL_TIMEOUT_MS = 60_000
+
 const WorkspaceBilling = () => {
   const { canManageWorkspaceStaff, isPlatformAdmin, user, workspace } = useAuth()
   const workspaceId = workspace?.id || ''
   const [searchParams, setSearchParams] = useSearchParams()
   const [checkoutPack, setCheckoutPack] = useState<string | null>(null)
+  const [awaitingCredits, setAwaitingCredits] = useState(false)
+  const [balanceBeforeCheckout, setBalanceBeforeCheckout] = useState<number | null>(null)
   useEffect(() => {
     const outcome = searchParams.get('checkout')
     if (!outcome) return
     if (outcome === 'success') {
       toast.success('Payment received — your credits will appear within a minute.')
+      // Credits are granted by the Stripe webhook, not by the redirect. If the
+      // webhook is not wired up the payment still succeeds and the balance
+      // never moves, so this watches for it rather than leaving the operator
+      // to notice on their own.
+      setAwaitingCredits(true)
     } else if (outcome === 'cancelled') {
       toast.info('Checkout cancelled. No charge was made.')
     }
@@ -73,9 +85,28 @@ const WorkspaceBilling = () => {
     queryFn: () => getWorkspaceBillingOverview(workspaceId),
     enabled: Boolean(workspaceId) && (canManageWorkspaceStaff || isPlatformAdmin),
     retry: false,
-    staleTime: 30_000,
+    // While a purchase is landing, ask again until it does.
+    refetchInterval: awaitingCredits ? 4_000 : false,
+    staleTime: awaitingCredits ? 0 : 30_000,
   })
   const overview = overviewQuery.data
+
+  const balance = overview?.balance ?? null
+  useEffect(() => {
+    if (!awaitingCredits || balance === null) return
+    if (balanceBeforeCheckout === null) {
+      setBalanceBeforeCheckout(balance)
+      return
+    }
+    if (balance > balanceBeforeCheckout) {
+      setAwaitingCredits(false)
+      setBalanceBeforeCheckout(null)
+      toast.success('Credits added to your balance.')
+      return
+    }
+    const timer = window.setTimeout(() => setAwaitingCredits(false), CREDIT_ARRIVAL_TIMEOUT_MS)
+    return () => window.clearTimeout(timer)
+  }, [awaitingCredits, balance, balanceBeforeCheckout])
 
   if (!canManageWorkspaceStaff && !isPlatformAdmin) return <Navigate to="/app/clients" replace />
 
@@ -131,6 +162,17 @@ const WorkspaceBilling = () => {
                 </CardContent>
               </Card>
             </div>
+
+            {awaitingCredits && (
+              <div role="status" className="flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
+                <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
+                <span>
+                  <span className="font-semibold">Waiting for your credits.</span> Stripe confirms the payment to us
+                  separately from this page. If the balance above has not moved in a minute, the payment went through
+                  but the credits did not — contact support rather than paying again.
+                </span>
+              </div>
+            )}
 
             <Card>
               <CardHeader className="pb-3">

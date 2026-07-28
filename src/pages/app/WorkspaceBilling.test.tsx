@@ -8,7 +8,7 @@ import WorkspaceBilling from '@/pages/app/WorkspaceBilling'
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('@/components/workspace/WorkspaceLayout', () => ({ WorkspaceLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }))
-vi.mock('sonner', () => ({ toast: { info: vi.fn() } }))
+vi.mock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/services/workspaceStaff', () => ({ getWorkspaceBillingOverview: vi.fn() }))
 
 const mockedUseAuth = vi.mocked(useAuth)
@@ -37,11 +37,11 @@ const Location = () => {
   return <div data-testid="location">{location.pathname}</div>
 }
 
-function renderPage() {
+function renderPage(path = '/app/settings/billing') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={queryClient}>
-    <MemoryRouter initialEntries={['/app/settings/billing']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter initialEntries={[path]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
         <Route path="/app/settings/billing" element={<WorkspaceBilling />} />
         <Route path="/app/clients" element={<Location />} />
@@ -53,6 +53,22 @@ function renderPage() {
 
 describe('WorkspaceBilling', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('waits for the credits to actually land, and says what it means if they do not', async () => {
+    mockedUseAuth.mockReturnValue({
+      isPlatformAdmin: false,
+      canManageWorkspaceStaff: true,
+      user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+      workspace: { id: '11111111-1111-4111-8111-111111111111' },
+    } as never)
+    mockedOverview.mockResolvedValue(overviewFixture as never)
+    renderPage('/app/settings/billing?checkout=success')
+
+    // Stripe redirects here; the credits are granted by the webhook, which is
+    // a separate thing that can be missing while the payment still succeeds.
+    expect(await screen.findByText(/Waiting for your credits/)).toBeInTheDocument()
+    expect(screen.getByText(/the payment went through but the credits did not/i)).toBeInTheDocument()
+  })
 
   it('advertises only the packs the server will actually charge', async () => {
     mockedUseAuth.mockReturnValue({

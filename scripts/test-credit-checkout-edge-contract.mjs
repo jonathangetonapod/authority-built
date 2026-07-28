@@ -62,3 +62,25 @@ for (const pack of serverPacks) {
 // And nothing may advertise a price the server cannot honour.
 assert.doesNotMatch(billingPage, /Secure checkout will be connected/u)
 assert.doesNotMatch(billingPage, /waterfallCreditPacks/u)
+
+// The purchase chain, end to end: a session is created here, the credits are
+// granted by the webhook, and the page waits for that rather than assuming it.
+const creditWebhook = readFileSync('supabase/functions/stripe-credit-webhook/index.ts', 'utf8')
+const workspaceLayout = readFileSync('src/components/workspace/WorkspaceLayout.tsx', 'utf8')
+
+// Only a signed, completed session may grant credits, and only once.
+assert.match(creditWebhook, /STRIPE_CREDIT_WEBHOOK_SECRET/u)
+assert.match(creditWebhook, /event\.type !== 'checkout\.session\.completed'/u)
+assert.match(creditWebhook, /grant_workspace_credits_v1/u)
+assert.match(creditWebhook, /p_idempotency_key/u)
+
+// Buying credits is reachable from the main navigation, not only from inside
+// a settings sub-page.
+assert.match(workspaceLayout, /id: 'billing', name: 'Billing & credits', segment: 'settings\/billing'/u)
+assert.match(workspaceLayout, /item\.id !== 'billing'/u)
+
+// A payment can succeed while the webhook never lands, which leaves a paid
+// balance that never moves. Saying so beats letting somebody pay twice.
+assert.match(billingPage, /setAwaitingCredits\(true\)/u)
+assert.match(billingPage, /refetchInterval: awaitingCredits/u)
+assert.match(billingPage, /the payment went through/u)

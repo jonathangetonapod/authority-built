@@ -32,6 +32,7 @@ import {
   Megaphone,
   Menu,
   Search,
+  CreditCard,
   Settings,
   Share2,
   User,
@@ -67,6 +68,11 @@ const workspaceNavItems: WorkspaceNavItem[] = [
   { id: 'relationships', name: 'Relationships', segment: 'relationships', icon: BookUser, enabled: true },
   { id: 'unibox', name: 'Master Inbox', segment: 'master-inbox', icon: Inbox, enabled: true },
   { id: 'mailboxes', name: 'Mailboxes', segment: 'mailboxes', icon: Mailbox, enabled: true },
+  // Billing sits in the main navigation rather than only inside Settings:
+  // "where do I buy credits" should not require knowing that credits live
+  // under a settings sub-page. Owner/admin only, and hidden when a platform
+  // admin is viewing a tenant, because that route is not workspace-scoped.
+  { id: 'billing', name: 'Billing & credits', segment: 'settings/billing', icon: CreditCard, enabled: false },
   { id: 'settings', name: 'Settings', segment: 'settings', icon: Settings, enabled: false },
 ]
 
@@ -321,6 +327,11 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
   const [isOrganizing, setIsOrganizing] = useState(false)
   const navigationRef = useRef<HTMLElement>(null)
   const isDefaultNavOrder = navItems.every((item, index) => item.id === workspaceNavItems[index]?.id)
+  // Billing is not workspace-scoped, so it is dropped rather than shown broken
+  // while a platform admin is looking at somebody else's workspace.
+  const visibleNavItems = platformWorkspace
+    ? navItems.filter((item) => item.id !== 'billing')
+    : navItems
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -513,15 +524,17 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
               <p className="mb-2 px-1 text-xs text-muted-foreground">Drag pages into your preferred order. Changes save automatically.</p>
             )}
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={navItems.map((item) => item.id)} strategy={verticalListSortingStrategy}>
+              <SortableContext items={visibleNavItems.map((item) => item.id)} strategy={verticalListSortingStrategy}>
                 <ul className="space-y-1">
-                  {navItems.map((item) => {
+                  {visibleNavItems.map((item) => {
                     const href = `${baseHref}/${item.segment}`
                     const isActive = location.pathname === href || location.pathname.startsWith(`${href}/`)
                     const isSettings = item.id === 'settings'
-                    const itemEnabled = isSettings
-                      ? Boolean(isPlatformAdmin || platformWorkspace || membership?.role === 'owner' || membership?.role === 'admin')
-                      : item.enabled
+                    const isBilling = item.id === 'billing'
+                    const managesWorkspace = Boolean(
+                      isPlatformAdmin || platformWorkspace || membership?.role === 'owner' || membership?.role === 'admin',
+                    )
+                    const itemEnabled = isSettings || isBilling ? managesWorkspace : item.enabled
 
                     return (
                       <SortableWorkspaceNavItem
@@ -531,7 +544,7 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
                         isActive={isActive}
                         isEnabled={itemEnabled}
                         isOrganizing={isOrganizing}
-                        restrictedLabel={isSettings ? 'Owner/Admin' : 'Soon'}
+                        restrictedLabel={isSettings || isBilling ? 'Owner/Admin' : 'Soon'}
                         onNavigate={handleSidebarNavigate}
                       />
                     )
