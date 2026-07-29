@@ -69,12 +69,14 @@ export function detectVariableTrigger(value: string, caret: number): VariableTri
 export function filterPromptVariables(
   query: string,
   limit = Number.POSITIVE_INFINITY,
+  extra: readonly PromptVariable[] = [],
 ): PromptVariable[] {
+  const all = extra.length > 0 ? [...PROMPT_VARIABLES, ...extra] : PROMPT_VARIABLES
   const needle = query.trim().toLowerCase()
-  if (needle === '') return PROMPT_VARIABLES.slice(0, limit)
+  if (needle === '') return all.slice(0, limit)
 
   const ranked: Array<{ variable: PromptVariable; rank: number; index: number }> = []
-  PROMPT_VARIABLES.forEach((variable, index) => {
+  all.forEach((variable, index) => {
     const id = variable.id.toLowerCase()
     const label = variable.label.toLowerCase()
     const rank = id.startsWith(needle) ? 0 : id.includes(needle) ? 1 : label.includes(needle) ? 2 : -1
@@ -115,12 +117,21 @@ export function groupPromptVariableMatches(
  * `{{placeholders}}` as prose about placeholders, and the filler already
  * leaves those alone.
  */
-export function referencedPromptVariables(content: string): string[] {
+export function referencedPromptVariables(
+  content: string,
+  extra: readonly PromptVariable[] = [],
+): string[] {
   const named = new Set<string>()
   for (const match of content.matchAll(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/gu)) {
     named.add(match[1])
   }
-  return PROMPT_VARIABLES.filter((variable) => named.has(variable.id)).map((variable) => variable.id)
+  const all = extra.length > 0 ? [...PROMPT_VARIABLES, ...extra] : PROMPT_VARIABLES
+  return all.filter((variable) => named.has(variable.id)).map((variable) => variable.id)
+}
+
+/** Whether an id names a field the run already provides. */
+export function isRegistryVariable(id: string): boolean {
+  return PROMPT_VARIABLES.some((variable) => variable.id === id)
 }
 
 /**

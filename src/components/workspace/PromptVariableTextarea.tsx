@@ -3,7 +3,7 @@ import { Braces } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
-import { PROMPT_VARIABLES } from '@/lib/promptVariables'
+import { PROMPT_VARIABLES, type PromptVariable } from '@/lib/promptVariables'
 import {
   applyVariableTrigger,
   detectVariableTrigger,
@@ -26,6 +26,8 @@ interface PromptVariableTextareaProps {
   readOnly?: boolean
   className?: string
   maxLength?: number
+  /** Fields earlier stages declare they return, offered alongside the registry. */
+  extraVariables?: PromptVariable[]
 }
 
 /**
@@ -45,6 +47,7 @@ export const PromptVariableTextarea = ({
   readOnly,
   className,
   maxLength,
+  extraVariables,
 }: PromptVariableTextareaProps) => {
   const fieldRef = useRef<HTMLTextAreaElement | null>(null)
   const [trigger, setTrigger] = useState<VariableTrigger | null>(null)
@@ -55,8 +58,8 @@ export const PromptVariableTextarea = ({
 
   const editable = !disabled && !readOnly
   const matches = useMemo(
-    () => (trigger ? filterPromptVariables(trigger.query) : []),
-    [trigger],
+    () => (trigger ? filterPromptVariables(trigger.query, undefined, extraVariables ?? []) : []),
+    [trigger, extraVariables],
   )
   // Ranking decides the order the arrow keys walk; the groups are headings over
   // that order, so what the eye scans and what Enter picks stay the same list.

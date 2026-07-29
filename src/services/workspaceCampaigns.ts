@@ -628,6 +628,66 @@ export async function resetClientPromptRequirements(
   if (data?.success !== true) throw new Error('The field requirements could not be reset.')
 }
 
+/** A field a stage declares it returns, usable by the stages after it. */
+export interface PromptOutputField {
+  id: string
+  label: string
+  description: string
+  type: 'text' | 'list'
+}
+
+export type PromptOutputs = Record<string, PromptOutputField[]>
+
+export async function getWorkspacePromptOutputs(workspaceId: string): Promise<PromptOutputs> {
+  const data = await invokeWorkspaceCampaigns<{ outputs?: PromptOutputs }>({
+    action: 'prompt-outputs-get',
+    workspace_id: workspaceId,
+  }, 'Stage outputs could not be loaded.')
+  return data.outputs ?? {}
+}
+
+export async function setWorkspacePromptOutputs(
+  workspaceId: string,
+  promptId: string,
+  outputFields: PromptOutputField[],
+): Promise<void> {
+  const data = await invokeWorkspaceCampaigns<{ success?: boolean }>({
+    action: 'prompt-outputs-set',
+    workspace_id: workspaceId,
+    prompt_id: promptId,
+    output_fields: outputFields,
+  }, 'The stage outputs could not be saved.')
+  if (data?.success !== true) throw new Error('The stage outputs could not be saved.')
+}
+
+export async function getClientPromptOutputs(
+  workspaceId: string,
+  clientId: string,
+): Promise<PromptOutputs> {
+  const data = await invokeWorkspaceCampaigns<{ outputs?: PromptOutputs }>({
+    action: 'client-prompt-outputs-get',
+    workspace_id: workspaceId,
+    client_id: clientId,
+  }, 'Stage outputs could not be loaded.')
+  return data.outputs ?? {}
+}
+
+export async function setClientPromptOutputs(
+  workspaceId: string,
+  clientId: string,
+  promptId: string,
+  outputFields: PromptOutputField[],
+): Promise<void> {
+  const data = await invokeWorkspaceCampaigns<{ success?: boolean }>({
+    action: 'client-prompt-outputs-set',
+    workspace_id: workspaceId,
+    client_id: clientId,
+    prompt_id: promptId,
+    output_fields: outputFields,
+  }, 'The stage outputs could not be saved.')
+  if (data?.success !== true) throw new Error('The stage outputs could not be saved.')
+}
+
 export async function resetWorkspaceResearchPrompt(
   workspaceId: string,
   promptId: string,
