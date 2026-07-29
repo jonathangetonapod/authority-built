@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronUp, Loader2, MessageSquareText, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -6,8 +6,7 @@ import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Textarea } from '@/components/ui/textarea'
-import { PromptVariablePalette } from './PromptVariablePalette'
+import { PromptVariableTextarea } from './PromptVariableTextarea'
 import { RESEARCH_PROMPT_DEFAULTS_BY_ID, type ResearchPromptId } from '@/lib/researchPromptDefaults'
 import {
   getClientSdrPrompts,
@@ -92,28 +91,7 @@ export const ClientSdrPromptsCard = ({
   const queryClient = useQueryClient()
   const [drafts, setDrafts] = useState<Partial<Record<ResearchPromptId, string>>>({})
   const [expanded, setExpanded] = useState<ResearchPromptId | null>(null)
-  const fieldRefs = useRef<Partial<Record<ResearchPromptId, HTMLTextAreaElement | null>>>({})
   const promptsKey = ['client-sdr-prompts', workspaceId, clientId] as const
-
-  // Click-to-insert at the caret, so building a prompt from fields reads like
-  // typing rather than copying tokens out of a list.
-  const insertVariable = (id: ResearchPromptId, token: string) => {
-    const field = fieldRefs.current[id] ?? null
-    const current = drafts[id] ?? ''
-    const start = field?.selectionStart ?? current.length
-    const end = field?.selectionEnd ?? current.length
-    const before = current.slice(0, start)
-    const after = current.slice(end)
-    const lead = before && !/\s$/u.test(before) ? ' ' : ''
-    const trail = after && !/^\s/u.test(after) ? ' ' : ''
-    const inserted = `${lead}${token}${trail}`
-    const caret = start + inserted.length
-    setDrafts((currentDrafts) => ({ ...currentDrafts, [id]: `${before}${inserted}${after}` }))
-    requestAnimationFrame(() => {
-      field?.focus()
-      field?.setSelectionRange(caret, caret)
-    })
-  }
 
   const promptsQuery = useQuery({
     queryKey: promptsKey,
@@ -228,17 +206,12 @@ export const ClientSdrPromptsCard = ({
                       </div>
                     </div>
                     {open && (
-                      <div className="space-y-3 border-t p-3.5">
-                        <PromptVariablePalette
-                          disabled={!canManage}
-                          onInsert={(token) => insertVariable(prompt.id, token)}
-                        />
-                        <Textarea
-                          ref={(node) => { fieldRefs.current[prompt.id] = node }}
+                      <div className="border-t p-3.5">
+                        <PromptVariableTextarea
                           value={value}
                           readOnly={!canManage}
-                          aria-label={`${prompt.title} for ${clientName}`}
-                          onChange={(event) => setDrafts((current) => ({ ...current, [prompt.id]: event.target.value }))}
+                          ariaLabel={`${prompt.title} for ${clientName}`}
+                          onChange={(next) => setDrafts((current) => ({ ...current, [prompt.id]: next }))}
                           className="min-h-52 font-mono text-xs leading-5"
                           maxLength={20_000}
                         />

@@ -66,7 +66,7 @@ import {
   resetWorkspaceResearchPrompt,
   setWorkspaceResearchPrompt,
 } from '@/services/workspaceCampaigns'
-import { PromptVariablePalette } from './PromptVariablePalette'
+import { PromptVariableTextarea } from './PromptVariableTextarea'
 import {
   RESEARCH_PROMPT_DEFAULTS,
   RESEARCH_PROMPT_DEFAULTS_BY_ID,
@@ -155,23 +155,6 @@ const emailUnlockSteps: EmailUnlockStep[] = [
 
 function promptVariables(content: string): string[] {
   return Array.from(new Set(Array.from(content.matchAll(/\{\{\s*([a-z_]+)\s*\}\}/gu), (match) => match[1])))
-}
-
-/** Inserts a token at the caret, replacing any selection, like Clay's columns. */
-function spliceAtCaret(field: HTMLTextAreaElement | null, value: string, token: string): {
-  next: string
-  caret: number
-} {
-  const start = field?.selectionStart ?? value.length
-  const end = field?.selectionEnd ?? value.length
-  // A token dropped straight against a word is unreadable; pad only where the
-  // neighbouring character is not already whitespace.
-  const before = value.slice(0, start)
-  const after = value.slice(end)
-  const lead = before && !/\s$/u.test(before) ? ' ' : ''
-  const trail = after && !/^\s/u.test(after) ? ' ' : ''
-  const inserted = `${lead}${token}${trail}`
-  return { next: `${before}${inserted}${after}`, caret: start + inserted.length }
 }
 
 function emptyDraft(): PodcastCampaignSequenceDraft {
@@ -382,7 +365,6 @@ export function ClientCampaignPrepDialog({
   const [showPodcastDetails, setShowPodcastDetails] = useState(false)
   const [showResearchSteps, setShowResearchSteps] = useState(false)
   const [showPromptSettings, setShowPromptSettings] = useState(false)
-  const promptFieldRef = useRef<HTMLTextAreaElement | null>(null)
   const [selectedPromptId, setSelectedPromptId] = useState<ResearchPromptId>('podcast_research')
   const [promptDraft, setPromptDraft] = useState(RESEARCH_PROMPT_DEFAULTS_BY_ID.podcast_research.content)
   const [promptTouched, setPromptTouched] = useState(false)
@@ -603,19 +585,6 @@ export function ClientCampaignPrepDialog({
   const selectedPromptCustomized = Boolean(promptOverrides[selectedPromptId])
   const promptDirty = promptDraft !== effectivePromptContent(selectedPromptId)
   const customPromptCount = RESEARCH_PROMPT_DEFAULTS.filter((prompt) => promptOverrides[prompt.id]).length
-
-  const insertPromptVariable = (token: string) => {
-    const field = promptFieldRef.current
-    const { next, caret } = spliceAtCaret(field, promptDraft, token)
-    setPromptTouched(true)
-    setPromptDraft(next)
-    // Restore focus and put the caret after the token, so a run of inserts
-    // reads like typing rather than each one jumping back to the end.
-    requestAnimationFrame(() => {
-      field?.focus()
-      field?.setSelectionRange(caret, caret)
-    })
-  }
 
   const savePromptMutation = useMutation({
     mutationFn: ({ promptId, content }: { promptId: ResearchPromptId; content: string }) =>
@@ -1588,19 +1557,14 @@ export function ClientCampaignPrepDialog({
                               </div>
                               <div className="mt-4 space-y-2">
                                 <Label htmlFor="campaign-research-stage-prompt">Prompt instructions</Label>
-                                <Textarea
+                                <PromptVariableTextarea
                                   id="campaign-research-stage-prompt"
-                                  ref={promptFieldRef}
-                                  aria-label={`Prompt for ${selectedPromptDefault.label}`}
+                                  ariaLabel={`Prompt for ${selectedPromptDefault.label}`}
                                   value={promptDraft}
-                                  onChange={(event) => { setPromptTouched(true); setPromptDraft(event.target.value) }}
+                                  onChange={(next) => { setPromptTouched(true); setPromptDraft(next) }}
                                   disabled={promptBusy || promptOverridesQuery.isLoading}
                                   className="min-h-48 resize-y bg-background font-mono text-xs leading-5"
                                   maxLength={20_000}
-                                />
-                                <PromptVariablePalette
-                                  disabled={promptBusy || promptOverridesQuery.isLoading}
-                                  onInsert={insertPromptVariable}
                                 />
                               </div>
                               <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">

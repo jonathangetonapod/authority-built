@@ -6,19 +6,21 @@ import { PROMPT_VARIABLE_GROUPS, PROMPT_VARIABLES } from '@/lib/promptVariables'
 interface PromptVariablePaletteProps {
   /** Inserts the token at the caret in the prompt being edited. */
   onInsert: (token: string) => void
-  disabled?: boolean
 }
 
 /**
- * The field list for prompt authoring: every variable the run holds, grouped
- * and searchable, inserted at the caret on click.
+ * The browsable field list: every variable the run holds, grouped and
+ * searchable, inserted at the caret on click.
  *
  * The editor used to print whichever variables the shipped default happened to
  * mention, so an owner rewriting a stage could not discover a field that was
  * already loaded and waiting. The registry is the list, and every stage is
  * filled from it.
+ *
+ * This is now the browse view behind a popover — typing `/` or `{{` in the
+ * field is the fast path. See PromptVariableTextarea.
  */
-export const PromptVariablePalette = ({ onInsert, disabled }: PromptVariablePaletteProps) => {
+export const PromptVariablePalette = ({ onInsert }: PromptVariablePaletteProps) => {
   const [query, setQuery] = useState('')
 
   const groups = useMemo(() => {
@@ -37,7 +39,7 @@ export const PromptVariablePalette = ({ onInsert, disabled }: PromptVariablePale
   const total = groups.reduce((count, group) => count + group.variables.length, 0)
 
   return (
-    <div className="rounded-lg border bg-muted/20">
+    <div className="rounded-lg">
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         <Input
@@ -69,13 +71,14 @@ export const PromptVariablePalette = ({ onInsert, disabled }: PromptVariablePale
                 <li key={variable.id}>
                   <button
                     type="button"
-                    disabled={disabled}
+                    // The field must not lose focus before the token lands.
+                    onMouseDown={(event) => event.preventDefault()}
                     title={variable.producedBy
                       ? `${variable.label} — written by the ${variable.producedBy} stage`
                       : variable.label}
                     aria-label={`Insert ${variable.label}`}
                     onClick={() => onInsert(`{{${variable.id}}}`)}
-                    className="rounded border bg-background px-1.5 py-0.5 font-mono text-[11px] leading-4 transition-colors hover:border-violet-400 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded border bg-background px-1.5 py-0.5 font-mono text-[11px] leading-4 transition-colors hover:border-violet-400 hover:bg-violet-50"
                   >
                     {variable.id}
                   </button>

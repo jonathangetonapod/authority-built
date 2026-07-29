@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ClientShortlistEditor } from '@/components/workspace/ClientShortlistEditor'
+import { PROMPT_VARIABLES } from '@/lib/promptVariables'
 import {
   addClientShortlistPodcasts,
   ensureClientShortlistEpisodes,
@@ -552,13 +553,22 @@ describe('ClientShortlistEditor', () => {
     expect((prompt as HTMLTextAreaElement).value).toContain('{{client_name}}')
     expect((prompt as HTMLTextAreaElement).value).toContain('HOST INFORMATION')
 
-    // The field palette offers every registry variable, not just the ones the
-    // shipped default happens to mention, and inserts at the caret.
-    const palette = within(promptSettings.getByLabelText('Search prompt variables').closest('div')!.parentElement!)
+    // The registry is reachable from inside the field now, so the editor rests
+    // as one line of hint text instead of a wall of 81 chips. Browsing the full
+    // grouped list is one click away, and still offers every registry variable
+    // rather than the ones the shipped default happens to mention.
+    expect(promptSettings.queryByLabelText('Search prompt variables')).not.toBeInTheDocument()
+    fireEvent.click(promptSettings.getByRole('button', { name: `Browse ${PROMPT_VARIABLES.length} fields` }))
     fireEvent.change(prompt, { target: { value: 'Ground this in' } })
     ;(prompt as HTMLTextAreaElement).setSelectionRange(14, 14)
-    fireEvent.click(palette.getByRole('button', { name: 'Insert Audience size' }))
-    expect((prompt as HTMLTextAreaElement).value).toBe('Ground this in {{audience_size}}')
+    fireEvent.click(await screen.findByRole('button', { name: 'Insert Audience size' }))
+    await waitFor(() => expect((prompt as HTMLTextAreaElement).value).toBe('Ground this in {{audience_size}}'))
+
+    // And typing a slash summons the same registry at the caret.
+    fireEvent.change(prompt, { target: { value: 'Then /guest' } })
+    const menu = within(await screen.findByRole('listbox', { name: 'Matching fields' }))
+    fireEvent.click(menu.getByRole('option', { name: /guest_report/ }))
+    await waitFor(() => expect((prompt as HTMLTextAreaElement).value).toBe('Then {{guest_report}}'))
 
     fireEvent.change(prompt, { target: { value: 'Use {{podcast_name}} to create a concise workspace-specific show brief.' } })
     expect(promptSettings.getByRole('button', { name: 'Save prompt' })).toBeEnabled()

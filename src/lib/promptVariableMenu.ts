@@ -1,0 +1,160 @@
+import { PROMPT_VARIABLES, type PromptVariable } from '@/lib/promptVariables'
+
+/**
+ * Inline field insertion for the prompt editors.
+ *
+ * The picker used to be a permanently open wall of 81 chips sitting above a
+ * textarea half its height. The list is now summoned at the caret instead: the
+ * resting state is a single line, and finding a field is typing rather than
+ * scanning.
+ */
+
+export type VariableTriggerKind = 'slash' | 'braces'
+
+export interface VariableTrigger {
+  /** Index of the first trigger character in the value. */
+  start: number
+  /** What has been typed after the trigger characters. */
+  query: string
+  kind: VariableTriggerKind
+}
+
+/**
+ * A slash only opens the menu at the start of a word. The shipped prompts are
+ * full of `Bio/Expertise:`, `[Yes/No`, `role/title/company` and `https://`,
+ * none of which put a slash after whitespace — so none of them summon it.
+ */
+const SLASH_TRIGGER = /(?:^|[\s(["'>])\/([A-Za-z0-9_]*)$/u
+
+/** `{{` is the token syntax itself, so it can never collide with prose. */
+const BRACE_TRIGGER = /\{\{[ \t]?([A-Za-z0-9_]*)$/u
+
+/** Reads the text behind the caret and reports an open field menu, if any. */
+export function detectVariableTrigger(value: string, caret: number): VariableTrigger | null {
+  const before = value.slice(0, Math.max(0, Math.min(caret, value.length)))
+
+  const braces = BRACE_TRIGGER.exec(before)
+  if (braces) {
+    return { start: braces.index, query: braces[1], kind: 'braces' }
+  }
+
+  const slash = SLASH_TRIGGER.exec(before)
+  if (slash) {
+    // slash[0] carries the boundary character; the trigger itself starts at the
+    // slash, so the boundary is left in place when the token replaces it.
+    return {
+      start: slash.index + slash[0].length - slash[1].length - 1,
+      query: slash[1],
+      kind: 'slash',
+    }
+  }
+
+  return null
+}
+
+/**
+ * Fields matching the typed query, best first: an id that starts with it, then
+ * an id that contains it, then a label that does. Ties keep registry order, so
+ * an empty query lists the registry as written.
+ */
+export function filterPromptVariables(query: string, limit = 8): PromptVariable[] {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') return PROMPT_VARIABLES.slice(0, limit)
+
+  const ranked: Array<{ variable: PromptVariable; rank: number; index: number }> = []
+  PROMPT_VARIABLES.forEach((variable, index) => {
+    const id = variable.id.toLowerCase()
+    const label = variable.label.toLowerCase()
+    const rank = id.startsWith(needle) ? 0 : id.includes(needle) ? 1 : label.includes(needle) ? 2 : -1
+    if (rank >= 0) ranked.push({ variable, rank, index })
+  })
+
+  return ranked
+    .sort((a, b) => (a.rank === b.rank ? a.index - b.index : a.rank - b.rank))
+    .slice(0, limit)
+    .map((entry) => entry.variable)
+}
+
+export function countPromptVariableMatches(query: string): number {
+  return filterPromptVariables(query, PROMPT_VARIABLES.length).length
+}
+
+/** Replaces the trigger text with the token, leaving the caret after it. */
+export function applyVariableTrigger(
+  value: string,
+  trigger: VariableTrigger,
+  caret: number,
+  id: string,
+): { next: string; caret: number } {
+  const token = `{{${id}}}`
+  const before = value.slice(0, trigger.start)
+  const after = value.slice(caret)
+  const lead = before && !/\s$/u.test(before) ? ' ' : ''
+  return {
+    next: `${before}${lead}${token}${after}`,
+    caret: before.length + lead.length + token.length,
+  }
+}
+
+/**
+ * Inserts a token at the caret, replacing any selection, like Clay's columns.
+ * A token dropped straight against a word is unreadable, so pad only where the
+ * neighbouring character is not already whitespace.
+ */
+export function spliceAtCaret(
+  value: string,
+  start: number,
+  end: number,
+  token: string,
+): { next: string; caret: number } {
+  const before = value.slice(0, start)
+  const after = value.slice(end)
+  const lead = before && !/\s$/u.test(before) ? ' ' : ''
+  const trail = after && !/^\s/u.test(after) ? ' ' : ''
+  const inserted = `${lead}${token}${trail}`
+  return { next: `${before}${inserted}${after}`, caret: start + inserted.length }
+}
+
+const MIRRORED_STYLES = [
+  'boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+  'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+  'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing',
+  'lineHeight', 'textTransform', 'textIndent', 'wordSpacing',
+] as const
+
+/**
+ * Where the caret sits inside a textarea, relative to its top-left padding box.
+ *
+ * A textarea exposes no caret coordinates, so the text up to the caret is laid
+ * out in a hidden clone of the field and the marker span is measured. Returns
+ * the origin under jsdom, where nothing has a layout — the menu still renders.
+ */
+export function measureCaret(field: HTMLTextAreaElement, index: number): { top: number; left: number } {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return { top: 0, left: 0 }
+
+  const computed = window.getComputedStyle(field)
+  const mirror = document.createElement('div')
+  MIRRORED_STYLES.forEach((property) => {
+    mirror.style[property] = computed[property]
+  })
+  mirror.style.position = 'absolute'
+  mirror.style.top = '0'
+  mirror.style.left = '-9999px'
+  mirror.style.visibility = 'hidden'
+  mirror.style.whiteSpace = 'pre-wrap'
+  mirror.style.overflowWrap = 'break-word'
+  mirror.style.height = 'auto'
+
+  mirror.textContent = field.value.slice(0, index)
+  const marker = document.createElement('span')
+  // A zero-width marker collapses; the following character gives it a box.
+  marker.textContent = field.value.slice(index) || '.'
+  mirror.appendChild(marker)
+
+  document.body.appendChild(mirror)
+  const top = marker.offsetTop - field.scrollTop
+  const left = marker.offsetLeft - field.scrollLeft
+  document.body.removeChild(mirror)
+
+  return { top, left }
+}
