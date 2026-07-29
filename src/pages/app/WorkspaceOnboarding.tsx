@@ -741,12 +741,14 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
             <DialogDescription>Choose the client and personalize the exact branded experience they will receive.</DialogDescription>
           </DialogHeader>
 
-          {/* The preview column carried a hard 440px floor from the lg
-              breakpoint up. At 1024–1280px that floor plus the form column
-              exceeded the dialog, and the dialog scrolls vertically only, so
-              the excess simply spilled. Both tracks shrink now. */}
-          <div className="grid min-h-0 flex-1 gap-6 overflow-y-auto px-6 py-5 lg:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]">
-            <div className="min-w-0 space-y-6">
+          {/* Side by side, the two columns have nothing to do with each other's
+              height: the form is as tall as its fields, the preview as tall as
+              the experience it renders. Sharing one scroll meant the shorter one
+              left a long white run beside the taller. Each column scrolls itself
+              instead, bounded by the dialog, so neither can strand the other.
+              Below lg they stack and the body scrolls as one. */}
+          <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-6 py-5 lg:flex-row lg:overflow-hidden">
+            <div className="min-w-0 space-y-6 lg:w-[45%] lg:overflow-y-auto lg:pr-1">
               <section className="space-y-4">
                 <div><h3 className="font-semibold">Client and form</h3><p className="text-sm text-muted-foreground">Create one private intake link for this client. The questions stay pinned to this published template version.</p></div>
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -779,7 +781,7 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
               </section>
             </div>
 
-            <aside className="min-w-0 lg:sticky lg:top-0 lg:self-start">
+            <aside className="min-w-0 lg:w-[55%] lg:overflow-y-auto">
               {selectedStartTemplate ? (
                 <ClientOnboardingPreview
                   key={selectedStartTemplate.id}
