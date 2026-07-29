@@ -1721,6 +1721,13 @@ serve(async (req) => {
             && captured.transcript_episode_title !== baseVariables.episode_title
             ? `Note: the transcript below is from an earlier episode, "${captured.transcript_episode_title}", because the episode above has no transcript yet. Attribute anything you quote to that earlier episode.`
             : '',
+          // The no-transcript rule used to live permanently in two prompts,
+          // describing a case that may never arise for this podcast. It is
+          // stated here, when it is actually true, so the prompt carries the
+          // instruction only while the instruction applies.
+          baseVariables.episode_transcript
+            ? ''
+            : 'No transcript is available for this show. Do NOT invent an episode reference or a quote, and never write the words "Not available" into output. Open instead from a specific, checkable detail in the research — its focus, format, or audience. Honesty beats fake familiarity. Where a quote bank is asked for, write exactly "No transcript available - quote bank skipped".',
           `<transcript>\n${present(baseVariables.episode_transcript)}\n</transcript>`,
           '</latest_episode>',
           '</context>',
@@ -2624,6 +2631,12 @@ serve(async (req) => {
         `Latest episode: ${present(variables.episode_title)}`,
         `Recent guest on that episode: ${present(variables.recent_guest_name)}`,
         `Description:\n${present(variables.podcast_description)}`,
+        // Stated here rather than permanently in the write_email prompt, so a
+        // podcast that HAS a transcript is never handed a paragraph about not
+        // having one.
+        variables.episode_transcript
+          ? ''
+          : 'No transcript or episode content is available for this show. Do NOT invent an episode reference or a quote. Open instead from a specific, checkable detail about the show in the research — its focus, format, or audience — and never write the words "Not available" into any output field. Honesty beats fake familiarity.',
         `<transcript_excerpt>\n${present(variables.episode_transcript)}\n</transcript_excerpt>`,
         '</podcast>',
         `<research_report>\n${present(variables.research_report)}\n</research_report>`,

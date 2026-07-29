@@ -938,3 +938,34 @@ assert.match(shortlistEdge, /const parsed = parseOutputFields\(raw, fields\)\s*\
 const outputsShared = readFileSync('supabase/functions/_shared/promptOutputs.ts', 'utf8')
 // A declared field may never take the name of one the run already provides.
 assert.match(outputsShared, /if \(isPromptVariable\(id\)\) \{\s*\n\s*throw new Error/u)
+
+// The no-transcript rule is stated when it is true, not carried permanently.
+//
+// It used to sit in two shipped prompts, describing a case that may never
+// arise for the podcast in hand. Deleting it outright would have been wrong
+// while nothing requires a transcript: it is the only thing standing between a
+// transcript-less show and an invented episode reference. So it moved, and
+// both paths must still emit it.
+for (const marker of ['Do NOT invent an episode reference', 'quote bank skipped']) {
+  assert.ok(
+    shortlistEdge.includes(marker),
+    `the run must still tell a transcript-less show: ${marker}`,
+  )
+}
+assert.match(
+  shortlistEdge,
+  /baseVariables\.episode_transcript\s*\n\s*\?\s*''\s*\n\s*:\s*'No transcript is available/u,
+  'the research context must state the rule only when there is no transcript',
+)
+assert.match(
+  shortlistEdge,
+  /variables\.episode_transcript\s*\n\s*\?\s*''\s*\n\s*:\s*'No transcript or episode content is available/u,
+  'the pitch context must state the rule only when there is no transcript',
+)
+// ...and the prompts themselves no longer describe the case.
+for (const promptId of ['podcast_research', 'write_email']) {
+  assert.ok(
+    !canonicalPrompts.prompts[promptId].content.includes('If NO transcript'),
+    `${promptId} must not carry the no-transcript branch as permanent text`,
+  )
+}
