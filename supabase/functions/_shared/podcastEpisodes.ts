@@ -169,14 +169,35 @@ export async function fetchRecentEpisodes(podscanId: string): Promise<RecentEpis
 // rows that predate the field self-heal without anyone doing anything.
 
 /** Everything RecentEpisode carries except the transcript, which is stored
- * in its own column so list-style reads can skip the heavy field. */
-export type StoredEpisode = Omit<RecentEpisode, 'transcript'>
+ * in its own column so list-style reads can skip the heavy field. The flag
+ * records which of them that column holds. */
+export type StoredEpisode = Omit<RecentEpisode, 'transcript'> & {
+  transcript_source?: boolean
+}
 
 export interface CapturedEpisodes {
   episodes: StoredEpisode[]
   transcript: string | null
+  /**
+   * The episode the transcript actually came from, which is not always the
+   * newest one. Podscan returns episodes whether or not transcription has
+   * finished (show_only_fully_processed defaults to false), and the newest
+   * episode is the likeliest to still be processing — so a show with fifty
+   * transcribed episodes can have an untranscribed one at the top.
+   *
+   * Naming it is not bookkeeping: the transcript is quoted back to the host,
+   * and a quote from June attributed to last Tuesday's episode is exactly the
+   * invented familiarity the prompts are written to avoid.
+   */
+  transcript_episode_title: string | null
   last_posted_at: string | null
   episodes_fetched_at: string | null
+}
+
+/** Marks the stored episode whose transcript is in the transcript column. */
+export function transcriptEpisodeTitle(episodes: StoredEpisode[]): string | null {
+  const source = episodes.find((episode) => episode.transcript_source)
+  return source?.title ?? episodes[0]?.title ?? null
 }
 
 const EPISODE_FRESHNESS_MS = 30 * 24 * 60 * 60 * 1000
@@ -207,9 +228,12 @@ export async function ensureEpisodesCaptured(admin: any, podscanId: string): Pro
     transcript: typeof row.latest_episode_transcript === 'string' && row.latest_episode_transcript
       ? row.latest_episode_transcript
       : null,
+    transcript_episode_title: null,
     last_posted_at: typeof row.last_posted_at === 'string' ? row.last_posted_at : null,
     episodes_fetched_at: typeof row.episodes_fetched_at === 'string' ? row.episodes_fetched_at : null,
   }
+  // Derived after the list is read, from the flag the capture wrote.
+  stored.transcript_episode_title = stored.transcript ? transcriptEpisodeTitle(stored.episodes) : null
   // A capture from before the metadata expansion (no episode_id key) is
   // treated as stale so rows silently upgrade to the full shape. An empty
   // capture with a fetch stamp is current: Podscan answered "no episodes",
@@ -234,8 +258,15 @@ export async function ensureEpisodesCaptured(admin: any, podscanId: string): Pro
     return { ...stored, episodes_fetched_at: checkedAt }
   }
 
-  const episodes: StoredEpisode[] = fetched.map(({ transcript: _transcript, ...episode }) => episode)
-  const transcript = fetched[0]?.transcript || null
+  // The newest episode that actually has a transcript, not simply the newest.
+  // Podscan is asked for episodes whether or not transcription has finished,
+  // so taking position 0 threw away a show's entire back catalogue of
+  // transcripts whenever its most recent episode was still processing.
+  const transcriptIndex = fetched.findIndex((episode) => (episode.transcript ?? '').trim() !== '')
+  const episodes: StoredEpisode[] = fetched.map(({ transcript: _transcript, ...episode }, index) =>
+    index === transcriptIndex ? { ...episode, transcript_source: true } : episode
+  )
+  const transcript = transcriptIndex >= 0 ? fetched[transcriptIndex].transcript : null
   const fetchedAt = new Date().toISOString()
   const lastPostedAt = newestIso([stored.last_posted_at, ...episodes.map((episode) => episode.posted_at)])
   // Podscan's speaker analysis names the hosts; fill the catalog's host_name
@@ -258,5 +289,11 @@ export async function ensureEpisodesCaptured(admin: any, podscanId: string): Pro
     })
     .eq('id', row.id)
 
-  return { episodes, transcript, last_posted_at: lastPostedAt, episodes_fetched_at: fetchedAt }
+  return {
+    episodes,
+    transcript,
+    transcript_episode_title: transcript ? transcriptEpisodeTitle(episodes) : null,
+    last_posted_at: lastPostedAt,
+    episodes_fetched_at: fetchedAt,
+  }
 }

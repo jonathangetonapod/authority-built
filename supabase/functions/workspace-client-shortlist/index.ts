@@ -1573,6 +1573,15 @@ serve(async (req) => {
           '<latest_episode>',
           `Title: ${present(baseVariables.episode_title)}`,
           `Summary:\n${present(baseVariables.episode_description)}`,
+          // The transcript is the newest one that EXISTS, which is not always
+          // the episode named above — Podscan returns episodes whose
+          // transcription has not finished. Saying which episode it belongs to
+          // is what stops a quote from an older show being pitched back as
+          // last week's, which reads as invented familiarity to the host.
+          captured?.transcript_episode_title
+            && captured.transcript_episode_title !== baseVariables.episode_title
+            ? `Note: the transcript below is from an earlier episode, "${captured.transcript_episode_title}", because the episode above has no transcript yet. Attribute anything you quote to that earlier episode.`
+            : '',
           `<transcript>\n${present(baseVariables.episode_transcript)}\n</transcript>`,
           '</latest_episode>',
           '</context>',
