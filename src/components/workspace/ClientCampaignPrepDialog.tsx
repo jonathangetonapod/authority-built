@@ -62,11 +62,14 @@ import {
   removeWorkspaceCampaignLead,
 } from '@/services/workspaceCampaigns'
 import {
+  getWorkspacePromptRequirements,
   getWorkspaceResearchPromptOverrides,
+  setWorkspacePromptRequirements,
   resetWorkspaceResearchPrompt,
   setWorkspaceResearchPrompt,
 } from '@/services/workspaceCampaigns'
 import { PromptVariableTextarea } from './PromptVariableTextarea'
+import { PromptRequiredFields } from './PromptRequiredFields'
 import {
   RESEARCH_PROMPT_DEFAULTS,
   RESEARCH_PROMPT_DEFAULTS_BY_ID,
@@ -585,6 +588,26 @@ export function ClientCampaignPrepDialog({
   const selectedPromptCustomized = Boolean(promptOverrides[selectedPromptId])
   const promptDirty = promptDraft !== effectivePromptContent(selectedPromptId)
   const customPromptCount = RESEARCH_PROMPT_DEFAULTS.filter((prompt) => promptOverrides[prompt.id]).length
+
+  const requirementsQuery = useQuery({
+    queryKey: ['workspace-prompt-requirements', workspaceId],
+    queryFn: () => getWorkspacePromptRequirements(workspaceId),
+    enabled: open,
+    retry: false,
+    staleTime: 60_000,
+  })
+  const promptRequirements = requirementsQuery.data ?? {}
+
+  const saveRequirementsMutation = useMutation({
+    mutationFn: ({ promptId, required }: { promptId: ResearchPromptId; required: string[] }) =>
+      setWorkspacePromptRequirements(workspaceId, promptId, required),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['workspace-prompt-requirements', workspaceId] })
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'The field requirements could not be saved.')
+    },
+  })
 
   const savePromptMutation = useMutation({
     mutationFn: ({ promptId, content }: { promptId: ResearchPromptId; content: string }) =>
@@ -1565,6 +1588,14 @@ export function ClientCampaignPrepDialog({
                                   disabled={promptBusy || promptOverridesQuery.isLoading}
                                   className="min-h-48 resize-y bg-background font-mono text-xs leading-5"
                                   maxLength={20_000}
+                                />
+                              </div>
+                              <div className="mt-4">
+                                <PromptRequiredFields
+                                  content={promptDraft}
+                                  required={promptRequirements[selectedPromptId] ?? []}
+                                  disabled={promptBusy || requirementsQuery.isLoading}
+                                  onChange={(next) => saveRequirementsMutation.mutate({ promptId: selectedPromptId, required: next })}
                                 />
                               </div>
                               <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">

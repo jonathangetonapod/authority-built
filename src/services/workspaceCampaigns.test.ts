@@ -8,7 +8,11 @@ import {
   setClientInstantlyCampaignLinks,
   getWorkspaceCampaignOverview,
   getWorkspaceMailboxes,
+  getWorkspacePromptRequirements,
   getWorkspaceResearchPromptOverrides,
+  resetClientPromptRequirements,
+  setClientPromptRequirements,
+  setWorkspacePromptRequirements,
   launchWorkspaceCampaignPitch,
   prepareWorkspaceCampaignPodcast,
   resetWorkspaceResearchPrompt,
@@ -253,6 +257,63 @@ describe('workspace research prompts', () => {
         workspace_id: workspaceId,
         prompt_id: 'write_email',
         content: 'New pitch instructions',
+      },
+    })
+  })
+
+  it('saves which fields a stage refuses to run without', async () => {
+    invoke.mockResolvedValueOnce({ data: { success: true }, error: null } as never)
+
+    await setWorkspacePromptRequirements(workspaceId, 'write_email', ['episode_transcript'])
+
+    expect(invoke).toHaveBeenCalledWith('workspace-client-campaigns', {
+      body: {
+        action: 'prompt-requirements-set',
+        workspace_id: workspaceId,
+        prompt_id: 'write_email',
+        required_variables: ['episode_transcript'],
+      },
+    })
+  })
+
+  it('reads requirements, treating an absent stage as requiring nothing', async () => {
+    invoke.mockResolvedValueOnce({
+      data: { requirements: { write_email: ['episode_transcript'] } },
+      error: null,
+    } as never)
+
+    const requirements = await getWorkspacePromptRequirements(workspaceId)
+
+    expect(invoke).toHaveBeenCalledWith('workspace-client-campaigns', {
+      body: { action: 'prompt-requirements-get', workspace_id: workspaceId },
+    })
+    expect(requirements.write_email).toEqual(['episode_transcript'])
+    expect(requirements.host_info).toBeUndefined()
+  })
+
+  it('sets a client requirement, and resets it back to inheriting the workspace', async () => {
+    invoke.mockResolvedValueOnce({ data: { success: true }, error: null } as never)
+    await setClientPromptRequirements(workspaceId, clientId, 'write_email', [])
+    expect(invoke).toHaveBeenCalledWith('workspace-client-campaigns', {
+      body: {
+        action: 'client-prompt-requirements-set',
+        workspace_id: workspaceId,
+        client_id: clientId,
+        prompt_id: 'write_email',
+        // An empty set is an opinion: this client pitches without a transcript
+        // even where the workspace insists on one.
+        required_variables: [],
+      },
+    })
+
+    invoke.mockResolvedValueOnce({ data: { success: true }, error: null } as never)
+    await resetClientPromptRequirements(workspaceId, clientId, 'write_email')
+    expect(invoke).toHaveBeenCalledWith('workspace-client-campaigns', {
+      body: {
+        action: 'client-prompt-requirements-reset',
+        workspace_id: workspaceId,
+        client_id: clientId,
+        prompt_id: 'write_email',
       },
     })
   })

@@ -25,6 +25,7 @@ import {
   deterministicClassification,
   generateReplyPackage,
 } from "../_shared/inboxSdr.ts";
+import { normalizeRequiredVariables } from "../_shared/promptRequirements.ts";
 import { chargeCredits, logOperationCost } from "../_shared/billing.ts";
 import { resolveAiKey } from "../_shared/workspaceAiKeys.ts";
 import {
@@ -70,6 +71,43 @@ function requireResearchPromptId(value: unknown): string {
     throw new HttpError(400, "INVALID_PROMPT", "Unknown research prompt");
   }
   return value;
+}
+
+function requireClientPromptId(value: unknown): string {
+  if (typeof value !== "string" || !CLIENT_PROMPT_IDS.includes(value)) {
+    throw new HttpError(400, "INVALID_PROMPT", "Unknown client AI SDR prompt");
+  }
+  return value;
+}
+
+/**
+ * A required field must name a real registry variable. The database CHECK only
+ * constrains the shape of the array, because docs/prompt-variables.json is the
+ * authority and it lives here, not in SQL.
+ */
+function parseRequiredVariables(value: unknown): string[] {
+  try {
+    return normalizeRequiredVariables(value);
+  } catch (error) {
+    throw new HttpError(
+      400,
+      "INVALID_REQUIRED_VARIABLES",
+      error instanceof Error ? error.message : "Invalid required_variables",
+    );
+  }
+}
+
+/** Absent row = nothing required, so a stage missing from the map is empty. */
+function requirementsDto(rows: unknown): Record<string, string[]> {
+  const requirements: Record<string, string[]> = {};
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const record = row as Record<string, unknown>;
+    const promptId = String(record.prompt_id ?? "");
+    if (!RESEARCH_PROMPT_IDS.includes(promptId)) continue;
+    const required = Array.isArray(record.required_variables) ? record.required_variables : [];
+    requirements[promptId] = required.filter((entry): entry is string => typeof entry === "string");
+  }
+  return requirements;
 }
 const CAMPAIGN_COLUMNS = [
   "id",
@@ -2878,6 +2916,47 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, { success: true });
     }
 
+    if (action === "prompt-requirements-get") {
+      requireOnlyKeys(body, ["action", "workspace_id"]);
+      requireCampaignManager(access);
+      const { data, error } = await context.admin
+        .from("workspace_prompt_requirements")
+        .select("prompt_id, required_variables")
+        .eq("workspace_id", workspaceId);
+      if (error) {
+        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "Field requirements are temporarily unavailable");
+      }
+      return jsonResponse(req, METHODS, 200, { requirements: requirementsDto(data) });
+    }
+
+    if (action === "prompt-requirements-set") {
+      requireOnlyKeys(body, ["action", "workspace_id", "prompt_id", "required_variables"]);
+      requireIntegrationOwner(access);
+      const promptId = requireResearchPromptId(body.prompt_id);
+      const requiredVariables = parseRequiredVariables(body.required_variables);
+      const { error } = await context.admin
+        .from("workspace_prompt_requirements")
+        .upsert({
+          workspace_id: workspaceId,
+          prompt_id: promptId,
+          required_variables: requiredVariables,
+          updated_by: context.user.id,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "workspace_id,prompt_id" });
+      if (error) {
+        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "The field requirements could not be saved");
+      }
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: "workspace.prompt_requirements.updated",
+        entityType: "workspace",
+        entityId: workspaceId,
+        metadata: { prompt_id: promptId, required_variables: requiredVariables },
+      });
+      return jsonResponse(req, METHODS, 200, { success: true });
+    }
+
     if (action === "inbox-list") {
       requireOnlyKeys(body, ["action", "workspace_id"]);
       const connection = await readConnection(context.admin, workspaceId);
@@ -4059,6 +4138,75 @@ serve(async (req) => {
         workspaceId,
         actorUserId: context.user.id,
         action: "client.ai_sdr_prompts.reset",
+        entityType: "client",
+        entityId: clientId,
+        metadata: { prompt_id: promptId },
+      });
+      return jsonResponse(req, METHODS, 200, { success: true });
+    }
+
+    if (action === "client-prompt-requirements-get") {
+      requireOnlyKeys(body, ["action", "workspace_id", "client_id"]);
+      const { data, error } = await context.admin
+        .from("client_prompt_requirements")
+        .select("prompt_id, required_variables")
+        .eq("workspace_id", workspaceId)
+        .eq("client_id", clientId);
+      if (error) {
+        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "Field requirements are temporarily unavailable");
+      }
+      return jsonResponse(req, METHODS, 200, { requirements: requirementsDto(data) });
+    }
+
+    if (action === "client-prompt-requirements-set") {
+      requireOnlyKeys(body, ["action", "workspace_id", "client_id", "prompt_id", "required_variables"]);
+      requireIntegrationOwner(access);
+      const promptId = requireClientPromptId(body.prompt_id);
+      const requiredVariables = parseRequiredVariables(body.required_variables);
+      const { error } = await context.admin
+        .from("client_prompt_requirements")
+        .upsert({
+          workspace_id: workspaceId,
+          client_id: clientId,
+          prompt_id: promptId,
+          required_variables: requiredVariables,
+          updated_by: context.user.id,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "workspace_id,client_id,prompt_id" });
+      if (error) {
+        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "The field requirements could not be saved");
+      }
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: "client.prompt_requirements.updated",
+        entityType: "client",
+        entityId: clientId,
+        metadata: { prompt_id: promptId, required_variables: requiredVariables },
+      });
+      return jsonResponse(req, METHODS, 200, { success: true });
+    }
+
+    if (action === "client-prompt-requirements-reset") {
+      requireOnlyKeys(body, ["action", "workspace_id", "client_id", "prompt_id"]);
+      requireIntegrationOwner(access);
+      const promptId = requireClientPromptId(body.prompt_id);
+      // Deleting the row is not the same as storing an empty one: this client
+      // goes back to inheriting the workspace set, rather than requiring
+      // nothing in spite of it.
+      const { error } = await context.admin
+        .from("client_prompt_requirements")
+        .delete()
+        .eq("workspace_id", workspaceId)
+        .eq("client_id", clientId)
+        .eq("prompt_id", promptId);
+      if (error) {
+        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "The field requirements could not be reset");
+      }
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: "client.prompt_requirements.reset",
         entityType: "client",
         entityId: clientId,
         metadata: { prompt_id: promptId },

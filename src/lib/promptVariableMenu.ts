@@ -109,6 +109,21 @@ export function groupPromptVariableMatches(
 }
 
 /**
+ * The registry fields a prompt actually names, in registry order.
+ *
+ * An unknown token is ignored rather than reported: the prompts contain
+ * `{{placeholders}}` as prose about placeholders, and the filler already
+ * leaves those alone.
+ */
+export function referencedPromptVariables(content: string): string[] {
+  const named = new Set<string>()
+  for (const match of content.matchAll(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/gu)) {
+    named.add(match[1])
+  }
+  return PROMPT_VARIABLES.filter((variable) => named.has(variable.id)).map((variable) => variable.id)
+}
+
+/**
  * Splits text on every occurrence of the query, so a row can show where it
  * matched.
  *

@@ -555,6 +555,79 @@ export async function setWorkspaceResearchPrompt(
   if (data?.success !== true) throw new Error('The prompt could not be saved.')
 }
 
+/** Fields a stage refuses to run without. Absent stage = nothing required. */
+export type PromptRequirements = Record<string, string[]>
+
+export async function getWorkspacePromptRequirements(
+  workspaceId: string,
+): Promise<PromptRequirements> {
+  const data = await invokeWorkspaceCampaigns<{ requirements?: PromptRequirements }>({
+    action: 'prompt-requirements-get',
+    workspace_id: workspaceId,
+  }, 'Field requirements could not be loaded.')
+  return data.requirements ?? {}
+}
+
+export async function setWorkspacePromptRequirements(
+  workspaceId: string,
+  promptId: string,
+  requiredVariables: string[],
+): Promise<void> {
+  const data = await invokeWorkspaceCampaigns<{ success?: boolean }>({
+    action: 'prompt-requirements-set',
+    workspace_id: workspaceId,
+    prompt_id: promptId,
+    required_variables: requiredVariables,
+  }, 'The field requirements could not be saved.')
+  if (data?.success !== true) throw new Error('The field requirements could not be saved.')
+}
+
+export async function getClientPromptRequirements(
+  workspaceId: string,
+  clientId: string,
+): Promise<PromptRequirements> {
+  const data = await invokeWorkspaceCampaigns<{ requirements?: PromptRequirements }>({
+    action: 'client-prompt-requirements-get',
+    workspace_id: workspaceId,
+    client_id: clientId,
+  }, 'Field requirements could not be loaded.')
+  return data.requirements ?? {}
+}
+
+export async function setClientPromptRequirements(
+  workspaceId: string,
+  clientId: string,
+  promptId: string,
+  requiredVariables: string[],
+): Promise<void> {
+  const data = await invokeWorkspaceCampaigns<{ success?: boolean }>({
+    action: 'client-prompt-requirements-set',
+    workspace_id: workspaceId,
+    client_id: clientId,
+    prompt_id: promptId,
+    required_variables: requiredVariables,
+  }, 'The field requirements could not be saved.')
+  if (data?.success !== true) throw new Error('The field requirements could not be saved.')
+}
+
+/**
+ * Drops this client's row so the stage inherits the workspace set again —
+ * different from saving an empty set, which requires nothing in spite of it.
+ */
+export async function resetClientPromptRequirements(
+  workspaceId: string,
+  clientId: string,
+  promptId: string,
+): Promise<void> {
+  const data = await invokeWorkspaceCampaigns<{ success?: boolean }>({
+    action: 'client-prompt-requirements-reset',
+    workspace_id: workspaceId,
+    client_id: clientId,
+    prompt_id: promptId,
+  }, 'The field requirements could not be reset.')
+  if (data?.success !== true) throw new Error('The field requirements could not be reset.')
+}
+
 export async function resetWorkspaceResearchPrompt(
   workspaceId: string,
   promptId: string,

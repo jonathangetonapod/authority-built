@@ -7,10 +7,14 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PromptVariableTextarea } from './PromptVariableTextarea'
+import { PromptRequiredFields } from './PromptRequiredFields'
 import { RESEARCH_PROMPT_DEFAULTS_BY_ID, type ResearchPromptId } from '@/lib/researchPromptDefaults'
 import {
+  getClientPromptRequirements,
   getClientSdrPrompts,
+  getWorkspacePromptRequirements,
   resetClientSdrPrompt,
+  setClientPromptRequirements,
   setClientSdrPrompt,
 } from '@/services/workspaceCampaigns'
 
@@ -100,6 +104,36 @@ export const ClientSdrPromptsCard = ({
     staleTime: 60_000,
   })
   const overrides = promptsQuery.data ?? {}
+
+  // Requirements resolve the way the prompts do: this client's row wins, and
+  // where it has none the workspace set applies.
+  const workspaceRequirementsQuery = useQuery({
+    queryKey: ['workspace-prompt-requirements', workspaceId],
+    queryFn: () => getWorkspacePromptRequirements(workspaceId),
+    retry: false,
+    staleTime: 60_000,
+  })
+  const clientRequirementsQuery = useQuery({
+    queryKey: ['client-prompt-requirements', workspaceId, clientId],
+    queryFn: () => getClientPromptRequirements(workspaceId, clientId),
+    retry: false,
+    staleTime: 60_000,
+  })
+  const workspaceRequirements = workspaceRequirementsQuery.data ?? {}
+  const clientRequirements = clientRequirementsQuery.data ?? {}
+  const effectiveRequirements = (id: ResearchPromptId): string[] =>
+    clientRequirements[id] ?? workspaceRequirements[id] ?? []
+
+  const saveRequirementsMutation = useMutation({
+    mutationFn: ({ id, required }: { id: ResearchPromptId; required: string[] }) =>
+      setClientPromptRequirements(workspaceId, clientId, id, required),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['client-prompt-requirements', workspaceId, clientId] })
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'The field requirements could not be saved.')
+    },
+  })
   // Seed each editor once from the saved override, or the shipped default
   // when this client has none.
   useEffect(() => {
@@ -206,7 +240,7 @@ export const ClientSdrPromptsCard = ({
                       </div>
                     </div>
                     {open && (
-                      <div className="border-t p-3.5">
+                      <div className="space-y-4 border-t p-3.5">
                         <PromptVariableTextarea
                           value={value}
                           readOnly={!canManage}
@@ -214,6 +248,15 @@ export const ClientSdrPromptsCard = ({
                           onChange={(next) => setDrafts((current) => ({ ...current, [prompt.id]: next }))}
                           className="min-h-52 font-mono text-xs leading-5"
                           maxLength={20_000}
+                        />
+                        <PromptRequiredFields
+                          content={value}
+                          required={effectiveRequirements(prompt.id)}
+                          disabled={!canManage || busy}
+                          inheritedNote={clientRequirements[prompt.id]
+                            ? undefined
+                            : `Inherited from the workspace. Changing one here sets it for ${clientName.split(' ')[0]} only.`}
+                          onChange={(next) => saveRequirementsMutation.mutate({ id: prompt.id, required: next })}
                         />
                       </div>
                     )}

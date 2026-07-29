@@ -32,6 +32,24 @@ import {
   isPromptVariable,
   PODCAST_VARIABLE_COLUMNS,
 } from '../_shared/promptVariables.ts'
+import {
+  describeMissingRequirements,
+  missingRequiredVariables,
+  type PromptRequirementRow,
+  resolveRequiredVariables,
+} from '../_shared/promptRequirements.ts'
+
+/**
+ * A stage refused to run because a field it requires is absent for this
+ * podcast. Distinct from a failure: nothing broke, and the run must not be
+ * rewritten as failed or reported as an error the operator should retry.
+ */
+class RequirementBlock extends Error {
+  constructor(message: string, readonly promptId: string, readonly missing: string[]) {
+    super(message)
+    this.name = 'RequirementBlock'
+  }
+}
 import { notifyShortlistReady } from '../_shared/clientNotify.ts'
 
 // Built as plain strings: an inline template literal makes supabase-js infer a
@@ -1445,15 +1463,9 @@ serve(async (req) => {
         throw new HttpError(500, 'RESEARCH_NOT_CONFIGURED', 'Podcast research is not configured')
       }
       const byoKeyUsed = anthropicKey.source === 'workspace'
-      await chargeCredits(authContext.admin, {
-        workspaceId,
-        operationType: 'research_run',
-        referenceKind: 'shortlist_podcast',
-        referenceId: shortlistPodcastId,
-        clientId,
-        actorUserId: authContext.user.id,
-        byoKeyUsed,
-      })
+      // Charged below, once the first stage's required fields are known to be
+      // present. A podcast that can never be researched must not be billed for
+      // discovering that.
 
       const startedAt = new Date().toISOString()
       const writeProgress = async (progress: Record<string, unknown>) => {
@@ -1488,6 +1500,21 @@ serve(async (req) => {
           clientOverrides.get(promptId)
             ?? overrides.get(promptId)
             ?? RESEARCH_PROMPT_DEFAULTS[promptId].content
+
+        // Which fields each stage refuses to run without, resolved the same
+        // way its prompt is: this client's row, else the workspace's, else
+        // nothing required.
+        const [{ data: workspaceRequirementRows }, { data: clientRequirementRows }] = await Promise.all([
+          authContext.admin
+            .from('workspace_prompt_requirements')
+            .select('prompt_id, required_variables')
+            .eq('workspace_id', workspaceId),
+          authContext.admin
+            .from('client_prompt_requirements')
+            .select('prompt_id, required_variables')
+            .eq('workspace_id', workspaceId)
+            .eq('client_id', clientId),
+        ])
 
         // Stored episode capture: Podscan is only hit when the capture is
         // missing or stale, so research reruns are free of provider calls.
@@ -1580,6 +1607,49 @@ serve(async (req) => {
           await writeProgress({ status: 'running', current_stage: nextStage, completed_stages: [...completedStages] })
         }
 
+        /**
+         * Refuses to run a stage whose required fields this podcast lacks.
+         *
+         * Checked against stageVariables, which is what the prompt is actually
+         * filled from — so a heavy value replaced by a pointer still counts as
+         * present, and a stage result not yet written still counts as absent.
+         */
+        const gateStage = async (promptId: string) => {
+          const required = resolveRequiredVariables(
+            promptId,
+            (clientRequirementRows ?? []) as PromptRequirementRow[],
+            (workspaceRequirementRows ?? []) as PromptRequirementRow[],
+          )
+          if (required.length === 0) return
+          const missing = missingRequiredVariables(required, stageVariables)
+          if (missing.length === 0) return
+          const reason = describeMissingRequirements(promptId, missing)
+          await writeProgress({
+            status: 'blocked',
+            current_stage: null,
+            completed_stages: [...completedStages],
+            message: reason,
+            blocked_stage: promptId,
+            missing_fields: missing,
+          })
+          throw new RequirementBlock(reason, promptId, missing)
+        }
+
+        // The first gate runs before the charge: a podcast that can never
+        // clear stage one costs nothing to reject. Later stages block after
+        // work has been done and paid for, which is the point of blocking at
+        // the first stage that needs the field rather than up front.
+        await gateStage('podcast_research')
+        await chargeCredits(authContext.admin, {
+          workspaceId,
+          operationType: 'research_run',
+          referenceKind: 'shortlist_podcast',
+          referenceId: shortlistPodcastId,
+          clientId,
+          actorUserId: authContext.user.id,
+          byoKeyUsed,
+        })
+
         const researchReport = await runResearchPrompt(
           anthropicKey.apiKey,
           RESEARCH_PROMPT_DEFAULTS.podcast_research,
@@ -1593,6 +1663,9 @@ serve(async (req) => {
         // pointer becomes true at the same moment the block starts being sent.
         const reportBlock = `<research_report>\n${researchReport}\n</research_report>`
         stageVariables.research_report = '(provided in the research report section above)'
+        // Gated after the pointer is assigned, so a stage requiring the report
+        // it reads is satisfied by the block it is about to be sent.
+        await gateStage('host_info')
         const hostReport = await runResearchPrompt(
           anthropicKey.apiKey,
           RESEARCH_PROMPT_DEFAULTS.host_info,
@@ -1604,6 +1677,7 @@ serve(async (req) => {
 
         let guestReport: string | null = null
         if (captured?.transcript) {
+          await gateStage('guest_info')
           guestReport = await runResearchPrompt(
             anthropicKey.apiKey,
             RESEARCH_PROMPT_DEFAULTS.guest_info,
@@ -1614,6 +1688,7 @@ serve(async (req) => {
         stageVariables.guest_report = guestReport ? guestReport.slice(0, 6_000) : null
         await advance('guest_info', 'guest_fit')
 
+        await gateStage('find_topics')
         const topicProposal = await runResearchPrompt(
           anthropicKey.apiKey,
           RESEARCH_PROMPT_DEFAULTS.find_topics,
@@ -1734,6 +1809,13 @@ serve(async (req) => {
           },
         })
       } catch (error) {
+        // A blocked run is not a failed one. Its progress row is already
+        // written and says which field is missing; rewriting it as "failed"
+        // here would replace that with a retry prompt for something no retry
+        // can fix, and would bill the cost log for work never done.
+        if (error instanceof RequirementBlock) {
+          throw new HttpError(409, 'RESEARCH_BLOCKED', error.message)
+        }
         // The real cause must reach the operator — a generic message here
         // once hid an invalid platform API key for months.
         const failureMessage = error instanceof Error && error.name === 'TimeoutError'
@@ -2276,16 +2358,9 @@ serve(async (req) => {
       const anthropicKey = await resolveAiKey(authContext.admin, workspaceId, 'anthropic')
       if (!anthropicKey) throw new HttpError(500, 'SERVER_MISCONFIGURED', 'Pitch writing is not configured')
       const byoKeyUsed = anthropicKey.source === 'workspace'
-      await chargeCredits(authContext.admin, {
-        workspaceId,
-        operationType: 'query_generation',
-        referenceKind: 'pitch_generate',
-        referenceId: `${shortlistPodcastId}:${angleIndex}`,
-        clientId,
-        actorUserId: authContext.user.id,
-        byoKeyUsed,
-        idempotencyKey: `pitch:${shortlistPodcastId}:${angleIndex}`,
-      })
+      // Charged below, once the fields write_email requires are known to be
+      // present. This is the case the whole feature exists for: a show with no
+      // transcript should cost nothing to decline to pitch.
 
       const { data: overrideRows } = await authContext.admin
         .from('workspace_research_prompts')
@@ -2408,6 +2483,44 @@ serve(async (req) => {
           topicResearch ? '(full topic research provided in <topic_research> within the CONTEXT section above)' : '',
         ].filter(Boolean).join('\n\n') || null,
       }
+
+      // Same resolution as the prompts: this client's row, else the
+      // workspace's, else nothing required.
+      const [{ data: pitchWorkspaceRequirements }, { data: pitchClientRequirements }] = await Promise.all([
+        authContext.admin
+          .from('workspace_prompt_requirements')
+          .select('prompt_id, required_variables')
+          .eq('workspace_id', workspaceId),
+        authContext.admin
+          .from('client_prompt_requirements')
+          .select('prompt_id, required_variables')
+          .eq('workspace_id', workspaceId)
+          .eq('client_id', clientId),
+      ])
+      for (const promptId of ['write_email', 'clean_email']) {
+        const required = resolveRequiredVariables(
+          promptId,
+          (pitchClientRequirements ?? []) as PromptRequirementRow[],
+          (pitchWorkspaceRequirements ?? []) as PromptRequirementRow[],
+        )
+        const missing = missingRequiredVariables(required, pitchVariables)
+        if (missing.length > 0) {
+          // Both stages are checked up front because they run back to back on
+          // one charge; blocking clean_email after write_email has been paid
+          // for would bill a sequence that is never returned.
+          throw new HttpError(409, 'PITCH_BLOCKED', describeMissingRequirements(promptId, missing))
+        }
+      }
+      await chargeCredits(authContext.admin, {
+        workspaceId,
+        operationType: 'query_generation',
+        referenceKind: 'pitch_generate',
+        referenceId: `${shortlistPodcastId}:${angleIndex}`,
+        clientId,
+        actorUserId: authContext.user.id,
+        byoKeyUsed,
+        idempotencyKey: `pitch:${shortlistPodcastId}:${angleIndex}`,
+      })
 
       const usage = { input: 0, output: 0 }
       try {

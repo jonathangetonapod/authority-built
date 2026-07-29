@@ -3,6 +3,7 @@ import {
   applyVariableTrigger,
   detectVariableTrigger,
   filterPromptVariables,
+  referencedPromptVariables,
   spliceAtCaret,
   splitOnMatch,
 } from '@/lib/promptVariableMenu'
@@ -67,6 +68,24 @@ describe('filterPromptVariables', () => {
   it('lists the registry in order when nothing is typed', () => {
     expect(filterPromptVariables('', 3).map((v) => v.id))
       .toEqual(PROMPT_VARIABLES.slice(0, 3).map((v) => v.id))
+  })
+})
+
+describe('referencedPromptVariables', () => {
+  it('lists the registry fields a prompt names, in registry order', () => {
+    expect(referencedPromptVariables('Pitch {{client_name}} using {{podcast_name}}.'))
+      .toEqual(['podcast_name', 'client_name'])
+  })
+
+  it('collapses repeats and tolerates whitespace inside the braces', () => {
+    expect(referencedPromptVariables('{{ podcast_name }} and {{podcast_name}}'))
+      .toEqual(['podcast_name'])
+  })
+
+  it('ignores a token that names no registry field', () => {
+    // The prompts talk about placeholders as prose; the filler leaves those
+    // alone, and so must the required-field list.
+    expect(referencedPromptVariables('unfilled {{placeholders}} must never appear')).toEqual([])
   })
 })
 

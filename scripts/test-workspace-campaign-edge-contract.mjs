@@ -852,3 +852,48 @@ for (const runVariable of ['host_report', 'guest_report', 'clean_description', '
     `pitch generation must expose ${runVariable} as a prompt variable`,
   )
 }
+
+// A stage refuses to run when a field it requires is absent for this podcast.
+// The whole point is that this costs nothing, so the gate must come BEFORE the
+// charge, not after it. These two assertions are the money: a later edit that
+// moves chargeCredits back above the gate reintroduces billing a podcast for
+// discovering it can never be pitched.
+const requirementsShared = readFileSync('supabase/functions/_shared/promptRequirements.ts', 'utf8')
+assert.match(requirementsShared, /export function resolveRequiredVariables/u)
+assert.match(requirementsShared, /export function missingRequiredVariables/u)
+// The registry is the authority on what may be required; SQL only checks shape.
+assert.match(requirementsShared, /if \(!isPromptVariable\(id\)\) throw new Error/u)
+
+assert.match(
+  shortlistEdge,
+  /await gateStage\('podcast_research'\)\s*\n\s*await chargeCredits\(/u,
+  'the research run must gate required fields before charging a credit',
+)
+assert.ok(
+  shortlistEdge.indexOf("throw new HttpError(409, 'PITCH_BLOCKED'")
+    < shortlistEdge.indexOf("operationType: 'query_generation'"),
+  'pitch generation must block on a missing required field before charging',
+)
+// A blocked run is not a failed one: the catch must let it past before it
+// rewrites progress as failed and logs a cost for work never done.
+assert.match(
+  shortlistEdge,
+  /catch \(error\) \{[\s\S]{0,400}?if \(error instanceof RequirementBlock\)/u,
+  'a requirement block must be handled before the generic failure path',
+)
+
+// Requirements are owner-gated and validated, exactly like the prompts.
+for (const action of [
+  'prompt-requirements-get',
+  'prompt-requirements-set',
+  'client-prompt-requirements-get',
+  'client-prompt-requirements-set',
+  'client-prompt-requirements-reset',
+]) {
+  assert.ok(
+    edge.includes(`action === "${action}"`),
+    `workspace-client-campaigns must expose ${action}`,
+  )
+}
+assert.match(edge, /"prompt-requirements-set"[\s\S]{0,200}requireIntegrationOwner\(access\)/u)
+assert.match(edge, /"client-prompt-requirements-set"[\s\S]{0,220}requireIntegrationOwner\(access\)/u)
