@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { RESEARCH_PROMPT_DEFAULTS_BY_ID, type ResearchPromptId } from '@/lib/researchPromptDefaults'
+import { PROMPT_VARIABLES, type PromptVariableGroup } from '@/lib/promptVariables'
 import {
   getClientSdrPrompts,
   resetClientSdrPrompt,
@@ -32,36 +33,17 @@ const REPLY_VARIABLES = [
   '{{podcast_research}}',
 ]
 
-const RESEARCH_BASE_VARIABLES = [
-  '{{client_name}}',
-  '{{client_bio}}',
-  '{{client_linkedin_url}}',
-  '{{client_website}}',
-  '{{podcast_name}}',
-  '{{podcast_url}}',
-  '{{podcast_description}}',
-  '{{last_posted_at}}',
-  '{{episode_title}}',
-  '{{episode_description}}',
-  '{{episode_transcript}}',
-]
+// Derived from the variable registry rather than restated, so a field added
+// there is offered here without a second edit. These lists used to name eleven
+// fields while the executor loaded four; now both come from one source.
+const registryTokens = (...groups: PromptVariableGroup[]): string[] =>
+  PROMPT_VARIABLES
+    .filter((variable) => groups.includes(variable.group))
+    .map((variable) => `{{${variable.id}}}`)
 
-const PITCH_VARIABLES = [
-  '{{client_name}}',
-  '{{client_bio}}',
-  '{{client_linkedin_url}}',
-  '{{client_website}}',
-  '{{podcast_name}}',
-  '{{podcast_url}}',
-  '{{podcast_description}}',
-  '{{host_name}}',
-  '{{verified_email}}',
-  '{{episode_title}}',
-  '{{episode_transcript}}',
-  '{{recent_guest_name}}',
-  '{{topic_proposal}}',
-  '{{research_report}}',
-]
+const RESEARCH_BASE_VARIABLES = registryTokens('podcast', 'episode', 'client')
+
+const PITCH_VARIABLES = [...RESEARCH_BASE_VARIABLES, ...registryTokens('run')]
 
 interface PromptSpec {
   id: ResearchPromptId

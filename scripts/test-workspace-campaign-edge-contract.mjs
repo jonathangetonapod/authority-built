@@ -711,3 +711,52 @@ assert.match(
   /\.eq\('prompt_id', 'host_name_extractor'\)/u,
 )
 assert.match(shortlistEdge, /fillPromptTemplate\(extractorContent,/u)
+
+// ---- prompt variable registry -------------------------------------------
+// docs/prompt-variables.json is canonical; both TS files are generated from it
+// by scripts/generate-prompt-variables.mjs. Assert all three agree, so a hand
+// edit to a mirror fails here instead of drifting quietly.
+const variableRegistry = JSON.parse(
+  readFileSync('docs/prompt-variables.json', 'utf8'),
+)
+function mirrorVariables(source) {
+  return [...source.matchAll(/\{ id: '([a-z_]+)', group: '([a-z]+)'(?:, column: '([a-z_]+)')?, type: '([a-z_]+)'/gu)]
+    .map((match) => ({ id: match[1], group: match[2], column: match[3], type: match[4] }))
+}
+const canonicalVariables = variableRegistry.variables.map((variable) => ({
+  id: variable.id, group: variable.group, column: variable.column, type: variable.type,
+}))
+const edgeMirror = mirrorVariables(
+  readFileSync('supabase/functions/_shared/promptVariables.ts', 'utf8'),
+)
+const appMirror = mirrorVariables(readFileSync('src/lib/promptVariables.ts', 'utf8'))
+assert.equal(edgeMirror.length, canonicalVariables.length)
+assert.deepEqual(edgeMirror, canonicalVariables)
+assert.deepEqual(appMirror, canonicalVariables)
+
+// Every {{variable}} a shipped prompt references must exist in the registry,
+// or the field picker offers a prompt-author less than the prompts already use.
+const shippedPrompts = readFileSync('src/lib/researchPromptDefaults.ts', 'utf8')
+const referenced = new Set(
+  [...shippedPrompts.matchAll(/\{\{([a-z_]+)\}\}/gu)].map((match) => match[1]),
+)
+const registryIds = new Set(canonicalVariables.map((variable) => variable.id))
+for (const name of referenced) {
+  assert.ok(registryIds.has(name), `{{${name}}} is used by a prompt but missing from the registry`)
+}
+
+// The research executor loads exactly the registry's podcast columns. It used
+// to select five, of which four reached a prompt; everything else Podscan gives
+// us was stored and never read.
+assert.match(shortlistEdge, /\.select\(PODCAST_VARIABLE_COLUMNS\.join\(', '\)\)/u)
+assert.match(
+  shortlistEdge,
+  /import \{\s*formatPromptValue,\s*PODCAST_VARIABLE_COLUMNS,\s*PROMPT_VARIABLES,\s*\} from '\.\.\/_shared\/promptVariables\.ts'/u,
+)
+// Values are formatted by declared type before filling, so a false boolean and
+// a zero cannot reach a prompt looking like missing data.
+assert.match(shortlistEdge, /formatPromptValue\(\s*variable\.id,/u)
+
+// Each stage's result becomes a field the stages after it can reference.
+assert.match(shortlistEdge, /stageVariables\.host_report = hostReport/u)
+assert.match(shortlistEdge, /stageVariables\.guest_report = guestReport/u)

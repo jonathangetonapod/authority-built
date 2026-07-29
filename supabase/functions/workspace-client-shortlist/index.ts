@@ -23,6 +23,11 @@ import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 import { ensureEpisodesCaptured, fetchPodcastHosts } from '../_shared/podcastEpisodes.ts'
 import { decryptInstantlyApiKey, instantlyRequest } from '../_shared/instantly.ts'
 import { RESEARCH_PROMPT_DEFAULTS } from '../_shared/researchPromptDefaults.ts'
+import {
+  formatPromptValue,
+  PODCAST_VARIABLE_COLUMNS,
+  PROMPT_VARIABLES,
+} from '../_shared/promptVariables.ts'
 import { notifyShortlistReady } from '../_shared/clientNotify.ts'
 
 const METHODS = ['POST'] as const
@@ -1410,7 +1415,10 @@ serve(async (req) => {
 
       const { data: catalogRow } = await authContext.admin
         .from('podcasts')
-        .select('podcast_name, podcast_description, podcast_url, publisher_name, last_posted_at')
+        // Every column the variable registry can offer a prompt. This used to
+        // read five, of which four reached a prompt — the rest of what Podscan
+        // gives us was stored and never looked at.
+        .select(PODCAST_VARIABLE_COLUMNS.join(', '))
         .eq('podscan_id', shortlistRow.podcast_id)
         .maybeSingle()
 
@@ -1467,15 +1475,34 @@ serve(async (req) => {
         // missing or stale, so research reruns are free of provider calls.
         const captured = await ensureEpisodesCaptured(authContext.admin, shortlistRow.podcast_id)
         const firstEpisode = captured?.episodes[0] ?? null
+        // Every podcast-sourced variable in the registry, rendered by its
+        // declared type. Typing matters here: a raw false or 0 handed to the
+        // filler would come out as "Not available", and podcast_has_guests
+        // being false is a fact, not an absence.
+        const catalogValues = (catalogRow ?? {}) as Record<string, unknown>
+        const podcastVariables: Record<string, string | null> = {}
+        for (const variable of PROMPT_VARIABLES) {
+          if (variable.group !== 'podcast' || !variable.column) continue
+          podcastVariables[variable.id] = formatPromptValue(
+            variable.id,
+            catalogValues[variable.column],
+          )
+        }
+
         const baseVariables: Record<string, string | null> = {
+          ...podcastVariables,
           client_name: clientProfile?.name ?? null,
           client_bio: clientProfile?.bio ?? null,
           client_linkedin_url: clientProfile?.linkedin_url ?? null,
           client_website: clientProfile?.website ?? null,
-          podcast_name: catalogRow?.podcast_name ?? shortlistRow.podcast_name,
-          podcast_url: catalogRow?.podcast_url ?? shortlistRow.podcast_url,
-          podcast_description: catalogRow?.podcast_description ?? shortlistRow.podcast_description,
-          last_posted_at: captured?.last_posted_at ?? catalogRow?.last_posted_at ?? shortlistRow.last_posted_at,
+          // The shortlist row is the fallback for a show the catalogue has not
+          // caught up with, and the capture is fresher than the catalogue.
+          podcast_name: podcastVariables.podcast_name ?? shortlistRow.podcast_name,
+          podcast_url: podcastVariables.podcast_url ?? shortlistRow.podcast_url,
+          podcast_description: podcastVariables.podcast_description ?? shortlistRow.podcast_description,
+          last_posted_at: formatPromptValue('last_posted_at', captured?.last_posted_at)
+            ?? podcastVariables.last_posted_at
+            ?? formatPromptValue('last_posted_at', shortlistRow.last_posted_at),
           episode_title: firstEpisode?.title ?? null,
           episode_description: firstEpisode?.description ?? null,
           episode_transcript: captured?.transcript ?? null,
@@ -1523,6 +1550,13 @@ serve(async (req) => {
           episode_description: pointer('<latest_episode>', baseVariables.episode_description),
           episode_transcript: pointer('<transcript>', baseVariables.episode_transcript),
           research_report: '(provided in the research report section above)',
+          // Each stage's result becomes a field the stages after it can use.
+          // Filled in as the run advances; a stage that references one before
+          // it exists gets "Not available" like any other absent field. The
+          // text is only ever sent when a prompt actually references it, so an
+          // unused result costs nothing.
+          host_report: null,
+          guest_report: null,
         }
 
         const advance = async (promptId: string, nextStage: string | null) => {
@@ -1547,6 +1581,7 @@ serve(async (req) => {
           { context: sharedContext, report: reportBlock, instruction: fillPromptTemplate(promptContent('host_info'), stageVariables) },
           usage,
         )
+        stageVariables.host_report = hostReport ? hostReport.slice(0, 6_000) : null
         await advance('host_info', 'guest_patterns')
 
         let guestReport: string | null = null
@@ -1558,6 +1593,7 @@ serve(async (req) => {
             usage,
           ).catch(() => null)
         }
+        stageVariables.guest_report = guestReport ? guestReport.slice(0, 6_000) : null
         await advance('guest_info', 'guest_fit')
 
         const topicProposal = await runResearchPrompt(

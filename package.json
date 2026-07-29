@@ -23,6 +23,7 @@
     "check:sql-grammar": "node scripts/check-sql-grammar.mjs",
     "check:mcp": "npm --prefix mcp-prospect-dashboard ci --ignore-scripts --no-audit --no-fund && npm --prefix mcp-prospect-dashboard run build && npm --prefix mcp-prospect-dashboard audit --audit-level=high && npm --prefix mcp-prospect-dashboard audit --omit=dev --audit-level=high",
     "check:edge": "bash scripts/check-edge-functions.sh",
+    "generate:prompt-variables": "node scripts/generate-prompt-variables.mjs",
     "test:sensitive-url": "tsx scripts/test-sensitive-url.ts",
     "test:external-url": "tsx scripts/test-external-url.ts",
     "test:sentry-sanitization": "tsx scripts/test-sentry-sanitization.ts",

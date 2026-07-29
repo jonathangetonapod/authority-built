@@ -25,7 +25,8 @@ const EXPECTED_COUNTS = Object.freeze({
   excludedFunctions: 2,
   retiredFunctions: 17,
   unauthenticatedTombstones: 5,
-  edgeTypeScriptFiles: 142,
+  // +2: _shared/promptVariables.ts and its test, the prompt variable registry.
+  edgeTypeScriptFiles: 144,
 })
 
 const EXPECTED_PHASE_KEYS = Object.freeze([
