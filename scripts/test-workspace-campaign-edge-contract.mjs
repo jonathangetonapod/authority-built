@@ -720,11 +720,19 @@ const variableRegistry = JSON.parse(
   readFileSync('docs/prompt-variables.json', 'utf8'),
 )
 function mirrorVariables(source) {
-  return [...source.matchAll(/\{ id: '([a-z_]+)', group: '([a-z]+)'(?:, column: '([a-z_]+)')?, type: '([a-z_]+)'/gu)]
-    .map((match) => ({ id: match[1], group: match[2], column: match[3], type: match[4] }))
+  return [...source.matchAll(
+    /\{ id: '([a-z_]+)', group: '([a-z]+)'(?:, column: '([a-z_]+)')?(?:, profile: '([a-z_]+)')?, type: '([a-z_]+)'/gu,
+  )]
+    .map((match) => ({
+      id: match[1], group: match[2], column: match[3], profile: match[4], type: match[5],
+    }))
 }
 const canonicalVariables = variableRegistry.variables.map((variable) => ({
-  id: variable.id, group: variable.group, column: variable.column, type: variable.type,
+  id: variable.id,
+  group: variable.group,
+  column: variable.column,
+  profile: variable.profile,
+  type: variable.type,
 }))
 const edgeMirror = mirrorVariables(
   readFileSync('supabase/functions/_shared/promptVariables.ts', 'utf8'),
@@ -736,27 +744,70 @@ assert.deepEqual(appMirror, canonicalVariables)
 
 // Every {{variable}} a shipped prompt references must exist in the registry,
 // or the field picker offers a prompt-author less than the prompts already use.
+// The exception is a prompt writing ABOUT placeholder syntax: the filler leaves
+// an unregistered token alone precisely so that prose survives, and listing it
+// here keeps a genuine typo from passing as prose.
+const PROSE_TOKENS = new Set(['placeholders'])
 const shippedPrompts = readFileSync('src/lib/researchPromptDefaults.ts', 'utf8')
 const referenced = new Set(
   [...shippedPrompts.matchAll(/\{\{([a-z_]+)\}\}/gu)].map((match) => match[1]),
 )
 const registryIds = new Set(canonicalVariables.map((variable) => variable.id))
 for (const name of referenced) {
+  if (PROSE_TOKENS.has(name)) continue
   assert.ok(registryIds.has(name), `{{${name}}} is used by a prompt but missing from the registry`)
 }
 
-// The research executor loads exactly the registry's podcast columns. It used
-// to select five, of which four reached a prompt; everything else Podscan gives
-// us was stored and never read.
-assert.match(shortlistEdge, /\.select\(PODCAST_VARIABLE_COLUMNS\.join\(', '\)\)/u)
+// Both executors load the registry's full column set. Research used to select
+// five columns of which four reached a prompt; the pitch stage, which actually
+// writes the emails, then read six of the thirty research had.
+// The column lists are built once from the registry...
 assert.match(
   shortlistEdge,
-  /import \{\s*formatPromptValue,\s*PODCAST_VARIABLE_COLUMNS,\s*PROMPT_VARIABLES,\s*\} from '\.\.\/_shared\/promptVariables\.ts'/u,
+  /const CLIENT_PROMPT_COLUMNS = `\$\{CLIENT_VARIABLE_COLUMNS\.join\(', '\)\}, ai_sdr_profile`/u,
 )
+assert.match(shortlistEdge, /const PODCAST_PROMPT_COLUMNS = PODCAST_VARIABLE_COLUMNS\.join\(', '\)/u)
+assert.match(
+  shortlistEdge,
+  /const PITCH_CATALOG_COLUMNS = `\$\{PODCAST_VARIABLE_COLUMNS\.join\(', '\)\}, recent_episodes`/u,
+)
+// ...and both executors select them. The pitch stage read a hand-written six
+// columns while research read the registry's thirty.
+assert.equal(
+  shortlistEdge.match(/\.select\(CLIENT_PROMPT_COLUMNS\)/gu)?.length,
+  2,
+  'both executors must load the client AI SDR profile',
+)
+assert.match(shortlistEdge, /\.select\(PODCAST_PROMPT_COLUMNS\)/u)
+assert.match(shortlistEdge, /\.select\(PITCH_CATALOG_COLUMNS\)/u)
+assert.match(
+  shortlistEdge,
+  /import \{\s*buildClientVariables,\s*buildPodcastVariables,\s*CLIENT_VARIABLE_COLUMNS,\s*formatPromptValue,\s*isPromptVariable,\s*PODCAST_VARIABLE_COLUMNS,\s*\} from '\.\.\/_shared\/promptVariables\.ts'/u,
+)
+// Both build their variables through the same helpers, so the two stages can
+// never again disagree about how much of a show they can see.
+assert.equal(shortlistEdge.match(/buildPodcastVariables\(/gu)?.length, 2)
+assert.equal(shortlistEdge.match(/buildClientVariables\(/gu)?.length, 2)
+
 // Values are formatted by declared type before filling, so a false boolean and
 // a zero cannot reach a prompt looking like missing data.
-assert.match(shortlistEdge, /formatPromptValue\(\s*variable\.id,/u)
+const sharedVariables = readFileSync('supabase/functions/_shared/promptVariables.ts', 'utf8')
+assert.match(sharedVariables, /formatPromptValue\(\s*variable\.id,\s*values\[variable\.column\]/u)
+assert.match(sharedVariables, /formatPromptValue\(variable\.id, profile\[variable\.profile\]\)/u)
+
+// The filler substitutes registered variables only. Filling every token turned
+// clean_email's rule about unfilled placeholders into "unfilled Not available
+// must never appear".
+assert.match(shortlistEdge, /if \(!isPromptVariable\(key\)\) return match/u)
 
 // Each stage's result becomes a field the stages after it can reference.
 assert.match(shortlistEdge, /stageVariables\.host_report = hostReport/u)
 assert.match(shortlistEdge, /stageVariables\.guest_report = guestReport/u)
+// ...and the pitch stage can name what research produced, not just the
+// concatenated report it used to receive.
+for (const runVariable of ['host_report', 'guest_report', 'clean_description', 'fit_reasons', 'selected_angle']) {
+  assert.ok(
+    new RegExp(`^\\s*${runVariable}:`, 'mu').test(shortlistEdge),
+    `pitch generation must expose ${runVariable} as a prompt variable`,
+  )
+}

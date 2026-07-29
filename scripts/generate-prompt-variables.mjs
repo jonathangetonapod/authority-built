@@ -13,6 +13,7 @@ const registry = JSON.parse(readFileSync('docs/prompt-variables.json', 'utf8'))
 function entry(variable) {
   const parts = [`id: '${variable.id}'`, `group: '${variable.group}'`]
   if (variable.column) parts.push(`column: '${variable.column}'`)
+  if (variable.profile) parts.push(`profile: '${variable.profile}'`)
   parts.push(`type: '${variable.type}'`)
   parts.push(`label: ${JSON.stringify(variable.label)}`)
   if (variable.producedBy) parts.push(`producedBy: '${variable.producedBy}'`)
@@ -30,14 +31,17 @@ export type PromptVariableType =
   | 'date'
   | 'list'
   | 'object'
+  | 'episode_list'
 
 export interface PromptVariable {
   id: string
   group: PromptVariableGroup
   type: PromptVariableType
   label: string
-  /** Podcast-group only: the podcasts column this reads. */
+  /** Podcast- and client-group only: the table column this reads. */
   column?: string
+  /** Client-group only: the clients.ai_sdr_profile key this reads. */
+  profile?: string
   /** Run-group only: the stage that produces it. */
   producedBy?: string
 }
@@ -49,14 +53,33 @@ ${registry.variables.map(entry).join('\n')}
 `
 
 const FORMATTER = `
-/** The podcasts columns the research executor must SELECT to fill the registry. */
+/** The podcasts columns an executor must SELECT to fill the registry. */
 export const PODCAST_VARIABLE_COLUMNS: string[] = PROMPT_VARIABLES
   .filter((variable) => variable.group === 'podcast' && variable.column)
+  .map((variable) => variable.column as string)
+
+/** The clients columns an executor must SELECT, alongside ai_sdr_profile. */
+export const CLIENT_VARIABLE_COLUMNS: string[] = PROMPT_VARIABLES
+  .filter((variable) => variable.group === 'client' && variable.column)
   .map((variable) => variable.column as string)
 
 const VARIABLE_TYPES = new Map(
   PROMPT_VARIABLES.map((variable) => [variable.id, variable.type] as const),
 )
+
+const VARIABLE_IDS = new Set(PROMPT_VARIABLES.map((variable) => variable.id))
+
+/**
+ * Whether a {{token}} names a real variable.
+ *
+ * A filler that substitutes anything token-shaped turns prose into data: the
+ * clean_email rule "unfilled {{placeholders}} must never appear" was itself
+ * being filled, so the shipped instruction read "unfilled Not available must
+ * never appear". An unknown token is left alone instead.
+ */
+export function isPromptVariable(id: string): boolean {
+  return VARIABLE_IDS.has(id)
+}
 
 function formatList(value: unknown): string | null {
   if (!Array.isArray(value)) return null
@@ -88,6 +111,26 @@ function formatObject(value: unknown): string | null {
       if (list) lines.push(\`\${readableKey}: \${list}\`)
     }
   }
+  return lines.length > 0 ? lines.join('\\n') : null
+}
+
+/** Stored episode captures, newest first, one dated title per line. */
+function formatEpisodeList(value: unknown): string | null {
+  if (!Array.isArray(value)) return null
+  const lines = value
+    .slice(0, 10)
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return ''
+      const episode = entry as Record<string, unknown>
+      const title = typeof episode.title === 'string' ? episode.title.trim() : ''
+      if (!title) return ''
+      const postedAt = typeof episode.posted_at === 'string' ? new Date(episode.posted_at) : null
+      const stamp = postedAt && !Number.isNaN(postedAt.getTime())
+        ? postedAt.toISOString().slice(0, 10)
+        : null
+      return stamp ? \`- \${stamp}: \${title}\` : \`- \${title}\`
+    })
+    .filter((line) => line.length > 0)
   return lines.length > 0 ? lines.join('\\n') : null
 }
 
@@ -130,12 +173,50 @@ export function formatPromptValue(variableId: string, value: unknown): string | 
       return formatList(value)
     case 'object':
       return formatObject(value)
+    case 'episode_list':
+      return formatEpisodeList(value)
     default: {
       if (typeof value !== 'string') return null
       const trimmed = value.trim()
       return trimmed.length > 0 ? value : null
     }
   }
+}
+
+/**
+ * Every podcast-group variable, read off a catalogue row by declared type.
+ * Both executors build these the same way so the pitch stage can never again
+ * see less of a show than the research stage did.
+ */
+export function buildPodcastVariables(row: unknown): Record<string, string | null> {
+  const values = (row ?? {}) as Record<string, unknown>
+  const variables: Record<string, string | null> = {}
+  for (const variable of PROMPT_VARIABLES) {
+    if (variable.group !== 'podcast' || !variable.column) continue
+    variables[variable.id] = formatPromptValue(variable.id, values[variable.column])
+  }
+  return variables
+}
+
+/**
+ * Every client-group variable, from the client row and its AI SDR profile.
+ * The profile fields (positioning, topics, proof points, booking details) were
+ * declared and referenced by shipped prompts but never loaded here, so they
+ * reached the model as "Not available" while sitting populated in the row.
+ */
+export function buildClientVariables(row: unknown): Record<string, string | null> {
+  const values = (row ?? {}) as Record<string, unknown>
+  const profile = (values.ai_sdr_profile ?? {}) as Record<string, unknown>
+  const variables: Record<string, string | null> = {}
+  for (const variable of PROMPT_VARIABLES) {
+    if (variable.group !== 'client') continue
+    if (variable.column) {
+      variables[variable.id] = formatPromptValue(variable.id, values[variable.column])
+    } else if (variable.profile) {
+      variables[variable.id] = formatPromptValue(variable.id, profile[variable.profile])
+    }
+  }
+  return variables
 }
 `
 

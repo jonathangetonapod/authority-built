@@ -13,14 +13,17 @@ export type PromptVariableType =
   | 'date'
   | 'list'
   | 'object'
+  | 'episode_list'
 
 export interface PromptVariable {
   id: string
   group: PromptVariableGroup
   type: PromptVariableType
   label: string
-  /** Podcast-group only: the podcasts column this reads. */
+  /** Podcast- and client-group only: the table column this reads. */
   column?: string
+  /** Client-group only: the clients.ai_sdr_profile key this reads. */
+  profile?: string
   /** Run-group only: the stage that produces it. */
   producedBy?: string
 }
@@ -49,13 +52,32 @@ export const PROMPT_VARIABLES: PromptVariable[] = [
   { id: 'demographics_episodes_analyzed', group: 'podcast', column: 'demographics_episodes_analyzed', type: 'number', label: "Episodes behind the demographics" },
   { id: 'brand_safety_risk_level', group: 'podcast', column: 'brand_safety_risk_level', type: 'text', label: "Brand safety risk" },
   { id: 'brand_safety_recommendation', group: 'podcast', column: 'brand_safety_recommendation', type: 'long_text', label: "Brand safety note" },
+  { id: 'podcast_host_name', group: 'podcast', column: 'host_name', type: 'text', label: "Host name (Podscan)" },
+  { id: 'podcast_is_active', group: 'podcast', column: 'is_active', type: 'boolean', label: "Still publishing" },
+  { id: 'podcast_inbox_email', group: 'podcast', column: 'podscan_email', type: 'text', label: "Show inbox (Podscan)" },
+  { id: 'podcast_rss_url', group: 'podcast', column: 'rss_url', type: 'text', label: "RSS feed" },
+  { id: 'podcast_image_url', group: 'podcast', column: 'podcast_image_url', type: 'text', label: "Cover art URL" },
+  { id: 'demographics_fetched_at', group: 'podcast', column: 'demographics_fetched_at', type: 'date', label: "Demographics captured" },
+  { id: 'episodes_fetched_at', group: 'podcast', column: 'episodes_fetched_at', type: 'date', label: "Episodes captured" },
   { id: 'episode_title', group: 'episode', type: 'text', label: "Latest episode title" },
   { id: 'episode_description', group: 'episode', type: 'long_text', label: "Latest episode summary" },
   { id: 'episode_transcript', group: 'episode', type: 'long_text', label: "Latest episode transcript" },
-  { id: 'client_name', group: 'client', type: 'text', label: "Client name" },
-  { id: 'client_bio', group: 'client', type: 'long_text', label: "Client bio and positioning" },
-  { id: 'client_linkedin_url', group: 'client', type: 'text', label: "Client LinkedIn" },
-  { id: 'client_website', group: 'client', type: 'text', label: "Client website" },
+  { id: 'episode_posted_at', group: 'episode', type: 'date', label: "Latest episode posted" },
+  { id: 'episode_summary', group: 'episode', type: 'long_text', label: "Latest episode summary (Podscan)" },
+  { id: 'episode_topics', group: 'episode', type: 'list', label: "Latest episode topics" },
+  { id: 'episode_keywords', group: 'episode', type: 'list', label: "Latest episode keywords" },
+  { id: 'episode_guests', group: 'episode', type: 'list', label: "Latest episode guests" },
+  { id: 'episode_hosts', group: 'episode', type: 'list', label: "Latest episode hosts" },
+  { id: 'episode_has_guests', group: 'episode', type: 'boolean', label: "Latest episode had a guest" },
+  { id: 'episode_url', group: 'episode', type: 'text', label: "Latest episode URL" },
+  { id: 'episode_duration_seconds', group: 'episode', type: 'number', label: "Latest episode length, seconds" },
+  { id: 'episode_word_count', group: 'episode', type: 'number', label: "Latest episode word count" },
+  { id: 'recent_episodes', group: 'episode', type: 'episode_list', label: "Recent episodes, newest first" },
+  { id: 'client_name', group: 'client', column: 'name', type: 'text', label: "Client name" },
+  { id: 'client_bio', group: 'client', column: 'bio', type: 'long_text', label: "Client bio and positioning" },
+  { id: 'client_linkedin_url', group: 'client', column: 'linkedin_url', type: 'text', label: "Client LinkedIn" },
+  { id: 'client_website', group: 'client', column: 'website', type: 'text', label: "Client website" },
+  { id: 'client_calendar_link', group: 'client', column: 'calendar_link', type: 'text', label: "Client booking link" },
   { id: 'research_report', group: 'run', type: 'long_text', label: "Podcast research result", producedBy: 'podcast_research' },
   { id: 'host_report', group: 'run', type: 'long_text', label: "Host identification result", producedBy: 'host_info' },
   { id: 'guest_report', group: 'run', type: 'long_text', label: "Guest verification result", producedBy: 'guest_info' },
@@ -66,26 +88,50 @@ export const PROMPT_VARIABLES: PromptVariable[] = [
   { id: 'verified_email', group: 'run', type: 'text', label: "Verified contact email", producedBy: 'email_unlock' },
   { id: 'sequence_json', group: 'run', type: 'long_text', label: "Drafted sequence, as JSON", producedBy: 'write_email' },
   { id: 'audit_flags', group: 'run', type: 'long_text', label: "Problems found in the draft", producedBy: 'write_email' },
-  { id: 'placeholders', group: 'run', type: 'long_text', label: "Unfilled placeholders in the draft", producedBy: 'write_email' },
-  { id: 'positioning', group: 'client', type: 'long_text', label: "Client positioning" },
-  { id: 'topics_and_angles', group: 'client', type: 'long_text', label: "Client topics and angles" },
-  { id: 'listener_takeaways', group: 'client', type: 'long_text', label: "Listener takeaways" },
-  { id: 'proof_points', group: 'client', type: 'long_text', label: "Client proof points" },
-  { id: 'booking_details', group: 'client', type: 'long_text', label: "Booking and scheduling details" },
+  { id: 'positioning', group: 'client', profile: 'positioning', type: 'long_text', label: "Client positioning" },
+  { id: 'topics_and_angles', group: 'client', profile: 'topics_and_angles', type: 'long_text', label: "Client topics and angles" },
+  { id: 'listener_takeaways', group: 'client', profile: 'listener_takeaways', type: 'long_text', label: "Listener takeaways" },
+  { id: 'proof_points', group: 'client', profile: 'proof_points', type: 'long_text', label: "Client proof points" },
+  { id: 'ideal_opportunities', group: 'client', profile: 'ideal_opportunities', type: 'long_text', label: "Ideal shows and audiences" },
+  { id: 'booking_details', group: 'client', profile: 'booking_details', type: 'long_text', label: "Booking and scheduling details" },
   { id: 'podcast_research', group: 'run', type: 'long_text', label: "Podcast research result, for the inbox", producedBy: 'podcast_research' },
   { id: 'pitch_sent', group: 'run', type: 'long_text', label: "The pitch this reply answers", producedBy: 'write_email' },
   { id: 'reply_subject', group: 'run', type: 'text', label: "Subject of the host reply", producedBy: 'inbox' },
   { id: 'reply_body', group: 'run', type: 'long_text', label: "Body of the host reply", producedBy: 'inbox' },
+  { id: 'agency_relationship', group: 'run', type: 'long_text', label: "What this agency already means to this host", producedBy: 'relationship' },
+  { id: 'clean_description', group: 'run', type: 'long_text', label: "Show summary, structured", producedBy: 'structure_research' },
+  { id: 'fit_reasons', group: 'run', type: 'list', label: "Why this guest fits, structured", producedBy: 'structure_research' },
+  { id: 'pitch_angles', group: 'run', type: 'long_text', label: "All three angles, structured", producedBy: 'structure_research' },
+  { id: 'selected_angle', group: 'run', type: 'long_text', label: "The angle this pitch was asked for", producedBy: 'structure_research' },
 ]
 
-/** The podcasts columns the research executor must SELECT to fill the registry. */
+/** The podcasts columns an executor must SELECT to fill the registry. */
 export const PODCAST_VARIABLE_COLUMNS: string[] = PROMPT_VARIABLES
   .filter((variable) => variable.group === 'podcast' && variable.column)
+  .map((variable) => variable.column as string)
+
+/** The clients columns an executor must SELECT, alongside ai_sdr_profile. */
+export const CLIENT_VARIABLE_COLUMNS: string[] = PROMPT_VARIABLES
+  .filter((variable) => variable.group === 'client' && variable.column)
   .map((variable) => variable.column as string)
 
 const VARIABLE_TYPES = new Map(
   PROMPT_VARIABLES.map((variable) => [variable.id, variable.type] as const),
 )
+
+const VARIABLE_IDS = new Set(PROMPT_VARIABLES.map((variable) => variable.id))
+
+/**
+ * Whether a {{token}} names a real variable.
+ *
+ * A filler that substitutes anything token-shaped turns prose into data: the
+ * clean_email rule "unfilled {{placeholders}} must never appear" was itself
+ * being filled, so the shipped instruction read "unfilled Not available must
+ * never appear". An unknown token is left alone instead.
+ */
+export function isPromptVariable(id: string): boolean {
+  return VARIABLE_IDS.has(id)
+}
 
 function formatList(value: unknown): string | null {
   if (!Array.isArray(value)) return null
@@ -117,6 +163,26 @@ function formatObject(value: unknown): string | null {
       if (list) lines.push(`${readableKey}: ${list}`)
     }
   }
+  return lines.length > 0 ? lines.join('\n') : null
+}
+
+/** Stored episode captures, newest first, one dated title per line. */
+function formatEpisodeList(value: unknown): string | null {
+  if (!Array.isArray(value)) return null
+  const lines = value
+    .slice(0, 10)
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return ''
+      const episode = entry as Record<string, unknown>
+      const title = typeof episode.title === 'string' ? episode.title.trim() : ''
+      if (!title) return ''
+      const postedAt = typeof episode.posted_at === 'string' ? new Date(episode.posted_at) : null
+      const stamp = postedAt && !Number.isNaN(postedAt.getTime())
+        ? postedAt.toISOString().slice(0, 10)
+        : null
+      return stamp ? `- ${stamp}: ${title}` : `- ${title}`
+    })
+    .filter((line) => line.length > 0)
   return lines.length > 0 ? lines.join('\n') : null
 }
 
@@ -159,10 +225,48 @@ export function formatPromptValue(variableId: string, value: unknown): string | 
       return formatList(value)
     case 'object':
       return formatObject(value)
+    case 'episode_list':
+      return formatEpisodeList(value)
     default: {
       if (typeof value !== 'string') return null
       const trimmed = value.trim()
       return trimmed.length > 0 ? value : null
     }
   }
+}
+
+/**
+ * Every podcast-group variable, read off a catalogue row by declared type.
+ * Both executors build these the same way so the pitch stage can never again
+ * see less of a show than the research stage did.
+ */
+export function buildPodcastVariables(row: unknown): Record<string, string | null> {
+  const values = (row ?? {}) as Record<string, unknown>
+  const variables: Record<string, string | null> = {}
+  for (const variable of PROMPT_VARIABLES) {
+    if (variable.group !== 'podcast' || !variable.column) continue
+    variables[variable.id] = formatPromptValue(variable.id, values[variable.column])
+  }
+  return variables
+}
+
+/**
+ * Every client-group variable, from the client row and its AI SDR profile.
+ * The profile fields (positioning, topics, proof points, booking details) were
+ * declared and referenced by shipped prompts but never loaded here, so they
+ * reached the model as "Not available" while sitting populated in the row.
+ */
+export function buildClientVariables(row: unknown): Record<string, string | null> {
+  const values = (row ?? {}) as Record<string, unknown>
+  const profile = (values.ai_sdr_profile ?? {}) as Record<string, unknown>
+  const variables: Record<string, string | null> = {}
+  for (const variable of PROMPT_VARIABLES) {
+    if (variable.group !== 'client') continue
+    if (variable.column) {
+      variables[variable.id] = formatPromptValue(variable.id, values[variable.column])
+    } else if (variable.profile) {
+      variables[variable.id] = formatPromptValue(variable.id, profile[variable.profile])
+    }
+  }
+  return variables
 }

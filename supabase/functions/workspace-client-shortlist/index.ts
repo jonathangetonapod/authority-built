@@ -24,11 +24,20 @@ import { ensureEpisodesCaptured, fetchPodcastHosts } from '../_shared/podcastEpi
 import { decryptInstantlyApiKey, instantlyRequest } from '../_shared/instantly.ts'
 import { RESEARCH_PROMPT_DEFAULTS } from '../_shared/researchPromptDefaults.ts'
 import {
+  buildClientVariables,
+  buildPodcastVariables,
+  CLIENT_VARIABLE_COLUMNS,
   formatPromptValue,
+  isPromptVariable,
   PODCAST_VARIABLE_COLUMNS,
-  PROMPT_VARIABLES,
 } from '../_shared/promptVariables.ts'
 import { notifyShortlistReady } from '../_shared/clientNotify.ts'
+
+// Built as plain strings: an inline template literal makes supabase-js infer a
+// literal select type and its parser cannot read a runtime-joined column list.
+const CLIENT_PROMPT_COLUMNS = `${CLIENT_VARIABLE_COLUMNS.join(', ')}, ai_sdr_profile` as string
+const PODCAST_PROMPT_COLUMNS = PODCAST_VARIABLE_COLUMNS.join(', ') as string
+const PITCH_CATALOG_COLUMNS = `${PODCAST_VARIABLE_COLUMNS.join(', ')}, recent_episodes` as string
 
 const METHODS = ['POST'] as const
 const MANAGER_ROLES = new Set(['owner', 'admin', 'platform_admin'])
@@ -738,7 +747,12 @@ function pitchSequenceChecks(sequence: PitchSequence): string[] {
 }
 
 function fillPromptTemplate(template: string, variables: Record<string, string | null | undefined>): string {
-  return template.replace(/\{\{\s*([a-z_]+)\s*\}\}/gu, (_match, key: string) => {
+  return template.replace(/\{\{\s*([a-z_]+)\s*\}\}/gu, (match, key: string) => {
+    // Only a registered variable is substituted. A prompt that writes about
+    // placeholders in placeholder syntax is prose, and filling it corrupts the
+    // instruction: clean_email's "unfilled {{placeholders}} must never appear"
+    // was shipping as "unfilled Not available must never appear".
+    if (!isPromptVariable(key)) return match
     const value = variables[key]
     return typeof value === 'string' && value.trim() ? value : 'Not available'
   })
@@ -1408,7 +1422,10 @@ serve(async (req) => {
 
       const { data: clientProfile } = await authContext.admin
         .from('clients')
-        .select('name, bio, linkedin_url, website')
+        // The AI SDR profile carries positioning, topics, proof points and
+        // booking details. Shipped prompts already referenced all four; none
+        // was loaded here, so every one arrived as "Not available".
+        .select(CLIENT_PROMPT_COLUMNS)
         .eq('id', clientId)
         .eq('workspace_id', workspaceId)
         .maybeSingle()
@@ -1418,7 +1435,7 @@ serve(async (req) => {
         // Every column the variable registry can offer a prompt. This used to
         // read five, of which four reached a prompt — the rest of what Podscan
         // gives us was stored and never looked at.
-        .select(PODCAST_VARIABLE_COLUMNS.join(', '))
+        .select(PODCAST_PROMPT_COLUMNS)
         .eq('podscan_id', shortlistRow.podcast_id)
         .maybeSingle()
 
@@ -1479,22 +1496,11 @@ serve(async (req) => {
         // declared type. Typing matters here: a raw false or 0 handed to the
         // filler would come out as "Not available", and podcast_has_guests
         // being false is a fact, not an absence.
-        const catalogValues = (catalogRow ?? {}) as Record<string, unknown>
-        const podcastVariables: Record<string, string | null> = {}
-        for (const variable of PROMPT_VARIABLES) {
-          if (variable.group !== 'podcast' || !variable.column) continue
-          podcastVariables[variable.id] = formatPromptValue(
-            variable.id,
-            catalogValues[variable.column],
-          )
-        }
+        const podcastVariables = buildPodcastVariables(catalogRow)
 
         const baseVariables: Record<string, string | null> = {
           ...podcastVariables,
-          client_name: clientProfile?.name ?? null,
-          client_bio: clientProfile?.bio ?? null,
-          client_linkedin_url: clientProfile?.linkedin_url ?? null,
-          client_website: clientProfile?.website ?? null,
+          ...buildClientVariables(clientProfile),
           // The shortlist row is the fallback for a show the catalogue has not
           // caught up with, and the capture is fresher than the catalogue.
           podcast_name: podcastVariables.podcast_name ?? shortlistRow.podcast_name,
@@ -1506,6 +1512,23 @@ serve(async (req) => {
           episode_title: firstEpisode?.title ?? null,
           episode_description: firstEpisode?.description ?? null,
           episode_transcript: captured?.transcript ?? null,
+          episode_posted_at: formatPromptValue('episode_posted_at', firstEpisode?.posted_at),
+          // Podscan's own per-episode analysis. All of it was captured and
+          // stored; only the title, description and transcript were readable.
+          episode_summary: formatPromptValue('episode_summary', firstEpisode?.summary),
+          episode_topics: formatPromptValue('episode_topics', firstEpisode?.topics),
+          episode_keywords: formatPromptValue('episode_keywords', firstEpisode?.keywords),
+          episode_guests: formatPromptValue('episode_guests', firstEpisode?.guests),
+          episode_hosts: formatPromptValue('episode_hosts', firstEpisode?.hosts),
+          episode_has_guests: formatPromptValue('episode_has_guests', firstEpisode?.has_guests),
+          episode_url: formatPromptValue('episode_url', firstEpisode?.url),
+          episode_duration_seconds: formatPromptValue('episode_duration_seconds', firstEpisode?.duration_seconds),
+          episode_word_count: formatPromptValue('episode_word_count', firstEpisode?.word_count),
+          // The capture holds a list; only its first entry was ever readable.
+          recent_episodes: formatPromptValue('recent_episodes', captured?.episodes ?? null),
+          // Already shaping every stage through the context block — a prompt
+          // can now address the relationship directly instead of inferring it.
+          agency_relationship: describeRelationship(relationship),
         }
 
         // One byte-identical CONTEXT block opens every Sonnet stage of this
@@ -2162,13 +2185,13 @@ serve(async (req) => {
       const [{ data: shortlistRow }, { data: clientProfile }, { data: target }] = await Promise.all([
         authContext.admin
           .from('client_dashboard_podcasts')
-          .select('id, podcast_id, podcast_name, podcast_description, podcast_url, publisher_name, ai_pitch_angles, research_document')
+          .select('id, podcast_id, podcast_name, podcast_description, podcast_url, publisher_name, ai_clean_description, ai_fit_reasons, ai_pitch_angles, research_document')
           .eq('id', shortlistPodcastId)
           .eq('client_id', clientId)
           .maybeSingle(),
         authContext.admin
           .from('clients')
-          .select('name, bio, linkedin_url, website')
+          .select(CLIENT_PROMPT_COLUMNS)
           .eq('id', clientId)
           .eq('workspace_id', workspaceId)
           .maybeSingle(),
@@ -2188,24 +2211,33 @@ serve(async (req) => {
       )
       // The catalog row is the fresher copy of show metadata and carries the
       // stored episode capture; the shortlist copy is only the fallback.
-      const { data: pitchCatalogRow } = await authContext.admin
+      // Reads the registry's full column set, same as research: the stage that
+      // actually writes the emails used to see six columns of a show the
+      // research stage had thirty of.
+      const { data: pitchCatalogData } = await authContext.admin
         .from('podcasts')
-        .select('podcast_name, podcast_description, podcast_url, host_name, publisher_name, recent_episodes')
+        .select(PITCH_CATALOG_COLUMNS)
         .eq('podscan_id', shortlistRow.podcast_id)
         .maybeSingle()
+      // A runtime-joined column list leaves supabase-js unable to infer a row
+      // type, so the shape is asserted once here rather than at each read.
+      const pitchCatalogRow = (pitchCatalogData ?? null) as Record<string, unknown> | null
+      const pitchClientRow = (clientProfile ?? null) as Record<string, unknown> | null
       const storedEpisodes = Array.isArray(pitchCatalogRow?.recent_episodes)
-        ? pitchCatalogRow.recent_episodes as Array<{ title?: unknown; guests?: Array<{ name?: unknown }> }>
+        ? pitchCatalogRow.recent_episodes as Array<Record<string, unknown>>
         : []
-      const storedEpisodeTitle = typeof storedEpisodes[0]?.title === 'string'
-        ? storedEpisodes[0].title as string
+      const storedEpisode = storedEpisodes[0] ?? null
+      const storedEpisodeTitle = typeof storedEpisode?.title === 'string'
+        ? storedEpisode.title
         : null
-      const storedGuestName = typeof storedEpisodes[0]?.guests?.[0]?.name === 'string'
-        ? storedEpisodes[0].guests[0].name as string
+      const storedGuestName = typeof (storedEpisode?.guests as Array<{ name?: unknown }>)?.[0]?.name === 'string'
+        ? (storedEpisode!.guests as Array<{ name: string }>)[0].name
         : null
       const researchDocument = (shortlistRow.research_document ?? null) as
         | {
           podcast_research?: unknown
           host_info?: unknown
+          guest_info?: unknown
           find_topics?: unknown
           episodes_used?: Array<{ title?: string }>
           episode_transcript_excerpt?: unknown
@@ -2262,10 +2294,12 @@ serve(async (req) => {
         typeof researchDocument.host_info === 'string' ? String(researchDocument.host_info).slice(0, 3_000) : '',
       ].filter(Boolean).join('\n\n')
       const variables: Record<string, string | null> = {
-        client_name: clientProfile?.name ?? null,
-        client_bio: typeof clientProfile?.bio === 'string' ? clientProfile.bio.slice(0, 1_500) : null,
-        client_linkedin_url: clientProfile?.linkedin_url ?? null,
-        client_website: clientProfile?.website ?? null,
+        // The same registry the research stage reads, so a prompt author who
+        // uses a field upstream can use it here without discovering that this
+        // stage was built from a shorter hand-written list.
+        ...buildPodcastVariables(pitchCatalogRow),
+        ...buildClientVariables(clientProfile),
+        client_bio: typeof pitchClientRow?.bio === 'string' ? pitchClientRow.bio.slice(0, 1_500) : null,
         podcast_name: decodeHtmlEntities(pitchCatalogRow?.podcast_name ?? shortlistRow.podcast_name),
         podcast_url: pitchCatalogRow?.podcast_url ?? shortlistRow.podcast_url,
         podcast_description: decodeHtmlEntities(pitchCatalogRow?.podcast_description ?? shortlistRow.podcast_description ?? ''),
@@ -2285,6 +2319,40 @@ serve(async (req) => {
           : storedGuestName,
         topic_proposal: null,
         research_report: researchReport,
+        // Podscan's analysis of the episode this pitch will reference.
+        episode_description: formatPromptValue('episode_description', storedEpisode?.description),
+        episode_posted_at: formatPromptValue('episode_posted_at', storedEpisode?.posted_at),
+        episode_summary: formatPromptValue('episode_summary', storedEpisode?.summary),
+        episode_topics: formatPromptValue('episode_topics', storedEpisode?.topics),
+        episode_keywords: formatPromptValue('episode_keywords', storedEpisode?.keywords),
+        episode_guests: formatPromptValue('episode_guests', storedEpisode?.guests),
+        episode_hosts: formatPromptValue('episode_hosts', storedEpisode?.hosts),
+        episode_has_guests: formatPromptValue('episode_has_guests', storedEpisode?.has_guests),
+        episode_url: formatPromptValue('episode_url', storedEpisode?.url),
+        episode_duration_seconds: formatPromptValue('episode_duration_seconds', storedEpisode?.duration_seconds),
+        episode_word_count: formatPromptValue('episode_word_count', storedEpisode?.word_count),
+        recent_episodes: formatPromptValue('recent_episodes', storedEpisodes),
+        // Research stage results, written to the document and until now
+        // readable only as the concatenated research_report.
+        host_report: typeof researchDocument.host_info === 'string'
+          ? researchDocument.host_info.slice(0, 6_000)
+          : null,
+        guest_report: typeof researchDocument.guest_info === 'string'
+          ? researchDocument.guest_info.slice(0, 6_000)
+          : null,
+        agency_relationship: describeRelationship(relationship),
+        clean_description: typeof shortlistRow.ai_clean_description === 'string'
+          ? shortlistRow.ai_clean_description
+          : null,
+        fit_reasons: formatPromptValue('fit_reasons', shortlistRow.ai_fit_reasons),
+        pitch_angles: angles.length > 0
+          ? angles
+            .map((entry: { title?: string; description?: string }) => `- ${entry?.title ?? ''}: ${entry?.description ?? ''}`)
+            .join('\n')
+          : null,
+        selected_angle: angle?.title && angle?.description
+          ? `${angle.title} — ${angle.description}`
+          : null,
       }
       const topicResearch = typeof researchDocument.find_topics === 'string'
         ? String(researchDocument.find_topics).slice(0, 4_000)
