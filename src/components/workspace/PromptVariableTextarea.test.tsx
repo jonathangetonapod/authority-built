@@ -114,6 +114,21 @@ describe('PromptVariableTextarea', () => {
     expect(reply.querySelector('mark')).toHaveTextContent('host')
   })
 
+  it('never offers a field the stage being edited writes itself', async () => {
+    render(
+      <PromptVariableTextarea
+        value=""
+        onChange={() => {}}
+        ariaLabel="Prompt"
+        omitVariableIds={['research_report']}
+      />,
+    )
+    fireEvent.change(field(), { target: { value: '/research' } })
+    await screen.findByRole('listbox')
+    const shown = screen.getAllByRole('option').map((node) => node.textContent ?? '')
+    expect(shown.some((text) => text.startsWith('research_report'))).toBe(false)
+  })
+
   it('dismisses on Escape', async () => {
     render(<Harness />)
     fireEvent.change(field(), { target: { value: 'Use {{aud' } })

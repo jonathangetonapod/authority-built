@@ -567,12 +567,15 @@ describe('ClientShortlistEditor', () => {
     // And typing a slash summons the same registry at the caret.
     fireEvent.change(prompt, { target: { value: 'Then /guest' } })
     const menu = within(await screen.findByRole('listbox', { name: 'Matching fields' }))
+    const rows = menu.getAllByRole('option')
+    // guest_report is written by guest_info, which runs AFTER this stage, so
+    // this editor must not offer it — a prompt cannot read a later answer.
+    expect(rows.some((node) => node.textContent?.startsWith('guest_report'))).toBe(false)
     // By text, not by accessible name: the matched substring is marked, which
     // splits it into its own element.
-    const guestRow = menu.getAllByRole('option')
-      .find((node) => node.textContent?.startsWith('guest_report'))!
+    const guestRow = rows.find((node) => node.textContent?.startsWith('episode_guests'))!
     fireEvent.click(guestRow)
-    await waitFor(() => expect((prompt as HTMLTextAreaElement).value).toBe('Then {{guest_report}}'))
+    await waitFor(() => expect((prompt as HTMLTextAreaElement).value).toBe('Then {{episode_guests}}'))
 
     fireEvent.change(prompt, { target: { value: 'Use {{podcast_name}} to create a concise workspace-specific show brief.' } })
     expect(promptSettings.getByRole('button', { name: 'Save prompt' })).toBeEnabled()

@@ -6,6 +6,7 @@ import {
   referencedPromptVariables,
   spliceAtCaret,
   splitOnMatch,
+  unavailableVariableIds,
 } from '@/lib/promptVariableMenu'
 import { PROMPT_VARIABLES } from '@/lib/promptVariables'
 
@@ -86,6 +87,43 @@ describe('referencedPromptVariables', () => {
     // The prompts talk about placeholders as prose; the filler leaves those
     // alone, and so must the required-field list.
     expect(referencedPromptVariables('unfilled {{placeholders}} must never appear')).toEqual([])
+  })
+})
+
+describe('unavailableVariableIds', () => {
+  const STAGES = [
+    'podcast_research', 'host_info', 'guest_info', 'host_name_extractor',
+    'find_topics', 'write_email', 'clean_email',
+  ]
+
+  it('hides the field the stage being edited writes itself', () => {
+    // Editing podcast_research must not offer {{research_report}} — that is
+    // the thing this stage is in the middle of producing.
+    expect(unavailableVariableIds('podcast_research', STAGES)).toContain('research_report')
+    expect(unavailableVariableIds('host_info', STAGES)).toContain('host_report')
+    expect(unavailableVariableIds('guest_info', STAGES)).toContain('guest_report')
+  })
+
+  it('hides fields written by later stages, and keeps earlier ones', () => {
+    const forHostInfo = unavailableVariableIds('host_info', STAGES)
+    // Written later, so it cannot exist when host_info runs.
+    expect(forHostInfo).toContain('topic_proposal')
+    expect(forHostInfo).toContain('sequence_json')
+    // Written by the stage before it, so it is available.
+    expect(forHostInfo).not.toContain('research_report')
+  })
+
+  it('leaves producers that are not stages in this order alone', () => {
+    const hidden = unavailableVariableIds('write_email', STAGES)
+    // The inbox, the email unlock and the relationship layer are not stages of
+    // this run; their values are there before it starts.
+    expect(hidden).not.toContain('verified_email')
+    expect(hidden).not.toContain('reply_body')
+    expect(hidden).not.toContain('agency_relationship')
+  })
+
+  it('hides nothing for a prompt outside the run order', () => {
+    expect(unavailableVariableIds('inbox_reply', STAGES)).toEqual([])
   })
 })
 

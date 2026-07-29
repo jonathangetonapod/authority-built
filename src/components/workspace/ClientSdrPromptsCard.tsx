@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PromptVariableTextarea } from './PromptVariableTextarea'
 import { PromptRequiredFields } from './PromptRequiredFields'
+import { unavailableVariableIds } from '@/lib/promptVariableMenu'
 import { RESEARCH_PROMPT_DEFAULTS_BY_ID, type ResearchPromptId } from '@/lib/researchPromptDefaults'
 import {
   getClientPromptRequirements,
@@ -17,6 +18,12 @@ import {
   setClientPromptRequirements,
   setClientSdrPrompt,
 } from '@/services/workspaceCampaigns'
+
+// The order the run executes in, which is what makes a field "later".
+const STAGE_ORDER = [
+  'podcast_research', 'host_info', 'guest_info', 'host_name_extractor',
+  'find_topics', 'write_email', 'clean_email', 'inbox_reply', 'inbox_nudges',
+]
 
 interface PromptSpec {
   id: ResearchPromptId
@@ -242,6 +249,7 @@ export const ClientSdrPromptsCard = ({
                     {open && (
                       <div className="space-y-4 border-t p-3.5">
                         <PromptVariableTextarea
+                          omitVariableIds={unavailableVariableIds(prompt.id, STAGE_ORDER)}
                           value={value}
                           readOnly={!canManage}
                           ariaLabel={`${prompt.title} for ${clientName}`}

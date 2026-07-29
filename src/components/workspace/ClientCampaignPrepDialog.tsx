@@ -76,6 +76,7 @@ import { PromptVariableTextarea } from './PromptVariableTextarea'
 import { PromptRequiredFields } from './PromptRequiredFields'
 import { PromptFieldPreview } from './PromptFieldPreview'
 import { PromptOutputFields } from './PromptOutputFields'
+import { unavailableVariableIds } from '@/lib/promptVariableMenu'
 import {
   RESEARCH_PROMPT_DEFAULTS,
   RESEARCH_PROMPT_DEFAULTS_BY_ID,
@@ -601,6 +602,13 @@ export function ClientCampaignPrepDialog({
       toast.error(error instanceof Error ? error.message : 'The stage outputs could not be saved.')
     },
   })
+
+  // Registry fields written by this stage or a later one, which this prompt
+  // must not be offered for the same reason its own declared fields are not.
+  const omittedVariableIds = useMemo(
+    () => unavailableVariableIds(selectedPromptId, RESEARCH_PROMPT_DEFAULTS.map((prompt) => prompt.id)),
+    [selectedPromptId],
+  )
 
   // Only the stages BEFORE this one can have written a field this prompt reads.
   // Offering a later stage's field would let a prompt name something that
@@ -1605,6 +1613,7 @@ export function ClientCampaignPrepDialog({
                                 <Label htmlFor="campaign-research-stage-prompt">Prompt instructions</Label>
                                 <PromptVariableTextarea
                                   extraVariables={upstreamOutputVariables}
+                                  omitVariableIds={omittedVariableIds}
                                   id="campaign-research-stage-prompt"
                                   ariaLabel={`Prompt for ${selectedPromptDefault.label}`}
                                   value={promptDraft}

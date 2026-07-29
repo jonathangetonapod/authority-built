@@ -6,6 +6,8 @@ import { PROMPT_VARIABLE_GROUPS, PROMPT_VARIABLES } from '@/lib/promptVariables'
 interface PromptVariablePaletteProps {
   /** Inserts the token at the caret in the prompt being edited. */
   onInsert: (token: string) => void
+  /** Fields the stage being edited writes itself, or that follow it. */
+  omitVariableIds?: string[]
 }
 
 /**
@@ -20,7 +22,7 @@ interface PromptVariablePaletteProps {
  * This is now the browse view behind a popover — typing `/` or `{{` in the
  * field is the fast path. See PromptVariableTextarea.
  */
-export const PromptVariablePalette = ({ onInsert }: PromptVariablePaletteProps) => {
+export const PromptVariablePalette = ({ onInsert, omitVariableIds }: PromptVariablePaletteProps) => {
   const [query, setQuery] = useState('')
 
   const groups = useMemo(() => {
@@ -28,13 +30,14 @@ export const PromptVariablePalette = ({ onInsert }: PromptVariablePaletteProps) 
     return PROMPT_VARIABLE_GROUPS.map((group) => ({
       ...group,
       variables: PROMPT_VARIABLES.filter((variable) => (
-        variable.group === group.id
+        !(omitVariableIds ?? []).includes(variable.id)
+        && variable.group === group.id
         && (needle === ''
           || variable.id.includes(needle)
           || variable.label.toLowerCase().includes(needle))
       )),
     })).filter((group) => group.variables.length > 0)
-  }, [query])
+  }, [query, omitVariableIds])
 
   const total = groups.reduce((count, group) => count + group.variables.length, 0)
 

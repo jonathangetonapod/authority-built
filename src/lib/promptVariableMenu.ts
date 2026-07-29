@@ -129,6 +129,29 @@ export function referencedPromptVariables(
   return all.filter((variable) => named.has(variable.id)).map((variable) => variable.id)
 }
 
+/**
+ * Fields a given stage must not be offered: the ones it writes itself, and the
+ * ones written after it.
+ *
+ * A stage cannot read its own output — the podcast_research editor offering
+ * {{research_report}} invites a prompt to reference the thing it is in the
+ * middle of producing, which reaches the model as "Not available" every time.
+ * Producers outside the stage list (the inbox, the email unlock, the
+ * relationship layer) are left alone: they are not stages in this order and
+ * their values exist before it starts.
+ */
+export function unavailableVariableIds(
+  promptId: string,
+  stageOrder: readonly string[],
+): string[] {
+  const index = stageOrder.indexOf(promptId)
+  if (index === -1) return []
+  const selfOrLater = new Set(stageOrder.slice(index))
+  return PROMPT_VARIABLES
+    .filter((variable) => variable.producedBy && selfOrLater.has(variable.producedBy))
+    .map((variable) => variable.id)
+}
+
 /** Whether an id names a field the run already provides. */
 export function isRegistryVariable(id: string): boolean {
   return PROMPT_VARIABLES.some((variable) => variable.id === id)

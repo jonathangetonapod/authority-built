@@ -28,6 +28,8 @@ interface PromptVariableTextareaProps {
   maxLength?: number
   /** Fields earlier stages declare they return, offered alongside the registry. */
   extraVariables?: PromptVariable[]
+  /** Fields this stage writes itself, or that are written after it. */
+  omitVariableIds?: string[]
 }
 
 /**
@@ -48,6 +50,7 @@ export const PromptVariableTextarea = ({
   className,
   maxLength,
   extraVariables,
+  omitVariableIds,
 }: PromptVariableTextareaProps) => {
   const fieldRef = useRef<HTMLTextAreaElement | null>(null)
   const [trigger, setTrigger] = useState<VariableTrigger | null>(null)
@@ -57,9 +60,13 @@ export const PromptVariableTextarea = ({
   const [browsing, setBrowsing] = useState(false)
 
   const editable = !disabled && !readOnly
+  const omitted = useMemo(() => new Set(omitVariableIds ?? []), [omitVariableIds])
   const matches = useMemo(
-    () => (trigger ? filterPromptVariables(trigger.query, undefined, extraVariables ?? []) : []),
-    [trigger, extraVariables],
+    () => (trigger
+      ? filterPromptVariables(trigger.query, undefined, extraVariables ?? [])
+        .filter((variable) => !omitted.has(variable.id))
+      : []),
+    [trigger, extraVariables, omitted],
   )
   // Ranking decides the order the arrow keys walk; the groups are headings over
   // that order, so what the eye scans and what Enter picks stay the same list.
@@ -168,7 +175,7 @@ export const PromptVariableTextarea = ({
             </Button>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-[22rem] p-0">
-            <PromptVariablePalette onInsert={insertFromPalette} />
+            <PromptVariablePalette onInsert={insertFromPalette} omitVariableIds={omitVariableIds} />
           </PopoverContent>
         </Popover>
       </div>
