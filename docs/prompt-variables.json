@@ -1,6 +1,6 @@
 {
   "_readme": "Canonical registry of every variable a research/pitch prompt can reference. Mirrored, without hand-edits, by src/lib/promptVariables.ts and supabase/functions/_shared/promptVariables.ts; the workspace-campaign contract script asserts all three agree, that every {{variable}} used in docs/pitch-research-prompts.json appears here, that every podcast-sourced entry is actually SELECTed by both executors, and that every run entry is assigned by the stage that claims to produce it. Groups: podcast and episode come from the Podscan catalogue, client from the client record and its AI SDR profile, run from a stage that already finished. A variable costs nothing until a prompt references it, so the rule here is to declare everything we hold rather than to curate.",
-  "_excluded": "Deliberately absent, and why. Account management, not the guest: clients.notes (operator CRM freetext — a leaked strategy note reached a host once already), clients.email, clients.status, clients.contact_person, clients.first_invoice_paid_date. Our bookkeeping, not the show: podcasts.podscan_last_fetched_at, podscan_fetch_count, cache_hit_count, embedding, id, podscan_id, created_at, updated_at. Unverified against the production schema (the two CREATE TABLE IF NOT EXISTS public.podcasts migrations disagree and PostgREST fails the whole SELECT on an unknown column): itunes_rating_count_bracket, spotify_rating_count_bracket, brand_safety_framework, podcast_itunes_id, podcast_spotify_id, podcast_guid — add these once the live column list is confirmed.",
+  "_excluded": "Verified against the live schema on 2026-07-29: every podcast and client column below exists and is deliberately left out. Account management and portal plumbing, not the guest: clients.notes (operator CRM freetext — a leaked strategy note reached a host once already), email, status, contact_person, first_invoice_paid_date, notifications_enabled, google_sheet_url, outreach_webhook_url, bison_campaign_id, photo_url, and every portal_*, password_*, dashboard_* and *_slug column. Our bookkeeping, not the show: podcasts.podscan_last_fetched_at, podscan_fetch_count, cache_hit_count, embedding and its metadata, id, podscan_id, created_at, updated_at. Everything else the two tables hold is offered to prompts.",
   "groups": {
     "podcast": "Podcast · Podscan",
     "episode": "Latest episode",
@@ -49,6 +49,12 @@
     { "id": "podcast_image_url", "group": "podcast", "column": "podcast_image_url", "type": "text", "label": "Cover art URL" },
     { "id": "demographics_fetched_at", "group": "podcast", "column": "demographics_fetched_at", "type": "date", "label": "Demographics captured" },
     { "id": "episodes_fetched_at", "group": "podcast", "column": "episodes_fetched_at", "type": "date", "label": "Episodes captured" },
+    { "id": "itunes_rating_count_bracket", "group": "podcast", "column": "itunes_rating_count_bracket", "type": "text", "label": "Apple ratings bracket" },
+    { "id": "spotify_rating_count_bracket", "group": "podcast", "column": "spotify_rating_count_bracket", "type": "text", "label": "Spotify ratings bracket" },
+    { "id": "brand_safety_framework", "group": "podcast", "column": "brand_safety_framework", "type": "text", "label": "Brand safety framework" },
+    { "id": "podcast_itunes_id", "group": "podcast", "column": "podcast_itunes_id", "type": "text", "label": "Apple Podcasts ID" },
+    { "id": "podcast_spotify_id", "group": "podcast", "column": "podcast_spotify_id", "type": "text", "label": "Spotify ID" },
+    { "id": "podcast_guid", "group": "podcast", "column": "podcast_guid", "type": "text", "label": "Podcast GUID" },
 
     { "id": "episode_title", "group": "episode", "type": "text", "label": "Latest episode title" },
     { "id": "episode_description", "group": "episode", "type": "long_text", "label": "Latest episode summary" },
@@ -70,6 +76,7 @@
     { "id": "client_linkedin_url", "group": "client", "column": "linkedin_url", "type": "text", "label": "Client LinkedIn" },
     { "id": "client_website", "group": "client", "column": "website", "type": "text", "label": "Client website" },
     { "id": "client_calendar_link", "group": "client", "column": "calendar_link", "type": "text", "label": "Client booking link" },
+    { "id": "client_media_kit_url", "group": "client", "column": "media_kit_url", "type": "text", "label": "Client media kit" },
 
     { "id": "research_report", "group": "run", "type": "long_text", "label": "Podcast research result", "producedBy": "podcast_research" },
     { "id": "host_report", "group": "run", "type": "long_text", "label": "Host identification result", "producedBy": "host_info" },

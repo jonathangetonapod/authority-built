@@ -761,6 +761,21 @@ for (const name of referenced) {
 // Both executors load the registry's full column set. Research used to select
 // five columns of which four reached a prompt; the pitch stage, which actually
 // writes the emails, then read six of the thirty research had.
+// A registry column that does not exist breaks EVERY research run, because
+// PostgREST fails the whole select rather than the one field — and the repo
+// migrations cannot settle which columns exist (two CREATE TABLE IF NOT EXISTS
+// public.podcasts migrations disagree). So the registry is checked against a
+// captured production schema instead of against the migrations.
+const sourceColumns = JSON.parse(readFileSync('docs/prompt-source-columns.json', 'utf8'))
+for (const variable of canonicalVariables) {
+  if (!variable.column) continue
+  const table = variable.group === 'podcast' ? 'podcasts' : 'clients'
+  assert.ok(
+    sourceColumns.tables[table].includes(variable.column),
+    `${variable.id} reads ${table}.${variable.column}, which is not in the captured schema`,
+  )
+}
+
 // The column lists are built once from the registry...
 assert.match(
   shortlistEdge,
