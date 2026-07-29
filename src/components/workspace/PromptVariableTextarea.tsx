@@ -11,6 +11,7 @@ import {
   groupPromptVariableMatches,
   measureCaret,
   spliceAtCaret,
+  splitOnMatch,
   type VariableTrigger,
 } from '@/lib/promptVariableMenu'
 import { PromptVariablePalette } from './PromptVariablePalette'
@@ -124,6 +125,16 @@ export const PromptVariableTextarea = ({
   }
 
   const optionId = (variableId: string) => `${id ?? ariaLabel}-field-${variableId}`
+
+  /**
+   * A row can match on its description alone, so show where it matched — an id
+   * that looks unrelated to what was typed is otherwise unexplained.
+   */
+  const marked = (text: string) => splitOnMatch(text, trigger?.query ?? '').map((segment, index) => (
+    segment.match
+      ? <mark key={index} className="bg-transparent font-semibold text-violet-700">{segment.text}</mark>
+      : <span key={index}>{segment.text}</span>
+  ))
   const activeId = open ? optionId(walkOrder[active]?.id) : undefined
 
   // The whole registry is in the menu now, so the active row can be well below
@@ -221,11 +232,13 @@ export const PromptVariableTextarea = ({
                       onClick={() => choose(variable.id)}
                       className={`block w-full rounded px-2 py-1 text-left transition-colors ${index === active ? 'bg-violet-50' : ''}`}
                     >
-                      <span className="block font-mono text-[11px] leading-4">{variable.id}</span>
+                      <span className="block font-mono text-[11px] leading-4">
+                        {marked(variable.id)}
+                      </span>
                       <span className="block text-[10px] leading-4 text-muted-foreground">
-                        {variable.producedBy
+                        {marked(variable.producedBy
                           ? `${variable.label} — from the ${variable.producedBy} stage`
-                          : variable.label}
+                          : variable.label)}
                       </span>
                     </button>
                   )

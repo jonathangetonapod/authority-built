@@ -108,6 +108,38 @@ export function groupPromptVariableMatches(
     .sort((a, b) => matches.indexOf(a.variables[0]) - matches.indexOf(b.variables[0]))
 }
 
+/**
+ * Splits text on every occurrence of the query, so a row can show where it
+ * matched.
+ *
+ * Fields are matched on their description as well as their id — that is what
+ * makes "media kit" find client_media_kit_url, whose id says nothing about a
+ * media kit. The cost is rows whose id looks unrelated to what was typed:
+ * /host returns reply_subject, because its description is "Subject of the host
+ * reply". Marking the hit answers that at a glance, which is better than either
+ * dropping description matching or making it conditional on how well the ids
+ * did.
+ */
+export function splitOnMatch(text: string, query: string): Array<{ text: string; match: boolean }> {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') return [{ text, match: false }]
+
+  const haystack = text.toLowerCase()
+  const segments: Array<{ text: string; match: boolean }> = []
+  let cursor = 0
+  while (cursor < text.length) {
+    const at = haystack.indexOf(needle, cursor)
+    if (at === -1) {
+      segments.push({ text: text.slice(cursor), match: false })
+      break
+    }
+    if (at > cursor) segments.push({ text: text.slice(cursor, at), match: false })
+    segments.push({ text: text.slice(at, at + needle.length), match: true })
+    cursor = at + needle.length
+  }
+  return segments.filter((segment) => segment.text !== '')
+}
+
 /** Replaces the trigger text with the token, leaving the caret after it. */
 export function applyVariableTrigger(
   value: string,

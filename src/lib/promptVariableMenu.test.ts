@@ -4,6 +4,7 @@ import {
   detectVariableTrigger,
   filterPromptVariables,
   spliceAtCaret,
+  splitOnMatch,
 } from '@/lib/promptVariableMenu'
 import { PROMPT_VARIABLES } from '@/lib/promptVariables'
 
@@ -66,6 +67,32 @@ describe('filterPromptVariables', () => {
   it('lists the registry in order when nothing is typed', () => {
     expect(filterPromptVariables('', 3).map((v) => v.id))
       .toEqual(PROMPT_VARIABLES.slice(0, 3).map((v) => v.id))
+  })
+})
+
+describe('splitOnMatch', () => {
+  it('marks every occurrence, case-insensitively', () => {
+    expect(splitOnMatch('Host identification result', 'host')).toEqual([
+      { text: 'Host', match: true },
+      { text: ' identification result', match: false },
+    ])
+    expect(splitOnMatch('host_report host', 'host')).toEqual([
+      { text: 'host', match: true },
+      { text: '_report ', match: false },
+      { text: 'host', match: true },
+    ])
+  })
+
+  it('marks nothing when the query is empty or absent', () => {
+    expect(splitOnMatch('podcast_name', '')).toEqual([{ text: 'podcast_name', match: false }])
+    expect(splitOnMatch('podcast_name', 'zzz')).toEqual([{ text: 'podcast_name', match: false }])
+  })
+
+  it('explains a row that matched on its description alone', () => {
+    // reply_subject has no "host" in its id; this is why it is in the menu.
+    expect(splitOnMatch('reply_subject', 'host').some((s) => s.match)).toBe(false)
+    expect(splitOnMatch('Subject of the host reply', 'host').filter((s) => s.match))
+      .toEqual([{ text: 'host', match: true }])
   })
 })
 

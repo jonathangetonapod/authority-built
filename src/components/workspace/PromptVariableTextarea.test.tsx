@@ -18,6 +18,17 @@ const Harness = ({ readOnly }: { readOnly?: boolean }) => {
 
 const field = () => screen.getByLabelText('Prompt') as HTMLTextAreaElement
 
+/**
+ * By text rather than by accessible name: the matched substring is split into
+ * its own element, which changes how the name is computed but not what the row
+ * says.
+ */
+const rowFor = (variableId: string) => {
+  const row = screen.getAllByRole('option').find((node) => node.textContent?.startsWith(variableId))
+  if (!row) throw new Error(`no option for ${variableId}`)
+  return row
+}
+
 describe('PromptVariableTextarea', () => {
   it('rests as one line of hint text, with the registry a click away', async () => {
     render(<Harness />)
@@ -43,7 +54,8 @@ describe('PromptVariableTextarea', () => {
   it('opens on the token syntax and does not double the braces', async () => {
     render(<Harness />)
     fireEvent.change(field(), { target: { value: 'Quote {{ep' } })
-    fireEvent.click(await screen.findByRole('option', { name: /episode_title/ }))
+    await screen.findByRole('listbox')
+    fireEvent.click(rowFor('episode_title'))
     await waitFor(() => expect(field().value).toBe('Quote {{episode_title}}'))
   })
 
@@ -86,6 +98,20 @@ describe('PromptVariableTextarea', () => {
     expect(screen.getAllByRole('group').map((node) => node.getAttribute('aria-label')))
       .toEqual(['Produced during the run', 'Podcast · Podscan', 'Latest episode'])
     expect(screen.getAllByRole('option')[0]).toHaveTextContent('host_report')
+  })
+
+  it('shows where a row matched, including rows that matched only on their description', async () => {
+    render(<Harness />)
+    fireEvent.change(field(), { target: { value: '/host' } })
+    await screen.findByRole('listbox')
+
+    // Matched in the id.
+    expect(rowFor('host_report').querySelector('mark')).toHaveTextContent('host')
+    // Matched in the description alone — reply_subject has no "host" in its id,
+    // and without the mark its presence in the menu is unexplained.
+    const reply = rowFor('reply_subject')
+    expect(reply).toHaveTextContent('Subject of the host reply')
+    expect(reply.querySelector('mark')).toHaveTextContent('host')
   })
 
   it('dismisses on Escape', async () => {

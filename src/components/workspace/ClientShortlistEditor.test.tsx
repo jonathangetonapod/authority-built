@@ -567,7 +567,11 @@ describe('ClientShortlistEditor', () => {
     // And typing a slash summons the same registry at the caret.
     fireEvent.change(prompt, { target: { value: 'Then /guest' } })
     const menu = within(await screen.findByRole('listbox', { name: 'Matching fields' }))
-    fireEvent.click(menu.getByRole('option', { name: /guest_report/ }))
+    // By text, not by accessible name: the matched substring is marked, which
+    // splits it into its own element.
+    const guestRow = menu.getAllByRole('option')
+      .find((node) => node.textContent?.startsWith('guest_report'))!
+    fireEvent.click(guestRow)
     await waitFor(() => expect((prompt as HTMLTextAreaElement).value).toBe('Then {{guest_report}}'))
 
     fireEvent.change(prompt, { target: { value: 'Use {{podcast_name}} to create a concise workspace-specific show brief.' } })
