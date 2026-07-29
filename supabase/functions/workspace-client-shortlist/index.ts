@@ -1561,12 +1561,16 @@ serve(async (req) => {
           podcast_description: pointer('<podcast>', baseVariables.podcast_description),
           episode_description: pointer('<latest_episode>', baseVariables.episode_description),
           episode_transcript: pointer('<transcript>', baseVariables.episode_transcript),
-          research_report: '(provided in the research report section above)',
           // Each stage's result becomes a field the stages after it can use.
           // Filled in as the run advances; a stage that references one before
           // it exists gets "Not available" like any other absent field. The
           // text is only ever sent when a prompt actually references it, so an
           // unused result costs nothing.
+          //
+          // research_report included: stage one is the only stage sent without
+          // a report block, so seeding the pointer here pointed the first
+          // prompt at a section that does not exist yet.
+          research_report: null,
           host_report: null,
           guest_report: null,
         }
@@ -1585,8 +1589,10 @@ serve(async (req) => {
         await advance('podcast_research', 'host_profile')
 
         // Stages two through four reuse two cached blocks: the shared context
-        // written by stage one, and the research report written here.
+        // written by stage one, and the research report written here. The
+        // pointer becomes true at the same moment the block starts being sent.
         const reportBlock = `<research_report>\n${researchReport}\n</research_report>`
+        stageVariables.research_report = '(provided in the research report section above)'
         const hostReport = await runResearchPrompt(
           anthropicKey.apiKey,
           RESEARCH_PROMPT_DEFAULTS.host_info,

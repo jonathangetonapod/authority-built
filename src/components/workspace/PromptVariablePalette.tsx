@@ -58,13 +58,21 @@ export const PromptVariablePalette = ({ onInsert, disabled }: PromptVariablePale
             <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               {group.label}
             </p>
+            {group.id === 'run' && (
+              <p className="mt-0.5 text-[10px] leading-4 text-muted-foreground">
+                Each is written by a stage and readable by the stages after it. One used
+                before its stage has run renders “Not available”.
+              </p>
+            )}
             <ul className="mt-1.5 flex flex-wrap gap-1.5">
               {group.variables.map((variable) => (
                 <li key={variable.id}>
                   <button
                     type="button"
                     disabled={disabled}
-                    title={variable.label}
+                    title={variable.producedBy
+                      ? `${variable.label} — written by the ${variable.producedBy} stage`
+                      : variable.label}
                     aria-label={`Insert ${variable.label}`}
                     onClick={() => onInsert(`{{${variable.id}}}`)}
                     className="rounded border bg-background px-1.5 py-0.5 font-mono text-[11px] leading-4 transition-colors hover:border-violet-400 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"

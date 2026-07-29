@@ -836,6 +836,14 @@ assert.match(shortlistEdge, /if \(!isPromptVariable\(key\)\) return match/u)
 // Each stage's result becomes a field the stages after it can reference.
 assert.match(shortlistEdge, /stageVariables\.host_report = hostReport/u)
 assert.match(shortlistEdge, /stageVariables\.guest_report = guestReport/u)
+// ...including the first stage's. Its pointer must be seeded null and set only
+// once the report block exists: stage one is the only stage sent WITHOUT that
+// block, so an eagerly-seeded pointer aims the first prompt at nothing.
+assert.match(shortlistEdge, /research_report: null,\s*\n\s*host_report: null,/u)
+assert.match(
+  shortlistEdge,
+  /const reportBlock = `<research_report>[^`]*`\s*\n\s*stageVariables\.research_report = '\(provided in the research report section above\)'/u,
+)
 // ...and the pitch stage can name what research produced, not just the
 // concatenated report it used to receive.
 for (const runVariable of ['host_report', 'guest_report', 'clean_description', 'fit_reasons', 'selected_angle']) {
