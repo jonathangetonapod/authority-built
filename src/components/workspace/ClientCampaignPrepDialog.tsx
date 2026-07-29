@@ -1840,7 +1840,7 @@ export function ClientCampaignPrepDialog({
                     : 'Research is running in the background. You can close this window and return without losing progress.'
                   : researchFailed
                     ? 'Research paused before the pitch could be prepared. Completed stages are saved.'
-                    : 'Research is included with your plan, saved to this podcast, and used to shape the pitch.')}
+                    : 'Research is saved to this podcast and used to shape the pitch.')}
                 {activeStep === 'pitch' && (draftHasUnsavedEdits
                   ? 'You have unsaved edits. Save them before sending this sequence to Client Campaign.'
                   : alreadyStaged && !submitWillSend

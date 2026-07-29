@@ -1903,10 +1903,25 @@ serve(async (req) => {
           const anthropicKey = await resolveAiKey(authContext.admin, workspaceId, 'anthropic')
           if (anthropicKey) {
             usedByoKey = anthropicKey.source === 'workspace'
+            // Contact name extraction is offered in the prompt editor like
+            // every other stage, and this call read the shipped default — so
+            // an owner who rewrote it changed nothing here, on the stage that
+            // decides the name the pitch opens with. No client override: this
+            // prompt is deliberately not offered per client (CLIENT_PROMPT_IDS).
+            const { data: extractorOverrideRows } = await authContext.admin
+              .from('workspace_research_prompts')
+              .select('content')
+              .eq('workspace_id', workspaceId)
+              .eq('prompt_id', 'host_name_extractor')
+              .maybeSingle()
+            const extractorContent = typeof extractorOverrideRows?.content === 'string'
+              && extractorOverrideRows.content.trim()
+              ? extractorOverrideRows.content
+              : RESEARCH_PROMPT_DEFAULTS.host_name_extractor.content
             const extracted = await runResearchPrompt(
               anthropicKey.apiKey,
               RESEARCH_PROMPT_DEFAULTS.host_name_extractor,
-              fillPromptTemplate(RESEARCH_PROMPT_DEFAULTS.host_name_extractor.content, { contact_data: contactData.slice(0, 8_000) }),
+              fillPromptTemplate(extractorContent, { contact_data: contactData.slice(0, 8_000) }),
               usage,
             ).catch(() => '')
             const candidateName = extracted.split('\n')[0]?.trim() ?? ''

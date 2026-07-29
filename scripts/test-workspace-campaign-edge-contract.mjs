@@ -666,3 +666,48 @@ assert.match(campaignsPage, /label="Bounce rate"/u)
 assert.match(campaignsPage, /bounced · \$\{unsubscribedCount\} unsubscribed/u)
 // A percentage of nothing must not read as a reassuring zero.
 assert.match(campaignsPage, /whole > 0 \? `\$\{Math\.round\(\(part \/ whole\) \* 100\)\}%` : '—'/u)
+
+// The workspace prompt editor offers nine stages, the edge function accepts
+// nine, and the table's CHECK allowed seven — so saving an inbox prompt at
+// workspace level passed every application check and then failed on the
+// database. Derive both lists and compare them, rather than restating either.
+const workspacePromptMigration = readFileSync(
+  'supabase/migrations/20260729000100_workspace_prompt_inbox_stages.sql',
+  'utf8',
+)
+const clientPromptMigration = readFileSync(
+  'supabase/migrations/20260726001400_client_ai_sdr_prompts.sql',
+  'utf8',
+)
+function checkedPromptIds(sql) {
+  const match = sql.match(/prompt_id IN \(([\s\S]*?)\)/u)
+  assert.ok(match, 'prompt_id CHECK list not found')
+  return [...match[1].matchAll(/'([a-z_]+)'/gu)].map((entry) => entry[1]).sort()
+}
+const edgePromptIds = (() => {
+  const match = edge.match(/const RESEARCH_PROMPT_IDS = \[([\s\S]*?)\];/u)
+  assert.ok(match, 'RESEARCH_PROMPT_IDS not found')
+  return [...match[1].matchAll(/"([a-z_]+)"/gu)].map((entry) => entry[1]).sort()
+})()
+assert.deepEqual(checkedPromptIds(workspacePromptMigration), edgePromptIds)
+// The two prompt layers must offer the same stages, or a prompt is editable
+// for one client and unsavable for the workspace it belongs to.
+assert.deepEqual(checkedPromptIds(clientPromptMigration), edgePromptIds)
+
+// Research charges two credits a run. The badge said so while the caption
+// underneath it said the run was included with the plan.
+assert.match(prepDialog, /2 credits per run/u)
+assert.doesNotMatch(prepDialog, /included with your plan/iu)
+
+// Contact name extraction is offered in the prompt editor, and the call that
+// decides the name a pitch opens with read the shipped default, so an owner's
+// rewrite of that stage changed nothing.
+const shortlistEdge = readFileSync(
+  'supabase/functions/workspace-client-shortlist/index.ts',
+  'utf8',
+)
+assert.match(
+  shortlistEdge,
+  /\.eq\('prompt_id', 'host_name_extractor'\)/u,
+)
+assert.match(shortlistEdge, /fillPromptTemplate\(extractorContent,/u)
