@@ -1,4 +1,9 @@
-import { PROMPT_VARIABLES, type PromptVariable } from '@/lib/promptVariables'
+import {
+  PROMPT_VARIABLES,
+  PROMPT_VARIABLE_GROUPS,
+  type PromptVariable,
+  type PromptVariableGroup,
+} from '@/lib/promptVariables'
 
 /**
  * Inline field insertion for the prompt editors.
@@ -56,8 +61,15 @@ export function detectVariableTrigger(value: string, caret: number): VariableTri
  * Fields matching the typed query, best first: an id that starts with it, then
  * an id that contains it, then a label that does. Ties keep registry order, so
  * an empty query lists the registry as written.
+ *
+ * Uncapped by default. The menu scrolls and is grouped, so there is no reason
+ * to hide the tail of the registry from someone who has not typed enough to
+ * narrow it — that only makes the first screenful look like the whole list.
  */
-export function filterPromptVariables(query: string, limit = 8): PromptVariable[] {
+export function filterPromptVariables(
+  query: string,
+  limit = Number.POSITIVE_INFINITY,
+): PromptVariable[] {
   const needle = query.trim().toLowerCase()
   if (needle === '') return PROMPT_VARIABLES.slice(0, limit)
 
@@ -75,8 +87,25 @@ export function filterPromptVariables(query: string, limit = 8): PromptVariable[
     .map((entry) => entry.variable)
 }
 
-export function countPromptVariableMatches(query: string): number {
-  return filterPromptVariables(query, PROMPT_VARIABLES.length).length
+/**
+ * The matches split into the registry's own groups, empty groups dropped.
+ *
+ * Groups lead with their best match rather than sitting in a fixed registry
+ * order, so the first row of the menu is still the best match overall — typing
+ * /host and pressing Enter must not land on podcast_host_name because the
+ * podcast group happens to sort first. With nothing typed there is no ranking
+ * to apply and this falls back to registry order.
+ */
+export function groupPromptVariableMatches(
+  matches: PromptVariable[],
+): Array<{ id: PromptVariableGroup; label: string; variables: PromptVariable[] }> {
+  return PROMPT_VARIABLE_GROUPS
+    .map((group) => ({
+      ...group,
+      variables: matches.filter((variable) => variable.group === group.id),
+    }))
+    .filter((group) => group.variables.length > 0)
+    .sort((a, b) => matches.indexOf(a.variables[0]) - matches.indexOf(b.variables[0]))
 }
 
 /** Replaces the trigger text with the token, leaving the caret after it. */

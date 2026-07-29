@@ -3,18 +3,16 @@ import { Braces } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
-import { PROMPT_VARIABLES, PROMPT_VARIABLE_GROUPS } from '@/lib/promptVariables'
+import { PROMPT_VARIABLES } from '@/lib/promptVariables'
 import {
   applyVariableTrigger,
-  countPromptVariableMatches,
   detectVariableTrigger,
   filterPromptVariables,
+  groupPromptVariableMatches,
   measureCaret,
   spliceAtCaret,
   type VariableTrigger,
 } from '@/lib/promptVariableMenu'
-
-const GROUP_LABELS = new Map(PROMPT_VARIABLE_GROUPS.map((group) => [group.id, group.label]))
 import { PromptVariablePalette } from './PromptVariablePalette'
 
 interface PromptVariableTextareaProps {
@@ -28,14 +26,6 @@ interface PromptVariableTextareaProps {
   className?: string
   maxLength?: number
 }
-
-/**
- * The menu scrolls, so this is a rendering cap rather than a view of the
- * registry. Eight showed the first eight rows — every one of them a podcast
- * field — which read as "there are eight fields" instead of "here are the
- * closest eight of eighty-one".
- */
-const MENU_LIMIT = 40
 
 /**
  * The prompt field, with the registry reachable from inside it.
@@ -64,13 +54,13 @@ export const PromptVariableTextarea = ({
 
   const editable = !disabled && !readOnly
   const matches = useMemo(
-    () => (trigger ? filterPromptVariables(trigger.query, MENU_LIMIT) : []),
+    () => (trigger ? filterPromptVariables(trigger.query) : []),
     [trigger],
   )
-  const matchCount = useMemo(
-    () => (trigger ? countPromptVariableMatches(trigger.query) : 0),
-    [trigger],
-  )
+  // Ranking decides the order the arrow keys walk; the groups are headings over
+  // that order, so what the eye scans and what Enter picks stay the same list.
+  const groups = useMemo(() => groupPromptVariableMatches(matches), [matches])
+  const walkOrder = useMemo(() => groups.flatMap((group) => group.variables), [groups])
   const open = Boolean(trigger) && matches.length > 0 && editable
 
   const syncTrigger = (field: HTMLTextAreaElement | null) => {
@@ -119,13 +109,13 @@ export const PromptVariableTextarea = ({
     if (!open) return
     if (event.key === 'ArrowDown') {
       event.preventDefault()
-      setActive((current) => (current + 1) % matches.length)
+      setActive((current) => (current + 1) % walkOrder.length)
     } else if (event.key === 'ArrowUp') {
       event.preventDefault()
-      setActive((current) => (current - 1 + matches.length) % matches.length)
+      setActive((current) => (current - 1 + walkOrder.length) % walkOrder.length)
     } else if (event.key === 'Enter' || event.key === 'Tab') {
       event.preventDefault()
-      choose(matches[active].id)
+      choose(walkOrder[active].id)
     } else if (event.key === 'Escape') {
       event.preventDefault()
       setDismissedAt(trigger?.start ?? null)
@@ -133,7 +123,15 @@ export const PromptVariableTextarea = ({
     }
   }
 
-  const activeId = open ? `${id ?? ariaLabel}-field-${matches[active]?.id}` : undefined
+  const optionId = (variableId: string) => `${id ?? ariaLabel}-field-${variableId}`
+  const activeId = open ? optionId(walkOrder[active]?.id) : undefined
+
+  // The whole registry is in the menu now, so the active row can be well below
+  // the fold. Keep it in view as the arrows walk past a group heading.
+  useLayoutEffect(() => {
+    if (!open || !activeId) return
+    document.getElementById(activeId)?.scrollIntoView({ block: 'nearest' })
+  }, [open, activeId])
 
   return (
     <div className="space-y-1.5">
@@ -187,51 +185,62 @@ export const PromptVariableTextarea = ({
         {open && (
           <div
             style={{ top: caretPoint.top + 22, left: Math.max(0, Math.min(caretPoint.left, 160)) }}
-            className="absolute z-50 w-[19rem] overflow-hidden rounded-lg border bg-popover shadow-md"
+            className="absolute z-50 w-[22rem] overflow-hidden rounded-lg border bg-popover shadow-md"
           >
-          <ul
+          <div
             id={`${id ?? ariaLabel}-field-menu`}
             role="listbox"
             aria-label="Matching fields"
-            className="max-h-56 overflow-y-auto p-1"
+            className="max-h-72 overflow-y-auto p-1"
           >
-            {matches.map((variable, index) => (
-              <li key={variable.id}>
-                <button
-                  type="button"
-                  id={`${id ?? ariaLabel}-field-${variable.id}`}
-                  role="option"
-                  aria-selected={index === active}
-                  // The field must not lose focus before the token lands.
-                  onMouseDown={(event) => event.preventDefault()}
-                  onMouseEnter={() => setActive(index)}
-                  onClick={() => choose(variable.id)}
-                  className={`w-full rounded px-2 py-1.5 text-left transition-colors ${index === active ? 'bg-violet-50' : ''}`}
+            {groups.map((group) => (
+              <div key={group.id} role="group" aria-label={group.label}>
+                <p
+                  aria-hidden="true"
+                  className="sticky top-0 z-10 bg-popover px-2 pb-1 pt-1.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground"
                 >
-                  <span className="flex items-baseline justify-between gap-3">
-                    <span className="font-mono text-[11px] leading-4">{variable.id}</span>
-                    <span className="shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground">
-                      {GROUP_LABELS.get(variable.group)}
+                  {group.label}
+                  {group.id === 'run' && (
+                    <span className="ml-1.5 font-normal normal-case tracking-normal">
+                      written by one stage, readable by the stages after it
                     </span>
-                  </span>
-                  <span className="block text-[10px] leading-4 text-muted-foreground">
-                    {variable.producedBy
-                      ? `${variable.label} — written by the ${variable.producedBy} stage`
-                      : variable.label}
-                  </span>
-                </button>
-              </li>
+                  )}
+                </p>
+                {group.variables.map((variable) => {
+                  const index = walkOrder.indexOf(variable)
+                  return (
+                    <button
+                      key={variable.id}
+                      type="button"
+                      id={optionId(variable.id)}
+                      role="option"
+                      aria-selected={index === active}
+                      // The field must not lose focus before the token lands.
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() => setActive(index)}
+                      onClick={() => choose(variable.id)}
+                      className={`block w-full rounded px-2 py-1 text-left transition-colors ${index === active ? 'bg-violet-50' : ''}`}
+                    >
+                      <span className="block font-mono text-[11px] leading-4">{variable.id}</span>
+                      <span className="block text-[10px] leading-4 text-muted-foreground">
+                        {variable.producedBy
+                          ? `${variable.label} — from the ${variable.producedBy} stage`
+                          : variable.label}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
             ))}
-          </ul>
+          </div>
           {/*
-            Eighty-one fields do not fit a menu. Say so, rather than letting the
-            first screenful read as the whole registry. Outside the listbox: a
-            row that is not an option does not belong among the options.
+            Outside the listbox: a row that is not an option does not belong
+            among the options.
           */}
           <p className="border-t px-2 py-1 text-[10px] leading-4 text-muted-foreground">
-            {matchCount > matches.length
-              ? `${matches.length} of ${matchCount} matches — keep typing to narrow`
-              : `${matchCount} of ${PROMPT_VARIABLES.length} fields`}
+            {matches.length === PROMPT_VARIABLES.length
+              ? `All ${PROMPT_VARIABLES.length} fields`
+              : `${matches.length} of ${PROMPT_VARIABLES.length} fields`}
           </p>
           </div>
         )}

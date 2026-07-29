@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
 import { PromptVariableTextarea } from '@/components/workspace/PromptVariableTextarea'
-import { PROMPT_VARIABLES } from '@/lib/promptVariables'
+import { PROMPT_VARIABLES, PROMPT_VARIABLE_GROUPS } from '@/lib/promptVariables'
 
 const Harness = ({ readOnly }: { readOnly?: boolean }) => {
   const [value, setValue] = useState('')
@@ -53,30 +53,39 @@ describe('PromptVariableTextarea', () => {
     await screen.findByRole('listbox')
     fireEvent.keyDown(field(), { key: 'ArrowDown' })
     fireEvent.keyDown(field(), { key: 'Enter' })
-    // Second of the id-prefix matches, in registry order.
+    // Second row of the menu as drawn: the arrows walk the visible order.
     await waitFor(() => expect(field().value).toBe('{{host_name}}'))
   })
 
-  it('says how much of the registry the menu is showing', async () => {
+  it('holds the whole registry, grouped, with nothing capped away', async () => {
     render(<Harness />)
     fireEvent.change(field(), { target: { value: '/' } })
     await screen.findByRole('listbox')
-    // A bare slash matches everything, so the menu is a window on the registry
-    // rather than a view of it — a screenful must not read as the whole list.
-    const shown = screen.getAllByRole('option').length
-    expect(shown).toBeGreaterThan(8)
-    expect(shown).toBeLessThan(PROMPT_VARIABLES.length)
-    expect(screen.getByText(
-      `${shown} of ${PROMPT_VARIABLES.length} matches — keep typing to narrow`,
-    )).toBeInTheDocument()
+
+    // A bare slash matches everything, and everything is what the menu holds.
+    expect(screen.getAllByRole('option')).toHaveLength(PROMPT_VARIABLES.length)
+    expect(screen.getByText(`All ${PROMPT_VARIABLES.length} fields`)).toBeInTheDocument()
+
+    // Structure, so the tail of the registry is reachable rather than hidden:
+    // every group the registry defines is a heading in the menu.
+    expect(PROMPT_VARIABLE_GROUPS.map((group) => group.label)).toEqual(
+      screen.getAllByRole('group').map((node) => node.getAttribute('aria-label')),
+    )
   })
 
-  it('counts against the registry once the matches all fit', async () => {
+  it('narrows to the matching groups and counts against the registry', async () => {
     render(<Harness />)
     fireEvent.change(field(), { target: { value: '/host' } })
     await screen.findByRole('listbox')
     const shown = screen.getAllByRole('option').length
+    expect(shown).toBeLessThan(PROMPT_VARIABLES.length)
     expect(screen.getByText(`${shown} of ${PROMPT_VARIABLES.length} fields`)).toBeInTheDocument()
+    // The podcast column, the episode list and the run result all match "host",
+    // and the headings are what tell them apart. The run group leads because
+    // its host_report is the best match — grouping must not bury it.
+    expect(screen.getAllByRole('group').map((node) => node.getAttribute('aria-label')))
+      .toEqual(['Produced during the run', 'Podcast · Podscan', 'Latest episode'])
+    expect(screen.getAllByRole('option')[0]).toHaveTextContent('host_report')
   })
 
   it('dismisses on Escape', async () => {
