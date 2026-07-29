@@ -1,0 +1,85 @@
+import { useMemo, useState } from 'react'
+import { Search } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { PROMPT_VARIABLE_GROUPS, PROMPT_VARIABLES } from '@/lib/promptVariables'
+
+interface PromptVariablePaletteProps {
+  /** Inserts the token at the caret in the prompt being edited. */
+  onInsert: (token: string) => void
+  disabled?: boolean
+}
+
+/**
+ * The field list for prompt authoring: every variable the run holds, grouped
+ * and searchable, inserted at the caret on click.
+ *
+ * The editor used to print whichever variables the shipped default happened to
+ * mention, so an owner rewriting a stage could not discover a field that was
+ * already loaded and waiting. The registry is the list, and every stage is
+ * filled from it.
+ */
+export const PromptVariablePalette = ({ onInsert, disabled }: PromptVariablePaletteProps) => {
+  const [query, setQuery] = useState('')
+
+  const groups = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return PROMPT_VARIABLE_GROUPS.map((group) => ({
+      ...group,
+      variables: PROMPT_VARIABLES.filter((variable) => (
+        variable.group === group.id
+        && (needle === ''
+          || variable.id.includes(needle)
+          || variable.label.toLowerCase().includes(needle))
+      )),
+    })).filter((group) => group.variables.length > 0)
+  }, [query])
+
+  const total = groups.reduce((count, group) => count + group.variables.length, 0)
+
+  return (
+    <div className="rounded-lg border bg-muted/20">
+      <div className="flex items-center gap-2 border-b px-3 py-2">
+        <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search fields"
+          aria-label="Search prompt variables"
+          className="h-7 border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
+        />
+        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{total}</span>
+      </div>
+      <div className="max-h-56 space-y-3 overflow-y-auto p-3">
+        {groups.length === 0 && (
+          <p className="text-[11px] italic text-muted-foreground">No field matches “{query}”.</p>
+        )}
+        {groups.map((group) => (
+          <div key={group.id}>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {group.label}
+            </p>
+            <ul className="mt-1.5 flex flex-wrap gap-1.5">
+              {group.variables.map((variable) => (
+                <li key={variable.id}>
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    title={variable.label}
+                    aria-label={`Insert ${variable.label}`}
+                    onClick={() => onInsert(`{{${variable.id}}}`)}
+                    className="rounded border bg-background px-1.5 py-0.5 font-mono text-[11px] leading-4 transition-colors hover:border-violet-400 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {variable.id}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <p className="border-t px-3 py-2 text-[10px] leading-4 text-muted-foreground">
+        Click a field to insert it. Anything else renders as “Not available”.
+      </p>
+    </div>
+  )
+}

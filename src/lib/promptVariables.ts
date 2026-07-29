@@ -104,3 +104,11 @@ export const PROMPT_VARIABLES: PromptVariable[] = [
   { id: 'pitch_angles', group: 'run', type: 'long_text', label: "All three angles, structured", producedBy: 'structure_research' },
   { id: 'selected_angle', group: 'run', type: 'long_text', label: "The angle this pitch was asked for", producedBy: 'structure_research' },
 ]
+
+/** Display order and labels for the prompt editor's field palette. */
+export const PROMPT_VARIABLE_GROUPS: Array<{ id: PromptVariableGroup; label: string }> = [
+  { id: 'podcast', label: "Podcast · Podscan" },
+  { id: 'episode', label: "Latest episode" },
+  { id: 'client', label: "Client" },
+  { id: 'run', label: "Produced during the run" },
+]

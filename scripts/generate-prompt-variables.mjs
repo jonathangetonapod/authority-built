@@ -50,6 +50,11 @@ export interface PromptVariable {
 const ARRAY = `export const PROMPT_VARIABLES: PromptVariable[] = [
 ${registry.variables.map(entry).join('\n')}
 ]
+
+/** Display order and labels for the prompt editor's field palette. */
+export const PROMPT_VARIABLE_GROUPS: Array<{ id: PromptVariableGroup; label: string }> = [
+${Object.entries(registry.groups).map(([id, label]) => `  { id: '${id}', label: ${JSON.stringify(label)} },`).join('\n')}
+]
 `
 
 const FORMATTER = `
@@ -196,6 +201,36 @@ export function buildPodcastVariables(row: unknown): Record<string, string | nul
     variables[variable.id] = formatPromptValue(variable.id, values[variable.column])
   }
   return variables
+}
+
+/**
+ * Every episode-group variable, from a stored capture (newest episode first).
+ *
+ * Reads what is already on the catalogue row — no provider call — so a stage
+ * that only holds a podcasts row can offer the same episode fields as the
+ * research run that captured them.
+ */
+export function buildEpisodeVariables(episodes: unknown): Record<string, string | null> {
+  const list = Array.isArray(episodes) ? episodes as Array<Record<string, unknown>> : []
+  const latest = (list[0] ?? {}) as Record<string, unknown>
+  return {
+    episode_title: formatPromptValue('episode_title', latest.title),
+    episode_description: formatPromptValue('episode_description', latest.description),
+    episode_posted_at: formatPromptValue('episode_posted_at', latest.posted_at),
+    episode_summary: formatPromptValue('episode_summary', latest.summary),
+    episode_topics: formatPromptValue('episode_topics', latest.topics),
+    episode_keywords: formatPromptValue('episode_keywords', latest.keywords),
+    episode_guests: formatPromptValue('episode_guests', latest.guests),
+    episode_hosts: formatPromptValue('episode_hosts', latest.hosts),
+    episode_has_guests: formatPromptValue('episode_has_guests', latest.has_guests),
+    episode_url: formatPromptValue('episode_url', latest.url),
+    episode_duration_seconds: formatPromptValue('episode_duration_seconds', latest.duration_seconds),
+    episode_word_count: formatPromptValue('episode_word_count', latest.word_count),
+    // The transcript is stored in its own column, so a caller that has one
+    // supplies it; a stored capture alone cannot.
+    episode_transcript: null,
+    recent_episodes: formatPromptValue('recent_episodes', list.length > 0 ? list : null),
+  }
 }
 
 /**

@@ -775,19 +775,37 @@ assert.match(
 // columns while research read the registry's thirty.
 assert.equal(
   shortlistEdge.match(/\.select\(CLIENT_PROMPT_COLUMNS\)/gu)?.length,
-  2,
-  'both executors must load the client AI SDR profile',
+  3,
+  'research, pitch and the identify step must all load the client AI SDR profile',
 )
 assert.match(shortlistEdge, /\.select\(PODCAST_PROMPT_COLUMNS\)/u)
 assert.match(shortlistEdge, /\.select\(PITCH_CATALOG_COLUMNS\)/u)
 assert.match(
   shortlistEdge,
-  /import \{\s*buildClientVariables,\s*buildPodcastVariables,\s*CLIENT_VARIABLE_COLUMNS,\s*formatPromptValue,\s*isPromptVariable,\s*PODCAST_VARIABLE_COLUMNS,\s*\} from '\.\.\/_shared\/promptVariables\.ts'/u,
+  /import \{\s*buildClientVariables,\s*buildEpisodeVariables,\s*buildPodcastVariables,\s*CLIENT_VARIABLE_COLUMNS,\s*formatPromptValue,\s*isPromptVariable,\s*PODCAST_VARIABLE_COLUMNS,\s*\} from '\.\.\/_shared\/promptVariables\.ts'/u,
 )
-// Both build their variables through the same helpers, so the two stages can
-// never again disagree about how much of a show they can see.
-assert.equal(shortlistEdge.match(/buildPodcastVariables\(/gu)?.length, 2)
-assert.equal(shortlistEdge.match(/buildClientVariables\(/gu)?.length, 2)
+// Every stage builds its variables through the same helpers, so no two can
+// disagree about how much of a show they can see. Research, pitch generation
+// and the waterfall's identify step all qualify — the last of these decides
+// the name a pitch opens with and used to receive a single field.
+assert.equal(shortlistEdge.match(/buildPodcastVariables\(/gu)?.length, 3)
+assert.equal(shortlistEdge.match(/buildClientVariables\(/gu)?.length, 3)
+assert.equal(shortlistEdge.match(/buildEpisodeVariables\(/gu)?.length, 3)
+// The inbox reply stage reads the catalogue too, from storage only — an
+// inbound reply must not trigger a provider fetch.
+const inboxSdr = readFileSync('supabase/functions/_shared/inboxSdr.ts', 'utf8')
+assert.match(inboxSdr, /\.\.\.buildPodcastVariables\(row\)/u)
+assert.match(inboxSdr, /\.\.\.buildEpisodeVariables\(row\?\.recent_episodes\)/u)
+assert.match(inboxSdr, /\.\.\.buildClientVariables\(client\)/u)
+assert.ok(
+  !/ensureEpisodesCaptured|fetchPodcastHosts/u.test(inboxSdr),
+  'the inbox path must read stored capture only, never fetch',
+)
+assert.match(inboxSdr, /if \(!isPromptVariable\(key\)\) return match/u)
+
+// The pitch revision stage runs in the pitch scope and gets all of it; it used
+// to receive only the draft and the flags it was being asked to fix.
+assert.match(shortlistEdge, /\.\.\.pitchVariables,\s*\n\s*sequence_json:/u)
 
 // Values are formatted by declared type before filling, so a false boolean and
 // a zero cannot reach a prompt looking like missing data.

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronUp, Loader2, MessageSquareText, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -7,49 +7,18 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
+import { PromptVariablePalette } from './PromptVariablePalette'
 import { RESEARCH_PROMPT_DEFAULTS_BY_ID, type ResearchPromptId } from '@/lib/researchPromptDefaults'
-import { PROMPT_VARIABLES, type PromptVariableGroup } from '@/lib/promptVariables'
 import {
   getClientSdrPrompts,
   resetClientSdrPrompt,
   setClientSdrPrompt,
 } from '@/services/workspaceCampaigns'
 
-// Exactly what each generator substitutes — verified against the executors
-// in _shared/inboxSdr.ts and workspace-client-shortlist. An unmapped
-// variable renders as "Not available", so this list is the contract.
-const REPLY_VARIABLES = [
-  '{{client_name}}',
-  '{{positioning}}',
-  '{{topics_and_angles}}',
-  '{{listener_takeaways}}',
-  '{{proof_points}}',
-  '{{booking_details}}',
-  '{{reply_subject}}',
-  '{{reply_body}}',
-  '{{podcast_name}}',
-  '{{host_name}}',
-  '{{pitch_sent}}',
-  '{{podcast_research}}',
-]
-
-// Derived from the variable registry rather than restated, so a field added
-// there is offered here without a second edit. These lists used to name eleven
-// fields while the executor loaded four; now both come from one source.
-const registryTokens = (...groups: PromptVariableGroup[]): string[] =>
-  PROMPT_VARIABLES
-    .filter((variable) => groups.includes(variable.group))
-    .map((variable) => `{{${variable.id}}}`)
-
-const RESEARCH_BASE_VARIABLES = registryTokens('podcast', 'episode', 'client')
-
-const PITCH_VARIABLES = [...RESEARCH_BASE_VARIABLES, ...registryTokens('run')]
-
 interface PromptSpec {
   id: ResearchPromptId
   title: string
   detail: string
-  variables: string[]
 }
 
 const PROMPT_GROUPS: Array<{ title: string; detail: string; prompts: PromptSpec[] }> = [
@@ -61,13 +30,11 @@ const PROMPT_GROUPS: Array<{ title: string; detail: string; prompts: PromptSpec[
         id: 'inbox_reply',
         title: 'Reply instructions',
         detail: 'Classifies the reply and writes the response.',
-        variables: REPLY_VARIABLES,
       },
       {
         id: 'inbox_nudges',
         title: 'Follow-up nudges',
         detail: 'Guides the nudge plan staged with every reply and sent when a host goes quiet.',
-        variables: REPLY_VARIABLES,
       },
     ],
   },
@@ -79,37 +46,31 @@ const PROMPT_GROUPS: Array<{ title: string; detail: string; prompts: PromptSpec[
         id: 'podcast_research',
         title: 'Podcast research',
         detail: 'Show positioning, audience, format, and guest fit.',
-        variables: RESEARCH_BASE_VARIABLES,
       },
       {
         id: 'host_info',
         title: 'Host identification',
         detail: 'Finds every host and the booking contact.',
-        variables: [...RESEARCH_BASE_VARIABLES, '{{research_report}}'],
       },
       {
         id: 'guest_info',
         title: 'Guest verification',
         detail: 'Confirms the most recent guest from the episode.',
-        variables: [...RESEARCH_BASE_VARIABLES, '{{research_report}}'],
       },
       {
         id: 'find_topics',
         title: 'Topic proposal',
         detail: 'Chooses the angles pitched to this show.',
-        variables: [...RESEARCH_BASE_VARIABLES, '{{research_report}}'],
       },
       {
         id: 'write_email',
         title: 'Pitch email',
         detail: 'Writes the opening outreach email.',
-        variables: PITCH_VARIABLES,
       },
       {
         id: 'clean_email',
         title: 'Pitch cleanup',
         detail: 'Final pass over the drafted pitch before it is staged.',
-        variables: ['{{email_draft}}'],
       },
     ],
   },
@@ -131,7 +92,28 @@ export const ClientSdrPromptsCard = ({
   const queryClient = useQueryClient()
   const [drafts, setDrafts] = useState<Partial<Record<ResearchPromptId, string>>>({})
   const [expanded, setExpanded] = useState<ResearchPromptId | null>(null)
+  const fieldRefs = useRef<Partial<Record<ResearchPromptId, HTMLTextAreaElement | null>>>({})
   const promptsKey = ['client-sdr-prompts', workspaceId, clientId] as const
+
+  // Click-to-insert at the caret, so building a prompt from fields reads like
+  // typing rather than copying tokens out of a list.
+  const insertVariable = (id: ResearchPromptId, token: string) => {
+    const field = fieldRefs.current[id] ?? null
+    const current = drafts[id] ?? ''
+    const start = field?.selectionStart ?? current.length
+    const end = field?.selectionEnd ?? current.length
+    const before = current.slice(0, start)
+    const after = current.slice(end)
+    const lead = before && !/\s$/u.test(before) ? ' ' : ''
+    const trail = after && !/^\s/u.test(after) ? ' ' : ''
+    const inserted = `${lead}${token}${trail}`
+    const caret = start + inserted.length
+    setDrafts((currentDrafts) => ({ ...currentDrafts, [id]: `${before}${inserted}${after}` }))
+    requestAnimationFrame(() => {
+      field?.focus()
+      field?.setSelectionRange(caret, caret)
+    })
+  }
 
   const promptsQuery = useQuery({
     queryKey: promptsKey,
@@ -247,22 +229,12 @@ export const ClientSdrPromptsCard = ({
                     </div>
                     {open && (
                       <div className="space-y-3 border-t p-3.5">
-                        <div>
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                            Variables this prompt can use
-                          </p>
-                          <ul className="mt-1.5 flex flex-wrap gap-1.5">
-                            {prompt.variables.map((variable) => (
-                              <li key={variable}>
-                                <code className="rounded border bg-background px-1.5 py-0.5 text-[11px]">{variable}</code>
-                              </li>
-                            ))}
-                          </ul>
-                          <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
-                            Anything else renders as “Not available”.
-                          </p>
-                        </div>
+                        <PromptVariablePalette
+                          disabled={!canManage}
+                          onInsert={(token) => insertVariable(prompt.id, token)}
+                        />
                         <Textarea
+                          ref={(node) => { fieldRefs.current[prompt.id] = node }}
                           value={value}
                           readOnly={!canManage}
                           aria-label={`${prompt.title} for ${clientName}`}

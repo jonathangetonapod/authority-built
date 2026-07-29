@@ -25,6 +25,7 @@ import { decryptInstantlyApiKey, instantlyRequest } from '../_shared/instantly.t
 import { RESEARCH_PROMPT_DEFAULTS } from '../_shared/researchPromptDefaults.ts'
 import {
   buildClientVariables,
+  buildEpisodeVariables,
   buildPodcastVariables,
   CLIENT_VARIABLE_COLUMNS,
   formatPromptValue,
@@ -1509,23 +1510,11 @@ serve(async (req) => {
           last_posted_at: formatPromptValue('last_posted_at', captured?.last_posted_at)
             ?? podcastVariables.last_posted_at
             ?? formatPromptValue('last_posted_at', shortlistRow.last_posted_at),
-          episode_title: firstEpisode?.title ?? null,
-          episode_description: firstEpisode?.description ?? null,
+          // Podscan's own per-episode analysis, all of it captured and stored;
+          // only the title, description and transcript were ever readable, and
+          // the capture is a list of which only the first entry could be named.
+          ...buildEpisodeVariables(captured?.episodes),
           episode_transcript: captured?.transcript ?? null,
-          episode_posted_at: formatPromptValue('episode_posted_at', firstEpisode?.posted_at),
-          // Podscan's own per-episode analysis. All of it was captured and
-          // stored; only the title, description and transcript were readable.
-          episode_summary: formatPromptValue('episode_summary', firstEpisode?.summary),
-          episode_topics: formatPromptValue('episode_topics', firstEpisode?.topics),
-          episode_keywords: formatPromptValue('episode_keywords', firstEpisode?.keywords),
-          episode_guests: formatPromptValue('episode_guests', firstEpisode?.guests),
-          episode_hosts: formatPromptValue('episode_hosts', firstEpisode?.hosts),
-          episode_has_guests: formatPromptValue('episode_has_guests', firstEpisode?.has_guests),
-          episode_url: formatPromptValue('episode_url', firstEpisode?.url),
-          episode_duration_seconds: formatPromptValue('episode_duration_seconds', firstEpisode?.duration_seconds),
-          episode_word_count: formatPromptValue('episode_word_count', firstEpisode?.word_count),
-          // The capture holds a list; only its first entry was ever readable.
-          recent_episodes: formatPromptValue('recent_episodes', captured?.episodes ?? null),
           // Already shaping every stage through the context block — a prompt
           // can now address the relationship directly instead of inferring it.
           agency_relationship: describeRelationship(relationship),
@@ -1977,10 +1966,38 @@ serve(async (req) => {
               && extractorOverrideRows.content.trim()
               ? extractorOverrideRows.content
               : RESEARCH_PROMPT_DEFAULTS.host_name_extractor.content
+            // This stage decides the name every pitch opens with, and it used
+            // to receive exactly one field. Podscan's own analyzed host and the
+            // research reports corroborate the answer it is guessing at.
+            const [{ data: extractorCatalogData }, { data: extractorClientRow }] = await Promise.all([
+              authContext.admin
+                .from('podcasts')
+                .select(PITCH_CATALOG_COLUMNS)
+                .eq('podscan_id', shortlistRow.podcast_id)
+                .maybeSingle(),
+              authContext.admin
+                .from('clients')
+                .select(CLIENT_PROMPT_COLUMNS)
+                .eq('id', clientId)
+                .eq('workspace_id', workspaceId)
+                .maybeSingle(),
+            ])
+            const extractorCatalogRow = (extractorCatalogData ?? null) as Record<string, unknown> | null
             const extracted = await runResearchPrompt(
               anthropicKey.apiKey,
               RESEARCH_PROMPT_DEFAULTS.host_name_extractor,
-              fillPromptTemplate(extractorContent, { contact_data: contactData.slice(0, 8_000) }),
+              fillPromptTemplate(extractorContent, {
+                ...buildPodcastVariables(extractorCatalogRow),
+                ...buildEpisodeVariables(extractorCatalogRow?.recent_episodes),
+                ...buildClientVariables(extractorClientRow),
+                contact_data: contactData.slice(0, 8_000),
+                research_report: typeof researchDocument?.podcast_research === 'string'
+                  ? researchDocument.podcast_research.slice(0, 8_000)
+                  : null,
+                host_report: typeof researchDocument?.host_info === 'string'
+                  ? researchDocument.host_info.slice(0, 6_000)
+                  : null,
+              }),
               usage,
             ).catch(() => '')
             const candidateName = extracted.split('\n')[0]?.trim() ?? ''
@@ -2310,6 +2327,8 @@ serve(async (req) => {
           ?? (typeof pitchCatalogRow?.host_name === 'string' ? pitchCatalogRow.host_name : null)
           ?? (typeof pitchCatalogRow?.publisher_name === 'string' ? pitchCatalogRow.publisher_name : null),
         verified_email: target?.contact_email ?? null,
+        // Podscan's analysis of the episode this pitch will reference.
+        ...buildEpisodeVariables(storedEpisodes),
         episode_title: researchDocument.episodes_used?.[0]?.title ?? storedEpisodeTitle,
         episode_transcript: typeof researchDocument.episode_transcript_excerpt === 'string'
           ? researchDocument.episode_transcript_excerpt.slice(0, 2_000)
@@ -2319,19 +2338,6 @@ serve(async (req) => {
           : storedGuestName,
         topic_proposal: null,
         research_report: researchReport,
-        // Podscan's analysis of the episode this pitch will reference.
-        episode_description: formatPromptValue('episode_description', storedEpisode?.description),
-        episode_posted_at: formatPromptValue('episode_posted_at', storedEpisode?.posted_at),
-        episode_summary: formatPromptValue('episode_summary', storedEpisode?.summary),
-        episode_topics: formatPromptValue('episode_topics', storedEpisode?.topics),
-        episode_keywords: formatPromptValue('episode_keywords', storedEpisode?.keywords),
-        episode_guests: formatPromptValue('episode_guests', storedEpisode?.guests),
-        episode_hosts: formatPromptValue('episode_hosts', storedEpisode?.hosts),
-        episode_has_guests: formatPromptValue('episode_has_guests', storedEpisode?.has_guests),
-        episode_url: formatPromptValue('episode_url', storedEpisode?.url),
-        episode_duration_seconds: formatPromptValue('episode_duration_seconds', storedEpisode?.duration_seconds),
-        episode_word_count: formatPromptValue('episode_word_count', storedEpisode?.word_count),
-        recent_episodes: formatPromptValue('recent_episodes', storedEpisodes),
         // Research stage results, written to the document and until now
         // readable only as the concatenated research_report.
         host_report: typeof researchDocument.host_info === 'string'
@@ -2497,7 +2503,11 @@ serve(async (req) => {
           const revisedRaw = await runResearchPrompt(
             anthropicKey.apiKey,
             RESEARCH_PROMPT_DEFAULTS.clean_email,
+            // The revision stage runs inside the pitch scope, so it can see
+            // everything the draft was written from. It used to get two fields,
+            // which meant it fixed flags without being able to check them.
             fillPromptTemplate(promptContent('clean_email'), {
+              ...pitchVariables,
               sequence_json: JSON.stringify(sequence),
               audit_flags: flags.map((flag) => `- ${flag}`).join('\n'),
             }),

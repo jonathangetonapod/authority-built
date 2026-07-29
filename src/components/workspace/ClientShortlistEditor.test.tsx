@@ -543,11 +543,22 @@ describe('ClientShortlistEditor', () => {
     expect(screen.getByRole('button', { name: 'Close prompt editor' })).toHaveAttribute('aria-expanded', 'true')
     expect(promptSettings.getByText('Owner controls')).toBeInTheDocument()
     expect(promptSettings.getByRole('navigation', { name: 'Research prompt stages' })).toBeInTheDocument()
-    const podcastResearchStage = promptSettings.getByRole('button', { name: /Podcast research/ })
+    // Scoped to the stage nav: the field palette also offers a "Podcast
+    // research result" button, and an unscoped name match now finds both.
+    const stageNav = within(promptSettings.getByRole('navigation', { name: 'Research prompt stages' }))
+    const podcastResearchStage = stageNav.getByRole('button', { name: /Podcast research/ })
     expect(podcastResearchStage).toHaveAttribute('aria-pressed', 'true')
     const prompt = promptSettings.getByLabelText('Prompt for Podcast research')
     expect((prompt as HTMLTextAreaElement).value).toContain('{{client_name}}')
     expect((prompt as HTMLTextAreaElement).value).toContain('HOST INFORMATION')
+
+    // The field palette offers every registry variable, not just the ones the
+    // shipped default happens to mention, and inserts at the caret.
+    const palette = within(promptSettings.getByLabelText('Search prompt variables').closest('div')!.parentElement!)
+    fireEvent.change(prompt, { target: { value: 'Ground this in' } })
+    ;(prompt as HTMLTextAreaElement).setSelectionRange(14, 14)
+    fireEvent.click(palette.getByRole('button', { name: 'Insert Audience size' }))
+    expect((prompt as HTMLTextAreaElement).value).toBe('Ground this in {{audience_size}}')
 
     fireEvent.change(prompt, { target: { value: 'Use {{podcast_name}} to create a concise workspace-specific show brief.' } })
     expect(promptSettings.getByRole('button', { name: 'Save prompt' })).toBeEnabled()
@@ -559,7 +570,7 @@ describe('ClientShortlistEditor', () => {
       'Use {{podcast_name}} to create a concise workspace-specific show brief.',
     ))
 
-    fireEvent.click(promptSettings.getByRole('button', { name: /Host identification/ }))
+    fireEvent.click(stageNav.getByRole('button', { name: /Host identification/ }))
     expect((promptSettings.getByLabelText('Prompt for Host identification') as HTMLTextAreaElement).value).toContain('Identify ALL podcast hosts')
   })
 

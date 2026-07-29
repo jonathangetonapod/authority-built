@@ -8,6 +8,13 @@
 // most valuable cost control).
 
 import { HttpError } from './httpError.ts'
+import {
+  buildClientVariables,
+  buildEpisodeVariables,
+  buildPodcastVariables,
+  isPromptVariable,
+  PODCAST_VARIABLE_COLUMNS,
+} from './promptVariables.ts'
 import { RESEARCH_PROMPT_DEFAULTS } from './researchPromptDefaults.ts'
 import { chargeCredits, logOperationCost } from './billing.ts'
 import { resolveAiKey } from './workspaceAiKeys.ts'
@@ -45,6 +52,10 @@ export interface CampaignSendWindow {
 // Used only when the provider has told us nothing. Deliberately wider than a
 // typical campaign schedule: guessing narrow would silently hold nudges back on
 // a campaign that is in fact sending.
+// Built as a plain string: an inline template literal makes supabase-js infer
+// a literal select type it cannot parse from a runtime-joined column list.
+const INBOX_CATALOG_COLUMNS = `${PODCAST_VARIABLE_COLUMNS.join(', ')}, recent_episodes` as string
+
 const DEFAULT_WINDOW = { fromHour: 8, toHour: 18 }
 const WEEKDAY_INDEX: Record<string, number> = {
   Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
@@ -212,6 +223,7 @@ export async function generateReplyPackage(input: GenerateReplyPackageInput): Pr
   let podcastName = ''
   let hostName = ''
   let podcastResearch = ''
+  let catalogVariables: Record<string, string | null> = {}
   if (input.leadEmail) {
     const { data: target } = await admin
       .from('workspace_client_campaign_targets')
@@ -231,10 +243,25 @@ export async function generateReplyPackage(input: GenerateReplyPackageInput): Pr
       if (typeof target.shortlist_podcast_id === 'string') {
         const { data: shortlist } = await admin
           .from('client_dashboard_podcasts')
-          .select('podcast_description, research_document')
+          .select('podcast_id, podcast_description, research_document')
           .eq('client_id', clientId)
           .eq('id', target.shortlist_podcast_id)
           .maybeSingle()
+        // The reply stage answers a host about a specific show; it can read the
+        // same catalogue and episode fields every other stage does. Stored
+        // only — no provider call on an inbound reply.
+        if (typeof shortlist?.podcast_id === 'string') {
+          const { data: catalogRow } = await admin
+            .from('podcasts')
+            .select(INBOX_CATALOG_COLUMNS)
+            .eq('podscan_id', shortlist.podcast_id)
+            .maybeSingle()
+          const row = (catalogRow ?? null) as Record<string, unknown> | null
+          catalogVariables = {
+            ...buildPodcastVariables(row),
+            ...buildEpisodeVariables(row?.recent_episodes),
+          }
+        }
         const document = shortlist?.research_document && typeof shortlist.research_document === 'object'
           ? shortlist.research_document as Record<string, unknown>
           : null
@@ -273,24 +300,24 @@ export async function generateReplyPackage(input: GenerateReplyPackageInput): Pr
   const resolvePrompt = (id: 'inbox_reply' | 'inbox_nudges', fallback: string): string =>
     promptRow(clientPromptRows, id) ?? promptRow(workspacePromptRows, id) ?? fallback
 
-  // One substitution map for both prompts; an unmapped variable renders as
-  // "Not available" rather than leaking the raw placeholder into the model.
-  const variables: Record<string, string> = {
-    client_name: String(client.name ?? ''),
-    positioning: profileText('positioning'),
-    topics_and_angles: profileText('topics_and_angles'),
-    listener_takeaways: profileText('listener_takeaways'),
+  // One substitution map for both prompts, built from the same registry as
+  // every other stage; the reply-specific fields are layered on top.
+  const variables: Record<string, string | null> = {
+    ...catalogVariables,
+    ...buildClientVariables(client),
     proof_points: profileText('proof_points') || 'n/a',
-    booking_details: profileText('booking_details'),
     reply_subject: subject,
     reply_body: message,
-    podcast_name: podcastName,
+    podcast_name: podcastName || catalogVariables.podcast_name || '',
     host_name: hostName,
     pitch_sent: pitchSent,
     podcast_research: podcastResearch,
   }
   const fill = (template: string): string =>
-    template.replace(/\{\{\s*([a-z_]+)\s*\}\}/gu, (_match, key: string) => {
+    template.replace(/\{\{\s*([a-z_]+)\s*\}\}/gu, (match, key: string) => {
+      // Registered variables only; a prompt writing about placeholder syntax
+      // keeps its prose instead of having it filled in.
+      if (!isPromptVariable(key)) return match
       const value = variables[key]
       return typeof value === 'string' && value.trim() ? value : 'Not available'
     })
