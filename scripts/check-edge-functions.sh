@@ -57,6 +57,7 @@ export DENO_DIR="${DENO_DIR:-${TMPDIR:-/tmp}/getonapod-deno-cache}"
   supabase/functions/_shared/instantly.test.ts \
   supabase/functions/_shared/podcastEpisodes.test.ts \
   supabase/functions/_shared/podcastExportDedupe.test.ts \
+  supabase/functions/_shared/promptOutputs.test.ts \
   supabase/functions/_shared/promptRequirements.test.ts \
   supabase/functions/_shared/promptVariables.test.ts \
   supabase/functions/_shared/workspaceCredentials.test.ts

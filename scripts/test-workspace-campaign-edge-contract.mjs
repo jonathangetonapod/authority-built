@@ -918,3 +918,23 @@ assert.ok(
   !previewAction.includes('ensureEpisodesCaptured(') && previewAction.includes('readStoredEpisodes('),
   'the preview must read the stored capture, never refetch from Podscan',
 )
+
+// A stage can declare the fields it returns, and those become variables the
+// stages after it can name. Every research stage goes through one runner, so a
+// stage cannot be added that quietly skips the declared shape.
+assert.match(shortlistEdge, /const runStage = async \(/u)
+for (const stage of ['podcast_research', 'host_info', 'guest_info', 'find_topics']) {
+  assert.ok(
+    shortlistEdge.includes(`runStage('${stage}'`),
+    `${stage} must run through runStage so its declared outputs are read back`,
+  )
+}
+// The declared shape is appended to the prompt, never substituted for it.
+assert.match(shortlistEdge, /fillPromptTemplate\(promptContent\(promptId\), stageVariables\),\s*\n\s*buildOutputInstruction\(fields\),/u)
+// A prose answer still reaches the caller: declaring fields must not be able
+// to lose a stage's output.
+assert.match(shortlistEdge, /const parsed = parseOutputFields\(raw, fields\)\s*\n\s*if \(parsed\) Object\.assign\(stageVariables, parsed\)\s*\n\s*return raw/u)
+
+const outputsShared = readFileSync('supabase/functions/_shared/promptOutputs.ts', 'utf8')
+// A declared field may never take the name of one the run already provides.
+assert.match(outputsShared, /if \(isPromptVariable\(id\)\) \{\s*\n\s*throw new Error/u)

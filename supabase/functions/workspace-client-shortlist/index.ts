@@ -33,6 +33,12 @@ import {
   PODCAST_VARIABLE_COLUMNS,
 } from '../_shared/promptVariables.ts'
 import {
+  buildOutputInstruction,
+  parseOutputFields,
+  type PromptOutputField,
+  resolveOutputFields,
+} from '../_shared/promptOutputs.ts'
+import {
   describeMissingRequirements,
   missingRequiredVariables,
   type PromptRequirementRow,
@@ -1644,6 +1650,26 @@ serve(async (req) => {
             .eq('client_id', clientId),
         ])
 
+        // The fields each stage declares it returns. A stage with none keeps
+        // writing its single blob, exactly as before.
+        const [{ data: workspaceOutputRows }, { data: clientOutputRows }] = await Promise.all([
+          authContext.admin
+            .from('workspace_prompt_outputs')
+            .select('prompt_id, output_fields')
+            .eq('workspace_id', workspaceId),
+          authContext.admin
+            .from('client_prompt_outputs')
+            .select('prompt_id, output_fields')
+            .eq('workspace_id', workspaceId)
+            .eq('client_id', clientId),
+        ])
+        const outputFieldsFor = (promptId: string): PromptOutputField[] =>
+          resolveOutputFields(
+            promptId,
+            (clientOutputRows ?? []) as Array<{ prompt_id: string; output_fields: unknown }>,
+            (workspaceOutputRows ?? []) as Array<{ prompt_id: string; output_fields: unknown }>,
+          )
+
         // Stored episode capture: Podscan is only hit when the capture is
         // missing or stale, so research reruns are free of provider calls.
         const captured = await ensureEpisodesCaptured(authContext.admin, shortlistRow.podcast_id)
@@ -1757,6 +1783,35 @@ serve(async (req) => {
           throw new RequirementBlock(reason, promptId, missing)
         }
 
+        /**
+         * Runs a stage, and turns its answer into variables when the stage
+         * declares what it returns.
+         *
+         * The declared shape is appended to the prompt rather than replacing
+         * it: the prompt says what to think about, this says what shape to
+         * answer in. A stage that answers in prose anyway still returns its
+         * blob to the caller, so declaring fields can never lose an answer.
+         */
+        const runStage = async (
+          promptId: string,
+          parts: { context: string; report?: string },
+        ): Promise<string> => {
+          const fields = outputFieldsFor(promptId)
+          const instruction = [
+            fillPromptTemplate(promptContent(promptId), stageVariables),
+            buildOutputInstruction(fields),
+          ].filter(Boolean).join('\n\n')
+          const raw = await runResearchPrompt(
+            anthropicKey.apiKey,
+            RESEARCH_PROMPT_DEFAULTS[promptId],
+            { ...parts, instruction },
+            usage,
+          )
+          const parsed = parseOutputFields(raw, fields)
+          if (parsed) Object.assign(stageVariables, parsed)
+          return raw
+        }
+
         // The first gate runs before the charge: a podcast that can never
         // clear stage one costs nothing to reject. Later stages block after
         // work has been done and paid for, which is the point of blocking at
@@ -1772,12 +1827,7 @@ serve(async (req) => {
           byoKeyUsed,
         })
 
-        const researchReport = await runResearchPrompt(
-          anthropicKey.apiKey,
-          RESEARCH_PROMPT_DEFAULTS.podcast_research,
-          { context: sharedContext, instruction: fillPromptTemplate(promptContent('podcast_research'), stageVariables) },
-          usage,
-        )
+        const researchReport = await runStage('podcast_research', { context: sharedContext })
         await advance('podcast_research', 'host_profile')
 
         // Stages two through four reuse two cached blocks: the shared context
@@ -1788,35 +1838,21 @@ serve(async (req) => {
         // Gated after the pointer is assigned, so a stage requiring the report
         // it reads is satisfied by the block it is about to be sent.
         await gateStage('host_info')
-        const hostReport = await runResearchPrompt(
-          anthropicKey.apiKey,
-          RESEARCH_PROMPT_DEFAULTS.host_info,
-          { context: sharedContext, report: reportBlock, instruction: fillPromptTemplate(promptContent('host_info'), stageVariables) },
-          usage,
-        )
+        const hostReport = await runStage('host_info', { context: sharedContext, report: reportBlock })
         stageVariables.host_report = hostReport ? hostReport.slice(0, 6_000) : null
         await advance('host_info', 'guest_patterns')
 
         let guestReport: string | null = null
         if (captured?.transcript) {
           await gateStage('guest_info')
-          guestReport = await runResearchPrompt(
-            anthropicKey.apiKey,
-            RESEARCH_PROMPT_DEFAULTS.guest_info,
-            { context: sharedContext, report: reportBlock, instruction: fillPromptTemplate(promptContent('guest_info'), stageVariables) },
-            usage,
-          ).catch(() => null)
+          guestReport = await runStage('guest_info', { context: sharedContext, report: reportBlock })
+            .catch(() => null)
         }
         stageVariables.guest_report = guestReport ? guestReport.slice(0, 6_000) : null
         await advance('guest_info', 'guest_fit')
 
         await gateStage('find_topics')
-        const topicProposal = await runResearchPrompt(
-          anthropicKey.apiKey,
-          RESEARCH_PROMPT_DEFAULTS.find_topics,
-          { context: sharedContext, report: reportBlock, instruction: fillPromptTemplate(promptContent('find_topics'), stageVariables) },
-          usage,
-        )
+        const topicProposal = await runStage('find_topics', { context: sharedContext, report: reportBlock })
         await advance('find_topics', null)
 
         // Structure the narrative outputs into the shortlist's existing

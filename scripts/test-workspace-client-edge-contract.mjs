@@ -130,7 +130,7 @@ assert.match(shortlistEdge, /const anthropicKey = await resolveAiKey\(authContex
 // for a podcast that could never have produced one.
 assert.match(
   shortlistEdge,
-  /await gateStage\('podcast_research'\)\s*\n\s*await chargeCredits\(authContext\.admin, \{[\s\S]*?operationType: 'research_run'[\s\S]*?byoKeyUsed,[\s\S]*?\}\)[\s\S]*?const researchReport = await runResearchPrompt\(/u,
+  /await gateStage\('podcast_research'\)\s*\n\s*await chargeCredits\(authContext\.admin, \{[\s\S]*?operationType: 'research_run'[\s\S]*?byoKeyUsed,[\s\S]*?\}\)[\s\S]*?const researchReport = await runStage\('podcast_research'/u,
 )
 assert.match(shortlistEdge, /from\('workspace_research_prompts'\)[\s\S]*?RESEARCH_PROMPT_DEFAULTS\[promptId\]\.content/u)
 assert.match(shortlistEdge, /ai_clean_description: cleanDescription,[\s\S]*?ai_analyzed_at: completedAt,[\s\S]*?research_document:[\s\S]*?research_progress:[\s\S]*?status: 'completed'/u)
