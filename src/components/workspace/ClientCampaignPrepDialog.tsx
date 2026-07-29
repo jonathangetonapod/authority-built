@@ -53,6 +53,7 @@ import {
   ensureClientShortlistEpisodes,
   generateClientShortlistPitch,
   getClientShortlistResearchDocument,
+  getPromptPreview,
   runClientShortlistEmailSearch,
   runClientShortlistResearch,
 } from '@/services/clientShortlist'
@@ -70,6 +71,7 @@ import {
 } from '@/services/workspaceCampaigns'
 import { PromptVariableTextarea } from './PromptVariableTextarea'
 import { PromptRequiredFields } from './PromptRequiredFields'
+import { PromptFieldPreview } from './PromptFieldPreview'
 import {
   RESEARCH_PROMPT_DEFAULTS,
   RESEARCH_PROMPT_DEFAULTS_BY_ID,
@@ -557,37 +559,23 @@ export function ClientCampaignPrepDialog({
     const text = value.trim().replace(/\s+/gu, ' ')
     return text.length > max ? `${text.slice(0, max)}…` : text
   }
-  // Mirrors the executor's variable mapping so the inspector can show where
-  // each prompt input came from and what was actually available.
-  const describeResearchVariable = (name: string): { source: string; value: string | null } => {
-    const firstEpisode = researchDocument?.episodes_used?.[0] ?? null
-    switch (name) {
-      case 'client_name': return { source: 'Client profile', value: variablePreview(clientName) }
-      case 'client_bio': return { source: 'Client profile', value: variablePreview(clientBio) }
-      case 'client_linkedin_url': return { source: 'Client profile', value: 'Mapped at run time' }
-      case 'client_website': return { source: 'Client profile', value: 'Mapped at run time' }
-      case 'podcast_name': return { source: 'Podcast catalog', value: variablePreview(podcast?.podcast_name) }
-      case 'podcast_url': return { source: 'Podcast catalog', value: variablePreview(podcast?.podcast_url) }
-      case 'podcast_description': return { source: 'Podcast catalog', value: variablePreview(podcast?.podcast_description) }
-      case 'last_posted_at': return { source: 'Podcast catalog', value: latestActivityAt ? formatPodcastDate(latestActivityAt) : null }
-      case 'episode_title': return { source: 'Stored episode capture (Podscan)', value: variablePreview(latestEpisode?.title) ?? variablePreview(firstEpisode?.title) }
-      case 'episode_description': return { source: 'Stored episode capture (Podscan)', value: variablePreview(latestEpisode?.description) ?? (firstEpisode ? 'Stored at run time' : null) }
-      case 'episode_transcript': return {
-        source: 'Latest episode transcript',
-        value: variablePreview(researchDocument?.episode_transcript_excerpt)
-          ?? (firstEpisode?.had_transcript ? 'Full transcript at run time' : null),
-      }
-      case 'research_report': return { source: 'Output of “Reading the podcast profile”', value: variablePreview(researchDocument?.podcast_research) }
-      case 'recent_guest_name': return { source: 'Guest verification stage', value: variablePreview(researchDocument?.recent_guest_name) }
-      default: return { source: 'Mapped at run time', value: 'Mapped at run time' }
-    }
-  }
   const effectivePromptContent = (promptId: ResearchPromptId): string =>
     promptOverrides[promptId]?.content ?? RESEARCH_PROMPT_DEFAULTS_BY_ID[promptId].content
   const selectedPromptDefault = RESEARCH_PROMPT_DEFAULTS_BY_ID[selectedPromptId]
   const selectedPromptCustomized = Boolean(promptOverrides[selectedPromptId])
   const promptDirty = promptDraft !== effectivePromptContent(selectedPromptId)
   const customPromptCount = RESEARCH_PROMPT_DEFAULTS.filter((prompt) => promptOverrides[prompt.id]).length
+
+  // The real value of every field for THIS podcast, built server-side by the
+  // same function the run uses. Stored reads only, so opening the editor is
+  // never a provider call or a charge.
+  const promptPreviewQuery = useQuery({
+    queryKey: ['client-shortlist-prompt-preview', workspaceId, clientId, podcast?.id || 'none'],
+    queryFn: () => getPromptPreview(workspaceId, clientId, podcast!.id),
+    enabled: open && Boolean(podcast?.id),
+    retry: false,
+    staleTime: 30_000,
+  })
 
   const requirementsQuery = useQuery({
     queryKey: ['workspace-prompt-requirements', workspaceId],
@@ -1494,21 +1482,14 @@ export function ClientCampaignPrepDialog({
                                   </div>
                                   <Button type="button" variant="ghost" size="sm" onClick={() => setInspectedStageId(null)}>Close</Button>
                                 </div>
-                                <p className="mt-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Variables this prompt received</p>
-                                <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label="Prompt input variables">
-                                  {promptVariables(inspectedPromptContent).map((name) => {
-                                    const variable = describeResearchVariable(name)
-                                    return (
-                                      <li key={name} className="max-w-full rounded-md border bg-muted/10 px-2 py-1 text-[11px] leading-4">
-                                        <code className="font-semibold text-foreground">{`{{${name}}}`}</code>
-                                        <span className="text-muted-foreground">{' ← '}{variable.source}</span>
-                                        <span className={`block truncate ${variable.value ? 'text-foreground/70' : 'italic text-muted-foreground'}`}>
-                                          {variable.value || 'Not available for this run'}
-                                        </span>
-                                      </li>
-                                    )
-                                  })}
-                                </ul>
+                                <div className="mt-3">
+                                  <PromptFieldPreview
+                                    content={inspectedPromptContent}
+                                    preview={promptPreviewQuery.data ?? null}
+                                    loading={promptPreviewQuery.isLoading}
+                                    podcastName={podcast?.podcast_name}
+                                  />
+                                </div>
                                 {researchDocumentQuery.isLoading ? (
                                   <div className="mt-3 flex items-center gap-2 rounded-lg border bg-muted/10 p-3 text-xs text-muted-foreground">
                                     <Loader2 className="h-3.5 w-3.5 animate-spin" />Loading the stored research…
@@ -1588,6 +1569,14 @@ export function ClientCampaignPrepDialog({
                                   disabled={promptBusy || promptOverridesQuery.isLoading}
                                   className="min-h-48 resize-y bg-background font-mono text-xs leading-5"
                                   maxLength={20_000}
+                                />
+                              </div>
+                              <div className="mt-4">
+                                <PromptFieldPreview
+                                  content={promptDraft}
+                                  preview={promptPreviewQuery.data ?? null}
+                                  loading={promptPreviewQuery.isLoading}
+                                  podcastName={podcast?.podcast_name}
                                 />
                               </div>
                               <div className="mt-4">

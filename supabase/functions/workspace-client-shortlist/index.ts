@@ -20,7 +20,7 @@ import {
 import { generatePodcastSearchEmbedding } from '../_shared/podcastSearch.ts'
 import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
-import { ensureEpisodesCaptured, fetchPodcastHosts } from '../_shared/podcastEpisodes.ts'
+import { ensureEpisodesCaptured, fetchPodcastHosts, readStoredEpisodes } from '../_shared/podcastEpisodes.ts'
 import { decryptInstantlyApiKey, instantlyRequest } from '../_shared/instantly.ts'
 import { RESEARCH_PROMPT_DEFAULTS } from '../_shared/researchPromptDefaults.ts'
 import {
@@ -44,6 +44,57 @@ import {
  * podcast. Distinct from a failure: nothing broke, and the run must not be
  * rewritten as failed or reported as an error the operator should retry.
  */
+
+/**
+ * Every registry variable a podcast can fill, before any stage has run.
+ *
+ * Extracted so the prompt editor's preview is built by the same code as the
+ * run. A hand-written mirror of this mapping is exactly what the editor used
+ * to carry, and it answered "Mapped at run time" for two thirds of the
+ * registry because nobody could keep 81 cases in step by hand.
+ */
+function buildBaseVariables(input: {
+  catalogRow: unknown
+  clientProfile: unknown
+  captured: { episodes: unknown[]; transcript: string | null; last_posted_at: string | null } | null
+  // Only the four columns the catalogue can be missing; the row itself
+  // carries far more, and none of the rest belongs in a variable.
+  shortlistRow: {
+    podcast_name?: string | null
+    podcast_url?: string | null
+    podcast_description?: string | null
+    last_posted_at?: string | null
+  }
+  relationship: Parameters<typeof describeRelationship>[0]
+}): Record<string, string | null> {
+  const { catalogRow, clientProfile, captured, shortlistRow, relationship } = input
+  // Every podcast-sourced variable in the registry, rendered by its declared
+  // type. Typing matters here: a raw false or 0 handed to the filler would
+  // come out as "Not available", and podcast_has_guests being false is a fact,
+  // not an absence.
+  const podcastVariables = buildPodcastVariables(catalogRow)
+  return {
+    ...podcastVariables,
+    ...buildClientVariables(clientProfile),
+    // The shortlist row is the fallback for a show the catalogue has not
+    // caught up with, and the capture is fresher than the catalogue.
+    podcast_name: podcastVariables.podcast_name ?? shortlistRow.podcast_name ?? null,
+    podcast_url: podcastVariables.podcast_url ?? shortlistRow.podcast_url ?? null,
+    podcast_description: podcastVariables.podcast_description ?? shortlistRow.podcast_description ?? null,
+    last_posted_at: formatPromptValue('last_posted_at', captured?.last_posted_at)
+      ?? podcastVariables.last_posted_at
+      ?? formatPromptValue('last_posted_at', shortlistRow.last_posted_at),
+    // Podscan's own per-episode analysis, all of it captured and stored; only
+    // the title, description and transcript were ever readable, and the
+    // capture is a list of which only the first entry could be named.
+    ...buildEpisodeVariables(captured?.episodes),
+    episode_transcript: captured?.transcript ?? null,
+    // Already shaping every stage through the context block — a prompt can now
+    // address the relationship directly instead of inferring it.
+    agency_relationship: describeRelationship(relationship),
+  }
+}
+
 class RequirementBlock extends Error {
   constructor(message: string, readonly promptId: string, readonly missing: string[]) {
     super(message)
@@ -1407,6 +1458,83 @@ serve(async (req) => {
       })
     }
 
+    if (action === 'prompt-preview') {
+      // What the prompt editor shows beside the textarea: the real value of
+      // every registry field for THIS podcast, built by buildBaseVariables —
+      // the same function the run uses — overlaid with the outputs of the
+      // stages that have already run. Reads stored data only: no Podscan call,
+      // no model call, no credit.
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'shortlist_podcast_id'])
+      const shortlistPodcastId = requireUuid(body.shortlist_podcast_id, 'shortlist_podcast_id')
+
+      const { data: shortlistRow } = await authContext.admin
+        .from('client_dashboard_podcasts')
+        .select('id, podcast_id, podcast_name, podcast_description, podcast_url, publisher_name, last_posted_at, research_document, ai_pitch_angles')
+        .eq('id', shortlistPodcastId)
+        .eq('client_id', clientId)
+        .maybeSingle()
+      if (!shortlistRow) throw new HttpError(404, 'PODCAST_NOT_FOUND', 'Shortlist podcast not found for this client')
+
+      const [{ data: previewCatalogRow }, { data: previewClient }] = await Promise.all([
+        authContext.admin
+          .from('podcasts')
+          .select(PODCAST_PROMPT_COLUMNS)
+          .eq('podscan_id', shortlistRow.podcast_id)
+          .maybeSingle(),
+        authContext.admin
+          .from('clients')
+          .select(CLIENT_PROMPT_COLUMNS)
+          .eq('workspace_id', workspaceId)
+          .eq('id', clientId)
+          .maybeSingle(),
+      ])
+      const relationships = await readPodcastRelationships(authContext.admin, workspaceId, [shortlistRow.podcast_id])
+      // Stored capture only. Asking Podscan here would make opening an editor
+      // a provider call, and the editor is opened far more often than a run.
+      const capturedForPreview = await readStoredEpisodes(authContext.admin, shortlistRow.podcast_id)
+
+      const previewVariables = buildBaseVariables({
+        catalogRow: previewCatalogRow,
+        clientProfile: previewClient,
+        captured: capturedForPreview,
+        shortlistRow,
+        relationship: relationships.get(shortlistRow.podcast_id),
+      })
+
+      // Stage outputs: what an earlier prompt actually produced for this
+      // podcast, which is the other half of writing the next prompt.
+      const doc = (shortlistRow.research_document ?? null) as Record<string, unknown> | null
+      const stageOutput = (key: string): string | null => {
+        const value = doc?.[key]
+        return typeof value === 'string' && value.trim() ? value : null
+      }
+      const runVariables: Record<string, string | null> = {
+        research_report: stageOutput('podcast_research'),
+        host_report: stageOutput('host_info'),
+        guest_report: stageOutput('guest_info'),
+        topic_proposal: stageOutput('find_topics'),
+        recent_guest_name: stageOutput('recent_guest_name'),
+        host_name: stageOutput('host_name'),
+      }
+
+      // Capped per field: this is a preview beside an editor, not a payload.
+      const PREVIEW_CHARS = 600
+      const fields: Record<string, { value: string | null; truncated: boolean }> = {}
+      for (const [key, value] of Object.entries({ ...previewVariables, ...runVariables })) {
+        if (!isPromptVariable(key)) continue
+        const text = typeof value === 'string' && value.trim() ? value.trim() : null
+        fields[key] = text && text.length > PREVIEW_CHARS
+          ? { value: `${text.slice(0, PREVIEW_CHARS)}…`, truncated: true }
+          : { value: text, truncated: false }
+      }
+
+      return jsonResponse(req, METHODS, 200, {
+        fields,
+        transcript_episode_title: capturedForPreview?.transcript_episode_title ?? null,
+        researched: Boolean(doc),
+      })
+    }
+
     if (action === 'research-run') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'shortlist_podcast_id', 'relationship_acknowledged'])
       const shortlistPodcastId = requireUuid(body.shortlist_podcast_id, 'shortlist_podcast_id')
@@ -1524,28 +1652,13 @@ serve(async (req) => {
         // declared type. Typing matters here: a raw false or 0 handed to the
         // filler would come out as "Not available", and podcast_has_guests
         // being false is a fact, not an absence.
-        const podcastVariables = buildPodcastVariables(catalogRow)
-
-        const baseVariables: Record<string, string | null> = {
-          ...podcastVariables,
-          ...buildClientVariables(clientProfile),
-          // The shortlist row is the fallback for a show the catalogue has not
-          // caught up with, and the capture is fresher than the catalogue.
-          podcast_name: podcastVariables.podcast_name ?? shortlistRow.podcast_name,
-          podcast_url: podcastVariables.podcast_url ?? shortlistRow.podcast_url,
-          podcast_description: podcastVariables.podcast_description ?? shortlistRow.podcast_description,
-          last_posted_at: formatPromptValue('last_posted_at', captured?.last_posted_at)
-            ?? podcastVariables.last_posted_at
-            ?? formatPromptValue('last_posted_at', shortlistRow.last_posted_at),
-          // Podscan's own per-episode analysis, all of it captured and stored;
-          // only the title, description and transcript were ever readable, and
-          // the capture is a list of which only the first entry could be named.
-          ...buildEpisodeVariables(captured?.episodes),
-          episode_transcript: captured?.transcript ?? null,
-          // Already shaping every stage through the context block — a prompt
-          // can now address the relationship directly instead of inferring it.
-          agency_relationship: describeRelationship(relationship),
-        }
+        const baseVariables = buildBaseVariables({
+          catalogRow,
+          clientProfile,
+          captured,
+          shortlistRow,
+          relationship,
+        })
 
         // One byte-identical CONTEXT block opens every Sonnet stage of this
         // run, marked for prompt caching: stage one pays the cache write,

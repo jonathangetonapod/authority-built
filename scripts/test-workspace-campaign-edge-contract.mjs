@@ -790,8 +790,8 @@ assert.match(
 // columns while research read the registry's thirty.
 assert.equal(
   shortlistEdge.match(/\.select\(CLIENT_PROMPT_COLUMNS\)/gu)?.length,
-  3,
-  'research, pitch and the identify step must all load the client AI SDR profile',
+  4,
+  'research, pitch, the identify step and the editor preview must all load the client AI SDR profile',
 )
 assert.match(shortlistEdge, /\.select\(PODCAST_PROMPT_COLUMNS\)/u)
 assert.match(shortlistEdge, /\.select\(PITCH_CATALOG_COLUMNS\)/u)
@@ -897,3 +897,24 @@ for (const action of [
 }
 assert.match(edge, /"prompt-requirements-set"[\s\S]{0,200}requireIntegrationOwner\(access\)/u)
 assert.match(edge, /"client-prompt-requirements-set"[\s\S]{0,220}requireIntegrationOwner\(access\)/u)
+
+// The prompt editor's field preview is built by the same function the run uses.
+// A hand-written mirror of that mapping is what the editor carried before, and
+// it answered "Mapped at run time" for two thirds of the registry.
+assert.match(shortlistEdge, /function buildBaseVariables\(input: \{/u)
+assert.ok(
+  (shortlistEdge.match(/buildBaseVariables\(\{/gu) ?? []).length >= 2,
+  'the run and the preview must both build their variables through buildBaseVariables',
+)
+// Opening an editor must never become a provider call or a charge.
+const previewAction = shortlistEdge.slice(
+  shortlistEdge.indexOf("if (action === 'prompt-preview')"),
+  shortlistEdge.indexOf("if (action === 'research-run')"),
+)
+assert.ok(previewAction.length > 0, 'workspace-client-shortlist must expose prompt-preview')
+assert.ok(!previewAction.includes('chargeCredits('), 'the preview must not charge a credit')
+assert.ok(!previewAction.includes('runResearchPrompt('), 'the preview must not call the model')
+assert.ok(
+  !previewAction.includes('ensureEpisodesCaptured(') && previewAction.includes('readStoredEpisodes('),
+  'the preview must read the stored capture, never refetch from Podscan',
+)

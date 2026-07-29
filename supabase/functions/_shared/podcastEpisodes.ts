@@ -212,6 +212,37 @@ function newestIso(values: Array<string | null>): string | null {
 
 // deno-lint-ignore no-explicit-any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+/**
+ * The stored capture, without ever calling Podscan.
+ *
+ * ensureEpisodesCaptured refetches when the capture is stale, which is right
+ * for a run and wrong for a preview: the prompt editor is opened far more
+ * often than a run happens, and opening an editor must not be a provider call.
+ */
+export async function readStoredEpisodes(admin: any, podscanId: string): Promise<CapturedEpisodes | null> {
+  if (!/^[a-zA-Z0-9_-]+$/.test(podscanId)) return null
+  const { data: row, error } = await admin
+    .from('podcasts')
+    .select('recent_episodes, latest_episode_transcript, episodes_fetched_at, last_posted_at')
+    .eq('podscan_id', podscanId)
+    .maybeSingle()
+  if (error || !row) return null
+  const episodes: StoredEpisode[] = Array.isArray(row.recent_episodes)
+    ? (row.recent_episodes as StoredEpisode[]).filter((episode) => episode && typeof episode.title === 'string')
+    : []
+  const transcript = typeof row.latest_episode_transcript === 'string' && row.latest_episode_transcript
+    ? row.latest_episode_transcript
+    : null
+  return {
+    episodes,
+    transcript,
+    transcript_episode_title: transcript ? transcriptEpisodeTitle(episodes) : null,
+    last_posted_at: typeof row.last_posted_at === 'string' ? row.last_posted_at : null,
+    episodes_fetched_at: typeof row.episodes_fetched_at === 'string' ? row.episodes_fetched_at : null,
+  }
+}
+
 export async function ensureEpisodesCaptured(admin: any, podscanId: string): Promise<CapturedEpisodes | null> {
   if (!/^[a-zA-Z0-9_-]+$/.test(podscanId)) return null
   const { data: row, error } = await admin

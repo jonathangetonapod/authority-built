@@ -193,6 +193,42 @@ async function invokeClientShortlist<T>(body: Record<string, unknown>): Promise<
   return data as T
 }
 
+/** The real value of every registry field for one podcast, for the editor. */
+export interface PromptPreviewField {
+  value: string | null
+  truncated: boolean
+}
+
+export interface PromptPreview {
+  fields: Record<string, PromptPreviewField>
+  /** Set when the stored transcript is not from the latest episode. */
+  transcript_episode_title: string | null
+  researched: boolean
+}
+
+/**
+ * Built server-side by the same function the run uses, so the editor cannot
+ * show a value the run would not send. Reads stored data only — no Podscan
+ * call, no model call, no credit.
+ */
+export async function getPromptPreview(
+  workspaceId: string,
+  clientId: string,
+  shortlistPodcastId: string,
+): Promise<PromptPreview> {
+  const data = await invokeClientShortlist<PromptPreview>({
+    action: 'prompt-preview',
+    workspace_id: workspaceId,
+    client_id: clientId,
+    shortlist_podcast_id: shortlistPodcastId,
+  })
+  return {
+    fields: data?.fields ?? {},
+    transcript_episode_title: data?.transcript_episode_title ?? null,
+    researched: data?.researched === true,
+  }
+}
+
 export async function getClientShortlist(
   workspaceId: string,
   clientId: string,
