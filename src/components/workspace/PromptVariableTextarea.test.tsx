@@ -57,6 +57,28 @@ describe('PromptVariableTextarea', () => {
     await waitFor(() => expect(field().value).toBe('{{host_name}}'))
   })
 
+  it('says how much of the registry the menu is showing', async () => {
+    render(<Harness />)
+    fireEvent.change(field(), { target: { value: '/' } })
+    await screen.findByRole('listbox')
+    // A bare slash matches everything, so the menu is a window on the registry
+    // rather than a view of it — a screenful must not read as the whole list.
+    const shown = screen.getAllByRole('option').length
+    expect(shown).toBeGreaterThan(8)
+    expect(shown).toBeLessThan(PROMPT_VARIABLES.length)
+    expect(screen.getByText(
+      `${shown} of ${PROMPT_VARIABLES.length} matches — keep typing to narrow`,
+    )).toBeInTheDocument()
+  })
+
+  it('counts against the registry once the matches all fit', async () => {
+    render(<Harness />)
+    fireEvent.change(field(), { target: { value: '/host' } })
+    await screen.findByRole('listbox')
+    const shown = screen.getAllByRole('option').length
+    expect(screen.getByText(`${shown} of ${PROMPT_VARIABLES.length} fields`)).toBeInTheDocument()
+  })
+
   it('dismisses on Escape', async () => {
     render(<Harness />)
     fireEvent.change(field(), { target: { value: 'Use {{aud' } })

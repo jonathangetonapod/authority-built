@@ -3,15 +3,18 @@ import { Braces } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
-import { PROMPT_VARIABLES } from '@/lib/promptVariables'
+import { PROMPT_VARIABLES, PROMPT_VARIABLE_GROUPS } from '@/lib/promptVariables'
 import {
   applyVariableTrigger,
+  countPromptVariableMatches,
   detectVariableTrigger,
   filterPromptVariables,
   measureCaret,
   spliceAtCaret,
   type VariableTrigger,
 } from '@/lib/promptVariableMenu'
+
+const GROUP_LABELS = new Map(PROMPT_VARIABLE_GROUPS.map((group) => [group.id, group.label]))
 import { PromptVariablePalette } from './PromptVariablePalette'
 
 interface PromptVariableTextareaProps {
@@ -26,7 +29,13 @@ interface PromptVariableTextareaProps {
   maxLength?: number
 }
 
-const MENU_LIMIT = 8
+/**
+ * The menu scrolls, so this is a rendering cap rather than a view of the
+ * registry. Eight showed the first eight rows — every one of them a podcast
+ * field — which read as "there are eight fields" instead of "here are the
+ * closest eight of eighty-one".
+ */
+const MENU_LIMIT = 40
 
 /**
  * The prompt field, with the registry reachable from inside it.
@@ -56,6 +65,10 @@ export const PromptVariableTextarea = ({
   const editable = !disabled && !readOnly
   const matches = useMemo(
     () => (trigger ? filterPromptVariables(trigger.query, MENU_LIMIT) : []),
+    [trigger],
+  )
+  const matchCount = useMemo(
+    () => (trigger ? countPromptVariableMatches(trigger.query) : 0),
     [trigger],
   )
   const open = Boolean(trigger) && matches.length > 0 && editable
@@ -172,12 +185,15 @@ export const PromptVariableTextarea = ({
           onBlur={() => setTrigger(null)}
         />
         {open && (
+          <div
+            style={{ top: caretPoint.top + 22, left: Math.max(0, Math.min(caretPoint.left, 160)) }}
+            className="absolute z-50 w-[19rem] overflow-hidden rounded-lg border bg-popover shadow-md"
+          >
           <ul
             id={`${id ?? ariaLabel}-field-menu`}
             role="listbox"
             aria-label="Matching fields"
-            style={{ top: caretPoint.top + 22, left: Math.max(0, Math.min(caretPoint.left, 160)) }}
-            className="absolute z-50 max-h-60 w-[19rem] overflow-y-auto rounded-lg border bg-popover p-1 shadow-md"
+            className="max-h-56 overflow-y-auto p-1"
           >
             {matches.map((variable, index) => (
               <li key={variable.id}>
@@ -192,7 +208,12 @@ export const PromptVariableTextarea = ({
                   onClick={() => choose(variable.id)}
                   className={`w-full rounded px-2 py-1.5 text-left transition-colors ${index === active ? 'bg-violet-50' : ''}`}
                 >
-                  <span className="block font-mono text-[11px] leading-4">{variable.id}</span>
+                  <span className="flex items-baseline justify-between gap-3">
+                    <span className="font-mono text-[11px] leading-4">{variable.id}</span>
+                    <span className="shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground">
+                      {GROUP_LABELS.get(variable.group)}
+                    </span>
+                  </span>
                   <span className="block text-[10px] leading-4 text-muted-foreground">
                     {variable.producedBy
                       ? `${variable.label} — written by the ${variable.producedBy} stage`
@@ -202,6 +223,17 @@ export const PromptVariableTextarea = ({
               </li>
             ))}
           </ul>
+          {/*
+            Eighty-one fields do not fit a menu. Say so, rather than letting the
+            first screenful read as the whole registry. Outside the listbox: a
+            row that is not an option does not belong among the options.
+          */}
+          <p className="border-t px-2 py-1 text-[10px] leading-4 text-muted-foreground">
+            {matchCount > matches.length
+              ? `${matches.length} of ${matchCount} matches — keep typing to narrow`
+              : `${matchCount} of ${PROMPT_VARIABLES.length} fields`}
+          </p>
+          </div>
         )}
       </div>
     </div>
