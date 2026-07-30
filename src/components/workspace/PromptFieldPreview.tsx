@@ -1,6 +1,13 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { PROMPT_VARIABLES } from '@/lib/promptVariables'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { referencedPromptVariables } from '@/lib/promptVariableMenu'
 import type { PromptPreview } from '@/services/clientShortlist'
 
@@ -66,9 +73,15 @@ export const PromptFieldPreview = ({
   refreshing,
 }: PromptFieldPreviewProps) => {
   const referenced = useMemo(() => referencedPromptVariables(content), [content])
-  // Open, because the values are the point of the panel. What made it long
-  // was printing each one as a paragraph, and they are one line now; hiding
-  // them as well took away the thing worth having.
+  /**
+   * The field list opens in its own window.
+   *
+   * Inline it was eleven rows sitting between the prompt and Save, and the
+   * editor became something you scrolled past to reach its own buttons. What
+   * stays on the page is what you should not have to open anything to learn —
+   * the count, and any warning — and the values are one click away.
+   */
+  const [fieldsOpen, setFieldsOpen] = useState(false)
   const [open, setOpen] = useState(true)
   const [shown, setShown] = useState<string | null>(null)
 
@@ -86,7 +99,8 @@ export const PromptFieldPreview = ({
   const listed = open ? referenced : missing
 
   return (
-    <section aria-label="Field values for this podcast" className="rounded-lg border">
+    <>
+      <section aria-label="Field values for this podcast" className="rounded-lg border">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/20 px-3 py-2">
         <p className="text-xs font-semibold">
           What this prompt receives{podcastName ? ` for ${podcastName}` : ''}
@@ -94,14 +108,11 @@ export const PromptFieldPreview = ({
         {!loading && preview && (
           <button
             type="button"
-            onClick={() => setOpen((current) => !current)}
-            aria-expanded={open}
-            className="rounded px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground hover:bg-muted"
+            onClick={() => setFieldsOpen(true)}
+            className="rounded border px-2 py-0.5 text-[10px] tabular-nums hover:bg-muted"
           >
             {present.length} of {referenced.length} filled
-            {missing.length > 0 && (
-              <span className="ml-1.5 underline">{open ? 'Only the gaps' : 'Show all'}</span>
-            )}
+            <span className="ml-1.5 underline">See the values</span>
           </button>
         )}
       </header>
@@ -174,14 +185,34 @@ export const PromptFieldPreview = ({
               the latest has none yet. Anything quoted belongs to that earlier episode.
             </p>
           )}
-          {/*
-            Every field the prompt names, once. This list used to be printed
-            twice — here for its value, and again underneath purely to carry
-            the required switches. Nothing is folded away now: a filled field
-            can be required too, and a switch you cannot see is a switch
-            nobody finds.
-          */}
-          <ul className="divide-y">
+        </>
+      )}
+    </section>
+
+      {/* Its own window, so the list cannot come between the prompt and Save. */}
+      <Dialog open={fieldsOpen} onOpenChange={setFieldsOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>What this prompt receives</DialogTitle>
+            <DialogDescription>
+              Read from stored data for {podcastName || 'this podcast'} by the same
+              function the run uses. Click a field for its full value.
+            </DialogDescription>
+          </DialogHeader>
+          {preview && (
+            <>
+              {missing.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setOpen((current) => !current)}
+                  aria-expanded={open}
+                  className="self-start rounded border px-2 py-0.5 text-[10px] hover:bg-muted"
+                >
+                  {open ? `Only the ${missing.length} empty` : 'Show all fields'}
+                </button>
+              )}
+              <div className="max-h-[60vh] overflow-y-auto rounded-lg border">
+                <ul className="divide-y">
             {listed.map((id) => {
               const field = preview.fields[id]
               const filled = Boolean(field?.value)
@@ -224,12 +255,15 @@ export const PromptFieldPreview = ({
             })}
           </ul>
 
-          <p className="border-t px-3 py-2 text-[10px] leading-4 text-muted-foreground">
-            Click a field for its full value. Switch one on in the prompt above to
-            skip this stage when it is empty, rather than run without it.
-          </p>
-        </>
-      )}
-    </section>
+              </div>
+              <p className="text-[10px] leading-4 text-muted-foreground">
+                Switch a field on in the prompt to skip this stage when it is empty,
+                rather than run without it.
+              </p>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
