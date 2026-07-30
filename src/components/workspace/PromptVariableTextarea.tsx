@@ -95,7 +95,15 @@ const RequiredToggle = ({
     // is the one thing on it that does not.
     onMouseDown={(event) => event.preventDefault()}
     onClick={() => onToggle(variableId, !required)}
-    style={{ width: `${widthCh}ch` }}
+    // The gap comes out of the switch, not on top of it: the chip has to
+    // total exactly the characters it replaced, so a margin that added width
+    // would push every character after it off its column. 0.15 in front, 0.45
+    // behind, and the switch takes what is left.
+    style={{
+      width: `${widthCh - 0.6}ch`,
+      marginLeft: '0.15ch',
+      marginRight: '0.45ch',
+    }}
     // before: an invisible pad that grows the target past the visible switch
     // without adding a pixel to the box.
     className={`pointer-events-auto relative inline-block h-[1.15em] shrink-0 cursor-pointer rounded-full border align-middle transition-colors before:absolute before:-inset-2 before:content-[''] hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50 ${
