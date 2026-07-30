@@ -2,24 +2,14 @@ import { createRoot } from "react-dom/client";
 import { HelmetProvider } from "react-helmet-async";
 import "./index.css";
 import { initSentry } from "./lib/sentry";
+import { installChunkReloadHandler } from "./lib/chunkReload";
 import {
   hasSensitiveAuthParameters,
   isSensitiveTelemetryLocation,
   scrubConsumedAuthParameters,
 } from "./lib/sensitiveUrl";
 
-// After a deploy, open tabs still reference the previous build's hashed
-// chunks, which 404. Reload once to pick up the fresh build instead of
-// surfacing a broken page; the session flag prevents reload loops when the
-// failure is anything other than deploy skew.
-window.addEventListener("vite:preloadError", (event) => {
-  const alreadyReloaded = sessionStorage.getItem("chunk-reload-at");
-  const now = Date.now();
-  if (alreadyReloaded && now - Number(alreadyReloaded) < 30_000) return;
-  sessionStorage.setItem("chunk-reload-at", String(now));
-  event.preventDefault();
-  window.location.reload();
-});
+installChunkReloadHandler();
 
 async function bootstrap(): Promise<void> {
   const suppressTelemetry = isSensitiveTelemetryLocation();
