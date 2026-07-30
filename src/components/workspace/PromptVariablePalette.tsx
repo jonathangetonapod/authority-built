@@ -8,6 +8,12 @@ interface PromptVariablePaletteProps {
   onInsert: (token: string) => void
   /** Fields the stage being edited writes itself, or that follow it. */
   omitVariableIds?: string[]
+  /**
+   * Which fields hold a value for the podcast being edited: id -> has a value.
+   * Omit it where there is no podcast in context, so the list stays neutral
+   * rather than reporting every field as empty.
+   */
+  availability?: Record<string, boolean> | null
 }
 
 /**
@@ -22,8 +28,13 @@ interface PromptVariablePaletteProps {
  * This is now the browse view behind a popover — typing `/` or `{{` in the
  * field is the fast path. See PromptVariableTextarea.
  */
-export const PromptVariablePalette = ({ onInsert, omitVariableIds }: PromptVariablePaletteProps) => {
+export const PromptVariablePalette = ({
+  onInsert,
+  omitVariableIds,
+  availability,
+}: PromptVariablePaletteProps) => {
   const [query, setQuery] = useState('')
+  const highlighting = Boolean(availability)
 
   const groups = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -70,29 +81,49 @@ export const PromptVariablePalette = ({ onInsert, omitVariableIds }: PromptVaria
               </p>
             )}
             <ul className="mt-1.5 flex flex-wrap gap-1.5">
-              {group.variables.map((variable) => (
-                <li key={variable.id}>
-                  <button
-                    type="button"
-                    // The field must not lose focus before the token lands.
-                    onMouseDown={(event) => event.preventDefault()}
-                    title={variable.producedBy
-                      ? `${variable.label} — written by the ${variable.producedBy} stage`
-                      : variable.label}
-                    aria-label={`Insert ${variable.label}`}
-                    onClick={() => onInsert(`{{${variable.id}}}`)}
-                    className="rounded border bg-background px-1.5 py-0.5 font-mono text-[11px] leading-4 transition-colors hover:border-violet-400 hover:bg-violet-50"
-                  >
-                    {variable.id}
-                  </button>
-                </li>
-              ))}
+              {group.variables.map((variable) => {
+                // Colour says it at a glance; the label says it to a screen
+                // reader and to anyone who cannot separate the two hues.
+                const filled = Boolean(availability?.[variable.id])
+                const state = highlighting
+                  ? (filled ? ' — has a value for this podcast' : ' — no value for this podcast')
+                  : ''
+                return (
+                  <li key={variable.id}>
+                    <button
+                      type="button"
+                      // The field must not lose focus before the token lands.
+                      onMouseDown={(event) => event.preventDefault()}
+                      title={(variable.producedBy
+                        ? `${variable.label} — written by the ${variable.producedBy} stage`
+                        : variable.label) + state}
+                      aria-label={`Insert ${variable.label}${state}`}
+                      onClick={() => onInsert(`{{${variable.id}}}`)}
+                      className={`rounded border px-1.5 py-0.5 font-mono text-[11px] leading-4 transition-colors hover:border-violet-400 hover:bg-violet-50 ${
+                        highlighting
+                          ? (filled
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                            : 'border-red-200 bg-red-50 text-red-700')
+                          : 'bg-background'
+                      }`}
+                    >
+                      {variable.id}
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           </div>
         ))}
       </div>
       <p className="border-t px-3 py-2 text-[10px] leading-4 text-muted-foreground">
         Click a field to insert it. Anything else renders as “Not available”.
+        {highlighting && (
+          <>
+            {' '}
+            <span className="text-red-600">Red</span> fields have no value for this podcast.
+          </>
+        )}
       </p>
     </div>
   )

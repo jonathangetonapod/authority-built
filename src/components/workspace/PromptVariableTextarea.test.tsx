@@ -205,3 +205,35 @@ describe('PromptVariableTextarea field colouring', () => {
     expect(tokenSpan('{{itunes_rating}}')?.className).toContain('text-red-600')
   })
 })
+
+describe('PromptVariableTextarea field colouring in the pickers', () => {
+  const availability = { podcast_name: true, itunes_rating: false }
+
+  it('marks each row in the insert menu before you pick it', async () => {
+    render(<Harness availability={availability} />)
+    fireEvent.change(field(), { target: { value: 'Use {{podcast_nam' } })
+    await screen.findByRole('listbox')
+    expect(rowFor('podcast_name').textContent).toContain('has a value')
+
+    fireEvent.change(field(), { target: { value: 'Use {{itunes_rat' } })
+    await screen.findByRole('listbox')
+    expect(rowFor('itunes_rating').textContent).toContain('empty')
+  })
+
+  it('marks each chip in the browse palette', () => {
+    render(<Harness availability={availability} />)
+    fireEvent.click(screen.getByRole('button', { name: `Browse ${PROMPT_VARIABLES.length} fields` }))
+    expect(screen.getByLabelText(/Insert Podcast name — has a value for this podcast/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Insert Apple rating — no value for this podcast/)).toBeInTheDocument()
+  })
+
+  // With no podcast open there is nothing to report, and a list painted red
+  // would claim the podcast lacks fields rather than that none is selected.
+  it('says nothing about availability when no podcast is in context', async () => {
+    render(<Harness />)
+    fireEvent.change(field(), { target: { value: 'Use {{podcast_nam' } })
+    await screen.findByRole('listbox')
+    expect(rowFor('podcast_name').textContent).not.toContain('has a value')
+    expect(rowFor('podcast_name').textContent).not.toContain('empty')
+  })
+})

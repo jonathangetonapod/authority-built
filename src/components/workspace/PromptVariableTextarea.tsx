@@ -206,7 +206,11 @@ export const PromptVariableTextarea = ({
             </Button>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-[22rem] p-0">
-            <PromptVariablePalette onInsert={insertFromPalette} omitVariableIds={omitVariableIds} />
+            <PromptVariablePalette
+              onInsert={insertFromPalette}
+              omitVariableIds={omitVariableIds}
+              availability={availability}
+            />
           </PopoverContent>
         </Popover>
       </div>
@@ -320,8 +324,24 @@ export const PromptVariableTextarea = ({
                       onClick={() => choose(variable.id)}
                       className={`block w-full rounded px-2 py-1 text-left transition-colors ${index === active ? 'bg-violet-50' : ''}`}
                     >
-                      <span className="block font-mono text-[11px] leading-4">
-                        {marked(variable.id)}
+                      <span className="flex items-baseline gap-2">
+                        <span className="block flex-1 font-mono text-[11px] leading-4">
+                          {marked(variable.id)}
+                        </span>
+                        {/*
+                          On the marker rather than on the id: the id already
+                          carries the violet highlight showing where the search
+                          matched, and two colours on one word read as neither.
+                        */}
+                        {highlighting && (
+                          <span
+                            className={`shrink-0 text-[9px] leading-4 ${
+                              availability?.[variable.id] ? 'text-emerald-600' : 'text-red-600'
+                            }`}
+                          >
+                            {availability?.[variable.id] ? '● has a value' : '● empty'}
+                          </span>
+                        )}
                       </span>
                       <span className="block text-[10px] leading-4 text-muted-foreground">
                         {marked(variable.producedBy
