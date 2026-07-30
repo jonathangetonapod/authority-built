@@ -334,3 +334,24 @@ assert.ok(createGate, 'the plan limit gate must exist')
 assert.match(createGate[0], /if \(action === 'create'\)/u)
 // A failed limit check refuses rather than silently allowing an extra client.
 assert.match(createGate[0], /PLAN_LIMIT_UNCHECKED/u)
+
+// Feed markup is decoded in one place, the prompt-variable registry, and the
+// pitch stage does not get its own decoder. It had one: a sequential replacer
+// that turned "&amp;lt;" into "<" by re-reading its own output and left <p>
+// tags standing. Because the pitch stage overrode podcast_name and
+// podcast_description after spreading buildPodcastVariables, that weaker
+// decoder was what actually reached the opener quoting the show name back to
+// the host.
+assert.ok(
+  !/function decodeHtmlEntities/u.test(shortlistEdge),
+  'the shortlist function must not define a local HTML decoder; use decodeFeedText from _shared/promptVariables.ts',
+)
+assert.match(shortlistEdge, /import \{[\s\S]*?decodeFeedText,[\s\S]*?\} from '\.\.\/_shared\/promptVariables\.ts'/u)
+// The pitch stage's own overrides of feed-sourced fields go through the
+// registry, so they decode exactly as the research stage's did.
+assert.match(pitchGenerateAction, /podcast_name: formatPromptValue\(\s*'podcast_name',/u)
+assert.match(pitchGenerateAction, /podcast_description: formatPromptValue\(\s*'podcast_description',/u)
+assert.match(pitchGenerateAction, /episode_title: formatPromptValue\(\s*'episode_title',/u)
+assert.match(pitchGenerateAction, /host_name: formatPromptValue\(\s*'host_name',/u)
+
+console.log('Workspace Client Edge feed-decoding checks passed')

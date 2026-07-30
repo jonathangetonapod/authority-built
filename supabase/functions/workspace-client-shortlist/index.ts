@@ -28,6 +28,7 @@ import {
   buildEpisodeVariables,
   buildPodcastVariables,
   CLIENT_VARIABLE_COLUMNS,
+  decodeFeedText,
   formatPromptValue,
   isPromptVariable,
   PODCAST_VARIABLE_COLUMNS,
@@ -83,10 +84,14 @@ function buildBaseVariables(input: {
     ...podcastVariables,
     ...buildClientVariables(clientProfile),
     // The shortlist row is the fallback for a show the catalogue has not
-    // caught up with, and the capture is fresher than the catalogue.
-    podcast_name: podcastVariables.podcast_name ?? shortlistRow.podcast_name ?? null,
+    // caught up with, and the capture is fresher than the catalogue. The
+    // fallback goes through the registry too — a show the catalogue is missing
+    // is exactly the one whose name still carries the feed's markup.
+    podcast_name: podcastVariables.podcast_name
+      ?? formatPromptValue('podcast_name', shortlistRow.podcast_name),
     podcast_url: podcastVariables.podcast_url ?? shortlistRow.podcast_url ?? null,
-    podcast_description: podcastVariables.podcast_description ?? shortlistRow.podcast_description ?? null,
+    podcast_description: podcastVariables.podcast_description
+      ?? formatPromptValue('podcast_description', shortlistRow.podcast_description),
     last_posted_at: formatPromptValue('last_posted_at', captured?.last_posted_at)
       ?? podcastVariables.last_posted_at
       ?? formatPromptValue('last_posted_at', shortlistRow.last_posted_at),
@@ -421,17 +426,6 @@ const RESEARCH_STAGE_MAP: Record<string, string[]> = {
 }
 const RESEARCH_STALE_LOCK_MS = 3 * 60 * 1000
 
-// Podscan payloads carry HTML entities in names and descriptions.
-function decodeHtmlEntities(value: string): string {
-  return value
-    .replace(/&amp;/gu, '&')
-    .replace(/&lt;/gu, '<')
-    .replace(/&gt;/gu, '>')
-    .replace(/&quot;/gu, '"')
-    .replace(/&#0?39;/gu, "'")
-    .replace(/&apos;/gu, "'")
-    .replace(/&#(\d+);/gu, (_match, code) => String.fromCharCode(Number(code)))
-}
 const EMAIL_SEARCH_STALE_LOCK_MS = 3 * 60 * 1000
 // Hosted-platform domains never receive host mailboxes — pattern guesses
 // against them are pure noise.
@@ -2563,19 +2557,34 @@ serve(async (req) => {
         ...buildPodcastVariables(pitchCatalogRow),
         ...buildClientVariables(clientProfile),
         client_bio: typeof pitchClientRow?.bio === 'string' ? pitchClientRow.bio.slice(0, 1_500) : null,
-        podcast_name: decodeHtmlEntities(pitchCatalogRow?.podcast_name ?? shortlistRow.podcast_name),
+        // Decoded through the registry, not a local decoder: this stage writes
+        // the opener that quotes the show name back to the host, so it is the
+        // last place that should see a feed's markup.
+        podcast_name: formatPromptValue(
+          'podcast_name',
+          pitchCatalogRow?.podcast_name ?? shortlistRow.podcast_name,
+        ),
         podcast_url: pitchCatalogRow?.podcast_url ?? shortlistRow.podcast_url,
-        podcast_description: decodeHtmlEntities(pitchCatalogRow?.podcast_description ?? shortlistRow.podcast_description ?? ''),
+        podcast_description: formatPromptValue(
+          'podcast_description',
+          pitchCatalogRow?.podcast_description ?? shortlistRow.podcast_description,
+        ),
         // The campaign target only exists after prep, but pitch generation
         // runs right after research — fall back to Podscan's analyzed host
         // so "Hey [first name]" is grounded instead of guessed.
-        host_name: target?.host_name
-          ?? (typeof pitchCatalogRow?.host_name === 'string' ? pitchCatalogRow.host_name : null)
-          ?? (typeof pitchCatalogRow?.publisher_name === 'string' ? pitchCatalogRow.publisher_name : null),
+        host_name: formatPromptValue(
+          'host_name',
+          target?.host_name
+            ?? (typeof pitchCatalogRow?.host_name === 'string' ? pitchCatalogRow.host_name : null)
+            ?? (typeof pitchCatalogRow?.publisher_name === 'string' ? pitchCatalogRow.publisher_name : null),
+        ),
         verified_email: target?.contact_email ?? null,
         // Podscan's analysis of the episode this pitch will reference.
         ...buildEpisodeVariables(storedEpisodes),
-        episode_title: researchDocument.episodes_used?.[0]?.title ?? storedEpisodeTitle,
+        episode_title: formatPromptValue(
+          'episode_title',
+          researchDocument.episodes_used?.[0]?.title ?? storedEpisodeTitle,
+        ),
         episode_transcript: typeof researchDocument.episode_transcript_excerpt === 'string'
           ? researchDocument.episode_transcript_excerpt.slice(0, 2_000)
           : null,
@@ -2756,7 +2765,7 @@ serve(async (req) => {
             'The pitch prompt refused to write without a verified email. Find or enter the host email first.',
           )
         }
-        const fallbackSubject = `Guest idea for ${decodeHtmlEntities(shortlistRow.podcast_name)}`
+        const fallbackSubject = `Guest idea for ${decodeFeedText(shortlistRow.podcast_name ?? '')}`
         // write_email returns a three-touch sequence as JSON; a malformed
         // response degrades to the raw text as the opener, never a failure.
         let sequence = parsePitchSequence(draftRaw) ?? {
