@@ -1747,7 +1747,7 @@ export function ClientCampaignPrepDialog({
                                   value={promptDraft}
                                   onChange={(next) => { setPromptTouched(true); setPromptDraft(next) }}
                                   disabled={promptBusy || promptOverridesQuery.isLoading}
-                                  className="min-h-48 resize-y bg-background font-mono text-xs leading-5"
+                                  className="min-h-48 resize-y bg-background font-mono text-sm leading-7"
                                   maxLength={20_000}
                                 />
                               </div>

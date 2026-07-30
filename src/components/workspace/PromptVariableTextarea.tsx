@@ -85,13 +85,17 @@ const RequiredToggle = ({
     // is the one thing on it that does not.
     onMouseDown={(event) => event.preventDefault()}
     onClick={() => onToggle(variableId, !required)}
-    className={`pointer-events-auto relative inline-block h-[0.85em] w-[2ch] shrink-0 cursor-pointer rounded-full align-middle transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-      required ? 'bg-primary' : 'bg-muted-foreground/40'
+    // before: an invisible pad that grows the target without growing the box.
+    // The visible switch can only ever be 2ch wide — that is what keeps the
+    // text on the column the textarea put it on — but what you have to hit
+    // does not have to be the same size as what you can see.
+    className={`pointer-events-auto relative inline-block h-[1.05em] w-[2ch] shrink-0 cursor-pointer rounded-full align-middle transition-colors before:absolute before:-inset-2 before:content-[''] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 ${
+      required ? 'bg-primary' : 'bg-muted-foreground/50'
     }`}
   >
     <span
-      className={`absolute top-1/2 block h-[0.6em] w-[0.6em] -translate-y-1/2 rounded-full bg-background transition-all ${
-        required ? 'left-[calc(100%-0.72em)]' : 'left-[0.12em]'
+      className={`absolute top-1/2 block h-[0.75em] w-[0.75em] -translate-y-1/2 rounded-full bg-background shadow-sm transition-all ${
+        required ? 'left-[calc(100%-0.9em)]' : 'left-[0.15em]'
       }`}
     />
   </button>
@@ -99,10 +103,16 @@ const RequiredToggle = ({
 
 type FieldState = 'filled' | 'degrades' | 'blocks'
 
+// whitespace-nowrap because the switch is an inline-block, and an inline-block
+// is somewhere a line may break. "{{itunes_rating}}" has no break in it as far
+// as the textarea is concerned, so a layer that broke between the switch and
+// the name put the two on different lines and took the text with it.
+const TOKEN_BASE = 'whitespace-nowrap rounded-[3px]'
+
 const TOKEN_STYLES: Record<FieldState, string> = {
-  filled: 'rounded-[3px] bg-emerald-50 text-emerald-700',
-  degrades: 'rounded-[3px] bg-amber-50 text-amber-700 underline decoration-amber-400 decoration-dotted underline-offset-2',
-  blocks: 'rounded-[3px] bg-red-100 text-red-700 underline decoration-red-500 underline-offset-2',
+  filled: `${TOKEN_BASE} bg-emerald-50 text-emerald-700`,
+  degrades: `${TOKEN_BASE} bg-amber-50 text-amber-700 underline decoration-amber-400 decoration-dotted underline-offset-2`,
+  blocks: `${TOKEN_BASE} bg-red-100 text-red-700 underline decoration-red-500 underline-offset-2`,
 }
 
 /**
