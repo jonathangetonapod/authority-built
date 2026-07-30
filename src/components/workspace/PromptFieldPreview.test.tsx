@@ -17,31 +17,40 @@ const preview = (overrides: Partial<PromptPreview> = {}): PromptPreview => ({
 })
 
 describe('PromptFieldPreview', () => {
-  // Report by exception: a prompt naming eleven fields printed eleven values,
-  // each a paragraph of description or transcript, and buried the editor. Only
-  // what needs a decision shows; the rest is one click away.
-  it('lists the empty fields and keeps the filled ones behind the count', () => {
+  // The values are the point of the panel, so they are on screen without
+  // being asked for. What made it long was printing each as a paragraph, and
+  // they are one line now — hiding them as well took away the thing worth
+  // having.
+  it('shows every field and its value without being asked', () => {
     render(<PromptFieldPreview content={PROMPT} preview={preview()} podcastName="Operator Weekly" />)
 
     expect(screen.getByText('episode_transcript')).toBeInTheDocument()
-    expect(screen.queryByText('Dana Reed')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /2 of 3 filled/ }))
     expect(screen.getByText('Dana Reed')).toBeInTheDocument()
     expect(screen.getByText('Operator Weekly', { selector: 'p' })).toBeInTheDocument()
   })
 
-  it('says so, and lists nothing, when every field is filled', () => {
+  it('narrows to the gaps when asked, and back again', () => {
+    render(<PromptFieldPreview content={PROMPT} preview={preview()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /2 of 3 filled/ }))
+    expect(screen.queryByText('Dana Reed')).not.toBeInTheDocument()
+    expect(screen.getByText('episode_transcript')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /2 of 3 filled/ }))
+    expect(screen.getByText('Dana Reed')).toBeInTheDocument()
+  })
+
+  // Nothing to narrow to, so the control that would narrow it is not offered.
+  it('offers no gaps-only view when every field is filled', () => {
     render(<PromptFieldPreview content="Open on {{podcast_name}}." preview={preview()} />)
-    expect(screen.getByText(/Every field this prompt names has a value/)).toBeInTheDocument()
-    expect(screen.queryByText('podcast_name')).not.toBeInTheDocument()
+    expect(screen.getByText('podcast_name')).toBeInTheDocument()
+    expect(screen.queryByText(/Only the gaps/)).not.toBeInTheDocument()
   })
 
   // The values are the thing worth having; they just are not worth having all
   // at once, at a paragraph each.
   it('opens one field to its full value on click', () => {
     render(<PromptFieldPreview content={PROMPT} preview={preview()} />)
-    fireEvent.click(screen.getByRole('button', { name: /2 of 3 filled/ }))
     const row = screen.getByText('podcast_name').closest('button')!
     expect(row).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(row)

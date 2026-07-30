@@ -66,7 +66,10 @@ export const PromptFieldPreview = ({
   refreshing,
 }: PromptFieldPreviewProps) => {
   const referenced = useMemo(() => referencedPromptVariables(content), [content])
-  const [open, setOpen] = useState(false)
+  // Open, because the values are the point of the panel. What made it long
+  // was printing each one as a paragraph, and they are one line now; hiding
+  // them as well took away the thing worth having.
+  const [open, setOpen] = useState(true)
   const [shown, setShown] = useState<string | null>(null)
 
   if (referenced.length === 0) return null
@@ -79,15 +82,7 @@ export const PromptFieldPreview = ({
   // Only an episode field can be filled by asking Podscan again. Offering the
   // button for a missing client bio would charge a credit to learn nothing.
   const refreshable = missing.filter((id) => LABELS.get(id)?.group === 'episode')
-  /**
-   * Report by exception.
-   *
-   * A prompt naming eleven fields printed eleven values, each a paragraph of
-   * description or transcript, and buried the editor under its own inputs.
-   * When nothing is missing there is nothing to act on, so the list stays shut
-   * and the count carries the answer; when something is missing, that is what
-   * opens. Values are one line until asked for.
-   */
+  /** Every field by default; the gaps alone when asked for. */
   const listed = open ? referenced : missing
 
   return (
@@ -104,7 +99,9 @@ export const PromptFieldPreview = ({
             className="rounded px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground hover:bg-muted"
           >
             {present.length} of {referenced.length} filled
-            <span className="ml-1.5">{open ? 'Hide' : 'Show all'}</span>
+            {missing.length > 0 && (
+              <span className="ml-1.5 underline">{open ? 'Only the gaps' : 'Show all'}</span>
+            )}
           </button>
         )}
       </header>
@@ -226,11 +223,7 @@ export const PromptFieldPreview = ({
               )
             })}
           </ul>
-          {listed.length === 0 && (
-            <p className="px-3 py-2 text-[11px] leading-4 text-emerald-700">
-              Every field this prompt names has a value.
-            </p>
-          )}
+
           <p className="border-t px-3 py-2 text-[10px] leading-4 text-muted-foreground">
             Click a field for its full value. Switch one on in the prompt above to
             skip this stage when it is empty, rather than run without it.
