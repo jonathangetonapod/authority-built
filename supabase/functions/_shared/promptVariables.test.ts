@@ -150,3 +150,44 @@ Deno.test('variable ids are unique', () => {
   const ids = PROMPT_VARIABLES.map((variable) => variable.id)
   assertEquals(new Set(ids).size, ids.length)
 })
+
+// Feed markup must not reach the model. The opener quotes the show name back
+// to the host, so an entity that survives is read as broken automation.
+Deno.test('feed entities and tags are decoded before a prompt sees them', () => {
+  assertEquals(
+    formatPromptValue('podcast_name', 'The Good, Bad, &amp; the Ugly of Self Storage'),
+    'The Good, Bad, & the Ugly of Self Storage',
+  )
+  assertEquals(
+    formatPromptValue('podcast_description', '<p>Peter&#39;s show.</p><p>Second para.</p>'),
+    "Peter's show.\n\nSecond para.",
+  )
+  // Block tags become breaks, not nothing: sentences must not run together.
+  assertEquals(formatPromptValue('podcast_description', 'One.<br>Two.'), 'One.\nTwo.')
+  // An escaped entity decodes once, never twice.
+  assertEquals(
+    formatPromptValue('podcast_name', 'Tags &amp;lt;p&amp;gt; explained'),
+    'Tags &lt;p&gt; explained',
+  )
+  // Smart punctuation arrives as itself rather than as a numeric reference.
+  assertEquals(formatPromptValue('podcast_name', 'It&#8217;s Storage &#8212; Weekly'), 'It’s Storage — Weekly')
+  // Text that was already clean is untouched.
+  assertEquals(formatPromptValue('podcast_name', 'Operator Weekly'), 'Operator Weekly')
+  // Markup that leaves nothing behind is an absence, not an empty string.
+  assertEquals(formatPromptValue('podcast_description', '<p></p>'), null)
+})
+
+// Episode titles are quoted back to a host as often as the show name is, and
+// they arrive from the same feeds. One line per episode has to survive it.
+Deno.test('feed markup in list entries and episode titles stays on one line', () => {
+  assertEquals(
+    formatPromptValue('podcast_categories', ['Business &amp; Finance', 'Self&#8211;Storage']),
+    'Business & Finance, Self–Storage',
+  )
+  assertEquals(
+    formatPromptValue('recent_episodes', [
+      { title: 'Ep 12: Rates &amp; Returns<br>Part One', posted_at: '2026-06-02T10:00:00Z' },
+    ]),
+    '- 2026-06-02: Ep 12: Rates & Returns Part One',
+  )
+})
