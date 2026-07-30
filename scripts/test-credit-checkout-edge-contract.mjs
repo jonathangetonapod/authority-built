@@ -10,6 +10,10 @@ assert.match(checkout, /export const CREDIT_PACKS = \{/u)
 assert.doesNotMatch(checkout, /grant_workspace_credits/u)
 assert.doesNotMatch(checkout, /body\.(?:amount|credits|price)/u)
 assert.match(checkout, /'metadata\[workspace_id\]': workspaceId/u)
+// Promotion codes are entered and validated on Stripe's page. The pack size
+// still comes from metadata, so a discount must never be able to change it.
+assert.match(checkout, /allow_promotion_codes: 'true'/u)
+assert.match(checkout, /'metadata\[credits\]': String\(pack\.credits\)/u)
 
 const webhook = readFileSync('supabase/functions/stripe-credit-webhook/index.ts', 'utf8')
 // Signature-verified with replay tolerance; idempotent grant keyed on event id.

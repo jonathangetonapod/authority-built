@@ -20,16 +20,16 @@ const CONFIG_PATH = path.join(REPOSITORY_ROOT, 'supabase', 'config.toml')
 const FUNCTIONS_ROOT = path.join(REPOSITORY_ROOT, 'supabase', 'functions')
 
 const EXPECTED_COUNTS = Object.freeze({
-  changedFunctions: 111,
-  deployedFunctions: 109,
+  changedFunctions: 113,
+  deployedFunctions: 111,
   excludedFunctions: 2,
   retiredFunctions: 17,
   unauthenticatedTombstones: 5,
   // +2: _shared/promptVariables.ts and its test, the prompt variable registry.
   // 146 with _shared/promptRequirements.ts and its test: the fields a prompt
-  // stage refuses to run without. No new function, so the deploy lists below
-  // are unchanged.
-  edgeTypeScriptFiles: 149,
+  // stage refuses to run without. 153 with plan management: the two new
+  // function entrypoints, plus _shared/stripeSignature.ts and its test.
+  edgeTypeScriptFiles: 153,
 })
 
 const EXPECTED_PHASE_KEYS = Object.freeze([
@@ -84,6 +84,9 @@ const EXPECTED_PUBLIC_NON_JWT_FUNCTIONS = Object.freeze([
   'inbox-enroll-tick',
   'inbox-nudge-tick',
   'stripe-credit-webhook',
+  // Stripe signs the request body; there is no user session on a webhook. Both
+  // of these verify that signature before reading anything out of the payload.
+  'workspace-subscription-webhook',
   'client-onboarding',
   'get-client-bookings',
   'get-client-podcasts',

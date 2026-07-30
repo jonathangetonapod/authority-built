@@ -3,7 +3,11 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuth } from '@/contexts/AuthContext'
-import { getWorkspaceBillingOverview } from '@/services/workspaceStaff'
+import {
+  createWorkspaceBillingPortal,
+  createWorkspaceSubscriptionCheckout,
+  getWorkspaceBillingOverview,
+} from '@/services/workspaceStaff'
 import { listGrantableWorkspaces } from '@/services/adminWorkspaces'
 import WorkspaceBilling from '@/pages/app/WorkspaceBilling'
 
@@ -13,6 +17,8 @@ vi.mock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.f
 vi.mock('@/services/workspaceStaff', () => ({
   getWorkspaceBillingOverview: vi.fn(),
   createWorkspaceCreditCheckout: vi.fn(),
+  createWorkspaceBillingPortal: vi.fn(),
+  createWorkspaceSubscriptionCheckout: vi.fn(),
   listWorkspaceStaff: vi.fn(),
   grantWorkspaceCredits: vi.fn(),
 }))
@@ -20,6 +26,8 @@ vi.mock('@/services/adminWorkspaces', () => ({ listGrantableWorkspaces: vi.fn() 
 
 const mockedUseAuth = vi.mocked(useAuth)
 const mockedOverview = vi.mocked(getWorkspaceBillingOverview)
+const mockedPortal = vi.mocked(createWorkspaceBillingPortal)
+const mockedSubscribe = vi.mocked(createWorkspaceSubscriptionCheckout)
 const mockedWorkspaces = vi.mocked(listGrantableWorkspaces)
 
 const overviewFixture = {
@@ -121,6 +129,57 @@ describe('WorkspaceBilling', () => {
     // third step, which no longer renders.
     expect(screen.getAllByText('Credits added')).toHaveLength(1)
     expect(screen.getByText('+25')).toBeInTheDocument()
+  })
+
+  // Plan changes live on Stripe's hosted pages. Which page depends on whether
+  // there is a subscription: a portal opened for a workspace without one shows
+  // no plan to switch, which is a dead end dressed up as a button.
+  it('sends a subscribed workspace to the Stripe portal', async () => {
+    mockedUseAuth.mockReturnValue({
+      isPlatformAdmin: false,
+      canManageWorkspaceStaff: true,
+      user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+      workspace: { id: '11111111-1111-4111-8111-111111111111' },
+    } as never)
+    mockedOverview.mockResolvedValue({ ...overviewFixture, has_subscription: true } as never)
+    mockedPortal.mockResolvedValue('https://billing.stripe.com/session/test')
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage plan' }))
+    expect(mockedPortal).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111')
+    expect(mockedSubscribe).not.toHaveBeenCalled()
+  })
+
+  it('sends a workspace with no subscription to checkout instead', async () => {
+    mockedUseAuth.mockReturnValue({
+      isPlatformAdmin: false,
+      canManageWorkspaceStaff: true,
+      user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+      workspace: { id: '11111111-1111-4111-8111-111111111111' },
+    } as never)
+    mockedOverview.mockResolvedValue({ ...overviewFixture, has_subscription: false } as never)
+    mockedSubscribe.mockResolvedValue('https://checkout.stripe.com/session/test')
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose a plan' }))
+    expect(mockedSubscribe).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111', 'founding_member')
+    expect(mockedPortal).not.toHaveBeenCalled()
+  })
+
+  // The badge was a literal, so it named a plan the workspace was not on while
+  // the plan card beside it named the real one.
+  it('names the plan once, from the workspace data', async () => {
+    mockedUseAuth.mockReturnValue({
+      isPlatformAdmin: false,
+      canManageWorkspaceStaff: true,
+      user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+      workspace: { id: '11111111-1111-4111-8111-111111111111' },
+    } as never)
+    mockedOverview.mockResolvedValue(overviewFixture as never)
+    renderPage()
+
+    expect(await screen.findByText('Founding member')).toBeInTheDocument()
+    expect(screen.queryByText('Available on Solo')).not.toBeInTheDocument()
   })
 
   it('offers a platform administrator the workspace top-up', async () => {

@@ -2824,7 +2824,7 @@ serve(async (req) => {
 
       const [profileResult, lotsResult, ledgerResult, usageResult, pricesResult] = await Promise.all([
         admin.from("workspace_billing_profiles")
-          .select("plan_key, billing_status, base_price_cents, per_client_price_cents, included_active_clients, monthly_credit_allowance")
+          .select("plan_key, billing_status, base_price_cents, per_client_price_cents, included_active_clients, monthly_credit_allowance, stripe_subscription_id")
           .eq("workspace_id", workspaceId)
           .maybeSingle(),
         admin.from("workspace_credit_lots")
@@ -2881,6 +2881,10 @@ serve(async (req) => {
           included_active_clients: profileResult.data?.included_active_clients ?? 1,
           monthly_credit_allowance: profileResult.data?.monthly_credit_allowance ?? 25,
           enforcement_enabled: Deno.env.get("CREDIT_ENFORCEMENT_ENABLED")?.trim() === "true",
+          // Whether there is a subscription to manage, not which one. The id
+          // itself is a Stripe identifier and the browser has no use for it.
+          has_subscription: typeof profileResult.data?.stripe_subscription_id === "string"
+            && profileResult.data.stripe_subscription_id.length > 0,
           balance,
           expiring_credits: expiringLots.reduce((sum, lot) => sum + (Number(lot.remaining) || 0), 0),
           next_expiry_at: expiringLots[0]?.expires_at ?? null,

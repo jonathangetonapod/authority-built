@@ -29,6 +29,13 @@ verify_jwt = true
 [functions.stripe-credit-webhook]
 verify_jwt = false
 
+[functions.workspace-billing-portal]
+verify_jwt = true
+
+# Stripe signs the request; there is no user session on a webhook.
+[functions.workspace-subscription-webhook]
+verify_jwt = false
+
 [functions.login-with-password]
 verify_jwt = false
 

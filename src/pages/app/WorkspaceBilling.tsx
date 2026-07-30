@@ -11,7 +11,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PlatformCreditTopUp } from '@/components/workspace/PlatformCreditTopUp'
 import { getWorkspaceBillingOverview,
+  createWorkspaceBillingPortal,
   createWorkspaceCreditCheckout,
+  createWorkspaceSubscriptionCheckout,
 } from '@/services/workspaceStaff'
 
 const OPERATION_LABELS: Record<string, string> = {
@@ -49,6 +51,7 @@ const WorkspaceBilling = () => {
   const workspaceId = workspace?.id || ''
   const [searchParams, setSearchParams] = useSearchParams()
   const [checkoutPack, setCheckoutPack] = useState<string | null>(null)
+  const [openingPlan, setOpeningPlan] = useState(false)
   const [awaitingCredits, setAwaitingCredits] = useState(false)
   const [balanceBeforeCheckout, setBalanceBeforeCheckout] = useState<number | null>(null)
   useEffect(() => {
@@ -69,6 +72,22 @@ const WorkspaceBilling = () => {
     setSearchParams(next, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
+  // A workspace with a subscription manages it in the portal. One without has
+  // nothing there to change, so it goes to checkout to start a plan instead.
+  const openPlanManagement = async (hasSubscription: boolean) => {
+    if (openingPlan) return
+    setOpeningPlan(true)
+    try {
+      const url = hasSubscription
+        ? await createWorkspaceBillingPortal(workspaceId)
+        : await createWorkspaceSubscriptionCheckout(workspaceId, 'founding_member')
+      window.location.assign(url)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Plan management could not be opened.')
+      setOpeningPlan(false)
+    }
+  }
+
   const buyPack = async (pack: 'starter' | 'growth' | 'scale') => {
     if (checkoutPack) return
     setCheckoutPack(pack)
@@ -121,11 +140,13 @@ const WorkspaceBilling = () => {
           <Button asChild variant="ghost" size="sm" className="-ml-3 w-fit"><Link to="/app/settings"><ArrowLeft className="mr-2 h-4 w-4" />Back to settings</Link></Button>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <div className="flex flex-wrap items-center gap-2"><Badge variant="secondary"><CreditCard className="mr-1.5 h-3.5 w-3.5" />Settings</Badge><Badge className="border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">Available on Solo</Badge></div>
+              {/* The plan is named on its own card, from the workspace's own
+                  data. A second badge here said "Available on Solo" whatever
+                  the plan actually was, contradicting the card below it. */}
+              <div className="flex flex-wrap items-center gap-2"><Badge variant="secondary"><CreditCard className="mr-1.5 h-3.5 w-3.5" />Settings</Badge></div>
               <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Billing & credits</h1>
-              <p className="mt-2 max-w-2xl text-muted-foreground">Manage Waterfall email credits without changing your workspace plan.</p>
+              <p className="mt-2 max-w-2xl text-muted-foreground">Your plan, and the credits your workspace spends on research, outreach and email lookups.</p>
             </div>
-            <Badge variant="outline" className="w-fit rounded-full px-3 py-1.5">One-time top-ups</Badge>
           </div>
         </header>
 
@@ -172,8 +193,23 @@ const WorkspaceBilling = () => {
               </Card>
               <Card>
                 <CardHeader className="pb-2"><CardDescription>Plan</CardDescription><CardTitle className="text-2xl">{PLAN_LABELS[overview.plan_key] || overview.plan_key}</CardTitle></CardHeader>
-                <CardContent className="text-xs text-muted-foreground">
-                  ${(overview.base_price_cents / 100).toFixed(0)}/mo base · ${(overview.per_client_price_cents / 100).toFixed(0)}/mo per additional active client
+                <CardContent className="space-y-3 text-xs text-muted-foreground">
+                  <p>
+                    ${(overview.base_price_cents / 100).toFixed(0)}/mo base · ${(overview.per_client_price_cents / 100).toFixed(0)}/mo per additional active client
+                  </p>
+                  {/* Plan, payment method, invoices and cancellation are all
+                      Stripe's hosted pages. Rebuilding them here would mean
+                      holding card details this app has never had to hold. */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={openingPlan}
+                    onClick={() => void openPlanManagement(Boolean(overview.has_subscription))}
+                  >
+                    {openingPlan ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    {overview.has_subscription ? 'Manage plan' : 'Choose a plan'}
+                  </Button>
                 </CardContent>
               </Card>
             </div>

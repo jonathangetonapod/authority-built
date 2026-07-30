@@ -76,6 +76,11 @@ serve(async (req) => {
     const billingBase = `${appUrl()}/app/settings/billing`
     const params = new URLSearchParams({
       mode: 'payment',
+      // Stripe collects and validates the code on its own page, so a promotion
+      // is created in the dashboard and needs nothing here. Credits are granted
+      // from metadata[credits] rather than the amount paid, so a discount
+      // changes the price without changing the size of the pack.
+      allow_promotion_codes: 'true',
       success_url: `${billingBase}?checkout=success`,
       cancel_url: `${billingBase}?checkout=cancelled`,
       client_reference_id: workspaceId,

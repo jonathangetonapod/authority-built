@@ -874,6 +874,9 @@ export interface WorkspaceBillingOverview {
   included_active_clients: number
   monthly_credit_allowance: number
   enforcement_enabled: boolean
+  // Whether there is a Stripe subscription to manage. Decides whether the page
+  // offers to open the portal or to pick a plan for the first time.
+  has_subscription?: boolean
   balance: number
   expiring_credits: number
   next_expiry_at: string | null
@@ -934,6 +937,40 @@ export async function grantWorkspaceCredits(
     throw new Error('The credit grant could not be recorded.')
   }
   return { granted: data.granted, balance: typeof data.balance === 'number' ? data.balance : null }
+}
+
+export type WorkspacePlanKey = 'founding_member' | 'standard'
+
+/**
+ * Opens Stripe's hosted Customer Portal, where the plan, payment method,
+ * invoices and cancellation all live. Returns the URL to send the browser to;
+ * nothing about the plan is decided here, and the subscription webhook is what
+ * records whatever the customer ends up doing there.
+ */
+export async function createWorkspaceBillingPortal(workspaceId: string): Promise<string> {
+  const { data, error } = await supabase.functions.invoke('workspace-billing-portal', {
+    body: { action: 'portal-create', workspace_id: canonicalUuid(workspaceId, 'Workspace ID') },
+  })
+  if (error) throw await toFunctionError(error, 'The billing portal could not be opened.')
+  if (!data || typeof data.url !== 'string') throw new Error('The billing portal response was invalid.')
+  return data.url
+}
+
+/** Subscription checkout, for a workspace that has no subscription to manage yet. */
+export async function createWorkspaceSubscriptionCheckout(
+  workspaceId: string,
+  planKey: WorkspacePlanKey,
+): Promise<string> {
+  const { data, error } = await supabase.functions.invoke('workspace-billing-portal', {
+    body: {
+      action: 'subscription-create',
+      workspace_id: canonicalUuid(workspaceId, 'Workspace ID'),
+      plan_key: planKey,
+    },
+  })
+  if (error) throw await toFunctionError(error, 'The plan checkout could not be started.')
+  if (!data || typeof data.url !== 'string') throw new Error('The plan checkout response was invalid.')
+  return data.url
 }
 
 export async function createWorkspaceCreditCheckout(

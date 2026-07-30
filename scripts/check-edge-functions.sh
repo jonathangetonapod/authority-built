@@ -26,7 +26,7 @@ mapfile -d '' edge_files < <(
     sort -z
 )
 
-expected_count=111
+expected_count=113
 if [[ "${#edge_files[@]}" -ne "$expected_count" ]]; then
   echo "Expected $expected_count Edge Function entrypoints; found ${#edge_files[@]}." >&2
   exit 1
@@ -60,4 +60,5 @@ export DENO_DIR="${DENO_DIR:-${TMPDIR:-/tmp}/getonapod-deno-cache}"
   supabase/functions/_shared/promptOutputs.test.ts \
   supabase/functions/_shared/promptRequirements.test.ts \
   supabase/functions/_shared/promptVariables.test.ts \
+  supabase/functions/_shared/stripeSignature.test.ts \
   supabase/functions/_shared/workspaceCredentials.test.ts
