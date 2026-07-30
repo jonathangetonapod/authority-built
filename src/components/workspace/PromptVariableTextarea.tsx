@@ -122,12 +122,16 @@ type FieldState = 'filled' | 'degrades' | 'blocks'
 // is somewhere a line may break. "{{itunes_rating}}" has no break in it as far
 // as the textarea is concerned, so a layer that broke between the switch and
 // the name put the two on different lines and took the text with it.
-const TOKEN_BASE = 'whitespace-nowrap rounded-[3px]'
+//
+// The outline is a ring rather than a border: a border on an inline element is
+// advance width, and a pixel of that on every token is a pixel the textarea
+// underneath never spent. A ring is a shadow, and shadows cost no space.
+const TOKEN_BASE = 'whitespace-nowrap rounded ring-1'
 
 const TOKEN_STYLES: Record<FieldState, string> = {
-  filled: `${TOKEN_BASE} bg-emerald-50 text-emerald-700`,
-  degrades: `${TOKEN_BASE} bg-amber-50 text-amber-700 underline decoration-amber-400 decoration-dotted underline-offset-2`,
-  blocks: `${TOKEN_BASE} bg-red-100 text-red-700 underline decoration-red-500 underline-offset-2`,
+  filled: `${TOKEN_BASE} bg-emerald-50/70 text-emerald-700 ring-emerald-200`,
+  degrades: `${TOKEN_BASE} bg-amber-50/70 text-amber-700 ring-amber-300 underline decoration-amber-400 decoration-dotted underline-offset-2`,
+  blocks: `${TOKEN_BASE} bg-red-50 text-red-700 ring-red-300 underline decoration-red-400 decoration-dotted underline-offset-2`,
 }
 
 /**
