@@ -15,6 +15,13 @@ interface PromptFieldPreviewProps {
   /** Fields this stage refuses to run without, marked as blocking not merely empty. */
   requiredVariableIds?: string[]
   podcastName?: string | null
+  /**
+   * Ask Podscan again for this show. Offered only where episode fields are
+   * empty, because that is the only gap a provider read can close — a missing
+   * client bio or an unrun stage will not change.
+   */
+  onRefreshEpisodes?: () => void
+  refreshing?: boolean
 }
 
 const LABELS = new Map(PROMPT_VARIABLES.map((variable) => [variable.id, variable]))
@@ -60,6 +67,8 @@ export const PromptFieldPreview = ({
   onRetry,
   requiredVariableIds,
   podcastName,
+  onRefreshEpisodes,
+  refreshing,
 }: PromptFieldPreviewProps) => {
   const [showFilled, setShowFilled] = useState(false)
   const referenced = useMemo(() => referencedPromptVariables(content), [content])
@@ -71,6 +80,9 @@ export const PromptFieldPreview = ({
   // The same field must not read as blocking in the prompt and merely empty
   // here; one field, one severity, wherever it is shown.
   const blocks = (id: string) => (requiredVariableIds ?? []).includes(id)
+  // Only an episode field can be filled by asking Podscan again. Offering the
+  // button for a missing client bio would charge a credit to learn nothing.
+  const refreshable = missing.filter((id) => LABELS.get(id)?.group === 'episode')
 
   return (
     <section aria-label="Field values for this podcast" className="rounded-lg border">
@@ -136,6 +148,22 @@ export const PromptFieldPreview = ({
                 available”. Say what to do when it is missing, or require the field
                 below so the stage skips instead.
               </p>
+              {refreshable.length > 0 && onRefreshEpisodes && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={onRefreshEpisodes}
+                    disabled={refreshing}
+                    className="rounded border border-red-300 bg-background px-2 py-1 text-[11px] font-medium hover:bg-red-100 disabled:opacity-50"
+                  >
+                    {refreshing ? 'Asking Podscan…' : 'Fetch episodes from Podscan'}
+                  </button>
+                  <span className="text-[10px] leading-4">
+                    1 credit, and only if Podscan answers. What it returns is stored
+                    for every workspace, so nobody pays for this show again.
+                  </span>
+                </div>
+              )}
             </div>
           )}
           {preview.transcript_episode_title && referenced.includes('episode_transcript') && (

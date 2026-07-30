@@ -6,6 +6,7 @@ import {
   generateClientShortlistPitch,
   getClientShortlist,
   getClientShortlistResearchDocument,
+  refreshClientShortlistEpisodes,
   reorderClientShortlistFeatured,
   runClientShortlistEmailSearch,
   runClientShortlistResearch,
@@ -185,5 +186,51 @@ describe('clientShortlist service', () => {
     expect((invoke.mock.calls[0][1] as { body: { podcasts: unknown[] } }).body.podcasts).toHaveLength(50)
     expect((invoke.mock.calls[1][1] as { body: { podcasts: unknown[] } }).body.podcasts).toHaveLength(1)
     expect(result).toMatchObject({ added: 50, skipped: 1 })
+  })
+})
+
+describe('refreshClientShortlistEpisodes', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('asks the episodes-refresh action for this podcast', async () => {
+    invoke.mockResolvedValue({
+      data: {
+        fetched: true,
+        charged: 1,
+        has_transcript: true,
+        episodes: [{ title: 'Ep 1' }],
+        last_posted_at: '2026-07-01',
+        episodes_fetched_at: '2026-07-30T10:00:00Z',
+      },
+      error: null,
+    } as never)
+
+    const result = await refreshClientShortlistEpisodes(workspaceId, clientId, 'pod-abc')
+
+    expect(invoke).toHaveBeenCalledWith('workspace-client-shortlist', {
+      body: {
+        action: 'episodes-refresh',
+        workspace_id: workspaceId,
+        client_id: clientId,
+        podcast_id: 'pod-abc',
+      },
+    })
+    expect(result.fetched).toBe(true)
+    expect(result.charged).toBe(1)
+    expect(result.has_transcript).toBe(true)
+  })
+
+  // The catalogue answering is the free path; the caller has to be able to
+  // tell the operator no credit was spent.
+  it('reports a catalogue answer as unfetched and uncharged', async () => {
+    invoke.mockResolvedValue({
+      data: { fetched: false, charged: 0, episodes: [], last_posted_at: null, episodes_fetched_at: null },
+      error: null,
+    } as never)
+
+    const result = await refreshClientShortlistEpisodes(workspaceId, clientId, 'pod-abc')
+    expect(result.fetched).toBe(false)
+    expect(result.charged).toBe(0)
+    expect(result.episodes).toEqual([])
   })
 })

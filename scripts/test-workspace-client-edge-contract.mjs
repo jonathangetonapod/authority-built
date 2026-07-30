@@ -355,3 +355,32 @@ assert.match(pitchGenerateAction, /episode_title: formatPromptValue\(\s*'episode
 assert.match(pitchGenerateAction, /host_name: formatPromptValue\(\s*'host_name',/u)
 
 console.log('Workspace Client Edge feed-decoding checks passed')
+
+// A deliberate Podscan re-read for a show whose episode fields are empty.
+// It is the only metered action in the prompt editor, so its guarantees are
+// pinned here rather than left to review.
+const episodesRefreshAction = shortlistActionSource('episodes-refresh')
+// Manager only, and never for a suppressed or already-live relationship: the
+// gate has to come before anything that spends.
+assert.match(episodesRefreshAction, /requireManager\(access\)/u)
+assert.match(episodesRefreshAction, /await preflightPodcastRelationship\(/u)
+// The podcast must belong to this client before its id reaches the provider.
+assert.match(episodesRefreshAction, /\.eq\('client_id', clientId\)[\s\S]*?\.eq\('podcast_id', podcastId\)/u)
+// Charged after the read and only when Podscan actually answered. A provider
+// outage returns fetched=false and must cost the workspace nothing.
+const refreshCharge = episodesRefreshAction.match(/if \(fetched\) \{[\s\S]*?\n      \}/u)
+assert.ok(refreshCharge, 'the refresh must charge inside a fetched check')
+assert.match(refreshCharge[0], /chargeCredits\(/u)
+assert.match(refreshCharge[0], /operationType: 'podscan_lookup'/u)
+assert.ok(
+  episodesRefreshAction.indexOf('refreshEpisodesCapture') < episodesRefreshAction.indexOf('chargeCredits'),
+  'the provider read must happen before the charge, so a failed read is free',
+)
+// The catalogue is global: an unaffordable charge never claws back data every
+// workspace can now see.
+assert.match(episodesRefreshAction, /INSUFFICIENT_CREDITS[\s\S]*?console\.warn/u)
+assert.match(episodesRefreshAction, /action: 'client\.podcast\.episodes_refreshed'/u)
+// The caller has to be able to say whether a credit was spent.
+assert.match(episodesRefreshAction, /return jsonResponse\(req, METHODS, 200, \{[\s\S]*?fetched,[\s\S]*?charged,/u)
+
+console.log('Workspace Client Edge episode-refresh checks passed')

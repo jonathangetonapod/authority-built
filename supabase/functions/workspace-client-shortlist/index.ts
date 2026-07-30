@@ -20,7 +20,12 @@ import {
 import { generatePodcastSearchEmbedding } from '../_shared/podcastSearch.ts'
 import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
-import { ensureEpisodesCaptured, fetchPodcastHosts, readStoredEpisodes } from '../_shared/podcastEpisodes.ts'
+import {
+  ensureEpisodesCaptured,
+  fetchPodcastHosts,
+  readStoredEpisodes,
+  refreshEpisodesCapture,
+} from '../_shared/podcastEpisodes.ts'
 import { decryptInstantlyApiKey, instantlyRequest } from '../_shared/instantly.ts'
 import { RESEARCH_PROMPT_DEFAULTS } from '../_shared/researchPromptDefaults.ts'
 import {
@@ -1418,6 +1423,90 @@ serve(async (req) => {
         metadata: { podcast_ids: podcastIds },
       })
       return jsonResponse(req, METHODS, 200, { reordered: Number(data || 0), podcast_ids: podcastIds })
+    }
+
+    if (action === 'episodes-refresh') {
+      /**
+       * Ask Podscan again for a show the catalogue looks thin on.
+       *
+       * Deliberate, unlike episodes-ensure: an operator looking at empty
+       * episode fields believes the provider has more than we stored, and
+       * until now nothing could act on that inside the monthly window.
+       *
+       * The catalogue is global, so what this buys is unlocked for every
+       * workspace. Only the request that actually reached Podscan is charged,
+       * which is what makes a second operator on the same show free.
+       */
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'podcast_id', 'relationship_acknowledged'])
+      requireManager(access)
+      const podcastId = requireString(body.podcast_id, 'podcast_id', { max: 200 })
+      if (!/^[a-zA-Z0-9_-]+$/.test(podcastId)) {
+        throw new HttpError(400, 'INVALID_FIELD', 'podcast_id is invalid')
+      }
+      const { data: refreshRow, error: refreshLookupError } = await authContext.admin
+        .from('client_dashboard_podcasts')
+        .select('id')
+        .eq('client_id', clientId)
+        .eq('podcast_id', podcastId)
+        .maybeSingle()
+      if (refreshLookupError) {
+        throw new HttpError(500, 'EPISODES_LOOKUP_FAILED', 'The podcast could not be checked')
+      }
+      if (!refreshRow) {
+        throw new HttpError(404, 'PODCAST_NOT_FOUND', 'Shortlist podcast not found for this client')
+      }
+      // A suppressed or already-live relationship must not spend anything,
+      // the same gate every other metered action in this function sits behind.
+      await preflightPodcastRelationship(
+        authContext.admin,
+        workspaceId,
+        podcastId,
+        body.relationship_acknowledged === true,
+      )
+
+      const { captured: refreshed, fetched } = await refreshEpisodesCapture(authContext.admin, podcastId)
+
+      // Charged after the read, never before: a provider outage returns
+      // fetched=false, and a workspace must not pay for episodes it did not
+      // get. The catalogue write has already happened and is never clawed
+      // back — the data belongs to everyone once it lands.
+      let charged = 0
+      if (fetched) {
+        try {
+          charged = await chargeCredits(authContext.admin, {
+            workspaceId,
+            operationType: 'podscan_lookup',
+            referenceKind: 'podcast_episode_refresh',
+            referenceId: podcastId,
+            clientId,
+            actorUserId: authContext.user.id,
+            idempotencyKey: `episodes-refresh:${podcastId}:${refreshed?.episodes_fetched_at ?? ''}`,
+          })
+        } catch (chargeError) {
+          if (!(chargeError instanceof HttpError && chargeError.code === 'INSUFFICIENT_CREDITS')) throw chargeError
+          console.warn('[Client Shortlist] Episode refresh landed globally without an available credit')
+        }
+      }
+
+      await writeAudit(authContext.admin, {
+        workspaceId,
+        actorUserId: authContext.user.id,
+        action: 'client.podcast.episodes_refreshed',
+        entityType: 'podcast',
+        entityId: podcastId,
+        metadata: { fetched, charged, episodes: refreshed?.episodes?.length ?? 0 },
+      })
+
+      return jsonResponse(req, METHODS, 200, {
+        // fetched=false with episodes present means the catalogue answered
+        // because someone refreshed this show within the hour.
+        fetched,
+        charged,
+        episodes: refreshed?.episodes ?? [],
+        has_transcript: Boolean(refreshed?.transcript),
+        last_posted_at: refreshed?.last_posted_at ?? null,
+        episodes_fetched_at: refreshed?.episodes_fetched_at ?? null,
+      })
     }
 
     if (action === 'episodes-ensure') {

@@ -451,6 +451,46 @@ export async function ensureClientShortlistEpisodes(
   }
 }
 
+export interface ClientShortlistEpisodeRefresh extends ClientShortlistEpisodeMetadata {
+  /** False when the catalogue answered because this show was refreshed recently. */
+  fetched: boolean
+  /** Credits this workspace spent. Zero when the catalogue answered. */
+  charged: number
+  has_transcript: boolean
+}
+
+/**
+ * Asks Podscan again for a show whose episode fields look thin, overriding the
+ * monthly capture window.
+ *
+ * Operator-initiated, unlike ensureClientShortlistEpisodes. What it retrieves
+ * lands in the global catalogue, so it is unlocked for every workspace; only
+ * the request that actually reached Podscan is charged, which is why a second
+ * operator on the same show within the hour pays nothing.
+ */
+export async function refreshClientShortlistEpisodes(
+  workspaceId: string,
+  clientId: string,
+  podcastId: string,
+  relationshipAcknowledged = false,
+): Promise<ClientShortlistEpisodeRefresh> {
+  const data = await invokeClientShortlist<ClientShortlistEpisodeRefresh>({
+    action: 'episodes-refresh',
+    workspace_id: workspaceId,
+    client_id: clientId,
+    podcast_id: podcastId,
+    ...(relationshipAcknowledged ? { relationship_acknowledged: true } : {}),
+  })
+  return {
+    fetched: data.fetched === true,
+    charged: typeof data.charged === 'number' ? data.charged : 0,
+    has_transcript: data.has_transcript === true,
+    episodes: Array.isArray(data.episodes) ? data.episodes : [],
+    last_posted_at: data.last_posted_at ?? null,
+    episodes_fetched_at: data.episodes_fetched_at ?? null,
+  }
+}
+
 export interface ClientAutopilotSettings {
   enabled: boolean
   max_weekly_adds: number

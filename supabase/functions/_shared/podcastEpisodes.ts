@@ -201,6 +201,9 @@ export function transcriptEpisodeTitle(episodes: StoredEpisode[]): string | null
 }
 
 const EPISODE_FRESHNESS_MS = 30 * 24 * 60 * 60 * 1000
+// A manual refresh overrides the monthly window, but not each other: within
+// the hour the catalogue answers and nobody is charged twice for one show.
+const REFRESH_FREE_WINDOW_MS = 60 * 60 * 1000
 
 function newestIso(values: Array<string | null>): string | null {
   // Podscan posted_at values are ISO-formatted, so lexicographic max works.
@@ -243,14 +246,52 @@ export async function readStoredEpisodes(admin: any, podscanId: string): Promise
   }
 }
 
+/**
+ * A capture, plus whether producing it cost a Podscan call.
+ *
+ * The catalogue is global, so one workspace's refresh is every workspace's
+ * data. Only the call that actually reached the provider is billable, which is
+ * what lets a second operator on the same show pay nothing.
+ */
+export interface CaptureOutcome {
+  captured: CapturedEpisodes | null
+  /** True only when Podscan answered. A provider failure is not a fetch. */
+  fetched: boolean
+}
+
 export async function ensureEpisodesCaptured(admin: any, podscanId: string): Promise<CapturedEpisodes | null> {
-  if (!/^[a-zA-Z0-9_-]+$/.test(podscanId)) return null
+  const { captured } = await captureEpisodes(admin, podscanId, EPISODE_FRESHNESS_MS)
+  return captured
+}
+
+/**
+ * A deliberate re-read, for an operator looking at a show whose episode fields
+ * are empty and who believes Podscan has more than the catalogue holds.
+ *
+ * The window is short rather than absent: the button always answers, but two
+ * people opening the same show minutes apart share one call instead of buying
+ * the same episodes twice.
+ */
+export async function refreshEpisodesCapture(
+  admin: any,
+  podscanId: string,
+  freeWindowMs = REFRESH_FREE_WINDOW_MS,
+): Promise<CaptureOutcome> {
+  return captureEpisodes(admin, podscanId, freeWindowMs)
+}
+
+async function captureEpisodes(
+  admin: any,
+  podscanId: string,
+  freshnessMs: number,
+): Promise<CaptureOutcome> {
+  if (!/^[a-zA-Z0-9_-]+$/.test(podscanId)) return { captured: null, fetched: false }
   const { data: row, error } = await admin
     .from('podcasts')
     .select('id, recent_episodes, latest_episode_transcript, episodes_fetched_at, last_posted_at, host_name')
     .eq('podscan_id', podscanId)
     .maybeSingle()
-  if (error || !row) return null
+  if (error || !row) return { captured: null, fetched: false }
 
   const stored: CapturedEpisodes = {
     episodes: Array.isArray(row.recent_episodes)
@@ -272,21 +313,22 @@ export async function ensureEpisodesCaptured(admin: any, podscanId: string): Pro
   const shapeCurrent = stored.episodes.every((episode) => 'episode_id' in episode)
   const fresh = shapeCurrent
     && stored.episodes_fetched_at
-    && Date.now() - Date.parse(stored.episodes_fetched_at) < EPISODE_FRESHNESS_MS
-  if (fresh) return stored
+    && Date.now() - Date.parse(stored.episodes_fetched_at) < freshnessMs
+  if (fresh) return { captured: stored, fetched: false }
 
   const fetched = await fetchRecentEpisodes(podscanId)
   if (fetched === null) {
     // Provider unavailable — keep what we had, leave episodes_fetched_at
-    // unstamped, and let the next flow that needs episodes retry.
-    return stored
+    // unstamped, and let the next flow that needs episodes retry. Nothing was
+    // read, so a caller metering this must not charge for it.
+    return { captured: stored, fetched: false }
   }
   if (fetched.length === 0 && stored.episodes.length > 0) {
     // Podscan answered "no episodes" for a show we already captured — keep
     // the better data we have, but stamp the check so we stop re-asking.
     const checkedAt = new Date().toISOString()
     await admin.from('podcasts').update({ episodes_fetched_at: checkedAt, updated_at: checkedAt }).eq('id', row.id)
-    return { ...stored, episodes_fetched_at: checkedAt }
+    return { captured: { ...stored, episodes_fetched_at: checkedAt }, fetched: true }
   }
 
   // The newest episode that actually has a transcript, not simply the newest.
@@ -321,10 +363,13 @@ export async function ensureEpisodesCaptured(admin: any, podscanId: string): Pro
     .eq('id', row.id)
 
   return {
-    episodes,
-    transcript,
-    transcript_episode_title: transcript ? transcriptEpisodeTitle(episodes) : null,
-    last_posted_at: lastPostedAt,
-    episodes_fetched_at: fetchedAt,
+    captured: {
+      episodes,
+      transcript,
+      transcript_episode_title: transcript ? transcriptEpisodeTitle(episodes) : null,
+      last_posted_at: lastPostedAt,
+      episodes_fetched_at: fetchedAt,
+    },
+    fetched: true,
   }
 }

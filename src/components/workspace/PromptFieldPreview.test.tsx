@@ -152,3 +152,50 @@ describe('PromptFieldPreview severity', () => {
     expect(screen.queryByText(/so this podcast skips it/)).not.toBeInTheDocument()
   })
 })
+
+describe('PromptFieldPreview episode refresh', () => {
+  const refreshable = preview({
+    fields: {
+      episode_transcript: { value: null, truncated: false },
+      podcast_name: { value: 'Operator Weekly', truncated: false },
+    },
+  })
+
+  it('offers a Podscan read when an episode field is empty', () => {
+    const refresh = vi.fn()
+    render(
+      <PromptFieldPreview
+        content="Quote {{episode_transcript}} from {{podcast_name}}."
+        preview={refreshable}
+        onRefreshEpisodes={refresh}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Fetch episodes from Podscan/ }))
+    expect(refresh).toHaveBeenCalled()
+    expect(screen.getByText(/stored for every workspace/)).toBeInTheDocument()
+  })
+
+  // Asking Podscan cannot fill a client bio or an unrun stage, so charging a
+  // credit to find that out would be taking money for nothing.
+  it('does not offer it when the gap is not an episode field', () => {
+    render(
+      <PromptFieldPreview
+        content="Introduce {{client_bio}}."
+        preview={preview({ fields: { client_bio: { value: null, truncated: false } } })}
+        onRefreshEpisodes={vi.fn()}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: /Podscan/ })).not.toBeInTheDocument()
+  })
+
+  it('does not offer it when every field is filled', () => {
+    render(
+      <PromptFieldPreview
+        content="Open on {{podcast_name}}."
+        preview={refreshable}
+        onRefreshEpisodes={vi.fn()}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: /Podscan/ })).not.toBeInTheDocument()
+  })
+})

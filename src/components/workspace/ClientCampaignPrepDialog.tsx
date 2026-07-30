@@ -54,6 +54,7 @@ import {
   generateClientShortlistPitch,
   getClientShortlistResearchDocument,
   getPromptPreview,
+  refreshClientShortlistEpisodes,
   runClientShortlistEmailSearch,
   runClientShortlistResearch,
 } from '@/services/clientShortlist'
@@ -601,6 +602,34 @@ export function ClientCampaignPrepDialog({
     () => ['client-shortlist-prompt-preview', workspaceId, clientId, podcast?.id || 'none'],
     [workspaceId, clientId, podcast?.id],
   )
+
+  /**
+   * The operator's escape hatch when the catalogue looks thinner than Podscan.
+   *
+   * The only metered action in this editor: everything else here reads stored
+   * data. What it fetches lands in the global catalogue, so the credit buys
+   * the show for every workspace, not just this one.
+   */
+  const refreshEpisodesMutation = useMutation({
+    mutationFn: () => refreshClientShortlistEpisodes(workspaceId, clientId, podcast!.podcast_id),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: promptPreviewQueryKey })
+      void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
+      if (!result.fetched) {
+        toast.success('Already refreshed in the last hour — used the stored copy, no credit spent.')
+      } else if (result.episodes.length === 0) {
+        toast.warning('Podscan has no episodes for this show. Nothing to quote from.')
+      } else {
+        toast.success(
+          `${result.episodes.length} ${result.episodes.length === 1 ? 'episode' : 'episodes'} captured`
+          + `${result.has_transcript ? ' with a transcript' : ', none with a transcript yet'}.`,
+        )
+      }
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Podscan could not be reached.')
+    },
+  })
 
   // The real value of every field for THIS podcast, built server-side by the
   // same function the run uses. Stored reads only, so opening the editor is
@@ -1694,6 +1723,10 @@ export function ClientCampaignPrepDialog({
                                   error={promptPreviewQuery.isError}
                                   onRetry={() => void promptPreviewQuery.refetch()}
                                   requiredVariableIds={promptRequirements[selectedPromptId] ?? []}
+                                  onRefreshEpisodes={podcast?.podcast_id
+                                    ? () => refreshEpisodesMutation.mutate()
+                                    : undefined}
+                                  refreshing={refreshEpisodesMutation.isPending}
                                   podcastName={podcast?.podcast_name}
                                 />
                               </div>
