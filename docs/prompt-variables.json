@@ -59,6 +59,7 @@
     { "id": "episode_title", "group": "episode", "type": "text", "label": "Latest episode title" },
     { "id": "episode_description", "group": "episode", "type": "long_text", "label": "Latest episode summary" },
     { "id": "episode_transcript", "group": "episode", "type": "long_text", "label": "Latest episode transcript" },
+    { "id": "transcript_episode_title", "group": "episode", "type": "text", "label": "Episode the transcript is from" },
     { "id": "episode_posted_at", "group": "episode", "type": "date", "label": "Latest episode posted" },
     { "id": "episode_summary", "group": "episode", "type": "long_text", "label": "Latest episode summary (Podscan)" },
     { "id": "episode_topics", "group": "episode", "type": "list", "label": "Latest episode topics" },

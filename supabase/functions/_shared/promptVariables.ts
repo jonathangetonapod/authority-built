@@ -68,6 +68,7 @@ export const PROMPT_VARIABLES: PromptVariable[] = [
   { id: 'episode_title', group: 'episode', type: 'text', label: "Latest episode title" },
   { id: 'episode_description', group: 'episode', type: 'long_text', label: "Latest episode summary" },
   { id: 'episode_transcript', group: 'episode', type: 'long_text', label: "Latest episode transcript" },
+  { id: 'transcript_episode_title', group: 'episode', type: 'text', label: "Episode the transcript is from" },
   { id: 'episode_posted_at', group: 'episode', type: 'date', label: "Latest episode posted" },
   { id: 'episode_summary', group: 'episode', type: 'long_text', label: "Latest episode summary (Podscan)" },
   { id: 'episode_topics', group: 'episode', type: 'list', label: "Latest episode topics" },
@@ -334,7 +335,15 @@ export function buildPodcastVariables(row: unknown): Record<string, string | nul
 export function buildEpisodeVariables(episodes: unknown): Record<string, string | null> {
   const list = Array.isArray(episodes) ? episodes as Array<Record<string, unknown>> : []
   const latest = (list[0] ?? {}) as Record<string, unknown>
+  // The transcript is not always the latest episode's: Podscan is asked for
+  // episodes whether or not transcription has finished, and the capture flags
+  // the one it actually got. A prompt that quotes the transcript needs to name
+  // that episode, or it attributes the words to whatever came out most
+  // recently — which is how a pitch tells a host they said something they
+  // said on a different show week.
+  const transcriptSource = list.find((episode) => episode.transcript_source) ?? latest
   return {
+    transcript_episode_title: formatPromptValue('transcript_episode_title', transcriptSource?.title),
     episode_title: formatPromptValue('episode_title', latest.title),
     episode_description: formatPromptValue('episode_description', latest.description),
     episode_posted_at: formatPromptValue('episode_posted_at', latest.posted_at),

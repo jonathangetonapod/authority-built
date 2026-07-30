@@ -179,10 +179,19 @@ export const PromptFieldPreview = ({
               )}
             </div>
           )}
-          {preview.transcript_episode_title && referenced.includes('episode_transcript') && (
+          {/*
+            The paragraph this replaced told an operator something the model
+            needed. A prompt that names the episode the transcript came from
+            attributes its quotes correctly, so the warning is only worth
+            making while the prompt does not — and it goes away when it does.
+          */}
+          {preview.transcript_episode_title
+            && referenced.includes('episode_transcript')
+            && !referenced.includes('transcript_episode_title') && (
             <p className="border-b bg-amber-50 px-3 py-2 text-[11px] leading-4 text-amber-900">
-              The transcript is from “{preview.transcript_episode_title}”, not the latest episode —
-              the latest has none yet. Anything quoted belongs to that earlier episode.
+              The transcript is from an earlier episode. Add{' '}
+              <code className="font-mono">{'{{transcript_episode_title}}'}</code> so quotes are
+              attributed to the right one.
             </p>
           )}
         </>

@@ -140,16 +140,9 @@ describe('PromptFieldPreview', () => {
     expect(screen.queryByText(/quote or summarise/)).not.toBeInTheDocument()
   })
 
-  it('warns when the transcript belongs to an earlier episode', () => {
-    render(
-      <PromptFieldPreview
-        content={PROMPT}
-        preview={preview({ transcript_episode_title: 'The one from June' })}
-      />,
-    )
-    // Quoting it as the latest episode is the misattribution this prevents.
-    expect(screen.getByText(/The one from June/)).toBeInTheDocument()
-  })
+  // Superseded: the episode the transcript came from is a field now, so the
+  // fix is naming it in the prompt rather than reading a paragraph about it.
+  // See the transcript attribution tests below.
 
   it('stays out of the way for a prompt that names no fields', () => {
     const { container } = render(<PromptFieldPreview content="Summarize the show." preview={preview()} />)
@@ -236,3 +229,32 @@ describe('PromptFieldPreview episode refresh', () => {
   })
 })
 
+
+describe('PromptFieldPreview transcript attribution', () => {
+  const withTranscript = () => preview({
+    fields: {
+      episode_transcript: { value: 'Welcome to the show…', truncated: true },
+      transcript_episode_title: { value: 'The one from June', truncated: false },
+    },
+    transcript_episode_title: 'The one from June',
+  })
+
+  // The old paragraph told an operator something the model needed. Naming the
+  // episode in the prompt is what actually stops a quote being attributed to
+  // whatever episode came out most recently.
+  it('asks for the variable while the prompt quotes a transcript without it', () => {
+    render(<PromptFieldPreview content="Quote {{episode_transcript}}." preview={withTranscript()} />)
+    expect(screen.getByText(/attributed to the right one/)).toBeInTheDocument()
+    expect(screen.getByText('{{transcript_episode_title}}')).toBeInTheDocument()
+  })
+
+  it('says nothing once the prompt names the episode', () => {
+    render(
+      <PromptFieldPreview
+        content="Quote {{episode_transcript}} from {{transcript_episode_title}}."
+        preview={withTranscript()}
+      />,
+    )
+    expect(screen.queryByText(/attributed to the right one/)).not.toBeInTheDocument()
+  })
+})
