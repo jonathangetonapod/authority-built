@@ -708,8 +708,12 @@ export function ClientCampaignPrepDialog({
     )
   }, [promptOutputs, selectedPromptId])
 
+  const requirementsQueryKey = useMemo(
+    () => ['workspace-prompt-requirements', workspaceId],
+    [workspaceId],
+  )
   const requirementsQuery = useQuery({
-    queryKey: ['workspace-prompt-requirements', workspaceId],
+    queryKey: requirementsQueryKey,
     queryFn: () => getWorkspacePromptRequirements(workspaceId),
     enabled: open,
     retry: false,
@@ -717,14 +721,37 @@ export function ClientCampaignPrepDialog({
   })
   const promptRequirements = requirementsQuery.data ?? {}
 
+  type PromptRequirementMap = Record<string, string[]>
+
   const saveRequirementsMutation = useMutation({
     mutationFn: ({ promptId, required }: { promptId: ResearchPromptId; required: string[] }) =>
       setWorkspacePromptRequirements(workspaceId, promptId, required),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['workspace-prompt-requirements', workspaceId] })
+    /**
+     * A switch has to move on the click that moved it.
+     *
+     * Its checked state is read from this query, so it used to wait out two
+     * round trips before it budged: the write, and then the refetch the write
+     * triggered. Write the new value in first and let the server confirm it.
+     */
+    onMutate: async ({ promptId, required }) => {
+      await queryClient.cancelQueries({ queryKey: requirementsQueryKey })
+      const previous = queryClient.getQueryData<PromptRequirementMap>(requirementsQueryKey)
+      queryClient.setQueryData<PromptRequirementMap>(requirementsQueryKey, (current) => ({
+        ...(current ?? {}),
+        [promptId]: required,
+      }))
+      return { previous }
     },
-    onError: (error) => {
+    onError: (error, _variables, context) => {
+      // Put the switch back where it was: leaving it on while the workspace
+      // has it off would be a lie about whether the stage will skip.
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(requirementsQueryKey, context.previous)
+      }
       toast.error(error instanceof Error ? error.message : 'The field requirements could not be saved.')
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: requirementsQueryKey })
     },
   })
 
@@ -751,6 +778,20 @@ export function ClientCampaignPrepDialog({
     },
   })
   const promptBusy = savePromptMutation.isPending || resetPromptMutation.isPending
+
+  /** Adds or removes one field from the selected stage's required set. */
+  const toggleRequirement = (variableId: string, next: boolean) => {
+    const wanted = new Set(promptRequirements[selectedPromptId] ?? [])
+    if (next) wanted.add(variableId)
+    else wanted.delete(variableId)
+    saveRequirementsMutation.mutate({
+      promptId: selectedPromptId,
+      // Registry order, so the saved set reads the way the list is drawn.
+      required: PROMPT_VARIABLES
+        .filter((variable) => wanted.has(variable.id))
+        .map((variable) => variable.id),
+    })
+  }
 
   // Keep the draft in sync with saved overrides unless the owner is mid-edit.
   useEffect(() => {
@@ -1699,6 +1740,8 @@ export function ClientCampaignPrepDialog({
                                   omitVariableIds={omittedVariableIds}
                                   availability={promptFieldAvailability}
                                   requiredVariableIds={promptRequirements[selectedPromptId] ?? []}
+                                  requirementsDisabled={requirementsQuery.isLoading}
+                                  onToggleRequired={(variableId, next) => toggleRequirement(variableId, next)}
                                   id="campaign-research-stage-prompt"
                                   ariaLabel={`Prompt for ${selectedPromptDefault.label}`}
                                   value={promptDraft}
@@ -1727,21 +1770,6 @@ export function ClientCampaignPrepDialog({
                                     ? () => refreshEpisodesMutation.mutate()
                                     : undefined}
                                   refreshing={refreshEpisodesMutation.isPending}
-                                  requirementsDisabled={promptBusy || requirementsQuery.isLoading}
-                                  onToggleRequired={(variableId, next) => {
-                                    const current = promptRequirements[selectedPromptId] ?? []
-                                    const wanted = new Set(current)
-                                    if (next) wanted.add(variableId)
-                                    else wanted.delete(variableId)
-                                    saveRequirementsMutation.mutate({
-                                      promptId: selectedPromptId,
-                                      // Registry order, so the saved set reads
-                                      // the way the list is drawn.
-                                      required: PROMPT_VARIABLES
-                                        .filter((variable) => wanted.has(variable.id))
-                                        .map((variable) => variable.id),
-                                    })
-                                  }}
                                   podcastName={podcast?.podcast_name}
                                 />
                               </div>

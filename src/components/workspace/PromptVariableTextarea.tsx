@@ -45,7 +45,57 @@ interface PromptVariableTextareaProps {
    * can be written to absorb. They are not the same warning.
    */
   requiredVariableIds?: string[]
+  /**
+   * Turns the requirement on or off from the token itself. Given here so the
+   * switch sits on the variable being written about, rather than in a list
+   * somewhere under the field.
+   */
+  onToggleRequired?: (variableId: string, required: boolean) => void
+  requirementsDisabled?: boolean
 }
+
+/**
+ * A switch the width of the "{{" it stands on.
+ *
+ * Sized in ch so it measures two monospace characters exactly. The coloured
+ * layer has to stay character-for-character with the textarea underneath it,
+ * so a control in the text can only ever occupy space the text already had.
+ */
+const RequiredToggle = ({
+  variableId,
+  required,
+  disabled,
+  onToggle,
+}: {
+  variableId: string
+  required: boolean
+  disabled?: boolean
+  onToggle: (variableId: string, required: boolean) => void
+}) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={required}
+    aria-label={`Require ${variableId}`}
+    disabled={disabled}
+    title={required
+      ? `${variableId} is required — this podcast skips the stage when it is empty`
+      : `Require ${variableId}`}
+    // The layer ignores pointers so the textarea keeps the caret; the switch
+    // is the one thing on it that does not.
+    onMouseDown={(event) => event.preventDefault()}
+    onClick={() => onToggle(variableId, !required)}
+    className={`pointer-events-auto relative inline-block h-[0.85em] w-[2ch] shrink-0 cursor-pointer rounded-full align-middle transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+      required ? 'bg-primary' : 'bg-muted-foreground/40'
+    }`}
+  >
+    <span
+      className={`absolute top-1/2 block h-[0.6em] w-[0.6em] -translate-y-1/2 rounded-full bg-background transition-all ${
+        required ? 'left-[calc(100%-0.72em)]' : 'left-[0.12em]'
+      }`}
+    />
+  </button>
+)
 
 type FieldState = 'filled' | 'degrades' | 'blocks'
 
@@ -76,6 +126,8 @@ export const PromptVariableTextarea = ({
   omitVariableIds,
   availability,
   requiredVariableIds,
+  onToggleRequired,
+  requirementsDisabled,
 }: PromptVariableTextareaProps) => {
   const fieldRef = useRef<HTMLTextAreaElement | null>(null)
   const highlightRef = useRef<HTMLDivElement | null>(null)
@@ -264,12 +316,16 @@ export const PromptVariableTextarea = ({
         {highlighting && (
           <div
             ref={highlightRef}
-            aria-hidden="true"
             className={cn(
-              // select-none as well as aria-hidden: the layer is a copy of the
-              // prompt, and without it selecting the page yields the text twice.
-              'pointer-events-none select-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words rounded-md border border-transparent px-3 py-2 text-sm',
+              // Each piece of text hides itself from the accessibility tree
+              // rather than the layer hiding all of it: the switches on this
+              // layer are real controls, and aria-hidden on the whole thing
+              // put them somewhere a screen reader could never reach.
+              // select-none because the layer copies the prompt, and without
+              // it selecting the page yields the text twice.
+              'pointer-events-none select-none absolute inset-0 z-10 overflow-hidden whitespace-pre-wrap break-words rounded-md border border-transparent bg-transparent px-3 py-2 text-sm',
               className,
+              'bg-transparent',
               // The textarea dims itself when disabled, but the text you can
               // actually see is this layer's, so without matching it a saving
               // field looks exactly like an editable one.
@@ -287,13 +343,33 @@ export const PromptVariableTextarea = ({
                     // selection, which still come from the textarea.
                     className={TOKEN_STYLES[fieldState(segment.variableId)]}
                   >
-                    {segment.text}
+                    {onToggleRequired
+                      ? (
+                        <>
+                          {/*
+                            The switch stands exactly where "{{" is typed, and
+                            is exactly that wide: 2ch of a monospace font is
+                            two characters, so the text after it still sits on
+                            the column the textarea put it in. Anything wider
+                            and the caret would part company with its own text.
+                          */}
+                          <RequiredToggle
+                            variableId={segment.variableId}
+                            required={fieldState(segment.variableId) === 'blocks'}
+                            disabled={requirementsDisabled}
+                            onToggle={onToggleRequired}
+                          />
+                          <span aria-hidden="true">{segment.text.slice(2, -2)}</span>
+                          <span aria-hidden="true" className="opacity-0">{'}}'}</span>
+                        </>
+                      )
+                      : <span aria-hidden="true">{segment.text}</span>}
                   </span>
                 )
-                : <span key={index}>{segment.text}</span>
+                : <span key={index} aria-hidden="true">{segment.text}</span>
             ))}
             {/* A trailing newline needs something after it or the box ends early. */}
-            {'\n'}
+            <span aria-hidden="true">{'\n'}</span>
           </div>
         )}
         <Textarea
@@ -306,7 +382,7 @@ export const PromptVariableTextarea = ({
           // The highlight classes go last: cn merges with tailwind-merge, and
           // callers pass bg-background, which would otherwise paint over the
           // coloured layer and hide the whole thing.
-          className={`${className ?? ''}${highlighting ? ' relative bg-transparent text-transparent caret-foreground selection:bg-violet-300/40' : ''}`}
+          className={`${className ?? ''}${highlighting ? ' text-transparent caret-foreground selection:bg-violet-300/40' : ''}`}
           maxLength={maxLength}
           onScroll={(event) => {
             const layer = highlightRef.current

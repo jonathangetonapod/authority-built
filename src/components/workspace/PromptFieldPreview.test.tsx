@@ -191,35 +191,3 @@ describe('PromptFieldPreview episode refresh', () => {
   })
 })
 
-describe('PromptFieldPreview inline requirement switches', () => {
-  // The switch lives on the row that shows the problem. These fields used to
-  // be printed a second time underneath purely to carry them.
-  it('requires a field from its own row', () => {
-    const toggle = vi.fn()
-    render(
-      <PromptFieldPreview
-        content="Quote {{episode_transcript}}."
-        preview={preview({ fields: { episode_transcript: { value: null, truncated: false } } })}
-        onToggleRequired={toggle}
-      />,
-    )
-    fireEvent.click(screen.getByRole('switch', { name: /Require Latest episode transcript/ }))
-    expect(toggle).toHaveBeenCalledWith('episode_transcript', true)
-  })
-
-  it('offers a switch for a filled field too', () => {
-    render(
-      <PromptFieldPreview
-        content="Open on {{podcast_name}}."
-        preview={preview()}
-        onToggleRequired={vi.fn()}
-      />,
-    )
-    expect(screen.getByRole('switch', { name: /Require Podcast name/ })).toBeInTheDocument()
-  })
-
-  it('shows no switches to a viewer who cannot change requirements', () => {
-    render(<PromptFieldPreview content="Open on {{podcast_name}}." preview={preview()} />)
-    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
-  })
-})

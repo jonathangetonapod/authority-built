@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { PromptVariableTextarea } from '@/components/workspace/PromptVariableTextarea'
 import { PROMPT_VARIABLES, PROMPT_VARIABLE_GROUPS } from '@/lib/promptVariables'
 
@@ -8,11 +8,13 @@ const Harness = ({
   readOnly,
   availability,
   requiredVariableIds,
+  onToggleRequired,
   initial = '',
 }: {
   readOnly?: boolean
   availability?: Record<string, boolean> | null
   requiredVariableIds?: string[]
+  onToggleRequired?: (id: string, next: boolean) => void
   initial?: string
 }) => {
   const [value, setValue] = useState(initial)
@@ -24,12 +26,17 @@ const Harness = ({
       readOnly={readOnly}
       availability={availability}
       requiredVariableIds={requiredVariableIds}
+      onToggleRequired={onToggleRequired}
     />
   )
 }
 
-/** The coloured layer mirrors the prompt; it is hidden from the a11y tree. */
-const highlightLayer = () => document.querySelector('[aria-hidden="true"].absolute')
+/**
+ * The coloured layer mirrors the prompt. Its text is hidden from the a11y
+ * tree piece by piece, but the layer itself is not: the switches on it are
+ * real controls that have to stay reachable.
+ */
+const highlightLayer = () => document.querySelector('div.absolute.select-none')
 const tokenSpan = (token: string) =>
   Array.from(highlightLayer()?.querySelectorAll('span') ?? [])
     .find((node) => node.textContent === token)
@@ -257,5 +264,42 @@ describe('PromptVariableTextarea field colouring in the pickers', () => {
     await screen.findByRole('listbox')
     expect(rowFor('podcast_name').textContent).not.toContain('has a value')
     expect(rowFor('podcast_name').textContent).not.toContain('empty')
+  })
+})
+
+describe('PromptVariableTextarea requirement switch on the token', () => {
+  const availability = { podcast_name: true, itunes_rating: false }
+
+  it('requires a field from the token itself', () => {
+    const toggle = vi.fn()
+    render(
+      <Harness
+        availability={availability}
+        onToggleRequired={toggle}
+        initial="Rated {{itunes_rating}}."
+      />,
+    )
+    fireEvent.click(screen.getByRole('switch', { name: 'Require itunes_rating' }))
+    expect(toggle).toHaveBeenCalledWith('itunes_rating', true)
+  })
+
+  it('reports the current state on the switch', () => {
+    render(
+      <Harness
+        availability={availability}
+        requiredVariableIds={['itunes_rating']}
+        onToggleRequired={vi.fn()}
+        initial="Rated {{itunes_rating}}."
+      />,
+    )
+    expect(screen.getByRole('switch', { name: 'Require itunes_rating' }))
+      .toHaveAttribute('aria-checked', 'true')
+  })
+
+  // Without a handler the layer stays purely decorative, which is what keeps
+  // it in step with the caret for a reader who cannot change anything.
+  it('shows no switch where requirements cannot be changed', () => {
+    render(<Harness availability={availability} initial="Rated {{itunes_rating}}." />)
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
   })
 })

@@ -1,6 +1,5 @@
 import { useMemo } from 'react'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
-import { Switch } from '@/components/ui/switch'
 import { PROMPT_VARIABLES } from '@/lib/promptVariables'
 import { referencedPromptVariables } from '@/lib/promptVariableMenu'
 import type { PromptPreview } from '@/services/clientShortlist'
@@ -23,13 +22,6 @@ interface PromptFieldPreviewProps {
    */
   onRefreshEpisodes?: () => void
   refreshing?: boolean
-  /**
-   * Turns the requirement on or off for one field. Given inline so the
-   * decision sits on the row that shows the problem — the same fields used to
-   * be listed a second time underneath purely to carry these switches.
-   */
-  onToggleRequired?: (variableId: string, required: boolean) => void
-  requirementsDisabled?: boolean
 }
 
 const LABELS = new Map(PROMPT_VARIABLES.map((variable) => [variable.id, variable]))
@@ -72,8 +64,6 @@ export const PromptFieldPreview = ({
   podcastName,
   onRefreshEpisodes,
   refreshing,
-  onToggleRequired,
-  requirementsDisabled,
 }: PromptFieldPreviewProps) => {
   const referenced = useMemo(() => referencedPromptVariables(content), [content])
 
@@ -185,15 +175,6 @@ export const PromptFieldPreview = ({
               return (
                 <li key={id} className="p-2">
                   <div className="flex items-start gap-2 rounded-md bg-muted/50 px-2 py-1.5">
-                    {onToggleRequired && (
-                      <Switch
-                        checked={required}
-                        disabled={requirementsDisabled}
-                        aria-label={`Require ${variable?.label ?? id}`}
-                        onCheckedChange={(next) => onToggleRequired(id, next === true)}
-                        className="mt-px shrink-0 scale-75"
-                      />
-                    )}
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-x-2">
                         {filled
@@ -223,9 +204,8 @@ export const PromptFieldPreview = ({
             })}
           </ul>
           <p className="border-t px-3 py-2 text-[10px] leading-4 text-muted-foreground">
-            {onToggleRequired
-              ? 'Switch a field on to skip this stage when it is empty, rather than run without it.'
-              : 'Anything empty reaches the model as “Not available”.'}
+            Switch a field on in the prompt above to skip this stage when it is
+            empty, rather than run without it.
           </p>
         </>
       )}
