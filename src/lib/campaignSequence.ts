@@ -1,4 +1,4 @@
-import { decodeHtmlEntities } from '@/lib/htmlEntities'
+import { decodeFeedText } from '@/lib/feedText'
 import type { ClientShortlistPodcast } from '@/services/clientShortlist'
 
 export interface PodcastCampaignSequenceDraft {
@@ -38,10 +38,10 @@ export function buildPodcastCampaignSequenceDraft({
   void clientBio
   // Catalog names arrive HTML-encoded from Podscan ("Good, Bad, &amp; the
   // Ugly") — decode once so no entity ever reaches an email a host reads.
-  const podcastName = decodeHtmlEntities(podcast.podcast_name)
+  const podcastName = decodeFeedText(podcast.podcast_name)
   const angle = podcast.ai_pitch_angles?.[angleIndex] || podcast.ai_pitch_angles?.[0] || null
   const fitReason = podcast.ai_fit_reasons?.[0] || null
-  const podcastSummary = sentence(decodeHtmlEntities(podcast.ai_clean_description || podcast.podcast_description || ''), 420)
+  const podcastSummary = sentence(decodeFeedText(podcast.ai_clean_description || podcast.podcast_description || ''), 420)
   const secondFitReason = podcast.ai_fit_reasons?.[1] || null
   const contactFirstName = podcast.publisher_name?.trim().split(/\s+/)[0] || ''
   const greeting = contactFirstName ? `Hi ${contactFirstName},` : 'Hi,'

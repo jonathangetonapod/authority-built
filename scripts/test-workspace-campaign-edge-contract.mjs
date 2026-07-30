@@ -797,7 +797,7 @@ assert.match(shortlistEdge, /\.select\(PODCAST_PROMPT_COLUMNS\)/u)
 assert.match(shortlistEdge, /\.select\(PITCH_CATALOG_COLUMNS\)/u)
 assert.match(
   shortlistEdge,
-  /import \{\s*buildClientVariables,\s*buildEpisodeVariables,\s*buildPodcastVariables,\s*CLIENT_VARIABLE_COLUMNS,\s*formatPromptValue,\s*isPromptVariable,\s*PODCAST_VARIABLE_COLUMNS,\s*\} from '\.\.\/_shared\/promptVariables\.ts'/u,
+  /import \{\s*buildClientVariables,\s*buildEpisodeVariables,\s*buildPodcastVariables,\s*CLIENT_VARIABLE_COLUMNS,\s*decodeFeedText,\s*formatPromptValue,\s*isPromptVariable,\s*PODCAST_VARIABLE_COLUMNS,\s*\} from '\.\.\/_shared\/promptVariables\.ts'/u,
 )
 // Every stage builds its variables through the same helpers, so no two can
 // disagree about how much of a show they can see. Research, pitch generation

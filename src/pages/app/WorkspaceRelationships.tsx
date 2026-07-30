@@ -45,7 +45,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { useAuth } from '@/contexts/AuthContext'
-import { decodeHtmlEntities } from '@/lib/htmlEntities'
+import { decodeFeedText } from '@/lib/feedText'
 import { sortRelationships, type RelationshipSort } from '@/lib/relationshipSort'
 import { MY_WORKSPACE_BASE_HREF, selectedWorkspaceBaseHref } from '@/lib/workspaceRoutes'
 import { workspaceLogoUrl } from '@/lib/workspaceLogo'
@@ -134,7 +134,7 @@ const EVENT_TITLES: Record<Exclude<RelationshipActivityItem['kind'], 'email'>, s
 }
 
 function podcastInitials(name: string): string {
-  const words = decodeHtmlEntities(name).trim().split(/\s+/u).filter(Boolean)
+  const words = decodeFeedText(name).trim().split(/\s+/u).filter(Boolean)
   if (words.length === 0) return 'P'
   return (words.length === 1 ? words[0].slice(0, 2) : `${words[0][0]}${words[1][0]}`).toUpperCase()
 }
@@ -156,7 +156,7 @@ function PodcastArtwork({ imageUrl, name, identified = true, large = false }: {
   const sizeClass = large ? 'h-20 w-20 rounded-xl text-lg' : 'h-12 w-12 rounded-lg text-xs'
   const showImage = Boolean(imageUrl) && !imageFailed
   const label = identified
-    ? (showImage ? `${decodeHtmlEntities(name)} cover` : `${decodeHtmlEntities(name)} — cover art unavailable`)
+    ? (showImage ? `${decodeFeedText(name)} cover` : `${decodeFeedText(name)} — cover art unavailable`)
     : 'Show not identified yet'
 
   return (
@@ -174,7 +174,7 @@ function PodcastArtwork({ imageUrl, name, identified = true, large = false }: {
         ? (
           <img
             src={imageUrl as string}
-            alt={`${decodeHtmlEntities(name)} cover`}
+            alt={`${decodeFeedText(name)} cover`}
             className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
             loading="lazy"
             referrerPolicy="no-referrer"
@@ -301,8 +301,8 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
       )
       && (
         !term
-        || decodeHtmlEntities(row.podcast_name ?? '').toLowerCase().includes(term)
-        || decodeHtmlEntities(row.host_name ?? '').toLowerCase().includes(term)
+        || decodeFeedText(row.podcast_name ?? '').toLowerCase().includes(term)
+        || decodeFeedText(row.host_name ?? '').toLowerCase().includes(term)
         || (row.contact_email ?? '').toLowerCase().includes(term)
       )
     ))
@@ -430,12 +430,12 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
       meta: [thread.campaign_name, thread.from_email || thread.lead_email].filter(Boolean).join(' · ') || null,
     })),
   ].sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt))
-  const selectedName = decodeHtmlEntities(
+  const selectedName = decodeFeedText(
     detail?.relationship?.podcast_name
     || openRow?.podcast_name
     || 'Show not identified',
   )
-  const selectedHost = decodeHtmlEntities(
+  const selectedHost = decodeFeedText(
     detail?.relationship?.host_name
     || openRow?.host_name
     || 'Host not identified',
@@ -620,9 +620,9 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
                         identified={Boolean(row.podcast_name)}
                       />
                       <div className="min-w-0">
-                        <CardTitle className="truncate text-base">{decodeHtmlEntities(row.podcast_name ?? 'Show not identified')}</CardTitle>
+                        <CardTitle className="truncate text-base">{decodeFeedText(row.podcast_name ?? 'Show not identified')}</CardTitle>
                         <CardDescription className="mt-1 truncate">
-                          {decodeHtmlEntities(row.host_name || 'Host not identified')}
+                          {decodeFeedText(row.host_name || 'Host not identified')}
                           {row.contact_email ? ` · ${row.contact_email}` : ''}
                         </CardDescription>
                       </div>

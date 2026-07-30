@@ -1,4 +1,4 @@
-import { decodeHtmlEntities } from '@/lib/htmlEntities'
+import { decodeFeedText } from '@/lib/feedText'
 
 export type RelationshipSort = 'recent' | 'show' | 'host'
 
@@ -20,8 +20,8 @@ export function sortRelationships<
   return [...rows].sort((left, right) => {
     // Decoded before comparing, so an escaped "&amp;lpha" files under A rather
     // than under the ampersand it is stored as.
-    const leftName = decodeHtmlEntities((sort === 'host' ? left.host_name : left.podcast_name) ?? '').toLowerCase()
-    const rightName = decodeHtmlEntities((sort === 'host' ? right.host_name : right.podcast_name) ?? '').toLowerCase()
+    const leftName = decodeFeedText((sort === 'host' ? left.host_name : left.podcast_name) ?? '').toLowerCase()
+    const rightName = decodeFeedText((sort === 'host' ? right.host_name : right.podcast_name) ?? '').toLowerCase()
     if (!leftName) return rightName ? 1 : 0
     if (!rightName) return -1
     return leftName.localeCompare(rightName)

@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { toFunctionError } from '@/lib/functionErrors'
-import { decodeHtmlEntities } from '@/lib/htmlEntities'
+import { decodeFeedText } from '@/lib/feedText'
 
 export type ClientShortlistVisibility = 'visible' | 'archived'
 export type ClientShortlistFeedbackStatus = 'approved' | 'rejected' | null
@@ -240,9 +240,9 @@ export async function getClientShortlist(
   })
   data.podcasts = (data.podcasts || []).map((podcast) => ({
     ...podcast,
-    podcast_name: decodeHtmlEntities(podcast.podcast_name),
+    podcast_name: decodeFeedText(podcast.podcast_name),
     podcast_description: podcast.podcast_description
-      ? decodeHtmlEntities(podcast.podcast_description)
+      ? decodeFeedText(podcast.podcast_description)
       : podcast.podcast_description,
   }))
   return data

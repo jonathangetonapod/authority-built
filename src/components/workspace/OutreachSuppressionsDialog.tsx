@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { decodeHtmlEntities } from '@/lib/htmlEntities'
+import { decodeFeedText } from '@/lib/feedText'
 import {
   addOutreachSuppression,
   listOutreachSuppressions,
@@ -80,8 +80,8 @@ export const OutreachSuppressionsDialog = ({
   const visible = suppressions.filter((row) => (
     !term
     || row.contact_email.includes(term)
-    || decodeHtmlEntities(row.host_name ?? '').toLowerCase().includes(term)
-    || decodeHtmlEntities(row.podcast_name ?? '').toLowerCase().includes(term)
+    || decodeFeedText(row.host_name ?? '').toLowerCase().includes(term)
+    || decodeFeedText(row.podcast_name ?? '').toLowerCase().includes(term)
   ))
 
   const refresh = () => {
@@ -259,7 +259,7 @@ export const OutreachSuppressionsDialog = ({
                     <p className="truncate text-sm font-medium">{row.contact_email}</p>
                     <p className="mt-0.5 truncate text-xs text-muted-foreground">
                       {row.podcast_name || row.host_name
-                        ? decodeHtmlEntities([row.host_name, row.podcast_name].filter(Boolean).join(' · '))
+                        ? decodeFeedText([row.host_name, row.podcast_name].filter(Boolean).join(' · '))
                         : 'Host not identified'}
                     </p>
                   </div>

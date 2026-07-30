@@ -1,6 +1,6 @@
 import { Mic, Radio, Send } from 'lucide-react'
 import type { CalendarEventInput } from '@/lib/calendarLinks'
-import { decodeHtmlEntities } from '@/lib/htmlEntities'
+import { decodeFeedText } from '@/lib/feedText'
 import type { WorkspaceClientBooking } from '@/services/clients'
 import type { ClientPodcastSystemItem } from '@/services/clientPodcastSystem'
 
@@ -74,7 +74,7 @@ export function activitiesFromItems(items: ClientPodcastSystemItem[]): CalendarA
       itemId: item.id,
       clientName: item.client.name,
       clientId: item.client.id,
-      podcastName: decodeHtmlEntities(item.podcast.name || 'Untitled show'),
+      podcastName: decodeFeedText(item.podcast.name || 'Untitled show'),
       podcastUrl: item.podcast.url,
       podcastImage: item.podcast.image_url,
       hostName: item.booking?.host_name ?? item.podcast.host_name ?? null,
@@ -128,7 +128,7 @@ export function activitiesFromBookings(
       itemId: booking.id,
       clientName: client.name,
       clientId: client.id,
-      podcastName: decodeHtmlEntities(booking.podcast_name || 'Untitled show'),
+      podcastName: decodeFeedText(booking.podcast_name || 'Untitled show'),
       podcastUrl: booking.podcast_url,
       podcastImage: null,
       hostName: booking.host_name,
