@@ -194,6 +194,16 @@ export const PromptVariableTextarea = ({
   const strays = useMemo(() => (editable ? strayTriggerHints(value) : []), [editable, value])
 
   const required = useMemo(() => new Set(requiredVariableIds ?? []), [requiredVariableIds])
+  /**
+   * What the token is worth telling you about, which is not the same question
+   * as whether the field is required.
+   *
+   * Requiredness is a setting and applies to a field that has a value today —
+   * you require it so a podcast that lacks it skips the stage. Reading the
+   * switch off this made it dead on every filled field: 'filled' is returned
+   * before requiredness is ever consulted, so the switch could not turn on for
+   * the one case where nothing looks wrong yet.
+   */
   const fieldState = useCallback((variableId: string): FieldState => {
     if (availability?.[variableId]) return 'filled'
     return required.has(variableId) ? 'blocks' : 'degrades'
@@ -380,7 +390,7 @@ export const PromptVariableTextarea = ({
                           */}
                           <RequiredToggle
                             variableId={segment.variableId}
-                            required={fieldState(segment.variableId) === 'blocks'}
+                            required={required.has(segment.variableId)}
                             disabled={requirementsDisabled}
                             // Every character the token does not spend on the
                             // field name, so the chip totals what it replaced.

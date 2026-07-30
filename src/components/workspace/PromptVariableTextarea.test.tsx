@@ -303,3 +303,37 @@ describe('PromptVariableTextarea requirement switch on the token', () => {
     expect(screen.queryByRole('switch')).not.toBeInTheDocument()
   })
 })
+
+describe('PromptVariableTextarea switch state', () => {
+  // The switch used to read its state off the token's severity, and severity
+  // answers "filled" before it ever looks at requiredness — so on a prompt
+  // where every field had a value, every switch was stuck off and clicking
+  // one did nothing visible.
+  it('shows a filled field as required when it is required', () => {
+    render(
+      <Harness
+        availability={{ podcast_name: true }}
+        requiredVariableIds={['podcast_name']}
+        onToggleRequired={vi.fn()}
+        initial="Open on {{podcast_name}}."
+      />,
+    )
+    expect(screen.getByRole('switch', { name: 'Require podcast_name' }))
+      .toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('turns a filled field on from off', () => {
+    const toggle = vi.fn()
+    render(
+      <Harness
+        availability={{ podcast_name: true }}
+        onToggleRequired={toggle}
+        initial="Open on {{podcast_name}}."
+      />,
+    )
+    const control = screen.getByRole('switch', { name: 'Require podcast_name' })
+    expect(control).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(control)
+    expect(toggle).toHaveBeenCalledWith('podcast_name', true)
+  })
+})
