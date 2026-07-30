@@ -124,8 +124,18 @@ serve(async (req) => {
       actorUserId: authContext.user.id,
       action: 'workspace.credits.checkout_started',
       entityType: 'billing',
-      entityId: payload.id,
-      metadata: { pack: packKey, credits: pack.credits, amount_cents: pack.amount_cents },
+      // entity_id is a UUID column, for ids of our own rows. A Stripe session
+      // id is not one, so Postgres rejected the insert, writeAudit threw, and
+      // the request failed with 500 — after the session had been created. The
+      // audit is the last step, so nobody could buy credits at all. The id is
+      // still recorded, in metadata, which is JSONB and takes it as it comes.
+      entityId: workspaceId,
+      metadata: {
+        pack: packKey,
+        credits: pack.credits,
+        amount_cents: pack.amount_cents,
+        stripe_session_id: payload.id,
+      },
     })
 
     return jsonResponse(req, METHODS, 200, { url: payload.url, session_id: payload.id })

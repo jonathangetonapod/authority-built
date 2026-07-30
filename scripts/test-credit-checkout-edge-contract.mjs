@@ -15,6 +15,14 @@ assert.match(checkout, /'metadata\[workspace_id\]': workspaceId/u)
 assert.match(checkout, /allow_promotion_codes: 'true'/u)
 assert.match(checkout, /'metadata\[credits\]': String\(pack\.credits\)/u)
 
+// workspace_audit_log.entity_id is a UUID column. A Stripe session id is not a
+// UUID, and passing it made the insert fail, which failed the whole request
+// after the session had been created — checkout was unusable. The Stripe id
+// belongs in metadata; entity_id gets something that is actually a UUID.
+assert.match(checkout, /entityId: workspaceId,/u)
+assert.doesNotMatch(checkout, /entityId: payload\.id/u)
+assert.match(checkout, /stripe_session_id: payload\.id/u)
+
 const webhook = readFileSync('supabase/functions/stripe-credit-webhook/index.ts', 'utf8')
 // Signature-verified with replay tolerance; idempotent grant keyed on event id.
 assert.match(webhook, /STRIPE_CREDIT_WEBHOOK_SECRET/u)
