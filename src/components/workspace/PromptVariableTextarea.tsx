@@ -55,21 +55,31 @@ interface PromptVariableTextareaProps {
 }
 
 /**
- * A switch the width of the "{{" it stands on.
+ * A switch built out of the characters the token was not using.
  *
- * Sized in ch so it measures two monospace characters exactly. The coloured
- * layer has to stay character-for-character with the textarea underneath it,
- * so a control in the text can only ever occupy space the text already had.
+ * The coloured layer has to stay character-for-character with the textarea, so
+ * a control in the text can only occupy space the text already had. A token
+ * has four such characters — the "{{" and the "}}" — and they are worth more
+ * as one switch than as two pairs of braces, so the switch takes all of them
+ * and stands where the opening brace was.
+ *
+ * widthCh is measured, not guessed: whatever the token spends on characters
+ * that are not the field name is what the switch is given, so "{{ name }}"
+ * yields a wider switch and the total stays exact either way. Everything after
+ * the token lands on the column the textarea put it on; only a caret placed
+ * inside the name itself sits left of where it reads.
  */
 const RequiredToggle = ({
   variableId,
   required,
   disabled,
+  widthCh,
   onToggle,
 }: {
   variableId: string
   required: boolean
   disabled?: boolean
+  widthCh: number
   onToggle: (variableId: string, required: boolean) => void
 }) => (
   <button
@@ -85,17 +95,22 @@ const RequiredToggle = ({
     // is the one thing on it that does not.
     onMouseDown={(event) => event.preventDefault()}
     onClick={() => onToggle(variableId, !required)}
-    // before: an invisible pad that grows the target without growing the box.
-    // The visible switch can only ever be 2ch wide — that is what keeps the
-    // text on the column the textarea put it on — but what you have to hit
-    // does not have to be the same size as what you can see.
-    className={`pointer-events-auto relative inline-block h-[1.05em] w-[2ch] shrink-0 cursor-pointer rounded-full align-middle transition-colors before:absolute before:-inset-2 before:content-[''] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 ${
-      required ? 'bg-primary' : 'bg-muted-foreground/50'
+    style={{ width: `${widthCh}ch` }}
+    // before: an invisible pad that grows the target past the visible switch
+    // without adding a pixel to the box.
+    className={`pointer-events-auto relative inline-block h-[1.15em] shrink-0 cursor-pointer rounded-full border align-middle transition-colors before:absolute before:-inset-2 before:content-[''] hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50 ${
+      required
+        ? 'border-primary bg-primary'
+        : 'border-muted-foreground/30 bg-muted-foreground/15'
     }`}
   >
+    {/* Travel the width of the track, so the thing reads as a switch rather
+        than a dot: at four characters wide there is room to see it move. */}
     <span
-      className={`absolute top-1/2 block h-[0.75em] w-[0.75em] -translate-y-1/2 rounded-full bg-background shadow-sm transition-all ${
-        required ? 'left-[calc(100%-0.9em)]' : 'left-[0.15em]'
+      className={`absolute top-1/2 block h-[0.8em] w-[0.8em] -translate-y-1/2 rounded-full shadow-sm transition-all ${
+        required
+          ? 'left-[calc(100%-0.95em)] bg-background'
+          : 'left-[0.13em] bg-background'
       }`}
     />
   </button>
@@ -367,10 +382,12 @@ export const PromptVariableTextarea = ({
                             variableId={segment.variableId}
                             required={fieldState(segment.variableId) === 'blocks'}
                             disabled={requirementsDisabled}
+                            // Every character the token does not spend on the
+                            // field name, so the chip totals what it replaced.
+                            widthCh={segment.text.length - segment.variableId.length}
                             onToggle={onToggleRequired}
                           />
-                          <span aria-hidden="true">{segment.text.slice(2, -2)}</span>
-                          <span aria-hidden="true" className="opacity-0">{'}}'}</span>
+                          <span aria-hidden="true">{segment.variableId}</span>
                         </>
                       )
                       : <span aria-hidden="true">{segment.text}</span>}
