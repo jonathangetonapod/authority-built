@@ -51,6 +51,13 @@ assert.doesNotMatch(portal, /body\.stripe_price_id/u)
 // not put it in the portal, so the configuration is repointed in the same call.
 assert.match(portal, /stripePost\('prices'/u)
 assert.match(portal, /syncPortalConfiguration\(updated, stripeKey\)/u)
+// Saving an unchanged price must still reach the sync. The sync runs after the
+// price is recorded, so one that failed there leaves a plan priced but not
+// offered, and an early return would make every retry a no-op — permanently.
+assert.doesNotMatch(portal, /alreadyPriced[\s\S]{0,120}?return jsonResponse[\s\S]{0,200}?unchanged: true[\s\S]{0,200}?syncPortalConfiguration/u)
+const syncAt = portal.indexOf('await syncPortalConfiguration(updated, stripeKey)')
+const unchangedReturnAt = portal.indexOf('unchanged: true')
+assert.ok(syncAt > 0 && unchangedReturnAt > syncAt, 'the unchanged path must sync before it returns')
 assert.match(portal, /billing_portal\/configurations\?is_default=true/u)
 // The recorded amount and the Price it describes are written together.
 assert.match(portal, /base_price_cents: amount,\n\s+stripe_price_id: priceId,/u)

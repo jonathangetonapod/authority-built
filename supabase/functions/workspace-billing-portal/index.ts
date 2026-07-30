@@ -168,53 +168,69 @@ async function handlePlanAdministration(
   if (!plan.is_purchasable) {
     throw new HttpError(400, 'PLAN_NOT_PURCHASABLE', 'That plan is assigned rather than sold')
   }
-  if (plan.base_price_cents === amount && plan.stripe_price_id) {
-    return jsonResponse(req, METHODS, 200, { success: true, plans, unchanged: true })
-  }
+  // Saving the price a plan already carries is not a no-op: the portal sync
+  // happens after the price is recorded, so a save that failed on the sync
+  // leaves a plan priced but not offered. Returning early here would make that
+  // permanent, because every retry would look like nothing to do. The Price is
+  // skipped — a second identical one is pure churn — and the sync still runs,
+  // which makes Save the thing that repairs it.
+  const alreadyPriced = plan.base_price_cents === amount && Boolean(plan.stripe_price_id)
 
-  // Stripe Prices are immutable, so a change is a new Price on the same
-  // Product. Reusing the Product keeps one plan's history in one place rather
-  // than scattering it across a product per price change.
-  let productId = ''
-  if (plan.stripe_price_id) {
-    const existingPrice = await stripeGet(`prices/${plan.stripe_price_id}`, stripeKey)
-    productId = typeof existingPrice.product === 'string' ? existingPrice.product : ''
-  }
-  if (!productId) {
-    const product = await stripePost('products', new URLSearchParams({
-      name: `Get On A Pod · ${plan.display_name}`,
+  let priceId = plan.stripe_price_id ?? ''
+  if (!alreadyPriced) {
+    // Stripe Prices are immutable, so a change is a new Price on the same
+    // Product. Reusing the Product keeps one plan's history in one place rather
+    // than scattering it across a product per price change.
+    let productId = ''
+    if (plan.stripe_price_id) {
+      const existingPrice = await stripeGet(`prices/${plan.stripe_price_id}`, stripeKey)
+      productId = typeof existingPrice.product === 'string' ? existingPrice.product : ''
+    }
+    if (!productId) {
+      const product = await stripePost('products', new URLSearchParams({
+        name: `Get On A Pod · ${plan.display_name}`,
+        'metadata[plan_key]': planKey,
+      }), stripeKey)
+      productId = typeof product.id === 'string' ? product.id : ''
+    }
+    if (!productId) throw new HttpError(502, 'STRIPE_REJECTED', 'The payment provider rejected the request')
+
+    const price = await stripePost('prices', new URLSearchParams({
+      product: productId,
+      currency: 'usd',
+      unit_amount: String(amount),
+      'recurring[interval]': 'month',
       'metadata[plan_key]': planKey,
     }), stripeKey)
-    productId = typeof product.id === 'string' ? product.id : ''
-  }
-  if (!productId) throw new HttpError(502, 'STRIPE_REJECTED', 'The payment provider rejected the request')
+    priceId = typeof price.id === 'string' ? price.id : ''
+    if (!priceId) throw new HttpError(502, 'STRIPE_REJECTED', 'The payment provider rejected the request')
 
-  const price = await stripePost('prices', new URLSearchParams({
-    product: productId,
-    currency: 'usd',
-    unit_amount: String(amount),
-    'recurring[interval]': 'month',
-    'metadata[plan_key]': planKey,
-  }), stripeKey)
-  const priceId = typeof price.id === 'string' ? price.id : ''
-  if (!priceId) throw new HttpError(502, 'STRIPE_REJECTED', 'The payment provider rejected the request')
-
-  // Recorded together: the amount is only a description of what the Price
-  // charges, and the two disagreeing is how a screen starts lying about money.
-  const { error: writeError } = await admin
-    .from('billing_plans')
-    .update({
-      base_price_cents: amount,
-      stripe_price_id: priceId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('plan_key', planKey)
-  if (writeError) {
-    throw new HttpError(503, 'BILLING_UNAVAILABLE', 'The new price could not be recorded')
+    // Recorded together: the amount is only a description of what the Price
+    // charges, and the two disagreeing is how a screen starts lying about money.
+    const { error: writeError } = await admin
+      .from('billing_plans')
+      .update({
+        base_price_cents: amount,
+        stripe_price_id: priceId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('plan_key', planKey)
+    if (writeError) {
+      throw new HttpError(503, 'BILLING_UNAVAILABLE', 'The new price could not be recorded')
+    }
   }
 
   const updated = await loadPlans(admin)
   const configurationId = await syncPortalConfiguration(updated, stripeKey)
+
+  if (alreadyPriced) {
+    return jsonResponse(req, METHODS, 200, {
+      success: true,
+      plans: updated,
+      unchanged: true,
+      portal_configuration_id: configurationId,
+    })
+  }
 
   await writeAudit(admin, {
     workspaceId: null,
