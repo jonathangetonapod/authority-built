@@ -4,17 +4,32 @@ import { describe, expect, it } from 'vitest'
 import { PromptVariableTextarea } from '@/components/workspace/PromptVariableTextarea'
 import { PROMPT_VARIABLES, PROMPT_VARIABLE_GROUPS } from '@/lib/promptVariables'
 
-const Harness = ({ readOnly }: { readOnly?: boolean }) => {
-  const [value, setValue] = useState('')
+const Harness = ({
+  readOnly,
+  availability,
+  initial = '',
+}: {
+  readOnly?: boolean
+  availability?: Record<string, boolean> | null
+  initial?: string
+}) => {
+  const [value, setValue] = useState(initial)
   return (
     <PromptVariableTextarea
       value={value}
       onChange={setValue}
       ariaLabel="Prompt"
       readOnly={readOnly}
+      availability={availability}
     />
   )
 }
+
+/** The coloured layer mirrors the prompt; it is hidden from the a11y tree. */
+const highlightLayer = () => document.querySelector('[aria-hidden="true"].absolute')
+const tokenSpan = (token: string) =>
+  Array.from(highlightLayer()?.querySelectorAll('span') ?? [])
+    .find((node) => node.textContent === token)
 
 const field = () => screen.getByLabelText('Prompt') as HTMLTextAreaElement
 
@@ -148,5 +163,45 @@ describe('PromptVariableTextarea', () => {
     fireEvent.change(field(), { target: { value: '/host' } })
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Browse/ })).toBeDisabled()
+  })
+})
+
+describe('PromptVariableTextarea field colouring', () => {
+  const availability = { podcast_name: true, itunes_rating: false }
+
+  it('leaves the prompt uncoloured when no podcast is in context', () => {
+    render(<Harness initial="Use {{podcast_name}}." />)
+    // Not "everything is empty" — nothing is claimed either way.
+    expect(highlightLayer()).toBeNull()
+    expect(screen.queryByText(/have no value for this podcast/)).not.toBeInTheDocument()
+  })
+
+  it('marks a field this podcast has, and one it does not', () => {
+    render(<Harness availability={availability} initial="Open on {{podcast_name}} ({{itunes_rating}})." />)
+    expect(tokenSpan('{{podcast_name}}')?.className).toContain('text-emerald-700')
+    expect(tokenSpan('{{itunes_rating}}')?.className).toContain('text-red-600')
+    expect(screen.getByText(/have no value for this podcast/)).toBeInTheDocument()
+  })
+
+  // The filler substitutes only registered tokens, so prose written in
+  // placeholder syntax must not be coloured as though it were a field.
+  it('leaves an unregistered token as prose', () => {
+    render(<Harness availability={availability} initial="No unfilled {{placeholders}} may appear." />)
+    expect(tokenSpan('{{placeholders}}')).toBeUndefined()
+    expect(highlightLayer()?.textContent).toContain('{{placeholders}}')
+  })
+
+  // A field absent from the preview is one no stage has written yet. On this
+  // run it is empty, and the model will be told exactly that.
+  it('treats a field the preview does not mention as empty', () => {
+    render(<Harness availability={availability} initial="Cite {{research_report}}." />)
+    expect(tokenSpan('{{research_report}}')?.className).toContain('text-red-600')
+  })
+
+  it('keeps the coloured layer in step with the prompt as it is edited', () => {
+    render(<Harness availability={availability} />)
+    fireEvent.change(field(), { target: { value: 'Rated {{itunes_rating}}.' } })
+    expect(highlightLayer()?.textContent).toContain('Rated {{itunes_rating}}.')
+    expect(tokenSpan('{{itunes_rating}}')?.className).toContain('text-red-600')
   })
 })

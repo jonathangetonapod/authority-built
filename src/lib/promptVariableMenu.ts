@@ -129,6 +129,39 @@ export function referencedPromptVariables(
   return all.filter((variable) => named.has(variable.id)).map((variable) => variable.id)
 }
 
+export interface PromptSegment {
+  text: string
+  /** The registry field this segment fills, or null for ordinary prose. */
+  variableId: string | null
+}
+
+/**
+ * Splits prompt content into prose and the tokens the run will substitute.
+ *
+ * The pattern matches fillPromptTemplate in workspace-client-shortlist, so a
+ * segment marked here is exactly a segment the run replaces. Prose written in
+ * placeholder syntax stays prose, the same way the filler leaves it alone —
+ * clean_email's "unfilled {{placeholders}} must never appear" is an
+ * instruction, not a field, and must not be coloured as one.
+ */
+export function splitPromptTokens(
+  content: string,
+  known: (id: string) => boolean,
+): PromptSegment[] {
+  const segments: PromptSegment[] = []
+  let cursor = 0
+  for (const match of content.matchAll(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/gu)) {
+    const id = match[1]
+    if (!known(id)) continue
+    const start = match.index ?? 0
+    if (start > cursor) segments.push({ text: content.slice(cursor, start), variableId: null })
+    segments.push({ text: match[0], variableId: id })
+    cursor = start + match[0].length
+  }
+  if (cursor < content.length) segments.push({ text: content.slice(cursor), variableId: null })
+  return segments
+}
+
 /**
  * Fields a given stage must not be offered: the ones it writes itself, and the
  * ones written after it.

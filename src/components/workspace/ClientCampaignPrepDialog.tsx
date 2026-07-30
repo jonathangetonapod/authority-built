@@ -610,6 +610,27 @@ export function ClientCampaignPrepDialog({
     [selectedPromptId],
   )
 
+  /**
+   * Which fields hold a value for this podcast, for colouring the prompt.
+   *
+   * Null while there is no preview to report from — no podcast open, or the
+   * read still in flight. Colouring against an empty map would paint every
+   * field red and read as "this podcast has nothing", which is a different
+   * claim from "not known yet".
+   *
+   * A field an earlier stage has not written yet counts as empty, because on
+   * this run it is: the filler will tell the model "Not available" either way.
+   */
+  const promptFieldAvailability = useMemo(() => {
+    const preview = promptPreviewQuery.data
+    if (!preview) return null
+    const map: Record<string, boolean> = {}
+    for (const [id, field] of Object.entries(preview.fields)) {
+      map[id] = Boolean(field?.value)
+    }
+    return map
+  }, [promptPreviewQuery.data])
+
   // Only the stages BEFORE this one can have written a field this prompt reads.
   // Offering a later stage's field would let a prompt name something that
   // cannot exist by the time it runs.
@@ -1614,6 +1635,7 @@ export function ClientCampaignPrepDialog({
                                 <PromptVariableTextarea
                                   extraVariables={upstreamOutputVariables}
                                   omitVariableIds={omittedVariableIds}
+                                  availability={promptFieldAvailability}
                                   id="campaign-research-stage-prompt"
                                   ariaLabel={`Prompt for ${selectedPromptDefault.label}`}
                                   value={promptDraft}

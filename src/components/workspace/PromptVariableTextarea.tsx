@@ -3,6 +3,7 @@ import { Braces } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
 import { PROMPT_VARIABLES, type PromptVariable } from '@/lib/promptVariables'
 import {
   applyVariableTrigger,
@@ -12,6 +13,7 @@ import {
   measureCaret,
   spliceAtCaret,
   splitOnMatch,
+  splitPromptTokens,
   type VariableTrigger,
 } from '@/lib/promptVariableMenu'
 import { PromptVariablePalette } from './PromptVariablePalette'
@@ -30,6 +32,12 @@ interface PromptVariableTextareaProps {
   extraVariables?: PromptVariable[]
   /** Fields this stage writes itself, or that are written after it. */
   omitVariableIds?: string[]
+  /**
+   * Which fields hold a value for the podcast being edited: id -> has a value.
+   * Omit it where there is no podcast in context — with nothing to report, the
+   * prompt is left uncoloured rather than painted as if every field were empty.
+   */
+  availability?: Record<string, boolean> | null
 }
 
 /**
@@ -51,8 +59,10 @@ export const PromptVariableTextarea = ({
   maxLength,
   extraVariables,
   omitVariableIds,
+  availability,
 }: PromptVariableTextareaProps) => {
   const fieldRef = useRef<HTMLTextAreaElement | null>(null)
+  const highlightRef = useRef<HTMLDivElement | null>(null)
   const [trigger, setTrigger] = useState<VariableTrigger | null>(null)
   const [dismissedAt, setDismissedAt] = useState<number | null>(null)
   const [active, setActive] = useState(0)
@@ -73,6 +83,21 @@ export const PromptVariableTextarea = ({
   const groups = useMemo(() => groupPromptVariableMatches(matches), [matches])
   const walkOrder = useMemo(() => groups.flatMap((group) => group.variables), [groups])
   const open = Boolean(trigger) && matches.length > 0 && editable
+
+  // A stage output an upstream prompt declares is as real a token as a
+  // registry field, so the overlay has to recognize both or it would leave the
+  // declared ones looking like prose.
+  const knownIds = useMemo(() => {
+    const ids = new Set(PROMPT_VARIABLES.map((variable) => variable.id))
+    for (const variable of extraVariables ?? []) ids.add(variable.id)
+    return ids
+  }, [extraVariables])
+
+  const highlighting = Boolean(availability)
+  const segments = useMemo(
+    () => (highlighting ? splitPromptTokens(value, (id) => knownIds.has(id)) : []),
+    [highlighting, value, knownIds],
+  )
 
   const syncTrigger = (field: HTMLTextAreaElement | null) => {
     if (!field || !editable) return
@@ -160,6 +185,12 @@ export const PromptVariableTextarea = ({
         <p className="text-[11px] leading-4 text-muted-foreground">
           Type <code className="rounded bg-muted px-1 py-px font-mono text-[10px]">/</code> or{' '}
           <code className="rounded bg-muted px-1 py-px font-mono text-[10px]">{'{{'}</code> to insert a field.
+          {highlighting && (
+            <>
+              {' '}
+              <span className="text-red-600">Red</span> fields have no value for this podcast.
+            </>
+          )}
         </p>
         <Popover open={browsing} onOpenChange={setBrowsing}>
           <PopoverTrigger asChild>
@@ -181,6 +212,44 @@ export const PromptVariableTextarea = ({
       </div>
 
       <div className="relative">
+        {/*
+          The coloured copy sits behind a textarea whose own text is
+          transparent, so the caret, selection and scrolling stay the
+          browser's. Both layers carry the same className and the same box —
+          padding, border width, font and leading — because any difference
+          between them shows up as text drifting off its own highlight.
+        */}
+        {highlighting && (
+          <div
+            ref={highlightRef}
+            aria-hidden="true"
+            className={cn(
+              'pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words rounded-md border border-transparent px-3 py-2 text-sm',
+              className,
+            )}
+          >
+            {segments.map((segment, index) => (
+              segment.variableId
+                ? (
+                  <span
+                    key={index}
+                    // Colour, background and underline only. Anything that
+                    // changes advance width — weight, size, letter-spacing —
+                    // would slide this layer out of step with the caret and
+                    // selection, which still come from the textarea.
+                    className={availability?.[segment.variableId]
+                      ? 'rounded-[3px] bg-emerald-50 text-emerald-700'
+                      : 'rounded-[3px] bg-red-50 text-red-600 underline decoration-red-400 decoration-dotted underline-offset-2'}
+                  >
+                    {segment.text}
+                  </span>
+                )
+                : <span key={index}>{segment.text}</span>
+            ))}
+            {/* A trailing newline needs something after it or the box ends early. */}
+            {'\n'}
+          </div>
+        )}
         <Textarea
           id={id}
           ref={fieldRef}
@@ -188,8 +257,17 @@ export const PromptVariableTextarea = ({
           aria-label={ariaLabel}
           disabled={disabled}
           readOnly={readOnly}
-          className={className}
+          // The highlight classes go last: cn merges with tailwind-merge, and
+          // callers pass bg-background, which would otherwise paint over the
+          // coloured layer and hide the whole thing.
+          className={`${className ?? ''}${highlighting ? ' relative bg-transparent text-transparent caret-foreground selection:bg-violet-300/40' : ''}`}
           maxLength={maxLength}
+          onScroll={(event) => {
+            const layer = highlightRef.current
+            if (!layer) return
+            layer.scrollTop = event.currentTarget.scrollTop
+            layer.scrollLeft = event.currentTarget.scrollLeft
+          }}
           role="combobox"
           aria-expanded={open}
           aria-autocomplete="list"

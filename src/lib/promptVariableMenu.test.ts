@@ -4,6 +4,7 @@ import {
   detectVariableTrigger,
   filterPromptVariables,
   referencedPromptVariables,
+  splitPromptTokens,
   spliceAtCaret,
   splitOnMatch,
   unavailableVariableIds,
@@ -189,5 +190,37 @@ describe('spliceAtCaret', () => {
   it('replaces a selection', () => {
     expect(spliceAtCaret('Use TOKEN here', 4, 9, '{{podcast_name}}').next)
       .toBe('Use {{podcast_name}} here')
+  })
+})
+
+describe('splitPromptTokens', () => {
+  const known = (id: string) => ['podcast_name', 'itunes_rating'].includes(id)
+
+  it('separates the tokens the run will fill from the prose around them', () => {
+    expect(splitPromptTokens('Open on {{podcast_name}} today.', known)).toEqual([
+      { text: 'Open on ', variableId: null },
+      { text: '{{podcast_name}}', variableId: 'podcast_name' },
+      { text: ' today.', variableId: null },
+    ])
+  })
+
+  // The filler substitutes registered tokens only, so prose written in
+  // placeholder syntax stays prose here too.
+  it('leaves an unregistered token in the surrounding prose', () => {
+    expect(splitPromptTokens('No {{placeholders}} allowed.', known)).toEqual([
+      { text: 'No {{placeholders}} allowed.', variableId: null },
+    ])
+  })
+
+  it('reassembles into exactly the original content', () => {
+    const content = '{{podcast_name}} then {{itunes_rating}}, and {{unknown}} at the end'
+    expect(splitPromptTokens(content, known).map((s) => s.text).join('')).toBe(content)
+  })
+
+  it('handles a token at each edge and padded braces', () => {
+    expect(splitPromptTokens('{{ podcast_name }}', known)).toEqual([
+      { text: '{{ podcast_name }}', variableId: 'podcast_name' },
+    ])
+    expect(splitPromptTokens('', known)).toEqual([])
   })
 })
