@@ -2727,7 +2727,12 @@ serve(async (req) => {
         `Host: ${present(variables.host_name)}`,
         `Verified email: ${present(variables.verified_email)}`,
         `Latest episode: ${present(variables.episode_title)}`,
-        `Recent guest on that episode: ${present(variables.recent_guest_name)}`,
+        // The transcript is not always the latest episode's, and the claim
+        // audit judges the sequence against this block. Left unlabelled, a
+        // quote lifted from an older episode and attributed to the newest one
+        // reads as supported: the evidence itself asserted the pairing.
+        `The transcript below is from: ${present(variables.transcript_episode_title)}`,
+        `Guest in that transcript: ${present(variables.recent_guest_name)}`,
         `Description:\n${present(variables.podcast_description)}`,
         // Stated here rather than permanently in the write_email prompt, so a
         // podcast that HAS a transcript is never handed a paragraph about not

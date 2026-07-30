@@ -384,3 +384,23 @@ assert.match(episodesRefreshAction, /action: 'client\.podcast\.episodes_refreshe
 assert.match(episodesRefreshAction, /return jsonResponse\(req, METHODS, 200, \{[\s\S]*?fetched,[\s\S]*?charged,/u)
 
 console.log('Workspace Client Edge episode-refresh checks passed')
+
+// The claim audit judges the sequence against the evidence block, so the block
+// has to say which episode the transcript came from. Unlabelled, it sat under
+// "Latest episode: X" and a quote lifted from an older episode read as
+// supported — the evidence had asserted the pairing the auditor was checking.
+const pitchGenerateSource = shortlistActionSource('pitch-generate')
+assert.match(pitchGenerateSource, /The transcript below is from: \$\{present\(variables\.transcript_episode_title\)\}/u)
+assert.ok(
+  pitchGenerateSource.indexOf('The transcript below is from:')
+    < pitchGenerateSource.indexOf('<transcript_excerpt>'),
+  'the transcript must be attributed before it is quoted',
+)
+// The guest was in the transcript, not necessarily in the latest episode.
+assert.match(pitchGenerateSource, /Guest in that transcript: /u)
+assert.ok(
+  !/Recent guest on that episode/u.test(pitchGenerateSource),
+  'the guest must not be tied to the latest episode',
+)
+
+console.log('Workspace Client Edge transcript-attribution checks passed')
