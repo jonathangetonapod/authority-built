@@ -164,6 +164,24 @@ describe('WorkspaceBilling', () => {
     expect(screen.queryByText(/no reachable owner to credit/i)).not.toBeInTheDocument()
   })
 
+  // There are no retries here, so one failed read used to leave an agency owner
+  // looking at a header above an empty page, with no way to tell a broken load
+  // from an account that simply has nothing in it.
+  it('tells an agency owner the balance failed to load rather than rendering nothing', async () => {
+    mockedUseAuth.mockReturnValue({
+      isPlatformAdmin: false,
+      canManageWorkspaceStaff: true,
+      user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+      workspace: { id: '11111111-1111-4111-8111-111111111111' },
+    } as never)
+    mockedOverview.mockRejectedValue(new Error('Billing data could not be loaded.'))
+    renderPage()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your credit balance could not be loaded.')
+    expect(screen.getByText(/Nothing has been charged/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+  })
+
   it('drops the inert purchase stepper that never advanced', async () => {
     mockedUseAuth.mockReturnValue({
       isPlatformAdmin: false,

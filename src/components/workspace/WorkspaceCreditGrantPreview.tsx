@@ -43,7 +43,8 @@ interface PreviewAdjustment {
   amount: number
   reason: CreditReason
   note: string
-  balanceAfter: number
+  // Null when the grant landed but the resulting balance could not be read.
+  balanceAfter: number | null
 }
 
 const quickAmounts = [25, 50, 100, 250]
@@ -85,7 +86,13 @@ export function WorkspaceCreditGrantPreview({
     retry: false,
     staleTime: 30_000,
   })
-  const balance = overviewQuery.data?.balance ?? 0
+  // Null until the balance is actually known. It used to fall back to 0, so a
+  // single failed read — there are no retries — rendered a confident "0" and
+  // projected "0 → 250". An admin who topped this workspace up an hour ago
+  // would read that as the grant never landing, and grant again.
+  const knownBalance = typeof overviewQuery.data?.balance === 'number'
+    ? overviewQuery.data.balance
+    : null
 
   const parsedAmount = useMemo(() => creditAmount(amount), [amount])
   const trimmedNote = note.trim()
@@ -101,7 +108,7 @@ export function WorkspaceCreditGrantPreview({
         amount: result.granted,
         reason: (reason || 'other') as CreditReason,
         note: trimmedNote,
-        balanceAfter: result.balance ?? balance + result.granted,
+        balanceAfter: result.balance ?? (knownBalance === null ? null : knownBalance + result.granted),
       }, ...current])
       void queryClient.invalidateQueries({ queryKey: overviewQueryKey })
       setAmount('100')
@@ -117,7 +124,7 @@ export function WorkspaceCreditGrantPreview({
   // The note is optional. The reason still is not: it is what the ledger entry
   // is filed under, and it costs one click rather than a sentence per grant.
   const formReady = parsedAmount !== null && reason !== '' && !grantMutation.isPending
-  const projectedBalance = balance + (parsedAmount || 0)
+  const projectedBalance = (knownBalance ?? 0) + (parsedAmount || 0)
 
   const confirmPreview = () => {
     if (parsedAmount === null || reason === '' || grantMutation.isPending) return
@@ -154,9 +161,26 @@ export function WorkspaceCreditGrantPreview({
                     <Coins className="mr-1.5 h-3.5 w-3.5" />Internal balance
                   </Badge>
                   <p className="mt-8 text-sm text-white/65">Available now</p>
-                  <p className="mt-1 text-5xl font-semibold tracking-tight" aria-label={`${balance} credits available`}>
-                    {balance.toLocaleString()}
-                  </p>
+                  {knownBalance === null ? (
+                    <div className="mt-1">
+                      <p className="text-2xl font-semibold tracking-tight text-white/70">
+                        {overviewQuery.isLoading ? 'Loading…' : 'Unavailable'}
+                      </p>
+                      {!overviewQuery.isLoading && (
+                        <button
+                          type="button"
+                          className="mt-1 text-sm text-violet-200 underline underline-offset-2"
+                          onClick={() => void overviewQuery.refetch()}
+                        >
+                          Try again
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-5xl font-semibold tracking-tight" aria-label={`${knownBalance} credits available`}>
+                      {knownBalance.toLocaleString()}
+                    </p>
+                  )}
                   <p className="mt-1 text-sm text-white/65">Waterfall credits</p>
 
                   <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.06] p-4">
@@ -276,11 +300,17 @@ export function WorkspaceCreditGrantPreview({
                 <div className="flex flex-col gap-4 rounded-2xl border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">Balance after grant</p>
-                    <div className="mt-1 flex items-center gap-2 text-lg font-semibold">
-                      <span>{balance.toLocaleString()}</span>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-violet-700">{projectedBalance.toLocaleString()}</span>
-                    </div>
+                    {knownBalance === null ? (
+                      <p className="mt-1 max-w-xs text-sm text-muted-foreground">
+                        The current balance could not be read, so this cannot be projected. The grant will still be added.
+                      </p>
+                    ) : (
+                      <div className="mt-1 flex items-center gap-2 text-lg font-semibold">
+                        <span>{knownBalance.toLocaleString()}</span>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-violet-700">{projectedBalance.toLocaleString()}</span>
+                      </div>
+                    )}
                   </div>
                   <Button type="submit" disabled={!formReady} className="shrink-0">
                     Review credit grant
@@ -321,7 +351,11 @@ export function WorkspaceCreditGrantPreview({
                     </div>
                     <div className="shrink-0 text-left sm:text-right">
                       <p className="text-base font-semibold text-emerald-700">+{adjustment.amount.toLocaleString()} credits</p>
-                      <p className="text-xs text-muted-foreground">Balance {adjustment.balanceAfter.toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {adjustment.balanceAfter === null
+                          ? 'Balance unavailable'
+                          : `Balance ${adjustment.balanceAfter.toLocaleString()}`}
+                      </p>
                     </div>
                   </div>
                 ))}
@@ -344,7 +378,7 @@ export function WorkspaceCreditGrantPreview({
             <div className="flex items-start justify-between gap-4"><span className="text-muted-foreground">Workspace</span><span className="text-right font-medium">{workspaceName}</span></div>
             <div className="flex items-start justify-between gap-4"><span className="text-muted-foreground">Current owner</span><span className="text-right"><span className="block font-medium">{ownerName}</span><span className="block text-xs text-muted-foreground">{ownerEmail}</span></span></div>
             <div className="flex items-center justify-between gap-4 border-t pt-3"><span className="text-muted-foreground">Reason</span><span className="font-medium">{reason ? reasonLabels[reason] : '—'}</span></div>
-            <div className="flex items-center justify-between gap-4"><span className="text-muted-foreground">Balance change</span><span className="flex items-center gap-2 font-semibold"><span>{balance.toLocaleString()}</span><ArrowRight className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-violet-700">{projectedBalance.toLocaleString()}</span></span></div>
+            <div className="flex items-center justify-between gap-4"><span className="text-muted-foreground">Balance change</span>{knownBalance === null ? (<span className="text-right font-medium">+{parsedAmount?.toLocaleString() || 0}, from a balance that could not be read</span>) : (<span className="flex items-center gap-2 font-semibold"><span>{knownBalance.toLocaleString()}</span><ArrowRight className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-violet-700">{projectedBalance.toLocaleString()}</span></span>)}</div>
             <div className="border-t pt-3"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Internal note</p><p className="mt-1 leading-6">{trimmedNote || '—'}</p></div>
           </div>
 

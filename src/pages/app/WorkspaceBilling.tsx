@@ -135,7 +135,20 @@ const WorkspaceBilling = () => {
 
         {overviewQuery.isLoading ? (
           <Card><CardContent className="flex min-h-32 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading your credit balance…</CardContent></Card>
-        ) : overview ? (
+        ) : !overview ? (
+          // There are no retries, so a single failure used to render nothing at
+          // all: an agency owner opened Billing and saw a header above an empty
+          // page, with no way to tell a broken load from an empty account.
+          <Card>
+            <CardContent className="space-y-3 p-6 text-sm" role="alert">
+              <p className="font-medium">Your credit balance could not be loaded.</p>
+              <p className="text-muted-foreground">Nothing has been charged. This is a problem reading the balance, not a problem with your account.</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => void overviewQuery.refetch()}>
+                Try again
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
           <section aria-labelledby="credit-balance-title" className="space-y-4">
             <h2 id="credit-balance-title" className="sr-only">Credit balance</h2>
             {!overview.enforcement_enabled && (
@@ -257,7 +270,7 @@ const WorkspaceBilling = () => {
               </Card>
             )}
           </section>
-        ) : null}
+        )}
       </div>
     </WorkspaceLayout>
   )

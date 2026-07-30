@@ -1118,12 +1118,17 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                     </Card>
                   </section>
 
-                  {isPlatformWorkspace && workspaceOwner && (
+                  {/* Not gated on there being an owner: the credit goes to the
+                      workspace ledger either way, and the billing page's own
+                      top-up already grants without one. Requiring it here meant
+                      the same admin got a different answer for the same
+                      workspace depending on which route they came in by. */}
+                  {isPlatformWorkspace && (
                     <WorkspaceCreditGrantPreview
                       workspaceId={workspaceId}
                       workspaceName={data.workspace.name}
-                      ownerName={workspaceOwner.full_name || workspaceOwner.email}
-                      ownerEmail={workspaceOwner.email}
+                      ownerName={workspaceOwner ? workspaceOwner.full_name || workspaceOwner.email : null}
+                      ownerEmail={workspaceOwner?.email ?? null}
                       actorEmail={user?.email || 'Platform administrator'}
                     />
                   )}

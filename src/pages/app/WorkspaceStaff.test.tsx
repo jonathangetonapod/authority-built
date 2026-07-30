@@ -641,6 +641,55 @@ describe('WorkspaceStaff', () => {
     expect(toastSuccess).toHaveBeenCalledWith('100 credits added to Acme Workspace.')
   })
 
+  // A workspace whose owner was invited the ordinary way and has not signed in
+  // yet has no owner row to name. The credit still goes to the workspace
+  // ledger, and the billing page's own top-up grants without one, so hiding the
+  // card here gave the same admin two answers for the same workspace.
+  it('still offers the grant for a workspace with no owner on the roster', async () => {
+    mockedUseAuth.mockReturnValue({
+      user: { id: userId, email: 'platform@example.com' },
+      workspace: null,
+      membership: null,
+      isPlatformAdmin: true,
+      refreshAccount,
+      refreshSession,
+      signOut,
+    } as never)
+    mockedList.mockResolvedValue({ ...ownerView, members: [{ ...admin, allowed_actions: [] }] })
+
+    renderPage(workspaceId)
+
+    const creditsSection = await screen.findByRole('region', { name: 'Workspace credits' })
+    expect(within(creditsSection).getByText('Nobody has accepted the invite yet')).toBeInTheDocument()
+    fireEvent.click(within(creditsSection).getByRole('combobox', { name: 'Reason' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Customer support' }))
+    expect(within(creditsSection).getByRole('button', { name: 'Review credit grant' })).toBeEnabled()
+  })
+
+  // The balance used to fall back to 0 when the read failed, and there are no
+  // retries. An admin who topped this workspace up an hour ago would read the
+  // 0 as the grant never landing, and grant a second time.
+  it('does not report a balance of zero when the balance could not be read', async () => {
+    mockedUseAuth.mockReturnValue({
+      user: { id: userId, email: 'platform@example.com' },
+      workspace: null,
+      membership: null,
+      isPlatformAdmin: true,
+      refreshAccount,
+      refreshSession,
+      signOut,
+    } as never)
+    vi.mocked(getWorkspaceBillingOverview).mockRejectedValue(new Error('Billing data could not be loaded.'))
+
+    renderPage(workspaceId)
+
+    const creditsSection = await screen.findByRole('region', { name: 'Workspace credits' })
+    expect(await within(creditsSection).findByText('Unavailable')).toBeInTheDocument()
+    expect(within(creditsSection).queryByLabelText('0 credits available')).not.toBeInTheDocument()
+    // And no projection is offered off a balance nobody knows.
+    expect(within(creditsSection).getByText(/could not be read, so this cannot be projected/i)).toBeInTheDocument()
+  })
+
   it('lets the platform owner reset the selected workspace owner without exposing an old password', async () => {
     const resettableOwner: WorkspaceStaffMember = { ...owner, allowed_actions: ['reset_password'] }
     mockedUseAuth.mockReturnValue({
