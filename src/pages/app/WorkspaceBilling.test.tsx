@@ -19,6 +19,8 @@ vi.mock('@/services/workspaceStaff', () => ({
   createWorkspaceCreditCheckout: vi.fn(),
   createWorkspaceBillingPortal: vi.fn(),
   createWorkspaceSubscriptionCheckout: vi.fn(),
+  listBillingPlans: vi.fn().mockResolvedValue([]),
+  updateBillingPlanPrice: vi.fn(),
   listWorkspaceStaff: vi.fn(),
   grantWorkspaceCredits: vi.fn(),
 }))

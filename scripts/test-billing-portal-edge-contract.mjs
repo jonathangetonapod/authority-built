@@ -15,11 +15,15 @@ assert.match(portal, /requireOnlyKeys\(body, \['action', 'workspace_id'\]\)/u)
 // the sole column this function writes is which Stripe customer it is talking
 // to. Asserted on the update payloads themselves, because reading plan_key and
 // naming it in an audit entry are both fine.
-const portalUpdates = [...portal.matchAll(/\.update\(\{([^}]*)\}\)/gu)].map((match) => match[1])
-assert.equal(portalUpdates.length, 1, 'the portal writes exactly one update')
-assert.match(portalUpdates[0], /stripe_customer_id: customerId/u)
+const portalUpdates = [...portal.matchAll(/\.update\(\{([^}]*)\}\)/gsu)].map((match) => match[1])
+assert.ok(
+  portalUpdates.some((payload) => /stripe_customer_id: customerId/u.test(payload)),
+  'the portal records which Stripe customer a workspace is',
+)
+// Plan pricing is a different table. What no update here may ever touch is what
+// a workspace is subscribed to — that belongs to the webhook alone.
 for (const payload of portalUpdates) {
-  assert.doesNotMatch(payload, /plan_key/u)
+  assert.doesNotMatch(payload, /^\s*plan_key:/mu)
   assert.doesNotMatch(payload, /billing_status/u)
   assert.doesNotMatch(payload, /stripe_subscription_id/u)
 }
@@ -27,11 +31,30 @@ for (const payload of portalUpdates) {
 // Prices come from the billing_plans table, never from the caller: a
 // client-supplied price would let a workspace subscribe itself to any amount
 // it liked. A plan that is not purchasable cannot be checked out either.
-assert.doesNotMatch(portal, /body\.(?:price|amount|price_id|base_price_cents)/u)
+// An admin may set an amount — the server turns it into a Price. Nobody may
+// hand over a price id, which would point a plan at an arbitrary Stripe object.
+assert.doesNotMatch(portal, /body\.(?:price|price_id|stripe_price_id)\b/u)
 assert.match(portal, /from\('billing_plans'\)/u)
 assert.match(portal, /plan\.stripe_price_id/u)
 assert.match(portal, /!plan\.is_purchasable/u)
 assert.match(portal, /allow_promotion_codes: 'true'/u)
+
+// Plan administration sets what a plan costs for everyone, so it is gated on
+// platform admin rather than on membership of any one workspace.
+assert.match(portal, /const authContext = await requirePlatformAdmin\(req\)/u)
+assert.match(portal, /action === 'plans-list' \|\| action === 'plans-update'/u)
+// The amount is the only thing a caller may set. A caller-supplied price id
+// would let an admin screen point a plan at any Stripe object at all.
+assert.match(portal, /requireOnlyKeys\(body, \['action', 'plan_key', 'base_price_cents'\]\)/u)
+assert.doesNotMatch(portal, /body\.stripe_price_id/u)
+// Stripe Prices are immutable, so a change creates one; and creating one does
+// not put it in the portal, so the configuration is repointed in the same call.
+assert.match(portal, /stripePost\('prices'/u)
+assert.match(portal, /syncPortalConfiguration\(updated, stripeKey\)/u)
+assert.match(portal, /billing_portal\/configurations\?is_default=true/u)
+// The recorded amount and the Price it describes are written together.
+assert.match(portal, /base_price_cents: amount,\n\s+stripe_price_id: priceId,/u)
+assert.match(portal, /action: 'billing_plan_price_changed'/u)
 
 const webhook = readFileSync('supabase/functions/workspace-subscription-webhook/index.ts', 'utf8')
 

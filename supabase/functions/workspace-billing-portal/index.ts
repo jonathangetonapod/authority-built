@@ -19,6 +19,7 @@ import {
   parseJsonObject,
   requireAuthenticatedUser,
   requireOnlyKeys,
+  requirePlatformAdmin,
   requireString,
   requireUuid,
   requireWorkspaceFeatureAccess,
@@ -80,6 +81,159 @@ async function stripePost(
   return payload
 }
 
+async function stripeGet(path: string, key: string): Promise<Record<string, unknown>> {
+  let response: Response
+  try {
+    response = await fetch(`https://api.stripe.com/v1/${path}`, {
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(20_000),
+    })
+  } catch (_error) {
+    throw new HttpError(503, 'STRIPE_UNAVAILABLE', 'The payment provider is unreachable right now')
+  }
+  const payload = await response.json().catch(() => null) as Record<string, unknown> | null
+  if (!response.ok || !payload) {
+    throw new HttpError(502, 'STRIPE_REJECTED', 'The payment provider rejected the request')
+  }
+  return payload
+}
+
+/**
+ * Repoints the Customer Portal at the plans' current prices.
+ *
+ * Creating a Price does not put it in the portal: the configuration lists
+ * prices by id, so a plan repointed without this keeps offering the old amount
+ * to anyone switching. Stripe's default configuration is the one the portal
+ * uses when a session names none, so that is the one kept in step.
+ */
+async function syncPortalConfiguration(
+  plans: BillingPlan[],
+  stripeKey: string,
+): Promise<string | null> {
+  const sellable = plans.filter((plan) => plan.is_purchasable && plan.stripe_price_id)
+  if (sellable.length === 0) return null
+
+  const params: Record<string, string> = {
+    'features[subscription_update][enabled]': 'true',
+    'features[subscription_update][default_allowed_updates][]': 'price',
+    'features[subscription_update][proration_behavior]': 'create_prorations',
+    'features[subscription_cancel][enabled]': 'true',
+    'features[payment_method_update][enabled]': 'true',
+    'features[invoice_history][enabled]': 'true',
+  }
+  for (const [index, plan] of sellable.entries()) {
+    const price = await stripeGet(`prices/${plan.stripe_price_id}`, stripeKey)
+    params[`features[subscription_update][products][${index}][product]`] = String(price.product ?? '')
+    params[`features[subscription_update][products][${index}][prices][]`] = String(plan.stripe_price_id)
+  }
+
+  const existing = await stripeGet('billing_portal/configurations?is_default=true&limit=1', stripeKey)
+  const current = (existing.data as Array<Record<string, unknown>> | undefined)?.[0]
+  const configurationId = typeof current?.id === 'string' ? current.id : ''
+  const configuration = configurationId
+    ? await stripePost(`billing_portal/configurations/${configurationId}`, new URLSearchParams(params), stripeKey)
+    : await stripePost('billing_portal/configurations', new URLSearchParams({
+      ...params,
+      'business_profile[headline]': 'Manage your Get On A Pod plan',
+    }), stripeKey)
+  return typeof configuration.id === 'string' ? configuration.id : null
+}
+
+async function handlePlanAdministration(
+  req: Request,
+  body: Record<string, unknown>,
+  action: string,
+  stripeKey: string,
+): Promise<Response> {
+  const authContext = await requirePlatformAdmin(req)
+  const admin = createAdminClient()
+
+  if (action === 'plans-list') {
+    requireOnlyKeys(body, ['action'])
+    return jsonResponse(req, METHODS, 200, { success: true, plans: await loadPlans(admin) })
+  }
+
+  requireOnlyKeys(body, ['action', 'plan_key', 'base_price_cents'])
+  const planKey = requireString(body.plan_key, 'plan_key', { max: 40 })
+  const amount = typeof body.base_price_cents === 'number' && Number.isSafeInteger(body.base_price_cents)
+    ? body.base_price_cents
+    : NaN
+  if (!Number.isSafeInteger(amount) || amount < 0 || amount > 10_000_00) {
+    throw new HttpError(400, 'INVALID_AMOUNT', 'Price must be between 0 and 1,000,000 cents')
+  }
+
+  const plans = await loadPlans(admin)
+  const plan = plans.find((candidate) => candidate.plan_key === planKey)
+  if (!plan) throw new HttpError(404, 'PLAN_NOT_FOUND', 'No such plan')
+  if (!plan.is_purchasable) {
+    throw new HttpError(400, 'PLAN_NOT_PURCHASABLE', 'That plan is assigned rather than sold')
+  }
+  if (plan.base_price_cents === amount && plan.stripe_price_id) {
+    return jsonResponse(req, METHODS, 200, { success: true, plans, unchanged: true })
+  }
+
+  // Stripe Prices are immutable, so a change is a new Price on the same
+  // Product. Reusing the Product keeps one plan's history in one place rather
+  // than scattering it across a product per price change.
+  let productId = ''
+  if (plan.stripe_price_id) {
+    const existingPrice = await stripeGet(`prices/${plan.stripe_price_id}`, stripeKey)
+    productId = typeof existingPrice.product === 'string' ? existingPrice.product : ''
+  }
+  if (!productId) {
+    const product = await stripePost('products', new URLSearchParams({
+      name: `Get On A Pod · ${plan.display_name}`,
+      'metadata[plan_key]': planKey,
+    }), stripeKey)
+    productId = typeof product.id === 'string' ? product.id : ''
+  }
+  if (!productId) throw new HttpError(502, 'STRIPE_REJECTED', 'The payment provider rejected the request')
+
+  const price = await stripePost('prices', new URLSearchParams({
+    product: productId,
+    currency: 'usd',
+    unit_amount: String(amount),
+    'recurring[interval]': 'month',
+    'metadata[plan_key]': planKey,
+  }), stripeKey)
+  const priceId = typeof price.id === 'string' ? price.id : ''
+  if (!priceId) throw new HttpError(502, 'STRIPE_REJECTED', 'The payment provider rejected the request')
+
+  // Recorded together: the amount is only a description of what the Price
+  // charges, and the two disagreeing is how a screen starts lying about money.
+  const { error: writeError } = await admin
+    .from('billing_plans')
+    .update({
+      base_price_cents: amount,
+      stripe_price_id: priceId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('plan_key', planKey)
+  if (writeError) {
+    throw new HttpError(503, 'BILLING_UNAVAILABLE', 'The new price could not be recorded')
+  }
+
+  const updated = await loadPlans(admin)
+  const configurationId = await syncPortalConfiguration(updated, stripeKey)
+
+  await writeAudit(admin, {
+    workspaceId: null,
+    actorUserId: authContext.user.id,
+    action: 'billing_plan_price_changed',
+    entityType: 'billing_plan',
+    entityId: null,
+    metadata: {
+      plan_key: planKey,
+      from_cents: plan.base_price_cents,
+      to_cents: amount,
+      stripe_price_id: priceId,
+      portal_configuration_id: configurationId,
+    },
+  })
+
+  return jsonResponse(req, METHODS, 200, { success: true, plans: updated })
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return optionsResponse(req, METHODS)
 
@@ -94,6 +248,13 @@ serve(async (req) => {
 
     const body = await parseJsonObject(req)
     const action = typeof body.action === 'string' ? body.action : ''
+
+    // Plan administration is platform-wide: it sets what a plan costs for
+    // everyone, so it is not scoped to a workspace and takes no workspace_id.
+    if (action === 'plans-list' || action === 'plans-update') {
+      return await handlePlanAdministration(req, body, action, stripeKey)
+    }
+
     if (action !== 'portal-create' && action !== 'subscription-create') {
       throw new HttpError(400, 'INVALID_ACTION', 'Unknown billing portal action')
     }

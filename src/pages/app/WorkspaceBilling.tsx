@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PlatformCreditTopUp } from '@/components/workspace/PlatformCreditTopUp'
+import { PlatformPlanPricing } from '@/components/workspace/PlatformPlanPricing'
 import { getWorkspaceBillingOverview,
   createWorkspaceBillingPortal,
   createWorkspaceCreditCheckout,
@@ -153,6 +154,7 @@ const WorkspaceBilling = () => {
         {/* A platform admin opens this page to credit somebody else, so the
             tool for that comes before this workspace's own balance and packs. */}
         {isPlatformAdmin && <PlatformCreditTopUp actorEmail={user?.email || 'Platform administrator'} />}
+        {isPlatformAdmin && <PlatformPlanPricing />}
 
         {overviewQuery.isLoading ? (
           <Card><CardContent className="flex min-h-32 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading your credit balance…</CardContent></Card>

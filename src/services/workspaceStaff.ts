@@ -941,6 +941,45 @@ export async function grantWorkspaceCredits(
 
 export type WorkspacePlanKey = 'founding_member' | 'standard'
 
+export interface BillingPlan {
+  plan_key: string
+  display_name: string
+  base_price_cents: number
+  stripe_price_id: string | null
+  is_purchasable: boolean
+}
+
+function readPlans(data: unknown): BillingPlan[] {
+  const plans = (data as { plans?: unknown })?.plans
+  if (!Array.isArray(plans)) throw new Error('The plan list response was invalid.')
+  return plans as BillingPlan[]
+}
+
+/** Platform-admin only: the plan ladder and the Stripe Price each is sold at. */
+export async function listBillingPlans(): Promise<BillingPlan[]> {
+  const { data, error } = await supabase.functions.invoke('workspace-billing-portal', {
+    body: { action: 'plans-list' },
+  })
+  if (error) throw await toFunctionError(error, 'The plans could not be loaded.')
+  return readPlans(data)
+}
+
+/**
+ * Platform-admin only. Stripe Prices are immutable, so this creates a new one
+ * and repoints the plan at it; existing subscribers stay on the price they
+ * signed up at until they move themselves.
+ */
+export async function updateBillingPlanPrice(
+  planKey: string,
+  baseCents: number,
+): Promise<BillingPlan[]> {
+  const { data, error } = await supabase.functions.invoke('workspace-billing-portal', {
+    body: { action: 'plans-update', plan_key: planKey, base_price_cents: baseCents },
+  })
+  if (error) throw await toFunctionError(error, 'The price could not be updated.')
+  return readPlans(data)
+}
+
 /**
  * Opens Stripe's hosted Customer Portal, where the plan, payment method,
  * invoices and cancellation all live. Returns the URL to send the browser to;
