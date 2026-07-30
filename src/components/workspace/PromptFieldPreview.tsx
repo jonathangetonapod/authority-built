@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
 import { PROMPT_VARIABLES } from '@/lib/promptVariables'
 import { referencedPromptVariables } from '@/lib/promptVariableMenu'
 import type { PromptPreview } from '@/services/clientShortlist'
@@ -22,6 +23,13 @@ interface PromptFieldPreviewProps {
    */
   onRefreshEpisodes?: () => void
   refreshing?: boolean
+  /**
+   * Turns the requirement on or off for one field. Given inline so the
+   * decision sits on the row that shows the problem — the same fields used to
+   * be listed a second time underneath purely to carry these switches.
+   */
+  onToggleRequired?: (variableId: string, required: boolean) => void
+  requirementsDisabled?: boolean
 }
 
 const LABELS = new Map(PROMPT_VARIABLES.map((variable) => [variable.id, variable]))
@@ -38,16 +46,11 @@ const LABELS = new Map(PROMPT_VARIABLES.map((variable) => [variable.id, variable
  */
 const explainEmpty = (variableId: string): string => {
   const variable = LABELS.get(variableId)
-  if (variable?.producedBy) {
-    return `Nothing stored yet — written by the ${variable.producedBy} stage, which has not run for this podcast.`
-  }
-  // A client field is empty for every podcast, not for this one: saying "not
-  // available for this podcast" would send someone looking at the show when
-  // the gap is in the client record.
-  if (variable?.group === 'client') {
-    return 'Missing from the client record — the model is told exactly that.'
-  }
-  return 'Not available for this podcast — the model is told exactly that.'
+  if (variable?.producedBy) return `Written by ${variable.producedBy}, which has not run`
+  // A client field is empty for every podcast, not for this one: pointing at
+  // the show would send someone to the wrong record.
+  if (variable?.group === 'client') return 'Not on the client record'
+  return 'This podcast has none'
 }
 
 /**
@@ -69,8 +72,9 @@ export const PromptFieldPreview = ({
   podcastName,
   onRefreshEpisodes,
   refreshing,
+  onToggleRequired,
+  requirementsDisabled,
 }: PromptFieldPreviewProps) => {
-  const [showFilled, setShowFilled] = useState(false)
   const referenced = useMemo(() => referencedPromptVariables(content), [content])
 
   if (referenced.length === 0) return null
@@ -137,16 +141,10 @@ export const PromptFieldPreview = ({
           */}
           {missing.length > 0 && (
             <div className="border-b bg-red-50 px-3 py-2 text-[11px] leading-4 text-red-900">
-              <p className="font-semibold">
-                {missing.length === 1
-                  ? '1 field this prompt names is empty'
-                  : `${missing.length} fields this prompt names are empty`}
-              </p>
-              <p className="mt-0.5">
-                Instructions that quote, summarise or count from{' '}
-                {missing.map((id) => `{{${id}}}`).join(', ')} will run against “Not
-                available”. Say what to do when it is missing, or require the field
-                below so the stage skips instead.
+              <p>
+                Anything this prompt asks you to quote or summarise from{' '}
+                {missing.length === 1 ? 'that field' : 'those fields'} will be
+                written from “Not available”.
               </p>
               {refreshable.length > 0 && onRefreshEpisodes && (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -159,8 +157,7 @@ export const PromptFieldPreview = ({
                     {refreshing ? 'Asking Podscan…' : 'Fetch episodes from Podscan'}
                   </button>
                   <span className="text-[10px] leading-4">
-                    1 credit, and only if Podscan answers. What it returns is stored
-                    for every workspace, so nobody pays for this show again.
+                    1 credit, only if Podscan answers.
                   </span>
                 </div>
               )}
@@ -173,62 +170,63 @@ export const PromptFieldPreview = ({
             </p>
           )}
           {/*
-            The empty ones lead and the filled ones fold away. Colour in the
-            prompt already says which is which, so re-listing all of them here
-            put the same set on screen three times — once coloured, once here,
-            once under Required fields — and buried the few that need a decision.
+            Every field the prompt names, once. This list used to be printed
+            twice — here for its value, and again underneath purely to carry
+            the required switches. Nothing is folded away now: a filled field
+            can be required too, and a switch you cannot see is a switch
+            nobody finds.
           */}
           <ul className="divide-y">
-            {(showFilled ? referenced : missing).map((id) => {
+            {referenced.map((id) => {
               const field = preview.fields[id]
               const filled = Boolean(field?.value)
               const variable = LABELS.get(id)
+              const required = blocks(id)
               return (
-                <li key={id} className="px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    {filled
-                      ? <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-600" aria-hidden="true" />
-                      : <AlertTriangle
-                        className={`h-3 w-3 shrink-0 ${blocks(id) ? 'text-red-600' : 'text-amber-600'}`}
-                        aria-hidden="true"
-                      />}
-                    <span className="font-mono text-[11px] leading-4">{id}</span>
-                    <span className="truncate text-[10px] text-muted-foreground">{variable?.label}</span>
+                <li key={id} className="p-2">
+                  <div className="flex items-start gap-2 rounded-md bg-muted/50 px-2 py-1.5">
+                    {onToggleRequired && (
+                      <Switch
+                        checked={required}
+                        disabled={requirementsDisabled}
+                        aria-label={`Require ${variable?.label ?? id}`}
+                        onCheckedChange={(next) => onToggleRequired(id, next === true)}
+                        className="mt-px shrink-0 scale-75"
+                      />
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-x-2">
+                        {filled
+                          ? <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-600" aria-hidden="true" />
+                          : <AlertTriangle
+                            className={`h-3 w-3 shrink-0 ${required ? 'text-red-600' : 'text-amber-600'}`}
+                            aria-hidden="true"
+                          />}
+                        <span className="font-mono text-[11px] leading-4">{id}</span>
+                        <span className="truncate text-[10px] text-muted-foreground">{variable?.label}</span>
+                        {required && (
+                          <span className="ml-auto shrink-0 text-[10px] font-medium text-primary">
+                            Required
+                          </span>
+                        )}
+                      </span>
+                      <p className={`mt-1 text-[11px] leading-4 ${
+                        filled ? 'text-foreground' : `italic ${required ? 'text-red-700' : 'text-amber-700'}`
+                      }`}>
+                        {filled ? field!.value : explainEmpty(id)}
+                        {!filled && required && ' — this podcast skips the stage'}
+                      </p>
+                    </span>
                   </div>
-                  <p className={`mt-1 text-[11px] leading-4 ${
-                    filled ? 'text-foreground' : `italic ${blocks(id) ? 'text-red-700' : 'text-amber-700'}`
-                  }`}>
-                    {filled ? field!.value : explainEmpty(id)}
-                    {!filled && blocks(id) && ' This stage is set to require it, so this podcast skips it.'}
-                  </p>
                 </li>
               )
             })}
           </ul>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2">
-            {missing.length > 0 ? (
-              <p className="text-[10px] leading-4 text-muted-foreground">
-                Requiring a field below makes this podcast skip the stage instead of
-                reading “Not available”.
-              </p>
-            ) : (
-              <p className="text-[10px] leading-4 text-emerald-700">
-                Every field this prompt names has a value.
-              </p>
-            )}
-            {present.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowFilled((current) => !current)}
-                aria-expanded={showFilled}
-                className="shrink-0 rounded border px-2 py-0.5 text-[10px] hover:bg-muted"
-              >
-                {showFilled
-                  ? 'Hide filled fields'
-                  : `Show ${present.length} filled ${present.length === 1 ? 'field' : 'fields'}`}
-              </button>
-            )}
-          </div>
+          <p className="border-t px-3 py-2 text-[10px] leading-4 text-muted-foreground">
+            {onToggleRequired
+              ? 'Switch a field on to skip this stage when it is empty, rather than run without it.'
+              : 'Anything empty reaches the model as “Not available”.'}
+          </p>
         </>
       )}
     </section>

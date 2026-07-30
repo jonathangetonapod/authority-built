@@ -74,9 +74,9 @@ import {
   setWorkspaceResearchPrompt,
 } from '@/services/workspaceCampaigns'
 import { PromptVariableTextarea } from './PromptVariableTextarea'
-import { PromptRequiredFields } from './PromptRequiredFields'
 import { PromptFieldPreview } from './PromptFieldPreview'
 import { PromptOutputFields } from './PromptOutputFields'
+import { PROMPT_VARIABLES } from '@/lib/promptVariables'
 import { unavailableVariableIds } from '@/lib/promptVariableMenu'
 import {
   RESEARCH_PROMPT_DEFAULTS,
@@ -1727,15 +1727,22 @@ export function ClientCampaignPrepDialog({
                                     ? () => refreshEpisodesMutation.mutate()
                                     : undefined}
                                   refreshing={refreshEpisodesMutation.isPending}
+                                  requirementsDisabled={promptBusy || requirementsQuery.isLoading}
+                                  onToggleRequired={(variableId, next) => {
+                                    const current = promptRequirements[selectedPromptId] ?? []
+                                    const wanted = new Set(current)
+                                    if (next) wanted.add(variableId)
+                                    else wanted.delete(variableId)
+                                    saveRequirementsMutation.mutate({
+                                      promptId: selectedPromptId,
+                                      // Registry order, so the saved set reads
+                                      // the way the list is drawn.
+                                      required: PROMPT_VARIABLES
+                                        .filter((variable) => wanted.has(variable.id))
+                                        .map((variable) => variable.id),
+                                    })
+                                  }}
                                   podcastName={podcast?.podcast_name}
-                                />
-                              </div>
-                              <div className="mt-4">
-                                <PromptRequiredFields
-                                  content={promptDraft}
-                                  required={promptRequirements[selectedPromptId] ?? []}
-                                  disabled={promptBusy || requirementsQuery.isLoading}
-                                  onChange={(next) => saveRequirementsMutation.mutate({ promptId: selectedPromptId, required: next })}
                                 />
                               </div>
                               <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">

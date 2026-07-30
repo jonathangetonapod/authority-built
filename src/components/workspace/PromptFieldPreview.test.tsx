@@ -17,22 +17,15 @@ const preview = (overrides: Partial<PromptPreview> = {}): PromptPreview => ({
 })
 
 describe('PromptFieldPreview', () => {
-  // The empty ones lead, because they are the ones needing a decision; the
-  // filled ones are one click away rather than a third copy of the same list.
-  it('leads with the empty fields and folds the filled ones away', () => {
+  // One list, every field the prompt names. A switch you cannot see is a
+  // switch nobody finds, so nothing is folded away.
+  it('shows every field the prompt names, filled or not', () => {
     render(<PromptFieldPreview content={PROMPT} preview={preview()} podcastName="Operator Weekly" />)
 
     expect(screen.getByText('2 of 3 filled')).toBeInTheDocument()
-    expect(screen.queryByText('Dana Reed')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /Show 2 filled fields/ }))
     expect(screen.getByText('Dana Reed')).toBeInTheDocument()
     expect(screen.getByText('Operator Weekly', { selector: 'p' })).toBeInTheDocument()
-  })
-
-  it('says so plainly when nothing is missing', () => {
-    render(<PromptFieldPreview content="Open on {{podcast_name}}." preview={preview()} />)
-    expect(screen.getByText(/Every field this prompt names has a value/)).toBeInTheDocument()
+    expect(screen.getByText('episode_transcript')).toBeInTheDocument()
   })
 
   // A failed read named the wrong cause: it claimed no podcast was open.
@@ -53,12 +46,12 @@ describe('PromptFieldPreview', () => {
         preview={preview({ fields: { client_bio: { value: null, truncated: false } } })}
       />,
     )
-    expect(screen.getByText(/Missing from the client record/)).toBeInTheDocument()
+    expect(screen.getByText(/Not on the client record/)).toBeInTheDocument()
   })
 
   it('says plainly that an empty field reaches the model as “Not available”', () => {
     render(<PromptFieldPreview content={PROMPT} preview={preview()} />)
-    expect(screen.getByText(/Not available for this podcast/)).toBeInTheDocument()
+    expect(screen.getByText(/This podcast has none/)).toBeInTheDocument()
   })
 
   it('names the stage that will write a field, when a stage writes it', () => {
@@ -68,7 +61,7 @@ describe('PromptFieldPreview', () => {
         preview={preview({ fields: { research_report: { value: null, truncated: false } }, researched: false })}
       />,
     )
-    expect(screen.getByText(/written by the podcast_research stage/)).toBeInTheDocument()
+    expect(screen.getByText(/Written by podcast_research, which has not run/)).toBeInTheDocument()
   })
 
   // An episode field comes from the stored Podscan capture, not from a prompt.
@@ -82,17 +75,16 @@ describe('PromptFieldPreview', () => {
         preview={preview({ fields: { episode_transcript: { value: null, truncated: false } }, researched: false })}
       />,
     )
-    expect(screen.queryByText(/written by/)).not.toBeInTheDocument()
-    expect(screen.getByText(/Not available for this podcast/)).toBeInTheDocument()
+    expect(screen.queryByText(/Written by/)).not.toBeInTheDocument()
+    expect(screen.getByText(/This podcast has none/)).toBeInTheDocument()
   })
 
   // The field being blank is only half of it: the instructions written around
   // it still run, against "Not available".
   it('warns that instructions built on an empty field still run', () => {
     render(<PromptFieldPreview content={PROMPT} preview={preview()} />)
-    expect(screen.getByText(/1 field this prompt names is empty/)).toBeInTheDocument()
-    expect(screen.getByText(/quote, summarise or count/)).toBeInTheDocument()
-    expect(screen.getByText(/\{\{episode_transcript\}\}/)).toBeInTheDocument()
+    expect(screen.getByText(/quote or summarise/)).toBeInTheDocument()
+    expect(screen.getByText(/will be written from/)).toBeInTheDocument()
   })
 
   it('says nothing about empty fields when every field is filled', () => {
@@ -102,8 +94,7 @@ describe('PromptFieldPreview', () => {
         preview={preview()}
       />,
     )
-    expect(screen.queryByText(/this prompt names is empty/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/prompt names are empty/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/quote or summarise/)).not.toBeInTheDocument()
   })
 
   it('warns when the transcript belongs to an earlier episode', () => {
@@ -139,7 +130,7 @@ describe('PromptFieldPreview severity', () => {
         requiredVariableIds={['episode_transcript']}
       />,
     )
-    expect(screen.getByText(/so this podcast skips it/)).toBeInTheDocument()
+    expect(screen.getByText(/this podcast skips the stage/)).toBeInTheDocument()
   })
 
   it('leaves an optional empty field as a degradation', () => {
@@ -149,7 +140,7 @@ describe('PromptFieldPreview severity', () => {
         preview={preview({ fields: { episode_transcript: { value: null, truncated: false } } })}
       />,
     )
-    expect(screen.queryByText(/so this podcast skips it/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/this podcast skips the stage/)).not.toBeInTheDocument()
   })
 })
 
@@ -172,7 +163,7 @@ describe('PromptFieldPreview episode refresh', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: /Fetch episodes from Podscan/ }))
     expect(refresh).toHaveBeenCalled()
-    expect(screen.getByText(/stored for every workspace/)).toBeInTheDocument()
+    expect(screen.getByText(/only if Podscan answers/)).toBeInTheDocument()
   })
 
   // Asking Podscan cannot fill a client bio or an unrun stage, so charging a
@@ -197,5 +188,38 @@ describe('PromptFieldPreview episode refresh', () => {
       />,
     )
     expect(screen.queryByRole('button', { name: /Podscan/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('PromptFieldPreview inline requirement switches', () => {
+  // The switch lives on the row that shows the problem. These fields used to
+  // be printed a second time underneath purely to carry them.
+  it('requires a field from its own row', () => {
+    const toggle = vi.fn()
+    render(
+      <PromptFieldPreview
+        content="Quote {{episode_transcript}}."
+        preview={preview({ fields: { episode_transcript: { value: null, truncated: false } } })}
+        onToggleRequired={toggle}
+      />,
+    )
+    fireEvent.click(screen.getByRole('switch', { name: /Require Latest episode transcript/ }))
+    expect(toggle).toHaveBeenCalledWith('episode_transcript', true)
+  })
+
+  it('offers a switch for a filled field too', () => {
+    render(
+      <PromptFieldPreview
+        content="Open on {{podcast_name}}."
+        preview={preview()}
+        onToggleRequired={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('switch', { name: /Require Podcast name/ })).toBeInTheDocument()
+  })
+
+  it('shows no switches to a viewer who cannot change requirements', () => {
+    render(<PromptFieldPreview content="Open on {{podcast_name}}." preview={preview()} />)
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
   })
 })
