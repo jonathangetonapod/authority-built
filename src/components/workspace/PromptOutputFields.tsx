@@ -49,11 +49,30 @@ export const PromptOutputFields = ({
     <section aria-label="Fields this stage returns" className="rounded-lg border">
       <header className="border-b bg-muted/20 px-3 py-2">
         <p className="text-xs font-semibold">Fields this stage returns</p>
-        <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
-          Name a field and this stage is asked to return it. Each one becomes a
-          variable {laterStageLabel ? `${laterStageLabel} and the stages after it can use` : 'later stages can use'},
-          like any other field. Leave this empty and the stage writes one block of
-          text, as it always has.
+        {/*
+          What this never said is the part that matters: naming a field does
+          not add one to the prose, it replaces the prose. The stage is asked
+          for a JSON object with exactly these keys and nothing else, so
+          anything the prompt asks for that is not a named key stops being
+          produced — silently, and only visible later as thinner pitches.
+        */}
+        {fields.length === 0 ? (
+          <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
+            This stage writes one block of text, and later stages read the whole
+            of it. Nothing is named here, which is the usual setup.
+          </p>
+        ) : (
+          <p className="mt-0.5 text-[11px] leading-4 text-amber-800">
+            This stage now returns <strong>only</strong> the {fields.length}{' '}
+            {fields.length === 1 ? 'field' : 'fields'} below, as JSON — the block
+            of text it used to write is not produced. Anything the prompt asks
+            for that is not named here is lost.
+          </p>
+        )}
+        <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+          Each name becomes a variable{' '}
+          {laterStageLabel ? `${laterStageLabel} and the stages after it can use` : 'later stages can use'},
+          like any other field. Remove them all and the stage goes back to prose.
         </p>
       </header>
 
@@ -103,7 +122,7 @@ export const PromptOutputFields = ({
             value={draftId}
             disabled={disabled}
             aria-label="New field name"
-            placeholder="host_style"
+            placeholder="Name a field, e.g. host_style"
             onChange={(event) => setDraftId(event.target.value)}
             onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); add() } }}
             className="h-7 font-mono text-[11px]"
