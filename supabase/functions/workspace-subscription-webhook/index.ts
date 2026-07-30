@@ -11,12 +11,23 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createAdminClient } from '../_shared/workspaceAuth.ts'
 import { verifyStripeSignature } from '../_shared/stripeSignature.ts'
 
-// Mirrors PLAN_PRICE_ENV in workspace-billing-portal. A plan switched inside the
-// Customer Portal arrives with no metadata of ours, so the price is the only
-// thing naming the plan.
-const PLAN_PRICE_ENV: Record<string, string> = {
-  founding_member: 'STRIPE_PRICE_FOUNDING_MEMBER',
-  standard: 'STRIPE_PRICE_STANDARD',
+// The same billing_plans rows workspace-billing-portal sells from. A plan
+// switched inside the Customer Portal arrives with no metadata of ours, so the
+// Stripe Price is the only thing naming the plan, and this is the table that
+// says which plan that Price belongs to.
+async function planKeysByPrice(
+  admin: ReturnType<typeof createAdminClient>,
+): Promise<Map<string, string>> {
+  const { data, error } = await admin
+    .from('billing_plans')
+    .select('plan_key, stripe_price_id')
+  if (error) throw new Error('billing_plans could not be read')
+  const byPrice = new Map<string, string>()
+  for (const row of data ?? []) {
+    const priceId = typeof row.stripe_price_id === 'string' ? row.stripe_price_id : ''
+    if (priceId) byPrice.set(priceId, String(row.plan_key))
+  }
+  return byPrice
 }
 
 // Stripe's subscription statuses, narrowed to the ones billing_status allows.
@@ -36,14 +47,6 @@ function json(status: number, body: Record<string, unknown>): Response {
     status,
     headers: { 'Content-Type': 'application/json' },
   })
-}
-
-function planKeyForPrice(priceId: string): string | null {
-  for (const [planKey, envName] of Object.entries(PLAN_PRICE_ENV)) {
-    const configured = Deno.env.get(envName)?.trim()
-    if (configured && configured === priceId) return planKey
-  }
-  return null
 }
 
 serve(async (req) => {
@@ -92,6 +95,7 @@ serve(async (req) => {
     return json(200, { received: true, ignored: `status ${stripeStatus || 'unknown'}` })
   }
 
+  const admin = createAdminClient()
   const update: Record<string, unknown> = {
     billing_status: billingStatus,
     updated_at: new Date().toISOString(),
@@ -109,10 +113,17 @@ serve(async (req) => {
     const firstItem = items?.data?.[0]
     const price = firstItem?.price as Record<string, unknown> | undefined
     const priceId = typeof price?.id === 'string' ? price.id : ''
-    const planKey = priceId ? planKeyForPrice(priceId) : null
+    let byPrice: Map<string, string>
+    try {
+      byPrice = await planKeysByPrice(admin)
+    } catch (_error) {
+      console.error('[Workspace Subscription Webhook] billing_plans could not be read')
+      return json(500, { error: 'PLANS_UNAVAILABLE' })
+    }
+    const planKey = priceId ? byPrice.get(priceId) ?? null : null
     if (planKey) {
       update.plan_key = planKey
-    } else if (typeof metadata.plan_key === 'string' && PLAN_PRICE_ENV[metadata.plan_key]) {
+    } else if (typeof metadata.plan_key === 'string' && [...byPrice.values()].includes(metadata.plan_key)) {
       update.plan_key = metadata.plan_key
     } else if (priceId) {
       // Leaving plan_key alone is deliberate: naming the wrong plan is worse
@@ -121,7 +132,6 @@ serve(async (req) => {
     }
   }
 
-  const admin = createAdminClient()
   const { error } = await admin
     .from('workspace_billing_profiles')
     .update(update)

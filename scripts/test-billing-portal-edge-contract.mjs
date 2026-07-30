@@ -24,10 +24,13 @@ for (const payload of portalUpdates) {
   assert.doesNotMatch(payload, /stripe_subscription_id/u)
 }
 
-// Prices come from configuration, never from the caller: a client-supplied
-// price would let a workspace subscribe itself to any amount it liked.
-assert.doesNotMatch(portal, /body\.(?:price|amount|price_id)/u)
-assert.match(portal, /PLAN_PRICE_ENV\[planKey\]/u)
+// Prices come from the billing_plans table, never from the caller: a
+// client-supplied price would let a workspace subscribe itself to any amount
+// it liked. A plan that is not purchasable cannot be checked out either.
+assert.doesNotMatch(portal, /body\.(?:price|amount|price_id|base_price_cents)/u)
+assert.match(portal, /from\('billing_plans'\)/u)
+assert.match(portal, /plan\.stripe_price_id/u)
+assert.match(portal, /!plan\.is_purchasable/u)
 assert.match(portal, /allow_promotion_codes: 'true'/u)
 
 const webhook = readFileSync('supabase/functions/workspace-subscription-webhook/index.ts', 'utf8')
@@ -40,17 +43,32 @@ assert.match(webhook, /customer\.subscription\.created/u)
 assert.match(webhook, /customer\.subscription\.updated/u)
 assert.match(webhook, /customer\.subscription\.deleted/u)
 // The plan is read from the subscribed price, so a switch made inside the
-// Customer Portal — carrying none of our metadata — is still recorded.
-assert.match(webhook, /planKeyForPrice\(priceId\)/u)
+// Customer Portal — carrying none of our metadata — is still recorded. Both
+// halves resolve it through billing_plans, so a price the admin screen creates
+// is understood by the webhook without a redeploy.
+assert.match(webhook, /from\('billing_plans'\)/u)
+assert.match(webhook, /byPrice\.get\(priceId\)/u)
+// A price nobody can name must not become a guessed plan.
+assert.match(webhook, /No plan configured for the subscribed price/u)
 
 const config = readFileSync('supabase/config.toml', 'utf8')
 assert.match(config, /\[functions\.workspace-billing-portal\]\nverify_jwt = true/u)
 assert.match(config, /\[functions\.workspace-subscription-webhook\]\nverify_jwt = false/u)
 
-// Both halves must name the same plans, or a price that can be subscribed to
-// would come back from Stripe as a plan the webhook cannot record.
-const planKeys = (source) => [...source.matchAll(/^\s{2}(\w+): 'STRIPE_PRICE_\w+',$/gmu)].map((m) => m[1])
-assert.deepEqual(planKeys(portal), planKeys(webhook))
-assert.ok(planKeys(portal).length >= 2, 'at least two plans must be configurable')
+// Price ids must not drift back into the environment: an env var cannot be
+// edited from the admin screen, which is the whole reason they live in a table.
+for (const [name, source] of [['portal', portal], ['webhook', webhook]]) {
+  assert.doesNotMatch(source, /STRIPE_PRICE_/u, `${name} must not read price ids from the environment`)
+}
+
+const migration = readFileSync('supabase/migrations/20260730000100_billing_plans.sql', 'utf8')
+// Writes go through the platform-admin edge action on the service role, so the
+// table carries a select policy and nothing else.
+assert.match(migration, /ENABLE ROW LEVEL SECURITY/u)
+assert.match(migration, /FOR SELECT\n\s+TO authenticated/u)
+assert.doesNotMatch(migration, /FOR (?:INSERT|UPDATE|DELETE|ALL)/u)
+// One plan per Stripe Price: sharing one would make repointing a plan silently
+// repoint another.
+assert.match(migration, /CREATE UNIQUE INDEX.*billing_plans_stripe_price_id_key/su)
 
 console.log('Billing portal edge contract checks passed')

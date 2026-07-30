@@ -30,12 +30,24 @@ const METHODS = ['POST'] as const
 const MANAGER_ROLES = new Set(['owner', 'admin', 'platform_admin'])
 
 // Prices are Stripe catalog objects rather than inline price_data, because the
-// Customer Portal can only offer a switch between prices it can name. A plan
-// with no configured price cannot be subscribed to, and says so rather than
-// opening a checkout that Stripe will reject.
-const PLAN_PRICE_ENV: Record<string, string> = {
-  founding_member: 'STRIPE_PRICE_FOUNDING_MEMBER',
-  standard: 'STRIPE_PRICE_STANDARD',
+// Customer Portal can only offer a switch between prices it can name. Which
+// Price each plan is sold at lives in billing_plans, so a platform admin can
+// change it from a screen; an environment variable cannot be edited from one.
+interface BillingPlan {
+  plan_key: string
+  display_name: string
+  base_price_cents: number
+  stripe_price_id: string | null
+  is_purchasable: boolean
+}
+
+async function loadPlans(admin: ReturnType<typeof createAdminClient>): Promise<BillingPlan[]> {
+  const { data, error } = await admin
+    .from('billing_plans')
+    .select('plan_key, display_name, base_price_cents, stripe_price_id, is_purchasable')
+    .order('base_price_cents', { ascending: true })
+  if (error) throw new HttpError(503, 'BILLING_UNAVAILABLE', 'Plans could not be read')
+  return (data ?? []) as BillingPlan[]
 }
 
 function appUrl(): string {
@@ -162,11 +174,11 @@ serve(async (req) => {
     }
 
     const planKey = requireString(body.plan_key, 'plan_key', { max: 40 })
-    const priceEnv = PLAN_PRICE_ENV[planKey]
-    if (!priceEnv) {
-      throw new HttpError(400, 'INVALID_FIELD', 'plan_key must be founding_member or standard')
+    const plan = (await loadPlans(admin)).find((candidate) => candidate.plan_key === planKey)
+    if (!plan || !plan.is_purchasable) {
+      throw new HttpError(400, 'INVALID_FIELD', 'That plan cannot be subscribed to')
     }
-    const priceId = Deno.env.get(priceEnv)?.trim()
+    const priceId = plan.stripe_price_id?.trim()
     if (!priceId) {
       throw new HttpError(500, 'PLAN_NOT_CONFIGURED', 'That plan has no price configured in Stripe')
     }
