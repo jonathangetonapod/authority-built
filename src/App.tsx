@@ -42,6 +42,7 @@ const WorkspaceClients = lazy(() => import("./pages/app/WorkspaceClients"));
 const WorkspaceClientDetail = lazy(() => import("./pages/app/WorkspaceClientDetail"));
 const WorkspaceOnboarding = lazy(() => import("./pages/app/WorkspaceOnboarding"));
 const MyWorkspaceSettings = lazy(() => import("./pages/app/MyWorkspaceSettings"));
+const PlatformBilling = lazy(() => import("./pages/app/PlatformBilling"));
 const ManageWorkspaces = lazy(() => import("./pages/app/ManageWorkspaces"));
 const WorkspaceBilling = lazy(() => import("./pages/app/WorkspaceBilling"));
 const WorkspaceCampaignDetail = lazy(() => import("./pages/app/WorkspaceCampaignDetail"));
@@ -135,6 +136,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <ManageWorkspaces />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/app/platform/billing"
+              element={
+                <ProtectedRoute>
+                  <PlatformBilling />
                 </ProtectedRoute>
               }
             />
