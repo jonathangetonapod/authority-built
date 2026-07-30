@@ -17,15 +17,35 @@ const preview = (overrides: Partial<PromptPreview> = {}): PromptPreview => ({
 })
 
 describe('PromptFieldPreview', () => {
-  // One list, every field the prompt names. A switch you cannot see is a
-  // switch nobody finds, so nothing is folded away.
-  it('shows every field the prompt names, filled or not', () => {
+  // Report by exception: a prompt naming eleven fields printed eleven values,
+  // each a paragraph of description or transcript, and buried the editor. Only
+  // what needs a decision shows; the rest is one click away.
+  it('lists the empty fields and keeps the filled ones behind the count', () => {
     render(<PromptFieldPreview content={PROMPT} preview={preview()} podcastName="Operator Weekly" />)
 
-    expect(screen.getByText('2 of 3 filled')).toBeInTheDocument()
+    expect(screen.getByText('episode_transcript')).toBeInTheDocument()
+    expect(screen.queryByText('Dana Reed')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /2 of 3 filled/ }))
     expect(screen.getByText('Dana Reed')).toBeInTheDocument()
     expect(screen.getByText('Operator Weekly', { selector: 'p' })).toBeInTheDocument()
-    expect(screen.getByText('episode_transcript')).toBeInTheDocument()
+  })
+
+  it('says so, and lists nothing, when every field is filled', () => {
+    render(<PromptFieldPreview content="Open on {{podcast_name}}." preview={preview()} />)
+    expect(screen.getByText(/Every field this prompt names has a value/)).toBeInTheDocument()
+    expect(screen.queryByText('podcast_name')).not.toBeInTheDocument()
+  })
+
+  // The values are the thing worth having; they just are not worth having all
+  // at once, at a paragraph each.
+  it('opens one field to its full value on click', () => {
+    render(<PromptFieldPreview content={PROMPT} preview={preview()} />)
+    fireEvent.click(screen.getByRole('button', { name: /2 of 3 filled/ }))
+    const row = screen.getByText('podcast_name').closest('button')!
+    expect(row).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(row)
+    expect(row).toHaveAttribute('aria-expanded', 'true')
   })
 
   // A failed read named the wrong cause: it claimed no podcast was open.

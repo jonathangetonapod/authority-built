@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { PROMPT_VARIABLES } from '@/lib/promptVariables'
 import { referencedPromptVariables } from '@/lib/promptVariableMenu'
@@ -66,6 +66,8 @@ export const PromptFieldPreview = ({
   refreshing,
 }: PromptFieldPreviewProps) => {
   const referenced = useMemo(() => referencedPromptVariables(content), [content])
+  const [open, setOpen] = useState(false)
+  const [shown, setShown] = useState<string | null>(null)
 
   if (referenced.length === 0) return null
 
@@ -77,6 +79,16 @@ export const PromptFieldPreview = ({
   // Only an episode field can be filled by asking Podscan again. Offering the
   // button for a missing client bio would charge a credit to learn nothing.
   const refreshable = missing.filter((id) => LABELS.get(id)?.group === 'episode')
+  /**
+   * Report by exception.
+   *
+   * A prompt naming eleven fields printed eleven values, each a paragraph of
+   * description or transcript, and buried the editor under its own inputs.
+   * When nothing is missing there is nothing to act on, so the list stays shut
+   * and the count carries the answer; when something is missing, that is what
+   * opens. Values are one line until asked for.
+   */
+  const listed = open ? referenced : missing
 
   return (
     <section aria-label="Field values for this podcast" className="rounded-lg border">
@@ -85,9 +97,15 @@ export const PromptFieldPreview = ({
           What this prompt receives{podcastName ? ` for ${podcastName}` : ''}
         </p>
         {!loading && preview && (
-          <p className="text-[10px] tabular-nums text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => setOpen((current) => !current)}
+            aria-expanded={open}
+            className="rounded px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground hover:bg-muted"
+          >
             {present.length} of {referenced.length} filled
-          </p>
+            <span className="ml-1.5">{open ? 'Hide' : 'Show all'}</span>
+          </button>
         )}
       </header>
 
@@ -167,14 +185,19 @@ export const PromptFieldPreview = ({
             nobody finds.
           */}
           <ul className="divide-y">
-            {referenced.map((id) => {
+            {listed.map((id) => {
               const field = preview.fields[id]
               const filled = Boolean(field?.value)
               const variable = LABELS.get(id)
               const required = blocks(id)
               return (
                 <li key={id} className="p-2">
-                  <div className="flex items-start gap-2 rounded-md bg-muted/50 px-2 py-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setShown((current) => (current === id ? null : id))}
+                    aria-expanded={shown === id}
+                    className="flex w-full items-start gap-2 rounded-md bg-muted/50 px-2 py-1.5 text-left hover:bg-muted"
+                  >
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-x-2">
                         {filled
@@ -192,20 +215,25 @@ export const PromptFieldPreview = ({
                         )}
                       </span>
                       <p className={`mt-1 text-[11px] leading-4 ${
-                        filled ? 'text-foreground' : `italic ${required ? 'text-red-700' : 'text-amber-700'}`
-                      }`}>
+                        shown === id ? '' : 'line-clamp-1'
+                      } ${filled ? 'text-foreground' : `italic ${required ? 'text-red-700' : 'text-amber-700'}`}`}>
                         {filled ? field!.value : explainEmpty(id)}
                         {!filled && required && ' — this podcast skips the stage'}
                       </p>
                     </span>
-                  </div>
+                  </button>
                 </li>
               )
             })}
           </ul>
+          {listed.length === 0 && (
+            <p className="px-3 py-2 text-[11px] leading-4 text-emerald-700">
+              Every field this prompt names has a value.
+            </p>
+          )}
           <p className="border-t px-3 py-2 text-[10px] leading-4 text-muted-foreground">
-            Switch a field on in the prompt above to skip this stage when it is
-            empty, rather than run without it.
+            Click a field for its full value. Switch one on in the prompt above to
+            skip this stage when it is empty, rather than run without it.
           </p>
         </>
       )}
