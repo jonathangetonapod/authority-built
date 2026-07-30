@@ -5,6 +5,7 @@ import {
   filterPromptVariables,
   referencedPromptVariables,
   splitPromptTokens,
+  strayTriggerHints,
   spliceAtCaret,
   splitOnMatch,
   unavailableVariableIds,
@@ -222,5 +223,29 @@ describe('splitPromptTokens', () => {
       { text: '{{ podcast_name }}', variableId: 'podcast_name' },
     ])
     expect(splitPromptTokens('', known)).toEqual([])
+  })
+})
+
+describe('strayTriggerHints', () => {
+  // Both of these were sitting in a saved workspace prompt: typing "/" opened
+  // the field menu, dismissing it left the character behind.
+  it('finds a slash left behind by the field menu', () => {
+    const content = '- Name: {{client_name}} /\n- Website: {{client_website}}\n/\n'
+    expect(strayTriggerHints(content)[0]).toContain('lines 1, 3')
+  })
+
+  it('leaves a slash that is part of a word alone', () => {
+    expect(strayTriggerHints('Use and/or, 24/7, http://example.com')).toEqual([])
+  })
+
+  it('finds an unfinished token but not a complete one', () => {
+    expect(strayTriggerHints('Open on {{podcast_name}}.')).toEqual([])
+    expect(strayTriggerHints('Open on {{podcast_name and stop')[0]).toContain('unfinished')
+  })
+
+  // The prompts talk about placeholders in placeholder syntax; that is prose,
+  // and closed, so it must not be reported.
+  it('says nothing about prose written in placeholder syntax', () => {
+    expect(strayTriggerHints('No unfilled {{placeholders}} may appear.')).toEqual([])
   })
 })

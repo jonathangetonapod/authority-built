@@ -14,6 +14,7 @@ import {
   spliceAtCaret,
   splitOnMatch,
   splitPromptTokens,
+  strayTriggerHints,
   type VariableTrigger,
 } from '@/lib/promptVariableMenu'
 import { PromptVariablePalette } from './PromptVariablePalette'
@@ -98,6 +99,7 @@ export const PromptVariableTextarea = ({
     () => (highlighting ? splitPromptTokens(value, (id) => knownIds.has(id)) : []),
     [highlighting, value, knownIds],
   )
+  const strays = useMemo(() => (editable ? strayTriggerHints(value) : []), [editable, value])
 
   const syncTrigger = (field: HTMLTextAreaElement | null) => {
     if (!field || !editable) return
@@ -228,7 +230,9 @@ export const PromptVariableTextarea = ({
             ref={highlightRef}
             aria-hidden="true"
             className={cn(
-              'pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words rounded-md border border-transparent px-3 py-2 text-sm',
+              // select-none as well as aria-hidden: the layer is a copy of the
+              // prompt, and without it selecting the page yields the text twice.
+              'pointer-events-none select-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words rounded-md border border-transparent px-3 py-2 text-sm',
               className,
             )}
           >
@@ -366,6 +370,14 @@ export const PromptVariableTextarea = ({
           </div>
         )}
       </div>
+
+      {/*
+        Reported, not corrected. What looks like litter is sometimes meant, and
+        the operator is the one who knows which.
+      */}
+      {strays.map((hint) => (
+        <p key={hint} className="text-[11px] leading-4 text-amber-700">{hint}</p>
+      ))}
     </div>
   )
 }

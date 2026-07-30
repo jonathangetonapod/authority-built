@@ -27,17 +27,52 @@ describe('PromptFieldPreview', () => {
 
   it('says plainly that an empty field reaches the model as “Not available”', () => {
     render(<PromptFieldPreview content={PROMPT} preview={preview()} />)
-    expect(screen.getByText(/Not available — the model is told exactly that/)).toBeInTheDocument()
+    expect(screen.getByText(/Not available for this podcast/)).toBeInTheDocument()
   })
 
-  it('distinguishes a field an earlier stage has not written yet', () => {
+  it('names the stage that will write a field, when a stage writes it', () => {
     render(
       <PromptFieldPreview
         content="Summarize {{research_report}}."
         preview={preview({ fields: { research_report: { value: null, truncated: false } }, researched: false })}
       />,
     )
-    expect(screen.getByText(/written by an earlier stage/)).toBeInTheDocument()
+    expect(screen.getByText(/written by the podcast_research stage/)).toBeInTheDocument()
+  })
+
+  // An episode field comes from the stored Podscan capture, not from a prompt.
+  // Before research had run, every empty field claimed a stage would write it,
+  // which sent the operator to run research when the fix was to capture
+  // episodes. The registry knows which fields a stage produces; ask it.
+  it('does not claim a stage will write a field no stage produces', () => {
+    render(
+      <PromptFieldPreview
+        content="Quote {{episode_transcript}}."
+        preview={preview({ fields: { episode_transcript: { value: null, truncated: false } }, researched: false })}
+      />,
+    )
+    expect(screen.queryByText(/written by/)).not.toBeInTheDocument()
+    expect(screen.getByText(/Not available for this podcast/)).toBeInTheDocument()
+  })
+
+  // The field being blank is only half of it: the instructions written around
+  // it still run, against "Not available".
+  it('warns that instructions built on an empty field still run', () => {
+    render(<PromptFieldPreview content={PROMPT} preview={preview()} />)
+    expect(screen.getByText(/1 field this prompt names is empty/)).toBeInTheDocument()
+    expect(screen.getByText(/quote, summarise or count/)).toBeInTheDocument()
+    expect(screen.getByText(/\{\{episode_transcript\}\}/)).toBeInTheDocument()
+  })
+
+  it('says nothing about empty fields when every field is filled', () => {
+    render(
+      <PromptFieldPreview
+        content="Open on {{podcast_name}}."
+        preview={preview()}
+      />,
+    )
+    expect(screen.queryByText(/this prompt names is empty/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/prompt names are empty/)).not.toBeInTheDocument()
   })
 
   it('warns when the transcript belongs to an earlier episode', () => {

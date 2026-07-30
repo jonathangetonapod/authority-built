@@ -129,6 +129,41 @@ export function referencedPromptVariables(
   return all.filter((variable) => named.has(variable.id)).map((variable) => variable.id)
 }
 
+/**
+ * Characters that look left over from opening the field menu.
+ *
+ * Typing `/` or `{{` opens the list; dismissing it leaves what was typed
+ * behind, and a stray `/` on its own line is easy to save without noticing.
+ *
+ * Reported rather than removed. Escape cancels the menu, not the typing, and
+ * this codebase contains prompts that legitimately write `{{placeholders}}` as
+ * prose — any rule that deleted on the way out would eventually eat text
+ * somebody meant. A slash counts as stray only when nothing adjoins it, so
+ * "and/or" and "24/7" are left alone.
+ */
+export function strayTriggerHints(content: string): string[] {
+  const hints: string[] = []
+  const lines = content.split('\n')
+
+  const slashLines = lines
+    .map((line, index) => ({ line, number: index + 1 }))
+    .filter(({ line }) => /(?:^|\s)\/(?=\s|$)/u.test(line))
+    .map(({ number }) => number)
+  if (slashLines.length > 0) {
+    hints.push(
+      `A “/” stands alone on ${slashLines.length === 1 ? 'line' : 'lines'} ${slashLines.join(', ')}` +
+      ' — likely left over from opening the field menu.',
+    )
+  }
+
+  // Closed tokens first, so only a genuinely unfinished one is left.
+  const unclosed = content.replace(/\{\{[^{}]*\}\}/gu, '')
+  if (unclosed.includes('{{')) {
+    hints.push('An unfinished “{{” has no closing “}}” — it will reach the model as written.')
+  }
+  return hints
+}
+
 export interface PromptSegment {
   text: string
   /** The registry field this segment fills, or null for ordinary prose. */

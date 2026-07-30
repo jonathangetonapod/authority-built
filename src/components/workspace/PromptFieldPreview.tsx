@@ -15,6 +15,24 @@ interface PromptFieldPreviewProps {
 const LABELS = new Map(PROMPT_VARIABLES.map((variable) => [variable.id, variable]))
 
 /**
+ * Why this field is empty, read off the field itself.
+ *
+ * This used to be chosen by one flag for the whole preview: before research
+ * had run, every empty field claimed "written by an earlier stage". That is
+ * false for most of them — episode_title and episode_transcript come from the
+ * stored episode capture, and no prompt will ever write them, so the sentence
+ * pointed the operator at the wrong fix. The registry already records which
+ * fields a stage produces, so ask it instead.
+ */
+const explainEmpty = (variableId: string): string => {
+  const producedBy = LABELS.get(variableId)?.producedBy
+  if (producedBy) {
+    return `Nothing stored yet — written by the ${producedBy} stage, which has not run for this podcast.`
+  }
+  return 'Not available for this podcast — the model is told exactly that.'
+}
+
+/**
  * What this prompt will actually receive, for the podcast in front of you.
  *
  * The editor used to describe its inputs from a hand-written switch that
@@ -59,6 +77,27 @@ export const PromptFieldPreview = ({
 
       {!loading && preview && (
         <>
+          {/*
+            An empty field is not just a blank in the text — every instruction
+            written around it now runs against "Not available". A prompt told
+            to quote verbatim from a transcript that is missing does not skip
+            the section; it invents one, and the quote reaches a host.
+          */}
+          {missing.length > 0 && (
+            <div className="border-b bg-red-50 px-3 py-2 text-[11px] leading-4 text-red-900">
+              <p className="font-semibold">
+                {missing.length === 1
+                  ? '1 field this prompt names is empty'
+                  : `${missing.length} fields this prompt names are empty`}
+              </p>
+              <p className="mt-0.5">
+                Instructions that quote, summarise or count from{' '}
+                {missing.map((id) => `{{${id}}}`).join(', ')} will run against “Not
+                available”. Say what to do when it is missing, or require the field
+                below so the stage skips instead.
+              </p>
+            </div>
+          )}
           {preview.transcript_episode_title && referenced.includes('episode_transcript') && (
             <p className="border-b bg-amber-50 px-3 py-2 text-[11px] leading-4 text-amber-900">
               The transcript is from “{preview.transcript_episode_title}”, not the latest episode —
@@ -80,11 +119,7 @@ export const PromptFieldPreview = ({
                     <span className="truncate text-[10px] text-muted-foreground">{variable?.label}</span>
                   </div>
                   <p className={`mt-1 text-[11px] leading-4 ${filled ? 'text-foreground' : 'italic text-amber-700'}`}>
-                    {filled
-                      ? field!.value
-                      : preview.researched
-                        ? 'Not available — the model is told exactly that'
-                        : 'Not available yet — this one is written by an earlier stage'}
+                    {filled ? field!.value : explainEmpty(id)}
                   </p>
                 </li>
               )
