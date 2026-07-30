@@ -31,8 +31,10 @@ type CreditReason =
 interface WorkspaceCreditGrantPreviewProps {
   workspaceId: string
   workspaceName: string
-  ownerName: string
-  ownerEmail: string
+  // Null when the owner has been invited but has not accepted yet. The ledger
+  // can still be credited; there is simply no name to put against it.
+  ownerName: string | null
+  ownerEmail: string | null
   actorEmail: string
 }
 
@@ -112,11 +114,13 @@ export function WorkspaceCreditGrantPreview({
       toast.error(error instanceof Error ? error.message : 'The credit grant could not be recorded.')
     },
   })
-  const formReady = parsedAmount !== null && reason !== '' && trimmedNote.length >= 8 && !grantMutation.isPending
+  // The note is optional. The reason still is not: it is what the ledger entry
+  // is filed under, and it costs one click rather than a sentence per grant.
+  const formReady = parsedAmount !== null && reason !== '' && !grantMutation.isPending
   const projectedBalance = balance + (parsedAmount || 0)
 
   const confirmPreview = () => {
-    if (parsedAmount === null || reason === '' || trimmedNote.length < 8 || grantMutation.isPending) return
+    if (parsedAmount === null || reason === '' || grantMutation.isPending) return
     grantMutation.mutate()
   }
 
@@ -162,15 +166,24 @@ export function WorkspaceCreditGrantPreview({
                       </span>
                       <div className="min-w-0">
                         <p className="text-xs font-medium uppercase tracking-[0.12em] text-white/50">Current owner</p>
-                        <p className="mt-1 truncate font-semibold">{ownerName}</p>
-                        <p className="truncate text-sm text-white/60">{ownerEmail}</p>
+                        {ownerName ? (
+                          <>
+                            <p className="mt-1 truncate font-semibold">{ownerName}</p>
+                            {ownerEmail && <p className="truncate text-sm text-white/60">{ownerEmail}</p>}
+                          </>
+                        ) : (
+                          <p className="mt-1 text-sm text-white/60">Nobody has accepted the invite yet</p>
+                        )}
                       </div>
                     </div>
                   </div>
 
+                  {/* Named after the workspace, never after the owner: these two
+                      are often the same person, and "granted to X, not to this
+                      person" under a card showing X reads as a contradiction. */}
                   <div className="mt-4 flex gap-3 rounded-xl border border-violet-300/15 bg-violet-300/[0.08] p-3 text-xs leading-5 text-violet-100/80">
                     <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-violet-200" />
-                    <p>Credits are granted to {workspaceName}, not to this person. They stay with the workspace if ownership changes.</p>
+                    <p>Credits belong to the workspace, not to whoever owns it today. They stay put if ownership changes.</p>
                   </div>
                 </div>
               </div>
@@ -245,7 +258,7 @@ export function WorkspaceCreditGrantPreview({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="workspace-credit-note">Internal note</Label>
+                  <Label htmlFor="workspace-credit-note">Internal note <span className="font-normal text-muted-foreground">(optional)</span></Label>
                   <Textarea
                     id="workspace-credit-note"
                     value={note}
@@ -255,8 +268,8 @@ export function WorkspaceCreditGrantPreview({
                     aria-describedby="workspace-credit-note-help"
                     className="min-h-24 max-w-xl resize-y"
                   />
-                  <p id="workspace-credit-note-help" className={`text-xs ${trimmedNote.length > 0 && trimmedNote.length < 8 ? 'text-destructive' : 'text-muted-foreground'}`}>
-                    {trimmedNote.length > 0 && trimmedNote.length < 8 ? 'Add a little more context for the internal history.' : 'Required. Workspace members will not see this note.'}
+                  <p id="workspace-credit-note-help" className="text-xs text-muted-foreground">
+                    Workspace members will not see this note.
                   </p>
                 </div>
 
@@ -283,7 +296,7 @@ export function WorkspaceCreditGrantPreview({
           <CardHeader className="flex flex-row items-start justify-between gap-4 border-b border-border/70 bg-muted/15">
             <div>
               <CardTitle className="flex items-center gap-2 text-lg"><History className="h-5 w-5" />Recent manual adjustments</CardTitle>
-              <CardDescription>Every real grant will show who made it, why, and the resulting workspace balance.</CardDescription>
+              <CardDescription>Grants you make here, with who made them, why, and the balance that followed.</CardDescription>
             </div>
             <Badge variant="secondary" className="hidden shrink-0 sm:inline-flex">Internal history</Badge>
           </CardHeader>
@@ -302,7 +315,7 @@ export function WorkspaceCreditGrantPreview({
                       <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><CheckCircle2 className="h-4 w-4" /></span>
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold">{reasonLabels[adjustment.reason]}</p><Badge variant="outline" className="text-[10px]">Just now</Badge></div>
-                        <p className="mt-1 truncate text-xs text-muted-foreground">{adjustment.note}</p>
+                        {adjustment.note && <p className="mt-1 truncate text-xs text-muted-foreground">{adjustment.note}</p>}
                         <p className="mt-1 text-[11px] text-muted-foreground">Granted by {actorEmail}</p>
                       </div>
                     </div>

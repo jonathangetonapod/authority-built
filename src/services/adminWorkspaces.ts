@@ -91,6 +91,28 @@ export async function listAdminWorkspaces(): Promise<AdminWorkspace[]> {
   return workspaces.filter((workspace) => availableWorkspaceIds.has(workspace.id))
 }
 
+/**
+ * Workspaces a platform admin can credit.
+ *
+ * Deliberately not listAdminWorkspaces: that list answers "whose owner can I
+ * act on", so it drops a workspace whose owner has been invited but has not
+ * accepted yet. A credit grant lands on the workspace ledger and stays there
+ * through a change of ownership, so an unaccepted invite is no reason to
+ * refuse one — it only means there is no name to show next to the balance.
+ */
+export async function listGrantableWorkspaces(): Promise<AdminWorkspace[]> {
+  const { data, error } = await supabase
+    .from('workspaces')
+    .select('id,name,slug,status,is_default,logo_path,logo_updated_at')
+    .eq('is_default', false)
+    .eq('status', 'active')
+    .order('name', { ascending: true })
+    .order('id', { ascending: true })
+
+  if (error) throw new Error('Client workspaces could not be loaded.')
+  return (data || []) as AdminWorkspace[]
+}
+
 export async function listPodcastResearchWorkspaces(): Promise<AdminWorkspace[]> {
   const [clientWorkspaces, defaultWorkspaceResult] = await Promise.all([
     listAdminWorkspaces(),

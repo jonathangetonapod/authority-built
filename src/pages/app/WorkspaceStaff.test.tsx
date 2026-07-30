@@ -559,7 +559,10 @@ describe('WorkspaceStaff', () => {
     expect(within(settingsNavigation).getByRole('link', { name: /^Credits/ })).toHaveAttribute('href', '#workspace-credits')
     const creditsSection = screen.getByRole('region', { name: 'Workspace credits' })
     expect(within(creditsSection).getByText('Live · grants apply immediately')).toBeInTheDocument()
-    expect(within(creditsSection).getByText(/credits are granted to Acme Workspace, not to this person/i)).toBeInTheDocument()
+    // Named after the workspace rather than the owner: a workspace called after
+    // the person who owns it turned "granted to X, not to this person" into a
+    // sentence that contradicted the card above it.
+    expect(within(creditsSection).getByText(/credits belong to the workspace, not to whoever owns it today/i)).toBeInTheDocument()
     await waitFor(() => expect(within(creditsSection).getByLabelText('10 credits available')).toBeInTheDocument())
     expect(screen.queryByText(/admin preview/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Sidebar navigation' })).not.toBeInTheDocument()
@@ -616,7 +619,11 @@ describe('WorkspaceStaff', () => {
 
     fireEvent.click(within(creditsSection).getByRole('combobox', { name: 'Reason' }))
     fireEvent.click(await screen.findByRole('option', { name: 'Customer support' }))
-    fireEvent.change(within(creditsSection).getByLabelText('Internal note'), {
+    // The reason alone arms the grant: a written justification on every top-up
+    // was friction the audit row did not need, so the note is optional now.
+    expect(reviewButton).toBeEnabled()
+
+    fireEvent.change(within(creditsSection).getByLabelText(/Internal note/), {
       target: { value: 'Onboarding courtesy for the new workspace.' },
     })
     expect(reviewButton).toBeEnabled()

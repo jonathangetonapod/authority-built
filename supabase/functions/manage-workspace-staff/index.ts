@@ -2911,7 +2911,10 @@ serve(async (req) => {
         throw new HttpError(400, "INVALID_AMOUNT", "Grant between 1 and 10,000 credits");
       }
       const reason = requireString(body.reason, "reason", { max: 60 });
-      const note = requireString(body.note, "note", { max: 500 });
+      // The note is optional: the reason is what the ledger entry is filed
+      // under, and requiring a written justification for every top-up bought
+      // nothing the audit row does not already carry.
+      const note = requireString(body.note, "note", { min: 0, max: 500 });
       const grantKey = requireUuid(body.grant_key, "grant_key");
 
       const { data, error } = await admin.rpc("grant_workspace_credits_v1", {

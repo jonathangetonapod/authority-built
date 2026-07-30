@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, ArrowRight, CheckCircle2, Coins, CreditCard, Loader2, Sparkles, Wallet } from 'lucide-react'
+import { ArrowLeft, CreditCard, Loader2, Wallet } from 'lucide-react'
 import { Link, Navigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
@@ -129,6 +129,10 @@ const WorkspaceBilling = () => {
           </div>
         </header>
 
+        {/* A platform admin opens this page to credit somebody else, so the
+            tool for that comes before this workspace's own balance and packs. */}
+        {isPlatformAdmin && <PlatformCreditTopUp actorEmail={user?.email || 'Platform administrator'} />}
+
         {overviewQuery.isLoading ? (
           <Card><CardContent className="flex min-h-32 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading your credit balance…</CardContent></Card>
         ) : overview ? (
@@ -254,23 +258,6 @@ const WorkspaceBilling = () => {
             )}
           </section>
         ) : null}
-
-        {isPlatformAdmin && <PlatformCreditTopUp actorEmail={user?.email || 'Platform administrator'} />}
-
-        <ol aria-label="Credit purchase steps" className="grid overflow-hidden rounded-2xl border bg-card sm:grid-cols-3">
-          <li className="flex items-center gap-3 border-b bg-violet-50/60 px-4 py-3.5 sm:border-b-0 sm:border-r">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-700 text-xs font-semibold text-white">1</span>
-            <span><span className="block text-sm font-semibold">Select credits</span><span className="block text-xs text-muted-foreground">Choose the right pack</span></span>
-          </li>
-          <li className="flex items-center gap-3 border-b px-4 py-3.5 sm:border-b-0 sm:border-r">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">2</span>
-            <span><span className="block text-sm font-semibold">Review checkout</span><span className="block text-xs text-muted-foreground">Confirm payment details</span></span>
-          </li>
-          <li className="flex items-center gap-3 px-4 py-3.5">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">3</span>
-            <span><span className="block text-sm font-semibold">Credits added</span><span className="block text-xs text-muted-foreground">Return to your pitch</span></span>
-          </li>
-        </ol>
       </div>
     </WorkspaceLayout>
   )

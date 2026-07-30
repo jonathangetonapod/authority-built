@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuth } from '@/contexts/AuthContext'
 import { getWorkspaceBillingOverview } from '@/services/workspaceStaff'
-import { listAdminWorkspaces } from '@/services/adminWorkspaces'
+import { listGrantableWorkspaces } from '@/services/adminWorkspaces'
 import WorkspaceBilling from '@/pages/app/WorkspaceBilling'
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
@@ -16,11 +16,11 @@ vi.mock('@/services/workspaceStaff', () => ({
   listWorkspaceStaff: vi.fn(),
   grantWorkspaceCredits: vi.fn(),
 }))
-vi.mock('@/services/adminWorkspaces', () => ({ listAdminWorkspaces: vi.fn() }))
+vi.mock('@/services/adminWorkspaces', () => ({ listGrantableWorkspaces: vi.fn() }))
 
 const mockedUseAuth = vi.mocked(useAuth)
 const mockedOverview = vi.mocked(getWorkspaceBillingOverview)
-const mockedWorkspaces = vi.mocked(listAdminWorkspaces)
+const mockedWorkspaces = vi.mocked(listGrantableWorkspaces)
 
 const overviewFixture = {
   plan_key: 'founding_member',
@@ -117,7 +117,9 @@ describe('WorkspaceBilling', () => {
     expect(screen.getAllByText('Prospect dashboard builds').length).toBeGreaterThan(0)
     expect(screen.getByText('3 (1 on your key)')).toBeInTheDocument()
     expect(screen.getByText('Founding member')).toBeInTheDocument()
-    expect(screen.getAllByText('Credits added').length).toBeGreaterThan(1)
+    // Once, in the activity list. The second was the purchase stepper's dead
+    // third step, which no longer renders.
+    expect(screen.getAllByText('Credits added')).toHaveLength(1)
     expect(screen.getByText('+25')).toBeInTheDocument()
   })
 
@@ -136,6 +138,47 @@ describe('WorkspaceBilling', () => {
 
     expect(await screen.findByRole('heading', { name: 'Top up a workspace' })).toBeInTheDocument()
     expect(mockedWorkspaces).toHaveBeenCalled()
+  })
+
+  // The picker used to run off the roster of workspaces whose owner can be
+  // acted on, so an agency whose owner had been invited but had not accepted
+  // was absent from the list and could not be credited at all. The grant lands
+  // on the workspace ledger, so the owner is a name to show, not a condition.
+  it('lists a workspace whose owner has not accepted yet', async () => {
+    mockedUseAuth.mockReturnValue({
+      isPlatformAdmin: true,
+      canManageWorkspaceStaff: true,
+      user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', email: 'jonathan@getonapod.com' },
+      workspace: { id: '11111111-1111-4111-8111-111111111111' },
+    } as never)
+    mockedOverview.mockResolvedValue(overviewFixture as never)
+    mockedWorkspaces.mockResolvedValue([
+      { id: '33333333-3333-4333-8333-333333333333', name: 'Unaccepted Agency', slug: 'unaccepted', status: 'active', is_default: false },
+    ] as never)
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: 'Top up a workspace' })).toBeInTheDocument()
+    // listGrantableWorkspaces does not filter on owner reachability at all, so
+    // the workspace reaches the picker for the admin to select.
+    expect(mockedWorkspaces).toHaveBeenCalled()
+    expect(screen.queryByText(/no reachable owner to credit/i)).not.toBeInTheDocument()
+  })
+
+  it('drops the inert purchase stepper that never advanced', async () => {
+    mockedUseAuth.mockReturnValue({
+      isPlatformAdmin: false,
+      canManageWorkspaceStaff: true,
+      user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+      workspace: { id: '11111111-1111-4111-8111-111111111111' },
+    } as never)
+    mockedOverview.mockResolvedValue(overviewFixture as never)
+    renderPage()
+
+    // Checkout happens on Stripe's domain, so steps two and three could never
+    // light up. It was decoration rendering below the platform admin tools.
+    expect(await screen.findByText('42')).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Credit purchase steps' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Review checkout')).not.toBeInTheDocument()
   })
 
   // The grant is refused for anyone but a platform admin at the edge function,
