@@ -1,10 +1,13 @@
 // Regenerates the two prompt-variable registry mirrors from the canonical JSON.
 //
-//   node scripts/generate-prompt-variables.mjs
+//   node scripts/generate-prompt-variables.mjs           write the mirrors
+//   node scripts/generate-prompt-variables.mjs --check   fail if they differ
 //
-// docs/prompt-variables.json is the only file to edit by hand. The
-// workspace-campaign contract script asserts the mirrors match it, so a hand
-// edit to either mirror fails CI rather than drifting quietly.
+// docs/prompt-variables.json is the only file to edit by hand, and any change
+// to what the mirrors CONTAIN — formatters included, not just the registry
+// array — belongs in this script. --check runs in check:static and fails CI on
+// any difference, in either direction: a hand-edited mirror and a stale
+// template are the same finding here.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 
@@ -86,16 +89,24 @@ export function isPromptVariable(id: string): boolean {
   return VARIABLE_IDS.has(id)
 }
 
+/**
+ * A decoded value for somewhere a line break would be read as a new item:
+ * list entries and episode titles each own exactly one line.
+ */
+function decodeFeedLine(value: string): string {
+  return decodeFeedText(value).replace(/\\s+/gu, ' ').trim()
+}
+
 function formatList(value: unknown): string | null {
   if (!Array.isArray(value)) return null
   const parts = value
     .map((entry) => {
-      if (typeof entry === 'string') return entry.trim()
+      if (typeof entry === 'string') return decodeFeedLine(entry)
       if (typeof entry === 'number') return String(entry)
       if (entry && typeof entry === 'object') {
         const named = entry as Record<string, unknown>
         const label = named.name ?? named.label ?? named.title ?? named.category
-        return typeof label === 'string' ? label.trim() : ''
+        return typeof label === 'string' ? decodeFeedLine(label) : ''
       }
       return ''
     })
@@ -127,7 +138,7 @@ function formatEpisodeList(value: unknown): string | null {
     .map((entry) => {
       if (!entry || typeof entry !== 'object') return ''
       const episode = entry as Record<string, unknown>
-      const title = typeof episode.title === 'string' ? episode.title.trim() : ''
+      const title = typeof episode.title === 'string' ? decodeFeedLine(episode.title) : ''
       if (!title) return ''
       const postedAt = typeof episode.posted_at === 'string' ? new Date(episode.posted_at) : null
       const stamp = postedAt && !Number.isNaN(postedAt.getTime())
@@ -137,6 +148,57 @@ function formatEpisodeList(value: unknown): string | null {
     })
     .filter((line) => line.length > 0)
   return lines.length > 0 ? lines.join('\\n') : null
+}
+
+/**
+ * Feed markup reaches the model as markup unless it is cleaned here.
+ *
+ * A third of catalogue descriptions carry <p> tags and 556 show names carry an
+ * HTML entity, because that is how the feeds publish them. The opener quotes
+ * the show name back to the host, so "The Good, Bad, &amp; the Ugly" is not a
+ * cosmetic problem — it is the broken-automation tell the prompts spend a
+ * paragraph avoiding, arriving through the data instead of the wording.
+ *
+ * Block tags become breaks rather than nothing, so "<p>One.</p><p>Two.</p>"
+ * does not collapse into "One.Two.". A paragraph ends with a blank line and a
+ * line item with a single newline, which is the shape the model reads as
+ * structure rather than as a wrapped sentence.
+ */
+export function decodeFeedText(value: string): string {
+  const withoutTags = value
+    .replace(/<br\\s*\\/?>/giu, '\\n')
+    .replace(/<\\/(p|div|h[1-6])>/giu, '\\n\\n')
+    .replace(/<\\/(li|tr)>/giu, '\\n')
+    .replace(/<[a-zA-Z/][^>]*>/gu, ' ')
+  // One pass, so an escaped entity like "&amp;lt;" decodes to "&lt;" and not
+  // to "<": decoding the ampersand separately would re-read its own output.
+  const decoded = withoutTags.replace(
+    /&(nbsp|amp|lt|gt|quot|apos|hellip|ndash|mdash|[lr]squo|[lr]dquo|#0?39|#x27|#821[167]|#822[01]|#8230|#8212);/giu,
+    (entity) => {
+      const key = entity.slice(1, -1).toLowerCase()
+      switch (key) {
+        case 'nbsp': return ' '
+        case 'amp': return '&'
+        case 'lt': return '<'
+        case 'gt': return '>'
+        case 'quot': case 'ldquo': case 'rdquo': case '#8220': case '#8221': return '"'
+        case 'apos': case '#39': case '#039': case '#x27': return "'"
+        case 'lsquo': case '#8216': return '‘'
+        case 'rsquo': case '#8217': return '’'
+        case 'hellip': case '#8230': return '…'
+        case 'ndash': case '#8211': return '–'
+        case 'mdash': case '#8212': return '—'
+        default: return entity
+      }
+    },
+  )
+  // The space a stripped tag leaves behind is an artefact of the markup, so it
+  // does not survive next to a break it did not create.
+  return decoded
+    .replace(/[ \\t]+/gu, ' ')
+    .replace(/[ \\t]*\\n[ \\t]*/gu, '\\n')
+    .replace(/\\n{3,}/gu, '\\n\\n')
+    .trim()
 }
 
 /**
@@ -182,8 +244,8 @@ export function formatPromptValue(variableId: string, value: unknown): string | 
       return formatEpisodeList(value)
     default: {
       if (typeof value !== 'string') return null
-      const trimmed = value.trim()
-      return trimmed.length > 0 ? value : null
+      const cleaned = decodeFeedText(value)
+      return cleaned.length > 0 ? cleaned : null
     }
   }
 }
@@ -213,7 +275,15 @@ export function buildPodcastVariables(row: unknown): Record<string, string | nul
 export function buildEpisodeVariables(episodes: unknown): Record<string, string | null> {
   const list = Array.isArray(episodes) ? episodes as Array<Record<string, unknown>> : []
   const latest = (list[0] ?? {}) as Record<string, unknown>
+  // The transcript is not always the latest episode's: Podscan is asked for
+  // episodes whether or not transcription has finished, and the capture flags
+  // the one it actually got. A prompt that quotes the transcript needs to name
+  // that episode, or it attributes the words to whatever came out most
+  // recently — which is how a pitch tells a host they said something they
+  // said on a different show week.
+  const transcriptSource = list.find((episode) => episode.transcript_source) ?? latest
   return {
+    transcript_episode_title: formatPromptValue('transcript_episode_title', transcriptSource?.title),
     episode_title: formatPromptValue('episode_title', latest.title),
     episode_description: formatPromptValue('episode_description', latest.description),
     episode_posted_at: formatPromptValue('episode_posted_at', latest.posted_at),
@@ -267,10 +337,31 @@ const appHeader = `// GENERATED from docs/prompt-variables.json by scripts/gener
 
 `
 
-writeFileSync(
-  'supabase/functions/_shared/promptVariables.ts',
-  edgeHeader + TYPES + '\n' + ARRAY + FORMATTER,
-)
-writeFileSync('src/lib/promptVariables.ts', appHeader + TYPES + '\n' + ARRAY)
+const outputs = [
+  ['supabase/functions/_shared/promptVariables.ts', edgeHeader + TYPES + '\n' + ARRAY + FORMATTER],
+  ['src/lib/promptVariables.ts', appHeader + TYPES + '\n' + ARRAY],
+]
 
-console.log(`prompt variable registry generated: ${registry.variables.length} variables`)
+// --check verifies the mirrors are exactly what this script would write.
+//
+// Without it, drift runs the other way from the documented workflow: a hand
+// edit to a mirror leaves the template behind, and the NEXT regenerate — the
+// sanctioned command — silently deletes the shipped logic. That is not
+// hypothetical. Both decodeFeedText (feed markup reaching hosts as markup) and
+// transcript_episode_title (quotes attributed to the wrong episode) were added
+// to the edge mirror by hand and would have been reverted by a regenerate.
+// The registry array was the only part any contract script compared.
+if (process.argv.includes('--check')) {
+  const stale = outputs.filter(([path, contents]) => readFileSync(path, 'utf8') !== contents)
+  if (stale.length > 0) {
+    console.error('prompt variable mirrors are out of sync with the generator:')
+    for (const [path] of stale) console.error(`  - ${path}`)
+    console.error('\nEither the mirror was hand-edited, or the generator template is stale.')
+    console.error('Fold the change into scripts/generate-prompt-variables.mjs, then rerun with --check.')
+    process.exit(1)
+  }
+  console.log(`prompt variable registry in sync: ${registry.variables.length} variables`)
+} else {
+  for (const [path, contents] of outputs) writeFileSync(path, contents)
+  console.log(`prompt variable registry generated: ${registry.variables.length} variables`)
+}
