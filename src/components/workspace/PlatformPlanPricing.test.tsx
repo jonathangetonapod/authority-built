@@ -77,6 +77,31 @@ describe('PlatformPlanPricing', () => {
     await waitFor(() => expect(mockedUpdate).toHaveBeenCalledWith('founding_member', 4950))
   })
 
+  // Standard is seeded at 9900 with no Stripe Price. Comparing only the number
+  // left Save disabled at exactly the amount that needed creating, so the plan
+  // could not be set up without first typing a price nobody wanted.
+  it('can create the first price at the amount already shown', async () => {
+    mockedList.mockResolvedValue(plans as never)
+    mockedUpdate.mockResolvedValue(plans as never)
+    renderPanel()
+
+    await screen.findByText('No Stripe price yet')
+    const save = screen.getAllByRole('button', { name: 'Save' })[1]
+    expect(save).toBeEnabled()
+
+    fireEvent.click(save)
+    await waitFor(() => expect(mockedUpdate).toHaveBeenCalledWith('standard', 9900))
+  })
+
+  // Once a plan has a Price, saving the same number again is churn.
+  it('leaves save disabled for a priced plan at an unchanged amount', async () => {
+    mockedList.mockResolvedValue(plans as never)
+    renderPanel()
+
+    await screen.findByText('price_founding')
+    expect(screen.getAllByRole('button', { name: 'Save' })[0]).toBeDisabled()
+  })
+
   it('refuses an amount that is not money', async () => {
     mockedList.mockResolvedValue(plans as never)
     renderPanel()

@@ -80,7 +80,12 @@ export function PlatformPlanPricing() {
             (plansQuery.data ?? []).map((plan) => {
               const draft = dollarsFor(plan)
               const cents = centsFrom(draft)
-              const changed = cents !== null && cents !== plan.base_price_cents
+              // A plan that has never been priced has to be savable at the
+              // amount it already shows. Comparing only the number disabled the
+              // button in the one state where pressing it is the whole point:
+              // the seeded amount is right, but no Stripe Price exists for it.
+              const changed = cents !== null
+                && (cents !== plan.base_price_cents || !plan.stripe_price_id)
               const saving = saveMutation.isPending && saveMutation.variables?.planKey === plan.plan_key
               return (
                 <div key={plan.plan_key} className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-end sm:justify-between">
