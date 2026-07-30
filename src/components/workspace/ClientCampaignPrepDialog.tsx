@@ -266,10 +266,16 @@ export function ClientCampaignPrepDialog({
       // refresh shortly after the backend writes its first progress row.
       window.setTimeout(() => {
         void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
+        // Whatever just changed for this podcast, the editor's field values
+        // changed with it.
+        void queryClient.invalidateQueries({ queryKey: promptPreviewQueryKey })
       }, 2_500)
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
+      // Whatever just changed for this podcast, the editor's field values
+      // changed with it.
+      void queryClient.invalidateQueries({ queryKey: promptPreviewQueryKey })
       void queryClient.invalidateQueries({ queryKey: ['client-shortlist-research-document', workspaceId, clientId] })
       toast.success('Research complete — writing the recommended sequence.')
       // One button, whole pipeline: research finishing rolls straight into
@@ -281,6 +287,9 @@ export function ClientCampaignPrepDialog({
     },
     onError: (error) => {
       void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
+      // Whatever just changed for this podcast, the editor's field values
+      // changed with it.
+      void queryClient.invalidateQueries({ queryKey: promptPreviewQueryKey })
       toast.error(error instanceof Error ? error.message : 'The research run could not be completed.')
     },
   })
@@ -339,6 +348,9 @@ export function ClientCampaignPrepDialog({
       setSavedDraft(applyPitch)
     } catch (error) {
       void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
+      // Whatever just changed for this podcast, the editor's field values
+      // changed with it.
+      void queryClient.invalidateQueries({ queryKey: promptPreviewQueryKey })
       toast.error(error instanceof Error ? error.message : 'The pitch could not be written from research.')
     } finally {
       setPitchLoadingKey((current) => (current === key ? null : current))
@@ -355,6 +367,9 @@ export function ClientCampaignPrepDialog({
     onMutate: () => {
       window.setTimeout(() => {
         void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
+        // Whatever just changed for this podcast, the editor's field values
+        // changed with it.
+        void queryClient.invalidateQueries({ queryKey: promptPreviewQueryKey })
       }, 2_500)
     },
     onSuccess: (unlock) => {
@@ -370,6 +385,9 @@ export function ClientCampaignPrepDialog({
     onSettled: () => {
       setPreviewEmailSearchPodcastId(null)
       void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
+      // Whatever just changed for this podcast, the editor's field values
+      // changed with it.
+      void queryClient.invalidateQueries({ queryKey: promptPreviewQueryKey })
     },
   })
   const [showPodcastDetails, setShowPodcastDetails] = useState(false)
@@ -571,11 +589,24 @@ export function ClientCampaignPrepDialog({
   const promptDirty = promptDraft !== effectivePromptContent(selectedPromptId)
   const customPromptCount = RESEARCH_PROMPT_DEFAULTS.filter((prompt) => promptOverrides[prompt.id]).length
 
+  /**
+   * Named, because anything that fills a field has to invalidate it.
+   *
+   * Research runs inside this dialog and writes host names, episode captures
+   * and stage outputs. Until this key was invalidated with the rest, the
+   * operator watched a stage complete while the fields it had just filled
+   * stayed marked empty — staleTime only refetches on remount, not on a write.
+   */
+  const promptPreviewQueryKey = useMemo(
+    () => ['client-shortlist-prompt-preview', workspaceId, clientId, podcast?.id || 'none'],
+    [workspaceId, clientId, podcast?.id],
+  )
+
   // The real value of every field for THIS podcast, built server-side by the
   // same function the run uses. Stored reads only, so opening the editor is
   // never a provider call or a charge.
   const promptPreviewQuery = useQuery({
-    queryKey: ['client-shortlist-prompt-preview', workspaceId, clientId, podcast?.id || 'none'],
+    queryKey: promptPreviewQueryKey,
     queryFn: () => getPromptPreview(workspaceId, clientId, podcast!.id),
     enabled: open && Boolean(podcast?.id),
     retry: false,
@@ -1558,6 +1589,8 @@ export function ClientCampaignPrepDialog({
                                     content={inspectedPromptContent}
                                     preview={promptPreviewQuery.data ?? null}
                                     loading={promptPreviewQuery.isLoading}
+                                    error={promptPreviewQuery.isError}
+                                    onRetry={() => void promptPreviewQuery.refetch()}
                                     podcastName={podcast?.podcast_name}
                                   />
                                 </div>
@@ -1636,6 +1669,7 @@ export function ClientCampaignPrepDialog({
                                   extraVariables={upstreamOutputVariables}
                                   omitVariableIds={omittedVariableIds}
                                   availability={promptFieldAvailability}
+                                  requiredVariableIds={promptRequirements[selectedPromptId] ?? []}
                                   id="campaign-research-stage-prompt"
                                   ariaLabel={`Prompt for ${selectedPromptDefault.label}`}
                                   value={promptDraft}
@@ -1657,6 +1691,9 @@ export function ClientCampaignPrepDialog({
                                   content={promptDraft}
                                   preview={promptPreviewQuery.data ?? null}
                                   loading={promptPreviewQuery.isLoading}
+                                  error={promptPreviewQuery.isError}
+                                  onRetry={() => void promptPreviewQuery.refetch()}
+                                  requiredVariableIds={promptRequirements[selectedPromptId] ?? []}
                                   podcastName={podcast?.podcast_name}
                                 />
                               </div>

@@ -14,6 +14,8 @@ interface PromptVariablePaletteProps {
    * rather than reporting every field as empty.
    */
   availability?: Record<string, boolean> | null
+  /** Fields this stage refuses to run without; an empty one stops the run. */
+  requiredVariableIds?: string[]
 }
 
 /**
@@ -32,9 +34,11 @@ export const PromptVariablePalette = ({
   onInsert,
   omitVariableIds,
   availability,
+  requiredVariableIds,
 }: PromptVariablePaletteProps) => {
   const [query, setQuery] = useState('')
   const highlighting = Boolean(availability)
+  const required = useMemo(() => new Set(requiredVariableIds ?? []), [requiredVariableIds])
 
   const groups = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -84,10 +88,17 @@ export const PromptVariablePalette = ({
               {group.variables.map((variable) => {
                 // Colour says it at a glance; the label says it to a screen
                 // reader and to anyone who cannot separate the two hues.
+                // Empty and required is not the same warning as empty and
+                // optional: one stops the run, the other only degrades it.
                 const filled = Boolean(availability?.[variable.id])
-                const state = highlighting
-                  ? (filled ? ' — has a value for this podcast' : ' — no value for this podcast')
-                  : ''
+                const blocks = !filled && required.has(variable.id)
+                const state = !highlighting
+                  ? ''
+                  : filled
+                    ? ' — has a value'
+                    : blocks
+                      ? ' — empty and required, so this podcast skips the stage'
+                      : ' — empty, reaches the model as Not available'
                 return (
                   <li key={variable.id}>
                     <button
@@ -103,7 +114,9 @@ export const PromptVariablePalette = ({
                         highlighting
                           ? (filled
                             ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                            : 'border-red-200 bg-red-50 text-red-700')
+                            : blocks
+                              ? 'border-red-300 bg-red-100 text-red-700'
+                              : 'border-amber-200 bg-amber-50 text-amber-800')
                           : 'bg-background'
                       }`}
                     >
@@ -121,7 +134,9 @@ export const PromptVariablePalette = ({
         {highlighting && (
           <>
             {' '}
-            <span className="text-red-600">Red</span> fields have no value for this podcast.
+            <span className="text-amber-700">Amber</span> fields are empty;{' '}
+            <span className="text-red-700">red</span> ones are empty and required, so the
+            stage is skipped.
           </>
         )}
       </p>

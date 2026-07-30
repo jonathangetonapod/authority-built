@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import { PromptFieldPreview } from '@/components/workspace/PromptFieldPreview'
 import type { PromptPreview } from '@/services/clientShortlist'
 
@@ -17,12 +17,43 @@ const preview = (overrides: Partial<PromptPreview> = {}): PromptPreview => ({
 })
 
 describe('PromptFieldPreview', () => {
-  it('shows the real value of each field the prompt names', () => {
+  // The empty ones lead, because they are the ones needing a decision; the
+  // filled ones are one click away rather than a third copy of the same list.
+  it('leads with the empty fields and folds the filled ones away', () => {
     render(<PromptFieldPreview content={PROMPT} preview={preview()} podcastName="Operator Weekly" />)
 
-    expect(screen.getByText('Operator Weekly', { selector: 'p' })).toBeInTheDocument()
-    expect(screen.getByText('Dana Reed')).toBeInTheDocument()
     expect(screen.getByText('2 of 3 filled')).toBeInTheDocument()
+    expect(screen.queryByText('Dana Reed')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Show 2 filled fields/ }))
+    expect(screen.getByText('Dana Reed')).toBeInTheDocument()
+    expect(screen.getByText('Operator Weekly', { selector: 'p' })).toBeInTheDocument()
+  })
+
+  it('says so plainly when nothing is missing', () => {
+    render(<PromptFieldPreview content="Open on {{podcast_name}}." preview={preview()} />)
+    expect(screen.getByText(/Every field this prompt names has a value/)).toBeInTheDocument()
+  })
+
+  // A failed read named the wrong cause: it claimed no podcast was open.
+  it('separates a failed read from having no podcast open', () => {
+    const retry = vi.fn()
+    render(<PromptFieldPreview content={PROMPT} preview={null} error onRetry={retry} />)
+    expect(screen.getByText(/could not be read/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(retry).toHaveBeenCalled()
+    expect(screen.queryByText(/Open this from a podcast/)).not.toBeInTheDocument()
+  })
+
+  // A client field is empty for every podcast, not for this one.
+  it('points a missing client field at the client record', () => {
+    render(
+      <PromptFieldPreview
+        content="Introduce {{client_bio}}."
+        preview={preview({ fields: { client_bio: { value: null, truncated: false } } })}
+      />,
+    )
+    expect(screen.getByText(/Missing from the client record/)).toBeInTheDocument()
   })
 
   it('says plainly that an empty field reaches the model as “Not available”', () => {
@@ -94,5 +125,30 @@ describe('PromptFieldPreview', () => {
   it('only offers real values once a podcast is in context', () => {
     render(<PromptFieldPreview content={PROMPT} preview={null} />)
     expect(screen.getByText(/Open this from a podcast/)).toBeInTheDocument()
+  })
+})
+
+describe('PromptFieldPreview severity', () => {
+  // One field, one severity. Before this the same field could read as blocking
+  // in the prompt above and merely empty in the list below.
+  it('marks a required empty field as blocking, not merely empty', () => {
+    render(
+      <PromptFieldPreview
+        content="Quote {{episode_transcript}}."
+        preview={preview({ fields: { episode_transcript: { value: null, truncated: false } } })}
+        requiredVariableIds={['episode_transcript']}
+      />,
+    )
+    expect(screen.getByText(/so this podcast skips it/)).toBeInTheDocument()
+  })
+
+  it('leaves an optional empty field as a degradation', () => {
+    render(
+      <PromptFieldPreview
+        content="Quote {{episode_transcript}}."
+        preview={preview({ fields: { episode_transcript: { value: null, truncated: false } } })}
+      />,
+    )
+    expect(screen.queryByText(/so this podcast skips it/)).not.toBeInTheDocument()
   })
 })

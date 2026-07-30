@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { PROMPT_VARIABLES } from '@/lib/promptVariables'
 import { referencedPromptVariables } from '@/lib/promptVariableMenu'
@@ -9,6 +9,11 @@ interface PromptFieldPreviewProps {
   content: string
   preview: PromptPreview | null
   loading?: boolean
+  /** The read failed. Distinct from having no podcast open. */
+  error?: boolean
+  onRetry?: () => void
+  /** Fields this stage refuses to run without, marked as blocking not merely empty. */
+  requiredVariableIds?: string[]
   podcastName?: string | null
 }
 
@@ -25,9 +30,15 @@ const LABELS = new Map(PROMPT_VARIABLES.map((variable) => [variable.id, variable
  * fields a stage produces, so ask it instead.
  */
 const explainEmpty = (variableId: string): string => {
-  const producedBy = LABELS.get(variableId)?.producedBy
-  if (producedBy) {
-    return `Nothing stored yet — written by the ${producedBy} stage, which has not run for this podcast.`
+  const variable = LABELS.get(variableId)
+  if (variable?.producedBy) {
+    return `Nothing stored yet — written by the ${variable.producedBy} stage, which has not run for this podcast.`
+  }
+  // A client field is empty for every podcast, not for this one: saying "not
+  // available for this podcast" would send someone looking at the show when
+  // the gap is in the client record.
+  if (variable?.group === 'client') {
+    return 'Missing from the client record — the model is told exactly that.'
   }
   return 'Not available for this podcast — the model is told exactly that.'
 }
@@ -45,14 +56,21 @@ export const PromptFieldPreview = ({
   content,
   preview,
   loading,
+  error,
+  onRetry,
+  requiredVariableIds,
   podcastName,
 }: PromptFieldPreviewProps) => {
+  const [showFilled, setShowFilled] = useState(false)
   const referenced = useMemo(() => referencedPromptVariables(content), [content])
 
   if (referenced.length === 0) return null
 
   const present = referenced.filter((id) => preview?.fields[id]?.value)
   const missing = referenced.filter((id) => !preview?.fields[id]?.value)
+  // The same field must not read as blocking in the prompt and merely empty
+  // here; one field, one severity, wherever it is shown.
+  const blocks = (id: string) => (requiredVariableIds ?? []).includes(id)
 
   return (
     <section aria-label="Field values for this podcast" className="rounded-lg border">
@@ -69,7 +87,29 @@ export const PromptFieldPreview = ({
 
       {loading && <p className="px-3 py-2 text-[11px] text-muted-foreground">Reading this podcast…</p>}
 
-      {!loading && !preview && (
+      {/*
+        A failed read is not an empty one. This used to fall through to "open
+        this from a podcast", which named the wrong cause while a podcast was
+        open, and the prompt simply went uncoloured with no explanation.
+      */}
+      {!loading && !preview && error && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+          <p className="text-[11px] text-amber-800">
+            This podcast's values could not be read, so nothing below is marked filled or empty.
+          </p>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="rounded border px-2 py-0.5 text-[11px] hover:bg-muted"
+            >
+              Try again
+            </button>
+          )}
+        </div>
+      )}
+
+      {!loading && !preview && !error && (
         <p className="px-3 py-2 text-[11px] text-muted-foreground">
           Open this from a podcast to see its real values.
         </p>
@@ -104,8 +144,14 @@ export const PromptFieldPreview = ({
               the latest has none yet. Anything quoted belongs to that earlier episode.
             </p>
           )}
+          {/*
+            The empty ones lead and the filled ones fold away. Colour in the
+            prompt already says which is which, so re-listing all of them here
+            put the same set on screen three times — once coloured, once here,
+            once under Required fields — and buried the few that need a decision.
+          */}
           <ul className="divide-y">
-            {referenced.map((id) => {
+            {(showFilled ? referenced : missing).map((id) => {
               const field = preview.fields[id]
               const filled = Boolean(field?.value)
               const variable = LABELS.get(id)
@@ -114,23 +160,47 @@ export const PromptFieldPreview = ({
                   <div className="flex items-center gap-2">
                     {filled
                       ? <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-600" aria-hidden="true" />
-                      : <AlertTriangle className="h-3 w-3 shrink-0 text-amber-600" aria-hidden="true" />}
+                      : <AlertTriangle
+                        className={`h-3 w-3 shrink-0 ${blocks(id) ? 'text-red-600' : 'text-amber-600'}`}
+                        aria-hidden="true"
+                      />}
                     <span className="font-mono text-[11px] leading-4">{id}</span>
                     <span className="truncate text-[10px] text-muted-foreground">{variable?.label}</span>
                   </div>
-                  <p className={`mt-1 text-[11px] leading-4 ${filled ? 'text-foreground' : 'italic text-amber-700'}`}>
+                  <p className={`mt-1 text-[11px] leading-4 ${
+                    filled ? 'text-foreground' : `italic ${blocks(id) ? 'text-red-700' : 'text-amber-700'}`
+                  }`}>
                     {filled ? field!.value : explainEmpty(id)}
+                    {!filled && blocks(id) && ' This stage is set to require it, so this podcast skips it.'}
                   </p>
                 </li>
               )
             })}
           </ul>
-          {missing.length > 0 && (
-            <p className="border-t px-3 py-2 text-[10px] leading-4 text-muted-foreground">
-              Requiring a field below makes this podcast skip the stage instead of
-              reading “Not available”.
-            </p>
-          )}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2">
+            {missing.length > 0 ? (
+              <p className="text-[10px] leading-4 text-muted-foreground">
+                Requiring a field below makes this podcast skip the stage instead of
+                reading “Not available”.
+              </p>
+            ) : (
+              <p className="text-[10px] leading-4 text-emerald-700">
+                Every field this prompt names has a value.
+              </p>
+            )}
+            {present.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowFilled((current) => !current)}
+                aria-expanded={showFilled}
+                className="shrink-0 rounded border px-2 py-0.5 text-[10px] hover:bg-muted"
+              >
+                {showFilled
+                  ? 'Hide filled fields'
+                  : `Show ${present.length} filled ${present.length === 1 ? 'field' : 'fields'}`}
+              </button>
+            )}
+          </div>
         </>
       )}
     </section>

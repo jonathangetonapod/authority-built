@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Braces } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -39,6 +39,20 @@ interface PromptVariableTextareaProps {
    * prompt is left uncoloured rather than painted as if every field were empty.
    */
   availability?: Record<string, boolean> | null
+  /**
+   * Fields this stage refuses to run without. An empty one of these stops the
+   * run; an empty optional one only renders "Not available", which a prompt
+   * can be written to absorb. They are not the same warning.
+   */
+  requiredVariableIds?: string[]
+}
+
+type FieldState = 'filled' | 'degrades' | 'blocks'
+
+const TOKEN_STYLES: Record<FieldState, string> = {
+  filled: 'rounded-[3px] bg-emerald-50 text-emerald-700',
+  degrades: 'rounded-[3px] bg-amber-50 text-amber-700 underline decoration-amber-400 decoration-dotted underline-offset-2',
+  blocks: 'rounded-[3px] bg-red-100 text-red-700 underline decoration-red-500 underline-offset-2',
 }
 
 /**
@@ -61,6 +75,7 @@ export const PromptVariableTextarea = ({
   extraVariables,
   omitVariableIds,
   availability,
+  requiredVariableIds,
 }: PromptVariableTextareaProps) => {
   const fieldRef = useRef<HTMLTextAreaElement | null>(null)
   const highlightRef = useRef<HTMLDivElement | null>(null)
@@ -100,6 +115,19 @@ export const PromptVariableTextarea = ({
     [highlighting, value, knownIds],
   )
   const strays = useMemo(() => (editable ? strayTriggerHints(value) : []), [editable, value])
+
+  const required = useMemo(() => new Set(requiredVariableIds ?? []), [requiredVariableIds])
+  const fieldState = useCallback((variableId: string): FieldState => {
+    if (availability?.[variableId]) return 'filled'
+    return required.has(variableId) ? 'blocks' : 'degrades'
+  }, [availability, required])
+  const blocking = useMemo(
+    () => (highlighting
+      ? [...new Set(segments.map((segment) => segment.variableId).filter((id): id is string => Boolean(id)))]
+        .filter((id) => fieldState(id) === 'blocks')
+      : []),
+    [highlighting, segments, fieldState],
+  )
 
   const syncTrigger = (field: HTMLTextAreaElement | null) => {
     if (!field || !editable) return
@@ -190,7 +218,15 @@ export const PromptVariableTextarea = ({
           {highlighting && (
             <>
               {' '}
-              <span className="text-red-600">Red</span> fields have no value for this podcast.
+              <span className="text-amber-700">Amber</span> fields are empty and reach the
+              model as “Not available”.
+              {blocking.length > 0 && (
+                <>
+                  {' '}
+                  <span className="text-red-700">Red</span> ones are required, so this podcast
+                  skips the stage entirely.
+                </>
+              )}
             </>
           )}
         </p>
@@ -234,6 +270,10 @@ export const PromptVariableTextarea = ({
               // prompt, and without it selecting the page yields the text twice.
               'pointer-events-none select-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words rounded-md border border-transparent px-3 py-2 text-sm',
               className,
+              // The textarea dims itself when disabled, but the text you can
+              // actually see is this layer's, so without matching it a saving
+              // field looks exactly like an editable one.
+              disabled && 'opacity-50',
             )}
           >
             {segments.map((segment, index) => (
@@ -245,9 +285,7 @@ export const PromptVariableTextarea = ({
                     // changes advance width — weight, size, letter-spacing —
                     // would slide this layer out of step with the caret and
                     // selection, which still come from the textarea.
-                    className={availability?.[segment.variableId]
-                      ? 'rounded-[3px] bg-emerald-50 text-emerald-700'
-                      : 'rounded-[3px] bg-red-50 text-red-600 underline decoration-red-400 decoration-dotted underline-offset-2'}
+                    className={TOKEN_STYLES[fieldState(segment.variableId)]}
                   >
                     {segment.text}
                   </span>
@@ -337,15 +375,24 @@ export const PromptVariableTextarea = ({
                           carries the violet highlight showing where the search
                           matched, and two colours on one word read as neither.
                         */}
-                        {highlighting && (
-                          <span
-                            className={`shrink-0 text-[9px] leading-4 ${
-                              availability?.[variable.id] ? 'text-emerald-600' : 'text-red-600'
-                            }`}
-                          >
-                            {availability?.[variable.id] ? '● has a value' : '● empty'}
-                          </span>
-                        )}
+                        {highlighting && (() => {
+                          const state = fieldState(variable.id)
+                          return (
+                            <span
+                              className={`shrink-0 text-[9px] leading-4 ${{
+                                filled: 'text-emerald-600',
+                                degrades: 'text-amber-700',
+                                blocks: 'text-red-700',
+                              }[state]}`}
+                            >
+                              {{
+                                filled: '● has a value',
+                                degrades: '● empty',
+                                blocks: '● empty — required, blocks the run',
+                              }[state]}
+                            </span>
+                          )
+                        })()}
                       </span>
                       <span className="block text-[10px] leading-4 text-muted-foreground">
                         {marked(variable.producedBy

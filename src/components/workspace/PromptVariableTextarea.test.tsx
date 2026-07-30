@@ -7,10 +7,12 @@ import { PROMPT_VARIABLES, PROMPT_VARIABLE_GROUPS } from '@/lib/promptVariables'
 const Harness = ({
   readOnly,
   availability,
+  requiredVariableIds,
   initial = '',
 }: {
   readOnly?: boolean
   availability?: Record<string, boolean> | null
+  requiredVariableIds?: string[]
   initial?: string
 }) => {
   const [value, setValue] = useState(initial)
@@ -21,6 +23,7 @@ const Harness = ({
       ariaLabel="Prompt"
       readOnly={readOnly}
       availability={availability}
+      requiredVariableIds={requiredVariableIds}
     />
   )
 }
@@ -179,8 +182,27 @@ describe('PromptVariableTextarea field colouring', () => {
   it('marks a field this podcast has, and one it does not', () => {
     render(<Harness availability={availability} initial="Open on {{podcast_name}} ({{itunes_rating}})." />)
     expect(tokenSpan('{{podcast_name}}')?.className).toContain('text-emerald-700')
-    expect(tokenSpan('{{itunes_rating}}')?.className).toContain('text-red-600')
-    expect(screen.getByText(/have no value for this podcast/)).toBeInTheDocument()
+    expect(tokenSpan('{{itunes_rating}}')?.className).toContain('text-amber-700')
+    expect(screen.getByText(/reach the model as/)).toBeInTheDocument()
+  })
+
+  // Empty and required stops the run; empty and optional only degrades it.
+  // The stronger warning is reserved for the one that costs a run.
+  it('separates a field that blocks the run from one that only degrades it', () => {
+    render(
+      <Harness
+        availability={availability}
+        requiredVariableIds={['itunes_rating']}
+        initial="Open on {{podcast_name}} ({{itunes_rating}})."
+      />,
+    )
+    expect(tokenSpan('{{itunes_rating}}')?.className).toContain('text-red-700')
+    expect(screen.getByText(/skips the stage entirely/)).toBeInTheDocument()
+  })
+
+  it('says nothing about blocking when no empty field is required', () => {
+    render(<Harness availability={availability} initial="Open on {{itunes_rating}}." />)
+    expect(screen.queryByText(/skips the stage entirely/)).not.toBeInTheDocument()
   })
 
   // The filler substitutes only registered tokens, so prose written in
@@ -195,14 +217,14 @@ describe('PromptVariableTextarea field colouring', () => {
   // run it is empty, and the model will be told exactly that.
   it('treats a field the preview does not mention as empty', () => {
     render(<Harness availability={availability} initial="Cite {{research_report}}." />)
-    expect(tokenSpan('{{research_report}}')?.className).toContain('text-red-600')
+    expect(tokenSpan('{{research_report}}')?.className).toContain('text-amber-700')
   })
 
   it('keeps the coloured layer in step with the prompt as it is edited', () => {
     render(<Harness availability={availability} />)
     fireEvent.change(field(), { target: { value: 'Rated {{itunes_rating}}.' } })
     expect(highlightLayer()?.textContent).toContain('Rated {{itunes_rating}}.')
-    expect(tokenSpan('{{itunes_rating}}')?.className).toContain('text-red-600')
+    expect(tokenSpan('{{itunes_rating}}')?.className).toContain('text-amber-700')
   })
 })
 
@@ -223,8 +245,8 @@ describe('PromptVariableTextarea field colouring in the pickers', () => {
   it('marks each chip in the browse palette', () => {
     render(<Harness availability={availability} />)
     fireEvent.click(screen.getByRole('button', { name: `Browse ${PROMPT_VARIABLES.length} fields` }))
-    expect(screen.getByLabelText(/Insert Podcast name — has a value for this podcast/)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Insert Apple rating — no value for this podcast/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Insert Podcast name — has a value/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Insert Apple rating — empty, reaches the model as Not available/)).toBeInTheDocument()
   })
 
   // With no podcast open there is nothing to report, and a list painted red
