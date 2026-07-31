@@ -57,23 +57,45 @@ export const PromptOutputFields = ({
           produced — silently, and only visible later as thinner pitches.
         */}
         {fields.length === 0 ? (
-          <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
-            This stage writes one block of text, and later stages read the whole
-            of it. Nothing is named here, which is the usual setup.
-          </p>
+          <>
+            <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
+              Right now this stage writes a report, and{' '}
+              {laterStageLabel ? `${laterStageLabel} and the stages after it read` : 'later stages read'}{' '}
+              the whole of it. That is the usual setup and most stages stay this way.
+            </p>
+            <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+              Naming a field pulls one value out instead — say{' '}
+              <code className="font-mono">{'{{host_style}}'}</code> for how the host
+              runs an interview — so a later prompt can drop in just that, rather
+              than the whole report.
+            </p>
+            {/* The cost belongs before the decision, not after it. Naming a field
+                does not add one to the prose, it replaces the prose: the stage is
+                asked for a JSON object with exactly these keys and nothing else,
+                so anything else the prompt asks for stops being produced —
+                silently, and visible later only as thinner pitches. */}
+            <p className="mt-1 text-[11px] leading-4 text-amber-800">
+              Worth knowing first: naming any field <strong>replaces</strong> the
+              report. The stage then returns only the fields you name, so anything
+              the prompt asks for that is not named here stops being produced.
+            </p>
+          </>
         ) : (
-          <p className="mt-0.5 text-[11px] leading-4 text-amber-800">
-            This stage now returns <strong>only</strong> the {fields.length}{' '}
-            {fields.length === 1 ? 'field' : 'fields'} below, as JSON — the block
-            of text it used to write is not produced. Anything the prompt asks
-            for that is not named here is lost.
-          </p>
+          <>
+            <p className="mt-0.5 text-[11px] leading-4 text-amber-800">
+              This stage now returns <strong>only</strong> the {fields.length}{' '}
+              {fields.length === 1 ? 'field' : 'fields'} below, as JSON — the report
+              it used to write is not produced. Anything the prompt asks for that is
+              not named here is lost.
+            </p>
+            <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+              Each name is a variable{' '}
+              {laterStageLabel ? `${laterStageLabel} and the stages after it can use` : 'later stages can use'},
+              like any other field. Remove them all and the stage goes back to
+              writing a report.
+            </p>
+          </>
         )}
-        <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
-          Each name becomes a variable{' '}
-          {laterStageLabel ? `${laterStageLabel} and the stages after it can use` : 'later stages can use'},
-          like any other field. Remove them all and the stage goes back to prose.
-        </p>
       </header>
 
       {fields.length > 0 && (
@@ -122,7 +144,7 @@ export const PromptOutputFields = ({
             value={draftId}
             disabled={disabled}
             aria-label="New field name"
-            placeholder="Name a field, e.g. host_style"
+            placeholder="Name a value to pull out, e.g. host_style"
             onChange={(event) => setDraftId(event.target.value)}
             onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); add() } }}
             className="h-7 font-mono text-[11px]"

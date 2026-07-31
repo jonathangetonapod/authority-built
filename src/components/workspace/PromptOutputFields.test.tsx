@@ -5,8 +5,14 @@ import { PromptOutputFields } from '@/components/workspace/PromptOutputFields'
 describe('PromptOutputFields', () => {
   it('describes the empty state as the ordinary one, not a gap to fill', () => {
     render(<PromptOutputFields fields={[]} onChange={vi.fn()} />)
-    expect(screen.getByText(/writes one block of text/)).toBeInTheDocument()
-    expect(screen.getByText(/which is the usual setup/)).toBeInTheDocument()
+    expect(screen.getByText(/this stage writes a report/i)).toBeInTheDocument()
+    expect(screen.getByText(/most stages stay this way/i)).toBeInTheDocument()
+    // What it is for, before how it works.
+    expect(screen.getByText(/pulls one value out instead/i)).toBeInTheDocument()
+    // And the cost before the decision, not after it: naming a field replaces
+    // the report rather than adding to it, and that used to appear only once a
+    // field had already been added.
+    expect(screen.getByText(/naming any field/i)).toHaveTextContent('replaces')
   })
 
   // The consequence the panel never stated: naming a field does not add one to
@@ -43,6 +49,6 @@ describe('PromptOutputFields', () => {
   it('marks the name box as an example, not an entry', () => {
     render(<PromptOutputFields fields={[]} onChange={vi.fn()} />)
     expect(screen.getByLabelText('New field name'))
-      .toHaveAttribute('placeholder', 'Name a field, e.g. host_style')
+      .toHaveAttribute('placeholder', 'Name a value to pull out, e.g. host_style')
   })
 })
