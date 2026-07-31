@@ -73,19 +73,39 @@ export function buildOutputInstruction(fields: readonly PromptOutputField[]): st
       return `  "${field.id}": ${type}${note}`
     })
     .join('\n')
+  // Additive, not instead-of. Asking for JSON alone meant the report the later
+  // stages read stopped being written the moment anyone named a field — a
+  // silent loss, visible only as thinner pitches. The stage writes what it
+  // always wrote, then repeats the named values in a block at the end.
   return [
-    'Return ONLY a JSON object with exactly these keys, and nothing else — no prose before or after, no code fence:',
+    'Write your full answer as normal.',
+    'Then, at the very end and after everything else, add one fenced JSON block'
+    + ' repeating these values from what you just wrote:',
+    '```json',
     '{',
     shape,
     '}',
-    'Use an empty string for anything the provided material does not support. Never invent a value to fill a key.',
+    '```',
+    'Use an empty string for anything the provided material does not support.'
+    + ' Never invent a value to fill a key, and never let the block replace your answer.',
   ].join('\n')
 }
 
-/** Pulls the JSON object out of a model answer that may be fenced or padded. */
-function extractJson(raw: string): unknown {
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/u)
-  const candidate = (fenced ? fenced[1] : raw).trim()
+/**
+ * Splits a stage's answer into the prose it wrote and the trailing block.
+ *
+ * The last fence, not the first: the answer itself may quote a fenced example,
+ * and the block being asked for is always the final thing on the page.
+ */
+export function splitOutputBlock(raw: string): { prose: string; block: string | null } {
+  const matches = [...raw.matchAll(/```(?:json)?\s*([\s\S]*?)```/gu)]
+  const last = matches.at(-1)
+  if (!last || last.index === undefined) return { prose: raw.trim(), block: null }
+  const prose = (raw.slice(0, last.index) + raw.slice(last.index + last[0].length)).trim()
+  return { prose, block: last[1].trim() }
+}
+
+function parseJsonObject(candidate: string): unknown {
   const start = candidate.indexOf('{')
   const end = candidate.lastIndexOf('}')
   if (start === -1 || end <= start) return null
@@ -94,6 +114,14 @@ function extractJson(raw: string): unknown {
   } catch {
     return null
   }
+}
+
+/** Pulls the JSON object out of a model answer that may be fenced or padded. */
+function extractJson(raw: string): unknown {
+  const { block } = splitOutputBlock(raw)
+  // A bare JSON answer still reads, so a stage that ignores the instruction and
+  // returns only the object is not treated as having produced nothing.
+  return (block === null ? null : parseJsonObject(block)) ?? parseJsonObject(raw.trim())
 }
 
 /**

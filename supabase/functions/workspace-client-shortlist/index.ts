@@ -41,6 +41,7 @@ import {
 import {
   buildOutputInstruction,
   parseOutputFields,
+  splitOutputBlock,
   type PromptOutputField,
   resolveOutputFields,
 } from '../_shared/promptOutputs.ts'
@@ -1899,7 +1900,13 @@ serve(async (req) => {
           )
           const parsed = parseOutputFields(raw, fields)
           if (parsed) Object.assign(stageVariables, parsed)
-          return raw
+          // The trailing block is for the named variables, not for the stages
+          // downstream, which read the report. It is taken back out so naming a
+          // field adds variables without changing what they were already given.
+          // Falls back to the whole answer if a stage returned only the block.
+          if (fields.length === 0) return raw
+          const { prose } = splitOutputBlock(raw)
+          return prose || raw
         }
 
         // The first gate runs before the charge: a podcast that can never

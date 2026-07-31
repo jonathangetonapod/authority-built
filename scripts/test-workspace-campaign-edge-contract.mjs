@@ -932,8 +932,19 @@ for (const stage of ['podcast_research', 'host_info', 'guest_info', 'find_topics
 // The declared shape is appended to the prompt, never substituted for it.
 assert.match(shortlistEdge, /fillPromptTemplate\(promptContent\(promptId\), stageVariables\),\s*\n\s*buildOutputInstruction\(fields\),/u)
 // A prose answer still reaches the caller: declaring fields must not be able
-// to lose a stage's output.
-assert.match(shortlistEdge, /const parsed = parseOutputFields\(raw, fields\)\s*\n\s*if \(parsed\) Object\.assign\(stageVariables, parsed\)\s*\n\s*return raw/u)
+// to lose a stage's output. The named values are read out, the trailing block
+// is taken back off, and what the later stages read is the report itself —
+// with a fallback to the whole answer when a stage returned only the block.
+assert.match(shortlistEdge, /const parsed = parseOutputFields\(raw, fields\)\s*\n\s*if \(parsed\) Object\.assign\(stageVariables, parsed\)/u)
+assert.match(shortlistEdge, /if \(fields\.length === 0\) return raw/u)
+assert.match(shortlistEdge, /const \{ prose \} = splitOutputBlock\(raw\)\s*\n\s*return prose \|\| raw/u)
+
+const outputsInstruction = readFileSync('supabase/functions/_shared/promptOutputs.ts', 'utf8')
+// Additive, never instead-of. Asking for JSON alone stopped the report being
+// written the moment anyone named a field, and the later stages read that
+// report — a loss visible only as thinner pitches, much later.
+assert.match(outputsInstruction, /Write your full answer as normal/u)
+assert.doesNotMatch(outputsInstruction, /Return ONLY a JSON object/u)
 
 const outputsShared = readFileSync('supabase/functions/_shared/promptOutputs.ts', 'utf8')
 // A declared field may never take the name of one the run already provides.

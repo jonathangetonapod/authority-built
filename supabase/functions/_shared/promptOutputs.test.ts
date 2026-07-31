@@ -1,8 +1,9 @@
-import { assertEquals, assertThrows } from 'https://deno.land/std@0.208.0/assert/mod.ts'
+import { assert, assertEquals, assertThrows } from 'https://deno.land/std@0.208.0/assert/mod.ts'
 import {
   buildOutputInstruction,
   normalizeOutputFields,
   parseOutputFields,
+  splitOutputBlock,
   resolveOutputFields,
 } from './promptOutputs.ts'
 
@@ -77,3 +78,54 @@ Deno.test('a client row wins, and a row that no longer validates falls back', ()
     { prompt_id: 'podcast_research', output_fields: [{ id: 'podcast_name' }] },
   ]), [])
 })
+
+// The instruction used to say "return ONLY a JSON object, no prose", so naming
+// a field stopped the report being written at all. Later stages read that
+// report, so a field nobody meant to trade for it silently thinned every pitch
+// downstream. It is additive now: the answer, then a block repeating the values.
+Deno.test('asks for the answer and the block, never the block instead', () => {
+  const instruction = buildOutputInstruction([
+    { id: 'host_style', label: 'host_style', description: '', type: 'text' },
+  ])
+  assert(instruction.includes('Write your full answer as normal'), 'the answer is still asked for')
+  assert(instruction.includes('at the very end'), 'the block comes last')
+  assert(!/ONLY a JSON object/u.test(instruction), 'nothing asks for JSON alone')
+  assert(instruction.includes('never let the block replace your answer'), 'stated outright')
+})
+
+Deno.test('splits the trailing block off the prose', () => {
+  const raw = 'The host runs a loose interview.\n\n```json\n{"host_style":"loose"}\n```'
+  const { prose, block } = splitOutputBlock(raw)
+  assertEquals(prose, 'The host runs a loose interview.')
+  assertEquals(block, '{"host_style":"loose"}')
+})
+
+// A report may quote a fenced example of its own, and the block being asked for
+// is always the final thing on the page.
+Deno.test('takes the last fence, not the first', () => {
+  const raw = 'Example:\n```\nnot the block\n```\nMore.\n```json\n{"host_style":"loose"}\n```'
+  const { prose, block } = splitOutputBlock(raw)
+  assertEquals(block, '{"host_style":"loose"}')
+  assert(prose.includes('not the block'), 'the quoted example stays in the report')
+})
+
+Deno.test('reads the named values out of a full answer', () => {
+  const fields = [{ id: 'host_style', label: 'host_style', description: '', type: 'text' as const }]
+  const raw = 'A long report about the show.\n\n```json\n{"host_style":"conversational"}\n```'
+  assertEquals(parseOutputFields(raw, fields), { host_style: 'conversational' })
+})
+
+// A stage that ignores the instruction and answers with the object alone must
+// still be read, or an old prompt would start producing nothing.
+Deno.test('still reads a bare JSON answer', () => {
+  const fields = [{ id: 'host_style', label: 'host_style', description: '', type: 'text' as const }]
+  assertEquals(parseOutputFields('{"host_style":"dry"}', fields), { host_style: 'dry' })
+})
+
+Deno.test('leaves an answer with no block entirely alone', () => {
+  const raw = 'Just a report, no block at all.'
+  const { prose, block } = splitOutputBlock(raw)
+  assertEquals(prose, raw)
+  assertEquals(block, null)
+})
+

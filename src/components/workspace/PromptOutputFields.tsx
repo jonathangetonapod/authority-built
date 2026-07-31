@@ -69,30 +69,22 @@ export const PromptOutputFields = ({
               runs an interview — so a later prompt can drop in just that, rather
               than the whole report.
             </p>
-            {/* The cost belongs before the decision, not after it. Naming a field
-                does not add one to the prose, it replaces the prose: the stage is
-                asked for a JSON object with exactly these keys and nothing else,
-                so anything else the prompt asks for stops being produced —
-                silently, and visible later only as thinner pitches. */}
-            <p className="mt-1 text-[11px] leading-4 text-amber-800">
-              Worth knowing first: naming any field <strong>replaces</strong> the
-              report. The stage then returns only the fields you name, so anything
-              the prompt asks for that is not named here stops being produced.
+            <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+              Nothing is lost by doing it. The stage still writes its report, and
+              still hands the whole of it on — the named values come as well.
             </p>
           </>
         ) : (
           <>
-            <p className="mt-0.5 text-[11px] leading-4 text-amber-800">
-              This stage now returns <strong>only</strong> the {fields.length}{' '}
-              {fields.length === 1 ? 'field' : 'fields'} below, as JSON — the report
-              it used to write is not produced. Anything the prompt asks for that is
-              not named here is lost.
+            <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
+              This stage writes its report as usual and also returns the{' '}
+              {fields.length} {fields.length === 1 ? 'value' : 'values'} below.
+              Later stages still read the whole report; these are extra.
             </p>
             <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
               Each name is a variable{' '}
               {laterStageLabel ? `${laterStageLabel} and the stages after it can use` : 'later stages can use'},
-              like any other field. Remove them all and the stage goes back to
-              writing a report.
+              like any other field. Remove them all and only the report is left.
             </p>
           </>
         )}

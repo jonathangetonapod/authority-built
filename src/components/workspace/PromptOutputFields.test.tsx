@@ -9,25 +9,25 @@ describe('PromptOutputFields', () => {
     expect(screen.getByText(/most stages stay this way/i)).toBeInTheDocument()
     // What it is for, before how it works.
     expect(screen.getByText(/pulls one value out instead/i)).toBeInTheDocument()
-    // And the cost before the decision, not after it: naming a field replaces
-    // the report rather than adding to it, and that used to appear only once a
-    // field had already been added.
-    expect(screen.getByText(/naming any field/i)).toHaveTextContent('replaces')
+    // Naming a field used to replace the report the later stages read, so this
+    // said so in amber. The stage writes both now, and the copy has to stop
+    // warning about a cost that is no longer charged.
+    expect(screen.getByText(/nothing is lost by doing it/i)).toBeInTheDocument()
   })
 
   // The consequence the panel never stated: naming a field does not add one to
   // the prose, it replaces the prose. The stage is asked for a JSON object
   // with exactly these keys and nothing else, so a research prompt that also
   // asks for a quote bank and audience insights silently stops producing them.
-  it('says that naming a field replaces the prose entirely', () => {
+  it('says the report survives, because it now does', () => {
     render(
       <PromptOutputFields
         fields={[{ id: 'host_style', label: 'host_style', description: '', type: 'text' }]}
         onChange={vi.fn()}
       />,
     )
-    expect(screen.getByText(/is not produced/)).toBeInTheDocument()
-    expect(screen.getByText(/not named here is lost/)).toBeInTheDocument()
+    expect(screen.getByText(/writes its report as usual/i)).toBeInTheDocument()
+    expect(screen.getByText(/still read the whole report/i)).toBeInTheDocument()
   })
 
   it('counts the fields it will return', () => {
@@ -40,8 +40,7 @@ describe('PromptOutputFields', () => {
         onChange={vi.fn()}
       />,
     )
-    expect(screen.getByText(/only/)).toBeInTheDocument()
-    expect(screen.getByText(/fields below, as JSON/)).toBeInTheDocument()
+        expect(screen.getByText(/2 values below/i)).toBeInTheDocument()
   })
 
   // The placeholder read like an existing entry in a plain-text rendering of
