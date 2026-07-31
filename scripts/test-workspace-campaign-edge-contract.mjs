@@ -1177,10 +1177,45 @@ assert.ok(
   'a resumed run must not adopt a completed document from an earlier run',
 )
 // A stage's model choice is only accepted where an executor honours it.
+//
+// One model call answers a host: the reply prompt owns the request and the
+// nudge prompt is appended to it. So inbox_reply is selectable and inbox_nudges
+// is not, and the two halves have to stay in step — accepting a model for
+// inbox_reply while inboxSdr still hardcoded the default is exactly the
+// "saved, but changes nothing" setting this pair exists to prevent.
 assert.ok(
   edge.includes('const MODEL_SELECTABLE_PROMPT_IDS = RESEARCH_PROMPT_IDS.filter(')
-  && edge.includes('(id) => id !== "inbox_reply" && id !== "inbox_nudges",'),
-  'inbox prompts run on their shipped model, so a choice for them must be refused rather than stored',
+  && edge.includes('(id) => id !== "inbox_nudges",'),
+  'inbox_nudges has no model call of its own, so a choice for it must be refused rather than stored',
+)
+assert.ok(
+  sdrShared.includes(".select('prompt_id, content, model')"),
+  'inboxSdr must read the workspace model choice, not only the prompt wording',
+)
+assert.ok(
+  sdrShared.includes('model: replyModel,')
+  && sdrShared.includes('const replyModel = resolveInboxModel(workspacePromptRows.data, replyDefault.model)')
+  && !sdrShared.includes('model: replyDefault.model,'),
+  'the inbox request must run the workspace-chosen model, falling back to the shipped default',
+)
+// The nudge stage must not quietly acquire a model choice: honouring one means
+// a second call, and doubling the tokens and the credit for every host reply.
+assert.ok(
+  sdrShared.includes("candidate?.prompt_id === 'inbox_reply'")
+  && !/inbox_nudges'\s*\)?\s*\?\?/.test(sdrShared),
+  'inbox_nudges must not resolve a model of its own — it rides inside the reply call',
+)
+// The card that edits the inbox prompts is where the model is chosen, and it
+// must name inbox_reply as the owner rather than offering both a picker.
+const sdrCard = readFileSync('src/components/workspace/ClientSdrPromptsCard.tsx', 'utf8')
+assert.ok(
+  sdrCard.includes("const INBOX_MODEL_OWNER: ResearchPromptId = 'inbox_reply'")
+  && sdrCard.includes("const INBOX_MODEL_FOLLOWER: ResearchPromptId = 'inbox_nudges'"),
+  'the SDR prompts card must name which inbox stage owns the model call',
+)
+assert.ok(
+  sdrCard.includes('setWorkspacePromptModel(workspaceId, INBOX_MODEL_OWNER, model)'),
+  'the inbox model picker must write against the stage that owns the call',
 )
 // Each stage is saved the moment it exists, or there would be nothing to
 // resume from and a killed run would start over and die in the same place.

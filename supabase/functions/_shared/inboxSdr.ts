@@ -172,6 +172,33 @@ export function deterministicClassification(kind: 'opt_out' | 'auto_reply'): Sdr
     }
 }
 
+/**
+ * The model the inbox runs on: the workspace's choice for inbox_reply, else
+ * the shipped default.
+ *
+ * Read from inbox_reply alone, deliberately. A host is answered in ONE model
+ * call — the nudge prompt is appended to the reply prompt as a guidance block
+ * — so there is a single model to choose and inbox_reply owns the request.
+ * Honouring a model stored against inbox_nudges would mean splitting that into
+ * two calls, doubling the tokens and the credit charged for every host reply,
+ * so workspace-client-campaigns refuses to store one and this ignores any that
+ * predates that guard.
+ *
+ * Model only: maxTokens and system stay with the shipped reply default. A
+ * workspace picks which model runs the stage, not how the response is budgeted
+ * or framed — the same rule the research stages follow.
+ */
+export function resolveInboxModel(
+  rows: Array<Record<string, unknown>> | null | undefined,
+  fallback: string,
+): string {
+  const row = (rows ?? []).find((candidate) => candidate?.prompt_id === 'inbox_reply')
+  const model = row?.model
+  // An empty string is a row that carries no choice, not a model id — sending
+  // it would fail the whole request rather than fall back.
+  return typeof model === 'string' && model.trim() ? model : fallback
+}
+
 export interface GenerateReplyPackageInput {
   admin: AdminClient
   workspaceId: string
@@ -289,7 +316,7 @@ export async function generateReplyPackage(input: GenerateReplyPackageInput): Pr
       .in('prompt_id', ['inbox_reply', 'inbox_nudges']),
     admin
       .from('workspace_research_prompts')
-      .select('prompt_id, content')
+      .select('prompt_id, content, model')
       .eq('workspace_id', workspaceId)
       .in('prompt_id', ['inbox_reply', 'inbox_nudges']),
   ])
@@ -299,6 +326,8 @@ export async function generateReplyPackage(input: GenerateReplyPackageInput): Pr
   }
   const resolvePrompt = (id: 'inbox_reply' | 'inbox_nudges', fallback: string): string =>
     promptRow(clientPromptRows, id) ?? promptRow(workspacePromptRows, id) ?? fallback
+
+  const replyModel = resolveInboxModel(workspacePromptRows.data, replyDefault.model)
 
   // One substitution map for both prompts, built from the same registry as
   // every other stage; the reply-specific fields are layered on top.
@@ -352,7 +381,7 @@ export async function generateReplyPackage(input: GenerateReplyPackageInput): Pr
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: replyDefault.model,
+      model: replyModel,
       max_tokens: replyDefault.maxTokens,
       system: replyDefault.system,
       messages: [{ role: 'user', content: filled }],

@@ -67,12 +67,16 @@ const RESEARCH_PROMPT_IDS = [
 // wired to any generator today, so it is not offered as a client override.
 // Stages whose model choice an executor actually honours.
 //
-// inbox_reply and inbox_nudges are excluded on purpose: _shared/inboxSdr.ts
-// builds its own request and runs the shipped default unconditionally, so
-// accepting a model for them would store a choice, report it back as saved,
-// and change nothing about what runs — the worst kind of setting.
+// inbox_nudges is excluded on purpose, and it is a structural fact rather than
+// a gap: _shared/inboxSdr.ts answers a host in ONE model call, appending the
+// nudge prompt to the reply prompt as a guidance block. inbox_reply owns that
+// request, so its model is honoured; inbox_nudges has no request of its own to
+// run anywhere. Storing a model for it would report a choice back as saved and
+// change nothing about what runs — the worst kind of setting. Honouring it
+// instead would mean splitting the call in two, doubling the tokens and the
+// credit charged for every host reply.
 const MODEL_SELECTABLE_PROMPT_IDS = RESEARCH_PROMPT_IDS.filter(
-  (id) => id !== "inbox_reply" && id !== "inbox_nudges",
+  (id) => id !== "inbox_nudges",
 );
 
 const CLIENT_PROMPT_IDS = RESEARCH_PROMPT_IDS.filter((id) => id !== "host_name_extractor");
@@ -2940,7 +2944,7 @@ serve(async (req) => {
         throw new HttpError(
           400,
           "INVALID_FIELD",
-          `${promptId} always runs on its shipped model, so a model cannot be chosen for it`,
+          `${promptId} runs inside the inbox reply's model call rather than one of its own, so it follows the model chosen for inbox_reply`,
         );
       }
       // null clears the choice and returns the stage to its shipped default.

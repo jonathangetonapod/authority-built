@@ -1,6 +1,49 @@
 import { assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 
-import { detectDeterministicReply, withinSendWindow } from './inboxSdr.ts'
+import { detectDeterministicReply, resolveInboxModel, withinSendWindow } from './inboxSdr.ts'
+
+Deno.test('the inbox runs on the workspace model chosen for the reply stage', () => {
+  const shipped = 'claude-sonnet-4-6'
+
+  // Nothing stored: the shipped default, not a pinned copy of it.
+  assertEquals(resolveInboxModel([], shipped), shipped)
+  assertEquals(resolveInboxModel(null, shipped), shipped)
+  assertEquals(resolveInboxModel(undefined, shipped), shipped)
+
+  // A row carrying only a model choice still governs the call — rows now exist
+  // for a model with no instruction override.
+  assertEquals(
+    resolveInboxModel([{ prompt_id: 'inbox_reply', content: null, model: 'claude-opus-5' }], shipped),
+    'claude-opus-5',
+  )
+
+  // A row with no choice falls back rather than sending null/'' upstream,
+  // which would fail the whole request instead of running the default.
+  assertEquals(
+    resolveInboxModel([{ prompt_id: 'inbox_reply', content: 'custom', model: null }], shipped),
+    shipped,
+  )
+  assertEquals(
+    resolveInboxModel([{ prompt_id: 'inbox_reply', content: 'custom', model: '   ' }], shipped),
+    shipped,
+  )
+
+  // The nudge prompt is appended to the reply's call and has no request of its
+  // own, so a model stored against it must never pick the model. Rows like this
+  // can exist from before the campaigns function refused them.
+  assertEquals(
+    resolveInboxModel([{ prompt_id: 'inbox_nudges', content: null, model: 'claude-opus-5' }], shipped),
+    shipped,
+  )
+  // Both present: the reply stage wins regardless of row order.
+  assertEquals(
+    resolveInboxModel([
+      { prompt_id: 'inbox_nudges', content: null, model: 'claude-haiku-4-5-20251001' },
+      { prompt_id: 'inbox_reply', content: null, model: 'claude-opus-5' },
+    ], shipped),
+    'claude-opus-5',
+  )
+})
 
 Deno.test('the send window is weekday business hours in the campaign timezone', () => {
   // Fix "now" so the assertion does not depend on when the suite runs.
