@@ -16,7 +16,6 @@ import {
   requireWorkspaceFeatureAccess,
   workspaceCredentialIsFresh,
   writeAudit,
-  writeAuditForCompletedWork,
 } from "../_shared/workspaceAuth.ts";
 import { generateTemporaryPassword } from "../_shared/workspaceCredentials.ts";
 import {
@@ -2938,7 +2937,7 @@ serve(async (req) => {
       // The credits are already in the ledger. Failing the request because the
       // log row would not insert tells an operator the grant did not happen,
       // and the obvious response to that is to grant again.
-      await writeAuditForCompletedWork(admin, {
+      await writeAudit(admin, {
         workspaceId,
         actorUserId: user.id,
         action: "workspace.credits.granted",

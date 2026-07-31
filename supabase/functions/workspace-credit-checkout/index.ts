@@ -17,7 +17,7 @@ import {
   requireUuid,
   requireWorkspaceFeatureAccess,
   workspaceCredentialIsFresh,
-  writeAuditForCompletedWork,
+  writeAudit,
 } from '../_shared/workspaceAuth.ts'
 
 const METHODS = ['POST'] as const
@@ -119,7 +119,7 @@ serve(async (req) => {
       throw new HttpError(502, 'CHECKOUT_FAILED', 'The checkout session could not be created')
     }
 
-    await writeAuditForCompletedWork(authContext.admin, {
+    await writeAudit(authContext.admin, {
       workspaceId,
       actorUserId: authContext.user.id,
       action: 'workspace.credits.checkout_started',

@@ -586,41 +586,44 @@ async function insertAudit(admin: SupabaseClient, event: AuditEvent) {
 }
 
 /**
- * Audits an action, and refuses the action if it cannot be audited.
+ * Records an action. Never fails the action because the record failed.
  *
- * Correct only while nothing irreversible has happened yet. Once an operation
- * has had an effect outside this request — a payment provider called, a
- * balance moved — failing it because the log write failed does not undo the
- * effect; it only hides it and invites the caller to do it twice. Use
- * writeAuditForCompletedWork past that point.
+ * Every audit in this codebase is written after the thing it describes has
+ * happened — the row is inserted, the provider is called, the balance has
+ * moved — which is the natural way to log that something occurred. Throwing
+ * from here therefore reported failure for work that had succeeded, and the
+ * obvious response to that report is to do it again. It took credit purchases
+ * down for days and the plan pricing screen down on the day it shipped.
+ *
+ * So the failure is shouted about and the caller is told what actually
+ * happened. Use writeAuditOrRefuse for the other case, where the record is a
+ * precondition rather than a description.
  */
 export async function writeAudit(admin: SupabaseClient, event: AuditEvent): Promise<void> {
-  const { error } = await insertAudit(admin, event)
-  if (error) {
-    throw new HttpError(500, 'AUDIT_WRITE_FAILED', 'The operation could not be audited')
+  try {
+    const { error } = await insertAudit(admin, event)
+    if (error) {
+      console.error(`[audit] ${event.action} happened but was not recorded`)
+    }
+  } catch (_error) {
+    console.error(`[audit] ${event.action} happened but the audit write threw`)
   }
 }
 
 /**
- * Audits work that has already happened, and never fails because of it.
+ * Records an action, and refuses the action if it cannot be recorded.
  *
- * Twice this went the other way and took a payment path down: the Stripe
- * session existed, the credits were granted, and the request returned 500
- * because the log row would not insert. The effect is real whether or not it
- * is recorded, so the record is attempted, its failure is shouted about, and
- * the caller is told what actually happened.
+ * Correct only while nothing has happened yet: refusing to act unless the
+ * record lands is a real guarantee, but only before the acting. Called after
+ * an effect it guarantees nothing, because the effect is already out there.
  */
-export async function writeAuditForCompletedWork(
+export async function writeAuditOrRefuse(
   admin: SupabaseClient,
   event: AuditEvent,
 ): Promise<void> {
-  try {
-    const { error } = await insertAudit(admin, event)
-    if (error) {
-      console.error(`[audit] ${event.action} completed but was not recorded`)
-    }
-  } catch (_error) {
-    console.error(`[audit] ${event.action} completed but the audit write threw`)
+  const { error } = await insertAudit(admin, event)
+  if (error) {
+    throw new HttpError(500, 'AUDIT_WRITE_FAILED', 'The operation could not be audited')
   }
 }
 
