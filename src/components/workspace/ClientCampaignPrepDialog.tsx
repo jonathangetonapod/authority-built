@@ -83,6 +83,7 @@ import {
   RESEARCH_PROMPT_DEFAULTS_BY_ID,
   type ResearchPromptId,
 } from '@/lib/researchPromptDefaults'
+import { researchPromptPhases, researchPromptStepNumbers } from '@/lib/researchPromptStages'
 
 interface ClientCampaignPrepDialogProps {
   open: boolean
@@ -585,6 +586,8 @@ export function ClientCampaignPrepDialog({
   }
   const effectivePromptContent = (promptId: ResearchPromptId): string =>
     promptOverrides[promptId]?.content ?? RESEARCH_PROMPT_DEFAULTS_BY_ID[promptId].content
+  const promptPhases = useMemo(() => researchPromptPhases(), [])
+  const promptStepNumbers = useMemo(() => researchPromptStepNumbers(promptPhases), [promptPhases])
   const selectedPromptDefault = RESEARCH_PROMPT_DEFAULTS_BY_ID[selectedPromptId]
   const selectedPromptCustomized = Boolean(promptOverrides[selectedPromptId])
   const promptDirty = promptDraft !== effectivePromptContent(selectedPromptId)
@@ -1705,23 +1708,48 @@ export function ClientCampaignPrepDialog({
                           </div>
 
                           <div className="grid lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
-                            <nav aria-label="Research prompt stages" className="grid gap-1 border-b bg-muted/10 p-3 sm:grid-cols-2 lg:grid-cols-1 lg:border-b-0 lg:border-r">
-                              {RESEARCH_PROMPT_DEFAULTS.map((prompt) => {
-                                const selected = prompt.id === selectedPromptId
-                                const customized = Boolean(promptOverrides[prompt.id])
-                                return (
-                                  <button
-                                    key={prompt.id}
-                                    type="button"
-                                    aria-pressed={selected}
-                                    className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${selected ? 'border-primary bg-primary/5' : 'border-transparent hover:border-border hover:bg-background'}`}
-                                    onClick={() => selectPromptStage(prompt.id)}
-                                  >
-                                    <span className="block text-xs font-semibold">{prompt.label}</span>
-                                    <span className={`mt-1 block text-[10px] font-medium ${customized ? 'text-primary' : 'text-muted-foreground'}`}>{customized ? 'Customized' : 'Workspace default'}</span>
-                                  </button>
-                                )
-                              })}
+                            {/* Grouped and numbered, because the first seven are
+                                one run in order and the last two fire when a
+                                host replies. Flat and identical, they read as
+                                nine unrelated settings. */}
+                            <nav aria-label="Research prompt stages" className="space-y-4 border-b bg-muted/10 p-3 lg:border-b-0 lg:border-r">
+                              {promptPhases.map((phase) => (
+                                <div key={phase.id}>
+                                  <p className="px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{phase.label}</p>
+                                  <p className="mt-0.5 px-1 text-[10px] leading-4 text-muted-foreground/80">{phase.hint}</p>
+                                  <div className="mt-2 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-1">
+                                    {phase.prompts.map((prompt) => {
+                                      const selected = prompt.id === selectedPromptId
+                                      const customized = Boolean(promptOverrides[prompt.id])
+                                      const step = promptStepNumbers.get(prompt.id)
+                                      return (
+                                        <button
+                                          key={prompt.id}
+                                          type="button"
+                                          aria-pressed={selected}
+                                          className={`flex items-start gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors ${selected ? 'border-primary bg-primary/5' : 'border-border/70 bg-background hover:border-border hover:bg-muted/40'}`}
+                                          onClick={() => selectPromptStage(prompt.id)}
+                                        >
+                                          <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${selected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                                            {step ?? '·'}
+                                          </span>
+                                          <span className="min-w-0 flex-1">
+                                            <span className="block text-xs font-semibold leading-4">{prompt.label}</span>
+                                            {/* Only the exception is labelled. Nine
+                                                repetitions of "Workspace default"
+                                                buried the one that had changed. */}
+                                            {customized && (
+                                              <span className="mt-1 inline-flex items-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-primary">
+                                                Customized
+                                              </span>
+                                            )}
+                                          </span>
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
                             </nav>
 
                             <div className="p-4 sm:p-5">
