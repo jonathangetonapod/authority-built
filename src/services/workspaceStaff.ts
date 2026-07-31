@@ -879,6 +879,9 @@ export interface WorkspaceBillingOverview {
   has_subscription?: boolean
   // Set while a subscription is live but will not renew. billing_status stays
   // active through that window, so it cannot carry this on its own.
+  // What the ledger actually took this month. The usage table below prices
+  // runs at today's rate, which only matches while the rate has not moved.
+  credits_spent_this_month?: number
   cancel_at_period_end?: boolean
   current_period_end?: string | null
   balance: number

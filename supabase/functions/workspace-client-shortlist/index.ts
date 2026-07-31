@@ -1900,11 +1900,12 @@ serve(async (req) => {
           )
           const parsed = parseOutputFields(raw, fields)
           if (parsed) Object.assign(stageVariables, parsed)
-          // The trailing block is for the named variables, not for the stages
-          // downstream, which read the report. It is taken back out so naming a
-          // field adds variables without changing what they were already given.
-          // Falls back to the whole answer if a stage returned only the block.
-          if (fields.length === 0) return raw
+          // Stripped only when the block parsed as the declared shape. A report
+          // may legitimately end on a fenced example — a draft opener, a code
+          // sample — and cutting the last fence off unconditionally deleted it
+          // whenever the model skipped the block or ran out of tokens. Losing
+          // the end of the report is the exact harm this whole change removes.
+          if (fields.length === 0 || !parsed) return raw
           const { prose } = splitOutputBlock(raw)
           return prose || raw
         }

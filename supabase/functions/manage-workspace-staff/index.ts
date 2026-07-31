@@ -2822,7 +2822,7 @@ serve(async (req) => {
       monthStart.setUTCDate(1);
       monthStart.setUTCHours(0, 0, 0, 0);
 
-      const [profileResult, lotsResult, ledgerResult, usageResult, pricesResult] = await Promise.all([
+      const [profileResult, lotsResult, ledgerResult, spentResult, usageResult, pricesResult] = await Promise.all([
         admin.from("workspace_billing_profiles")
           .select("plan_key, billing_status, base_price_cents, per_client_price_cents, included_active_clients, monthly_credit_allowance, stripe_subscription_id, cancel_at_period_end, current_period_end")
           .eq("workspace_id", workspaceId)
@@ -2836,6 +2836,16 @@ serve(async (req) => {
           .eq("workspace_id", workspaceId)
           .order("created_at", { ascending: false })
           .limit(25),
+        // What was actually taken this month. Multiplying run counts by today's
+        // price is only right while the price has never moved: the ledger holds
+        // the amount charged at the time, and a mid-month price change made the
+        // total on the page disagree with the balance underneath it.
+        admin.from("workspace_credit_ledger")
+          .select("amount")
+          .eq("workspace_id", workspaceId)
+          .lt("amount", 0)
+          .gte("created_at", monthStart.toISOString())
+          .limit(10000),
         admin.from("workspace_operation_costs")
           .select("operation_type, used_byo_key")
           .eq("workspace_id", workspaceId)
@@ -2881,6 +2891,8 @@ serve(async (req) => {
           included_active_clients: profileResult.data?.included_active_clients ?? 1,
           monthly_credit_allowance: profileResult.data?.monthly_credit_allowance ?? 25,
           enforcement_enabled: Deno.env.get("CREDIT_ENFORCEMENT_ENABLED")?.trim() === "true",
+          credits_spent_this_month: (spentResult.data ?? [])
+            .reduce((sum, row) => sum + Math.abs(Number(row.amount) || 0), 0),
           // Whether there is a subscription to manage, not which one. The id
           // itself is a Stripe identifier and the browser has no use for it.
           has_subscription: typeof profileResult.data?.stripe_subscription_id === "string"

@@ -43,6 +43,7 @@ const overviewFixture = {
     dashboard_build: { total: 3, byo: 1 },
     research_run: { total: 4, byo: 0 },
   },
+  credits_spent_this_month: 50,
   prices: { dashboard_build: 5, research_run: 10 },
   recent_activity: [
     { id: 'entry-1', entry_type: 'grant', amount: 25, operation_type: null, reference_kind: 'allowance_period', created_at: '2026-07-01T00:00:00.000Z' },
@@ -133,8 +134,10 @@ describe('WorkspaceBilling', () => {
     expect(within(dashboards).getByText(/1 on your own key, free/i)).toBeInTheDocument()
     expect(within(dashboards).getByText('10')).toBeInTheDocument()
 
-    // 40 + 10, and the same figure is what the allowance meter reports.
-    expect(screen.getByText('Total').closest('tr')).toHaveTextContent('50')
+    // 40 + 10 at today's rates. The meter reports the ledger instead, because a
+    // price that moved mid-month makes the two disagree and only the ledger
+    // matches the balance above it.
+    expect(screen.getByText(/Total at today/).closest('tr')).toHaveTextContent('50')
     expect(screen.getByText("50% of this month's included credits used.")).toBeInTheDocument()
   })
 

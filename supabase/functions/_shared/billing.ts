@@ -52,7 +52,7 @@ async function ensureMonthlyAllowance(
 ): Promise<void> {
   const { data: profile, error: profileError } = await admin
     .from('workspace_billing_profiles')
-    .select('monthly_credit_allowance')
+    .select('monthly_credit_allowance, billing_status')
     .eq('workspace_id', workspaceId)
     .maybeSingle()
   if (profileError) {
@@ -72,6 +72,14 @@ async function ensureMonthlyAllowance(
     allowance = 100
   }
   if (typeof allowance !== 'number' || allowance < 1) return
+  // A workspace that cancelled keeps its plan's allowance on the row, because
+  // that column describes the plan rather than the subscription. Granting from
+  // it regardless meant a cancelled workspace was topped up every month for
+  // ever. No profile is a workspace that has never been billed — the trial
+  // case — which still gets its allowance.
+  const payable = profile === null
+    || ['trialing', 'active', 'comped'].includes(String(profile.billing_status ?? 'trialing'))
+  if (!payable) return
 
   const period = new Date().toISOString().slice(0, 7)
   const endOfNextMonth = new Date(Date.UTC(

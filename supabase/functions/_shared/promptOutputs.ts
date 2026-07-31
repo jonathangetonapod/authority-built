@@ -141,8 +141,10 @@ export function parseOutputFields(
 
   const record = parsed as Record<string, unknown>
   // At least one declared key must be present, or this is some other JSON the
-  // prompt happened to produce and reading it would invent structure.
-  if (!fields.some((field) => field.id in record)) return null
+  // prompt happened to produce and reading it would invent structure. Own keys
+  // only: `in` walks the prototype, so a field named `constructor` — which the
+  // id pattern allows — would match every object ever parsed.
+  if (!fields.some((field) => Object.prototype.hasOwnProperty.call(record, field.id))) return null
 
   const values: Record<string, string | null> = {}
   for (const field of fields) {

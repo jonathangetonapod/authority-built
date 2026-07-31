@@ -75,6 +75,15 @@ assert.match(webhook, /update\.monthly_credit_allowance = plan\.monthly_credit_a
 assert.match(webhook, /update\.cancel_at_period_end/u)
 assert.match(webhook, /update\.current_period_end/u)
 
+// Stripe does not promise order. The event's created time is the ordering key,
+// and the comparison is part of the write rather than a read before it — two
+// racing deliveries would each pass a separate check and the one that arrived
+// later, not the one that happened later, would win.
+assert.match(webhook, /last_subscription_event_at: eventAt/u)
+assert.match(webhook, /\.or\(`last_subscription_event_at\.is\.null,last_subscription_event_at\.lte\.\$\{eventAt\}`\)/u)
+// A stale delivery is a 200: retrying cannot make an older event newer.
+assert.match(webhook, /ignored: 'stale or unknown workspace'/u)
+
 // Signature-verified before anything is read out of the body.
 assert.match(webhook, /verifyStripeSignature\(payload, req\.headers\.get\('stripe-signature'\), secret\)/u)
 assert.match(webhook, /STRIPE_SUBSCRIPTION_WEBHOOK_SECRET/u)

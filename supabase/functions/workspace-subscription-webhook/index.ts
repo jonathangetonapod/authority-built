@@ -73,6 +73,7 @@ serve(async (req) => {
   let event: {
     id?: string
     type?: string
+    created?: number
     data?: { object?: Record<string, unknown> }
   }
   try {
@@ -102,12 +103,24 @@ serve(async (req) => {
   const deleted = event.type === 'customer.subscription.deleted'
   const billingStatus = deleted ? 'suspended' : BILLING_STATUS[stripeStatus]
   if (!billingStatus) {
+    // Every status Stripe documents today is mapped, so this is unreachable
+    // until Stripe adds one — at which point the whole update is dropped, not
+    // just the status, and nothing else would say so.
+    console.error(`[Workspace Subscription Webhook] Unmapped subscription status: ${stripeStatus || 'unknown'}`)
     return json(200, { received: true, ignored: `status ${stripeStatus || 'unknown'}` })
   }
+
+  // Stripe does not promise order. Without this an update delivered after the
+  // deletion that followed it would put a cancelled workspace back on an active
+  // plan, holding that plan's allowance.
+  const eventAt = typeof event.created === 'number' && Number.isFinite(event.created)
+    ? new Date(event.created * 1000).toISOString()
+    : new Date().toISOString()
 
   const admin = createAdminClient()
   const update: Record<string, unknown> = {
     billing_status: billingStatus,
+    last_subscription_event_at: eventAt,
     updated_at: new Date().toISOString(),
   }
 
@@ -161,15 +174,25 @@ serve(async (req) => {
     }
   }
 
-  const { error } = await admin
+  // The comparison is part of the write, not a read before it: two deliveries
+  // racing would both pass a separate check and the later-arriving one would
+  // still win. Postgres settles it on the row.
+  const { data, error } = await admin
     .from('workspace_billing_profiles')
     .update(update)
     .eq('workspace_id', workspaceId)
+    .or(`last_subscription_event_at.is.null,last_subscription_event_at.lte.${eventAt}`)
+    .select('workspace_id')
   if (error) {
     console.error('[Workspace Subscription Webhook] Billing profile update failed')
     // Non-200 makes Stripe retry. The update is idempotent — it sets state
     // rather than accumulating it — so a retry costs nothing.
     return json(500, { error: 'UPDATE_FAILED' })
+  }
+  if ((data ?? []).length === 0) {
+    // Either the workspace has no profile row, or a newer event already landed.
+    // Both are 200: retrying will not make an older event newer.
+    return json(200, { received: true, ignored: 'stale or unknown workspace' })
   }
 
   return json(200, { received: true })

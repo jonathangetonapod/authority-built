@@ -251,6 +251,23 @@ async function handlePlanAdministration(
   const configurationId = await syncPortalConfiguration(updated, stripeKey)
 
   if (alreadyPriced) {
+    // An allowance change is a change to what every workspace on this plan
+    // gets. It used to slip through unaudited because the audit sat in the
+    // price branch, and this path returns before reaching it.
+    if (allowanceChanged) {
+      await writeAudit(admin, {
+        workspaceId: null,
+        actorUserId: authContext.user.id,
+        action: 'billing_plan_allowance_changed',
+        entityType: 'billing_plan',
+        entityId: null,
+        metadata: {
+          plan_key: planKey,
+          from_credits: plan.monthly_credit_allowance,
+          to_credits: allowance,
+        },
+      })
+    }
     return jsonResponse(req, METHODS, 200, {
       success: true,
       plans: updated,

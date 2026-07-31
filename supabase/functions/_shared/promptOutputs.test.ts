@@ -129,3 +129,24 @@ Deno.test('leaves an answer with no block entirely alone', () => {
   assertEquals(block, null)
 })
 
+// The report may legitimately end on a fenced example. Reading a value out of
+// an illustration would feed a later stage something nobody wrote as an answer.
+Deno.test('does not read fields out of a trailing example when the block is absent', () => {
+  const fields = [{ id: 'pitch_angle', label: 'pitch_angle', description: '', type: 'text' as const }]
+  const raw = 'Findings.\n\nFor example the shape would be:\n\n```json\n{"pitch_angle":"AN ILLUSTRATION"}\n```'
+  // It does parse — an illustration in the declared shape is indistinguishable
+  // from the real thing, which is why the executor only strips when it parsed
+  // and why an example that is NOT the declared shape must return null.
+  assertEquals(parseOutputFields(raw, fields), { pitch_angle: 'AN ILLUSTRATION' })
+
+  const unrelated = 'Findings.\n\n```json\n{"something_else":1}\n```'
+  assertEquals(parseOutputFields(unrelated, fields), null)
+})
+
+// `in` walks the prototype chain, and the id pattern allows `constructor`, so
+// the "at least one declared key" guard used to pass for any object at all.
+Deno.test('matches own keys only, so constructor is not a wildcard', () => {
+  const fields = [{ id: 'constructor', label: 'constructor', description: '', type: 'text' as const }]
+  assertEquals(parseOutputFields('```json\n{"unrelated":1}\n```', fields), null)
+})
+

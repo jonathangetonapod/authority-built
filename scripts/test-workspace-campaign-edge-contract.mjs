@@ -936,7 +936,10 @@ assert.match(shortlistEdge, /fillPromptTemplate\(promptContent\(promptId\), stag
 // is taken back off, and what the later stages read is the report itself —
 // with a fallback to the whole answer when a stage returned only the block.
 assert.match(shortlistEdge, /const parsed = parseOutputFields\(raw, fields\)\s*\n\s*if \(parsed\) Object\.assign\(stageVariables, parsed\)/u)
-assert.match(shortlistEdge, /if \(fields\.length === 0\) return raw/u)
+// Stripped only when the block parsed as the declared shape. A report may end
+// on a fenced example of its own, and cutting the last fence unconditionally
+// deleted it whenever the model skipped the block or ran out of tokens.
+assert.match(shortlistEdge, /if \(fields\.length === 0 \|\| !parsed\) return raw/u)
 assert.match(shortlistEdge, /const \{ prose \} = splitOutputBlock\(raw\)\s*\n\s*return prose \|\| raw/u)
 
 const outputsInstruction = readFileSync('supabase/functions/_shared/promptOutputs.ts', 'utf8')

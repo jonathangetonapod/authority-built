@@ -164,7 +164,11 @@ const WorkspaceBilling = () => {
       return { type, total: counts.total, byo: counts.byo, charged, unitCost, credits: charged * unitCost }
     })
     .sort((left, right) => right.credits - left.credits || right.total - left.total)
-  const creditsSpent = usageRows.reduce((sum, row) => sum + row.credits, 0)
+  // The meter reports what the ledger took, not what the run counts imply. A
+  // price that changed mid-month makes those two disagree, and only one of them
+  // matches the balance above it.
+  const estimatedSpend = usageRows.reduce((sum, row) => sum + row.credits, 0)
+  const creditsSpent = overview?.credits_spent_this_month ?? estimatedSpend
   const allowance = overview?.monthly_credit_allowance ?? 0
   const spentPercent = allowance > 0 ? Math.min(100, Math.round((creditsSpent / allowance) * 100)) : 0
   const status = overview ? BILLING_STATUS[overview.billing_status] : undefined
@@ -412,8 +416,8 @@ const WorkspaceBilling = () => {
                         </tbody>
                         <tfoot className="border-t bg-muted/20">
                           <tr>
-                            <td className="px-5 py-2.5 font-medium" colSpan={3}>Total</td>
-                            <td className="px-5 py-2.5 text-right font-semibold tabular-nums">{creditsSpent.toLocaleString()}</td>
+                            <td className="px-5 py-2.5 font-medium" colSpan={3}>Total at today&rsquo;s rates</td>
+                            <td className="px-5 py-2.5 text-right font-semibold tabular-nums">{estimatedSpend.toLocaleString()}</td>
                           </tr>
                         </tfoot>
                       </table>
