@@ -877,6 +877,10 @@ export interface WorkspaceBillingOverview {
   // Whether there is a Stripe subscription to manage. Decides whether the page
   // offers to open the portal or to pick a plan for the first time.
   has_subscription?: boolean
+  // Set while a subscription is live but will not renew. billing_status stays
+  // active through that window, so it cannot carry this on its own.
+  cancel_at_period_end?: boolean
+  current_period_end?: string | null
   balance: number
   expiring_credits: number
   next_expiry_at: string | null
@@ -945,6 +949,7 @@ export interface BillingPlan {
   plan_key: string
   display_name: string
   base_price_cents: number
+  monthly_credit_allowance: number
   stripe_price_id: string | null
   is_purchasable: boolean
 }
@@ -972,9 +977,15 @@ export async function listBillingPlans(): Promise<BillingPlan[]> {
 export async function updateBillingPlanPrice(
   planKey: string,
   baseCents: number,
+  monthlyCreditAllowance?: number,
 ): Promise<BillingPlan[]> {
   const { data, error } = await supabase.functions.invoke('workspace-billing-portal', {
-    body: { action: 'plans-update', plan_key: planKey, base_price_cents: baseCents },
+    body: {
+      action: 'plans-update',
+      plan_key: planKey,
+      base_price_cents: baseCents,
+      ...(monthlyCreditAllowance === undefined ? {} : { monthly_credit_allowance: monthlyCreditAllowance }),
+    },
   })
   if (error) throw await toFunctionError(error, 'The price could not be updated.')
   return readPlans(data)

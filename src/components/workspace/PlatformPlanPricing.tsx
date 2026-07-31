@@ -28,9 +28,11 @@ export function PlatformPlanPricing() {
     staleTime: 60_000,
   })
 
+  const [allowanceDrafts, setAllowanceDrafts] = useState<Record<string, string>>({})
+
   const saveMutation = useMutation({
-    mutationFn: ({ planKey, cents }: { planKey: string; cents: number }) =>
-      updateBillingPlanPrice(planKey, cents),
+    mutationFn: ({ planKey, cents, allowance }: { planKey: string; cents: number; allowance: number }) =>
+      updateBillingPlanPrice(planKey, cents, allowance),
     onSuccess: (plans, variables) => {
       queryClient.setQueryData(['platform-billing-plans'], plans)
       setDrafts((current) => {
@@ -38,7 +40,12 @@ export function PlatformPlanPricing() {
         delete next[variables.planKey]
         return next
       })
-      toast.success('Price updated. New subscriptions will use it.')
+      setAllowanceDrafts((current) => {
+        const next = { ...current }
+        delete next[variables.planKey]
+        return next
+      })
+      toast.success('Plan updated. Workspaces take it on when their subscription next moves.')
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'The price could not be updated.')
@@ -47,6 +54,15 @@ export function PlatformPlanPricing() {
 
   const dollarsFor = (plan: BillingPlan) =>
     drafts[plan.plan_key] ?? (plan.base_price_cents / 100).toFixed(2)
+
+  const allowanceFor = (plan: BillingPlan) =>
+    allowanceDrafts[plan.plan_key] ?? String(plan.monthly_credit_allowance ?? 0)
+
+  const creditsFrom = (value: string): number | null => {
+    if (!/^\d+$/u.test(value.trim())) return null
+    const credits = Number(value)
+    return Number.isSafeInteger(credits) && credits >= 0 && credits <= 1_000_000 ? credits : null
+  }
 
   const centsFrom = (value: string): number | null => {
     if (!/^\d+(\.\d{1,2})?$/u.test(value.trim())) return null
@@ -80,12 +96,16 @@ export function PlatformPlanPricing() {
             (plansQuery.data ?? []).map((plan) => {
               const draft = dollarsFor(plan)
               const cents = centsFrom(draft)
+              const allowanceDraft = allowanceFor(plan)
+              const credits = creditsFrom(allowanceDraft)
               // A plan that has never been priced has to be savable at the
               // amount it already shows. Comparing only the number disabled the
               // button in the one state where pressing it is the whole point:
               // the seeded amount is right, but no Stripe Price exists for it.
-              const changed = cents !== null
-                && (cents !== plan.base_price_cents || !plan.stripe_price_id)
+              const changed = cents !== null && credits !== null
+                && (cents !== plan.base_price_cents
+                  || credits !== plan.monthly_credit_allowance
+                  || !plan.stripe_price_id)
               const saving = saveMutation.isPending && saveMutation.variables?.planKey === plan.plan_key
               return (
                 <div key={plan.plan_key} className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-end sm:justify-between">
@@ -121,11 +141,25 @@ export function PlatformPlanPricing() {
                           }))}
                         />
                       </div>
+                      <div className="space-y-1">
+                        <Label htmlFor={`plan-credits-${plan.plan_key}`} className="text-xs">Credits/month</Label>
+                        <Input
+                          id={`plan-credits-${plan.plan_key}`}
+                          inputMode="numeric"
+                          className="w-28"
+                          value={allowanceDraft}
+                          onChange={(event) => setAllowanceDrafts((current) => ({
+                            ...current,
+                            [plan.plan_key]: event.target.value,
+                          }))}
+                        />
+                      </div>
                       <Button
                         type="button"
                         size="sm"
                         disabled={!changed || saving}
-                        onClick={() => cents !== null && saveMutation.mutate({ planKey: plan.plan_key, cents })}
+                        onClick={() => cents !== null && credits !== null
+                          && saveMutation.mutate({ planKey: plan.plan_key, cents, allowance: credits })}
                       >
                         {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                         Save

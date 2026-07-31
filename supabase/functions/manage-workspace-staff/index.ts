@@ -2824,7 +2824,7 @@ serve(async (req) => {
 
       const [profileResult, lotsResult, ledgerResult, usageResult, pricesResult] = await Promise.all([
         admin.from("workspace_billing_profiles")
-          .select("plan_key, billing_status, base_price_cents, per_client_price_cents, included_active_clients, monthly_credit_allowance, stripe_subscription_id")
+          .select("plan_key, billing_status, base_price_cents, per_client_price_cents, included_active_clients, monthly_credit_allowance, stripe_subscription_id, cancel_at_period_end, current_period_end")
           .eq("workspace_id", workspaceId)
           .maybeSingle(),
         admin.from("workspace_credit_lots")
@@ -2885,6 +2885,10 @@ serve(async (req) => {
           // itself is a Stripe identifier and the browser has no use for it.
           has_subscription: typeof profileResult.data?.stripe_subscription_id === "string"
             && profileResult.data.stripe_subscription_id.length > 0,
+          // A subscription cancelled from the portal stays active until the
+          // period ends, so the status alone cannot show that it is ending.
+          cancel_at_period_end: profileResult.data?.cancel_at_period_end === true,
+          current_period_end: profileResult.data?.current_period_end ?? null,
           balance,
           expiring_credits: expiringLots.reduce((sum, lot) => sum + (Number(lot.remaining) || 0), 0),
           next_expiry_at: expiringLots[0]?.expires_at ?? null,

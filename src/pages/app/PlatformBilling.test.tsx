@@ -49,7 +49,7 @@ describe('PlatformBilling', () => {
       { id: '22222222-2222-4222-8222-222222222222', name: 'Northwind Agency', slug: 'northwind', status: 'active', is_default: false },
     ] as never)
     mockedPlans.mockResolvedValue([
-      { plan_key: 'founding_member', display_name: 'Founding member', base_price_cents: 3900, stripe_price_id: 'price_x', is_purchasable: true },
+      { plan_key: 'founding_member', display_name: 'Founding member', base_price_cents: 3900, monthly_credit_allowance: 100, stripe_price_id: 'price_x', is_purchasable: true },
     ] as never)
   })
 

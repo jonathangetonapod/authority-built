@@ -45,7 +45,7 @@ assert.match(portal, /const authContext = await requirePlatformAdmin\(req\)/u)
 assert.match(portal, /action === 'plans-list' \|\| action === 'plans-update'/u)
 // The amount is the only thing a caller may set. A caller-supplied price id
 // would let an admin screen point a plan at any Stripe object at all.
-assert.match(portal, /requireOnlyKeys\(body, \['action', 'plan_key', 'base_price_cents'\]\)/u)
+assert.match(portal, /requireOnlyKeys\(body, \['action', 'plan_key', 'base_price_cents', 'monthly_credit_allowance'\]\)/u)
 assert.doesNotMatch(portal, /body\.stripe_price_id/u)
 // Stripe Prices are immutable, so a change creates one; and creating one does
 // not put it in the portal, so the configuration is repointed in the same call.
@@ -54,16 +54,26 @@ assert.match(portal, /syncPortalConfiguration\(updated, stripeKey\)/u)
 // Saving an unchanged price must still reach the sync. The sync runs after the
 // price is recorded, so one that failed there leaves a plan priced but not
 // offered, and an early return would make every retry a no-op — permanently.
-assert.doesNotMatch(portal, /alreadyPriced[\s\S]{0,120}?return jsonResponse[\s\S]{0,200}?unchanged: true[\s\S]{0,200}?syncPortalConfiguration/u)
 const syncAt = portal.indexOf('await syncPortalConfiguration(updated, stripeKey)')
-const unchangedReturnAt = portal.indexOf('unchanged: true')
-assert.ok(syncAt > 0 && unchangedReturnAt > syncAt, 'the unchanged path must sync before it returns')
+const unchangedReturnAt = portal.indexOf('if (alreadyPriced) {')
+assert.ok(syncAt > 0, 'the portal configuration is repointed after a price change')
+assert.ok(unchangedReturnAt > syncAt, 'the unchanged path must sync before it returns')
 assert.match(portal, /billing_portal\/configurations\?is_default=true/u)
 // The recorded amount and the Price it describes are written together.
 assert.match(portal, /base_price_cents: amount,\n\s+stripe_price_id: priceId,/u)
+assert.match(portal, /monthly_credit_allowance/u)
 assert.match(portal, /action: 'billing_plan_price_changed'/u)
 
 const webhook = readFileSync('supabase/functions/workspace-subscription-webhook/index.ts', 'utf8')
+
+// A plan carries what it gives, not only what it costs. Applied with the plan,
+// or a workspace that downgraded keeps the dearer allowance and goes on
+// spending it — credits are granted from that column.
+assert.match(webhook, /update\.monthly_credit_allowance = plan\.monthly_credit_allowance/u)
+// A portal cancellation lands as an update with the subscription still active,
+// so the status alone cannot show that a plan is on its way out.
+assert.match(webhook, /update\.cancel_at_period_end/u)
+assert.match(webhook, /update\.current_period_end/u)
 
 // Signature-verified before anything is read out of the body.
 assert.match(webhook, /verifyStripeSignature\(payload, req\.headers\.get\('stripe-signature'\), secret\)/u)

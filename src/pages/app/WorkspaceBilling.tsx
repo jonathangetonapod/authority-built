@@ -229,6 +229,15 @@ const WorkspaceBilling = () => {
                     <p className="text-sm text-muted-foreground">
                       Includes {allowance.toLocaleString()} credits each month.
                     </p>
+                    {/* Cancelled from the portal, but still running. The status
+                        stays active through this window, so without saying so
+                        the plan looks like one that is staying. */}
+                    {overview.cancel_at_period_end && overview.billing_status !== 'suspended' && (
+                      <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="status">
+                        This plan is set to end on {formatShortDate(overview.current_period_end ?? null)} and will not
+                        renew. Reopen Manage plan to keep it.
+                      </p>
+                    )}
                     {overview.billing_status === 'past_due' && (
                       <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900" role="alert">
                         A payment did not go through. Update your card to keep your workspace running.

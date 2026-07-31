@@ -14,9 +14,9 @@ const mockedList = vi.mocked(listBillingPlans)
 const mockedUpdate = vi.mocked(updateBillingPlanPrice)
 
 const plans = [
-  { plan_key: 'founding_member', display_name: 'Founding member', base_price_cents: 3900, stripe_price_id: 'price_founding', is_purchasable: true },
-  { plan_key: 'standard', display_name: 'Standard', base_price_cents: 9900, stripe_price_id: null, is_purchasable: true },
-  { plan_key: 'comped', display_name: 'Complimentary', base_price_cents: 0, stripe_price_id: null, is_purchasable: false },
+  { plan_key: 'founding_member', display_name: 'Founding member', base_price_cents: 3900, monthly_credit_allowance: 100, stripe_price_id: 'price_founding', is_purchasable: true },
+  { plan_key: 'standard', display_name: 'Standard', base_price_cents: 9900, monthly_credit_allowance: 100, stripe_price_id: null, is_purchasable: true },
+  { plan_key: 'comped', display_name: 'Complimentary', base_price_cents: 0, monthly_credit_allowance: 0, stripe_price_id: null, is_purchasable: false },
 ]
 
 function renderPanel() {
@@ -74,7 +74,7 @@ describe('PlatformPlanPricing', () => {
     expect(save).toBeEnabled()
     fireEvent.click(save)
 
-    await waitFor(() => expect(mockedUpdate).toHaveBeenCalledWith('founding_member', 4950))
+    await waitFor(() => expect(mockedUpdate).toHaveBeenCalledWith('founding_member', 4950, 100))
   })
 
   // Standard is seeded at 9900 with no Stripe Price. Comparing only the number
@@ -90,7 +90,7 @@ describe('PlatformPlanPricing', () => {
     expect(save).toBeEnabled()
 
     fireEvent.click(save)
-    await waitFor(() => expect(mockedUpdate).toHaveBeenCalledWith('standard', 9900))
+    await waitFor(() => expect(mockedUpdate).toHaveBeenCalledWith('standard', 9900, 100))
   })
 
   // Once a plan has a Price, saving the same number again is churn.
@@ -100,6 +100,24 @@ describe('PlatformPlanPricing', () => {
 
     await screen.findByText('price_founding')
     expect(screen.getAllByRole('button', { name: 'Save' })[0]).toBeDisabled()
+  })
+
+  // A plan's allowance is what a workspace gets each month, and it moves with
+  // the plan. Editing it alone is a change worth saving.
+  it('saves an allowance change on its own', async () => {
+    mockedList.mockResolvedValue(plans as never)
+    mockedUpdate.mockResolvedValue(plans as never)
+    renderPanel()
+
+    const credits = await screen.findByLabelText('Credits/month', { selector: '#plan-credits-founding_member' })
+    const save = screen.getAllByRole('button', { name: 'Save' })[0]
+    expect(save).toBeDisabled()
+
+    fireEvent.change(credits, { target: { value: '250' } })
+    expect(save).toBeEnabled()
+    fireEvent.click(save)
+
+    await waitFor(() => expect(mockedUpdate).toHaveBeenCalledWith('founding_member', 3900, 250))
   })
 
   it('refuses an amount that is not money', async () => {

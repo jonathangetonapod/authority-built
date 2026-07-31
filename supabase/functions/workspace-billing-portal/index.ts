@@ -38,6 +38,7 @@ interface BillingPlan {
   plan_key: string
   display_name: string
   base_price_cents: number
+  monthly_credit_allowance: number
   stripe_price_id: string | null
   is_purchasable: boolean
 }
@@ -45,7 +46,7 @@ interface BillingPlan {
 async function loadPlans(admin: ReturnType<typeof createAdminClient>): Promise<BillingPlan[]> {
   const { data, error } = await admin
     .from('billing_plans')
-    .select('plan_key, display_name, base_price_cents, stripe_price_id, is_purchasable')
+    .select('plan_key, display_name, base_price_cents, monthly_credit_allowance, stripe_price_id, is_purchasable')
     .order('base_price_cents', { ascending: true })
   if (error) throw new HttpError(503, 'BILLING_UNAVAILABLE', 'Plans could not be read')
   return (data ?? []) as BillingPlan[]
@@ -153,13 +154,26 @@ async function handlePlanAdministration(
     return jsonResponse(req, METHODS, 200, { success: true, plans: await loadPlans(admin) })
   }
 
-  requireOnlyKeys(body, ['action', 'plan_key', 'base_price_cents'])
+  requireOnlyKeys(body, ['action', 'plan_key', 'base_price_cents', 'monthly_credit_allowance'])
   const planKey = requireString(body.plan_key, 'plan_key', { max: 40 })
   const amount = typeof body.base_price_cents === 'number' && Number.isSafeInteger(body.base_price_cents)
     ? body.base_price_cents
     : NaN
   if (!Number.isSafeInteger(amount) || amount < 0 || amount > 10_000_00) {
     throw new HttpError(400, 'INVALID_AMOUNT', 'Price must be between 0 and 1,000,000 cents')
+  }
+
+  // Optional: a caller changing only the price leaves the allowance alone.
+  const allowance = body.monthly_credit_allowance === undefined
+    ? null
+    : typeof body.monthly_credit_allowance === 'number'
+        && Number.isSafeInteger(body.monthly_credit_allowance)
+        && body.monthly_credit_allowance >= 0
+        && body.monthly_credit_allowance <= 1_000_000
+      ? body.monthly_credit_allowance
+      : NaN
+  if (Number.isNaN(allowance)) {
+    throw new HttpError(400, 'INVALID_AMOUNT', 'Allowance must be between 0 and 1,000,000 credits')
   }
 
   const plans = await loadPlans(admin)
@@ -175,6 +189,19 @@ async function handlePlanAdministration(
   // skipped — a second identical one is pure churn — and the sync still runs,
   // which makes Save the thing that repairs it.
   const alreadyPriced = plan.base_price_cents === amount && Boolean(plan.stripe_price_id)
+  const allowanceChanged = allowance !== null && allowance !== plan.monthly_credit_allowance
+  if (allowanceChanged) {
+    // Recorded on the plan, and applied to a workspace when its subscription
+    // next moves onto the plan. Existing subscribers keep what they have until
+    // then, the same way Stripe leaves them on the price they signed up at.
+    const { error: allowanceError } = await admin
+      .from('billing_plans')
+      .update({ monthly_credit_allowance: allowance, updated_at: new Date().toISOString() })
+      .eq('plan_key', planKey)
+    if (allowanceError) {
+      throw new HttpError(503, 'BILLING_UNAVAILABLE', 'The allowance could not be recorded')
+    }
+  }
 
   let priceId = plan.stripe_price_id ?? ''
   if (!alreadyPriced) {
@@ -227,7 +254,7 @@ async function handlePlanAdministration(
     return jsonResponse(req, METHODS, 200, {
       success: true,
       plans: updated,
-      unchanged: true,
+      unchanged: !allowanceChanged,
       portal_configuration_id: configurationId,
     })
   }

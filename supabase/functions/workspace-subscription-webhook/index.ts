@@ -15,19 +15,29 @@ import { verifyStripeSignature } from '../_shared/stripeSignature.ts'
 // switched inside the Customer Portal arrives with no metadata of ours, so the
 // Stripe Price is the only thing naming the plan, and this is the table that
 // says which plan that Price belongs to.
-async function planKeysByPrice(
+interface PlanEconomics {
+  plan_key: string
+  monthly_credit_allowance: number
+  base_price_cents: number
+  per_client_price_cents: number
+  included_active_clients: number
+}
+
+async function loadPlans(
   admin: ReturnType<typeof createAdminClient>,
-): Promise<Map<string, string>> {
+): Promise<{ byPrice: Map<string, PlanEconomics>; byKey: Map<string, PlanEconomics> }> {
   const { data, error } = await admin
     .from('billing_plans')
-    .select('plan_key, stripe_price_id')
+    .select('plan_key, stripe_price_id, monthly_credit_allowance, base_price_cents, per_client_price_cents, included_active_clients')
   if (error) throw new Error('billing_plans could not be read')
-  const byPrice = new Map<string, string>()
+  const byPrice = new Map<string, PlanEconomics>()
+  const byKey = new Map<string, PlanEconomics>()
   for (const row of data ?? []) {
-    const priceId = typeof row.stripe_price_id === 'string' ? row.stripe_price_id : ''
-    if (priceId) byPrice.set(priceId, String(row.plan_key))
+    const plan = row as PlanEconomics & { stripe_price_id: string | null }
+    byKey.set(plan.plan_key, plan)
+    if (plan.stripe_price_id) byPrice.set(plan.stripe_price_id, plan)
   }
-  return byPrice
+  return { byPrice, byKey }
 }
 
 // Stripe's subscription statuses, narrowed to the ones billing_status allows.
@@ -103,8 +113,21 @@ serve(async (req) => {
 
   if (deleted) {
     update.stripe_subscription_id = null
+    update.cancel_at_period_end = false
+    update.current_period_end = null
   } else {
     update.stripe_subscription_id = typeof subscription.id === 'string' ? subscription.id : null
+
+    // A portal cancellation takes effect at period end, and arrives as an
+    // update with the subscription still active. Recorded, or a plan on its way
+    // out is indistinguishable from one that is staying.
+    update.cancel_at_period_end = subscription.cancel_at_period_end === true
+    const periodEnd = typeof subscription.current_period_end === 'number'
+      ? subscription.current_period_end
+      : null
+    update.current_period_end = periodEnd === null
+      ? null
+      : new Date(periodEnd * 1000).toISOString()
 
     // The price is read from the subscription rather than from our metadata, so
     // a switch made inside the Customer Portal — where nothing of ours is
@@ -113,18 +136,24 @@ serve(async (req) => {
     const firstItem = items?.data?.[0]
     const price = firstItem?.price as Record<string, unknown> | undefined
     const priceId = typeof price?.id === 'string' ? price.id : ''
-    let byPrice: Map<string, string>
+    let plans: Awaited<ReturnType<typeof loadPlans>>
     try {
-      byPrice = await planKeysByPrice(admin)
+      plans = await loadPlans(admin)
     } catch (_error) {
       console.error('[Workspace Subscription Webhook] billing_plans could not be read')
       return json(500, { error: 'PLANS_UNAVAILABLE' })
     }
-    const planKey = priceId ? byPrice.get(priceId) ?? null : null
-    if (planKey) {
-      update.plan_key = planKey
-    } else if (typeof metadata.plan_key === 'string' && [...byPrice.values()].includes(metadata.plan_key)) {
-      update.plan_key = metadata.plan_key
+    const plan = (priceId ? plans.byPrice.get(priceId) : undefined)
+      ?? (typeof metadata.plan_key === 'string' ? plans.byKey.get(metadata.plan_key) : undefined)
+    if (plan) {
+      update.plan_key = plan.plan_key
+      // What the plan gives, applied with the plan. Without this a workspace
+      // moving to the cheaper plan kept the dearer allowance and went on
+      // spending it, because credits are granted from this column.
+      update.monthly_credit_allowance = plan.monthly_credit_allowance
+      update.base_price_cents = plan.base_price_cents
+      update.per_client_price_cents = plan.per_client_price_cents
+      update.included_active_clients = plan.included_active_clients
     } else if (priceId) {
       // Leaving plan_key alone is deliberate: naming the wrong plan is worse
       // than showing a stale one, and the price is recoverable from Stripe.
