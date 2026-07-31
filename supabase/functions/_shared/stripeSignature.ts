@@ -24,15 +24,23 @@ export async function verifyStripeSignature(
   nowMs: number = Date.now(),
 ): Promise<boolean> {
   if (!header) return false
-  const parts = new Map(
-    header.split(',').flatMap((part) => {
-      const [key, value] = part.split('=', 2)
-      return key && value ? [[key.trim(), value.trim()] as const] : []
-    }),
-  )
-  const timestamp = parts.get('t')
-  const signature = parts.get('v1')
-  if (!timestamp || !signature) return false
+
+  // While a signing secret is being rotated, Stripe signs with every secret
+  // that is still valid and puts one v1 in the header per secret. Reading them
+  // into a Map kept only the last, so whether a real event verified came down
+  // to the order Stripe happened to list them in — and a rotation with an
+  // overlap window would have rejected live events for the length of it.
+  let timestamp = ''
+  const signatures: string[] = []
+  for (const part of header.split(',')) {
+    const [rawKey, rawValue] = part.split('=', 2)
+    if (!rawKey || !rawValue) continue
+    const key = rawKey.trim()
+    const value = rawValue.trim()
+    if (key === 't' && !timestamp) timestamp = value
+    else if (key === 'v1') signatures.push(value)
+  }
+  if (!timestamp || signatures.length === 0) return false
   const age = Math.abs(nowMs / 1000 - Number(timestamp))
   if (!Number.isFinite(age) || age > SIGNATURE_TOLERANCE_SECONDS) return false
 
@@ -51,5 +59,11 @@ export async function verifyStripeSignature(
   const expected = [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('')
-  return timingSafeEqual(expected, signature)
+  // Every candidate is compared, and comparison stays constant-time per
+  // candidate: a match anywhere means this secret signed the payload.
+  let matched = false
+  for (const signature of signatures) {
+    if (timingSafeEqual(expected, signature)) matched = true
+  }
+  return matched
 }

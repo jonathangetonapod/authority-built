@@ -59,6 +59,56 @@ Deno.test('accepts one inside the replay window', async () => {
   assertEquals(await verifyStripeSignature(PAYLOAD, header, SECRET, NOW_MS), true)
 })
 
+// Rotating a signing secret gives an overlap window where Stripe signs with
+// every valid secret and lists one v1 per secret. The old parser read them into
+// a Map, so only the last survived and verification came down to Stripe's
+// ordering. Both positions are checked here because only one of them failed.
+Deno.test('accepts a rotation header whose matching signature comes second', async () => {
+  const ours = await sign(PAYLOAD, NOW_SECONDS)
+  const theirs = await sign(PAYLOAD, NOW_SECONDS, 'whsec_other')
+  const header = `t=${NOW_SECONDS},v1=${theirs},v1=${ours}`
+  assertEquals(await verifyStripeSignature(PAYLOAD, header, SECRET, NOW_MS), true)
+})
+
+Deno.test('accepts a rotation header whose matching signature comes first', async () => {
+  const ours = await sign(PAYLOAD, NOW_SECONDS)
+  const theirs = await sign(PAYLOAD, NOW_SECONDS, 'whsec_other')
+  const header = `t=${NOW_SECONDS},v1=${ours},v1=${theirs}`
+  assertEquals(await verifyStripeSignature(PAYLOAD, header, SECRET, NOW_MS), true)
+})
+
+// Several wrong signatures are still no signature. Widening the search must not
+// widen what counts as valid.
+Deno.test('rejects a header of signatures none of which are ours', async () => {
+  const a = await sign(PAYLOAD, NOW_SECONDS, 'whsec_one')
+  const b = await sign(PAYLOAD, NOW_SECONDS, 'whsec_two')
+  assertEquals(
+    await verifyStripeSignature(PAYLOAD, `t=${NOW_SECONDS},v1=${a},v1=${b}`, SECRET, NOW_MS),
+    false,
+  )
+})
+
+// The timestamp is what the signature covers, so a second t must not be able to
+// replace the one that was signed.
+Deno.test('keeps the first timestamp when a header carries two', async () => {
+  const stale = NOW_SECONDS - 400
+  const header = `t=${stale},t=${NOW_SECONDS},v1=${await sign(PAYLOAD, NOW_SECONDS)}`
+  assertEquals(await verifyStripeSignature(PAYLOAD, header, SECRET, NOW_MS), false)
+})
+
+// v0 is Stripe's test-mode scheme and is not the one we verify.
+Deno.test('ignores signature schemes other than v1', async () => {
+  const ours = await sign(PAYLOAD, NOW_SECONDS)
+  assertEquals(
+    await verifyStripeSignature(PAYLOAD, `t=${NOW_SECONDS},v0=${ours}`, SECRET, NOW_MS),
+    false,
+  )
+  assertEquals(
+    await verifyStripeSignature(PAYLOAD, `t=${NOW_SECONDS},v0=deadbeef,v1=${ours}`, SECRET, NOW_MS),
+    true,
+  )
+})
+
 Deno.test('rejects a missing or malformed header', async () => {
   assertEquals(await verifyStripeSignature(PAYLOAD, null, SECRET, NOW_MS), false)
   assertEquals(await verifyStripeSignature(PAYLOAD, '', SECRET, NOW_MS), false)
