@@ -1062,6 +1062,40 @@ assert.ok(
   '_shared/promptOutputs.ts has no callers left and must not be reintroduced',
 )
 
+// The angles are the only thing that differs between the three sequence
+// options — everything else the pitch is written from is one shared cached
+// block — so whoever writes the angles decides what every pitch says. They must
+// come from the stage that proposes them under its own rules, not from a
+// cheaper pass re-deriving three of its own from a truncated copy.
+assert.match(
+  canonicalPrompts.prompts.find_topics.content,
+  /MACHINE-READABLE ANGLES \(required, and the last thing in your answer\)/u,
+  'find_topics must return its angles as structure, not only as prose',
+)
+assert.match(shortlistEdge, /const \{ prose: topicProposal, angles: proposedAngles \} = splitStructuredAngles\(topicRaw\)/u)
+assert.match(
+  shortlistEdge,
+  /const pitchAngles = proposedAngles\.length > 0\s*\n\s*\? proposedAngles\.map\(\(angle\) => \(\{ title: angle\.title, description: angle\.description \}\)\)\s*\n\s*: derivedAngles/u,
+  "find_topics' own angles must win, with the structuring pass left as the fallback",
+)
+// ai_pitch_angles renders on the prospect dashboard and the client approval
+// view. The grounding is our reasoning about the show and must never be written
+// to a column a client reads — that is how a strategy note reaches a host.
+assert.ok(
+  !/ai_pitch_angles:[^\n]*grounding/u.test(shortlistEdge),
+  'ai_pitch_angles must carry title and description only, never the grounding',
+)
+assert.match(
+  shortlistEdge,
+  /pitch_angles_structured: proposedAngles\.length > 0 \? proposedAngles : null/u,
+  'the grounding belongs in the research document, which is server-side only',
+)
+// The pitch is written from the evidence the angle was chosen on, not from its
+// title alone. Absent for a podcast researched before this shipped, so the
+// pitch path must treat it as optional rather than requiring it.
+assert.match(shortlistEdge, /WHAT THIS ANGLE IS BUILT ON: \$\{angleGrounding\}/u)
+assert.match(shortlistEdge, /angleGrounding \? `WHAT THIS ANGLE IS BUILT ON/u)
+
 // The no-transcript rule is stated when it is true, not carried permanently.
 //
 // It used to sit in two shipped prompts, describing a case that may never

@@ -39,6 +39,7 @@ import {
   PODCAST_VARIABLE_COLUMNS,
   STAGE_RESPONSE_TARGETS,
 } from '../_shared/promptVariables.ts'
+import { splitStructuredAngles, type StructuredAngle } from '../_shared/pitchAngles.ts'
 import {
   describeMissingRequirements,
   missingRequiredVariables,
@@ -1948,7 +1949,10 @@ serve(async (req) => {
         await advance('guest_info', 'guest_fit')
 
         await gateStage('find_topics')
-        const topicProposal = await runStage('find_topics', { context: sharedContext, report: reportBlock })
+        const topicRaw = await runStage('find_topics', { context: sharedContext, report: reportBlock })
+        // The angles come from the stage that proposed them, under the rules
+        // its prompt spends a section on, rather than from a paraphrase.
+        const { prose: topicProposal, angles: proposedAngles } = splitStructuredAngles(topicRaw)
         publishStageOutput('find_topics', topicProposal ? topicProposal.slice(0, 6_000) : null)
         await advance('find_topics', null)
 
@@ -1976,7 +1980,10 @@ serve(async (req) => {
         const fitReasons = Array.isArray(parsed.fit_reasons)
           ? parsed.fit_reasons.filter((reason): reason is string => typeof reason === 'string').slice(0, 5)
           : []
-        const pitchAngles = Array.isArray(parsed.pitch_angles)
+        // find_topics' own angles win. The structuring pass is still asked for
+        // a set, but only as a fallback for the run where the block did not
+        // parse — this change must not be able to leave a podcast with none.
+        const derivedAngles = Array.isArray(parsed.pitch_angles)
           ? parsed.pitch_angles.flatMap((angle) => {
             if (!angle || typeof angle !== 'object' || Array.isArray(angle)) return []
             const record = angle as Record<string, unknown>
@@ -1985,6 +1992,12 @@ serve(async (req) => {
               : []
           }).slice(0, 3)
           : []
+        // title and description only, deliberately: this column renders on the
+        // prospect dashboard and the client approval view, and the grounding is
+        // our reasoning about the show, not something a client should be shown.
+        const pitchAngles = proposedAngles.length > 0
+          ? proposedAngles.map((angle) => ({ title: angle.title, description: angle.description }))
+          : derivedAngles
         const hostName = typeof parsed.host_name === 'string' && parsed.host_name.trim()
           ? parsed.host_name.trim().slice(0, 200)
           : null
@@ -2008,6 +2021,13 @@ serve(async (req) => {
               host_info: hostReport.slice(0, 20_000),
               guest_info: guestReport ? guestReport.slice(0, 20_000) : null,
               find_topics: topicProposal.slice(0, 20_000),
+              // The angles as their author wrote them, grounding included. Kept
+              // in the research document rather than on ai_pitch_angles because
+              // that column renders to prospects and clients and this does not:
+              // the grounding is our reasoning about the show, and it exists so
+              // the pitch can be written from the evidence the angle was chosen
+              // on instead of from its title alone.
+              pitch_angles_structured: proposedAngles.length > 0 ? proposedAngles : null,
               episodes_used: (captured?.episodes ?? []).map((episode, index) => ({
                 title: episode.title,
                 had_transcript: index === 0 && Boolean(captured?.transcript),
@@ -2601,6 +2621,7 @@ serve(async (req) => {
           host_info?: unknown
           guest_info?: unknown
           find_topics?: unknown
+          pitch_angles_structured?: unknown
           episodes_used?: Array<{ title?: string }>
           episode_transcript_excerpt?: unknown
           recent_guest_name?: unknown
@@ -2611,6 +2632,15 @@ serve(async (req) => {
       }
       const angles = Array.isArray(shortlistRow.ai_pitch_angles) ? shortlistRow.ai_pitch_angles : []
       const angle = angles[angleIndex] as { title?: string; description?: string } | undefined
+      // What the angle was chosen on, for the pitch that has to open on
+      // something specific. Absent for a podcast researched before the angles
+      // carried their grounding, so everything below treats it as optional.
+      const structuredAngles = Array.isArray(researchDocument.pitch_angles_structured)
+        ? researchDocument.pitch_angles_structured as StructuredAngle[]
+        : []
+      const angleGrounding = typeof structuredAngles[angleIndex]?.grounding === 'string'
+        ? structuredAngles[angleIndex].grounding.trim()
+        : ''
 
       const anthropicKey = await resolveAiKey(authContext.admin, workspaceId, 'anthropic')
       if (!anthropicKey) throw new HttpError(500, 'SERVER_MISCONFIGURED', 'Pitch writing is not configured')
@@ -2772,6 +2802,12 @@ serve(async (req) => {
           podcast_research: '(provided in <research_report> within the CONTEXT section above)',
           find_topics: [
             angle?.title && angle?.description ? `SELECTED ANGLE: ${angle.title} — ${angle.description}` : '',
+            // The evidence this angle was chosen on, named where the writer
+            // cannot miss it. The opener has to reference something specific
+            // from the show, and this is the specific thing the angle is for —
+            // it used to reach the writer only as part of 4,000 truncated
+            // characters of topic research, if at all.
+            angleGrounding ? `WHAT THIS ANGLE IS BUILT ON: ${angleGrounding}` : '',
             topicResearch ? '(full topic research provided in <topic_research> within the CONTEXT section above)' : '',
           ].filter(Boolean).join('\n\n') || null,
         }),

@@ -32,7 +32,9 @@ const EXPECTED_COUNTS = Object.freeze({
   // 153 again after _shared/promptOutputs.ts and its test were removed with the
   // declared-output-fields feature: a stage returns its whole answer as
   // {{<stage_id>_response}}, so nothing declares or parses a shape any more.
-  edgeTypeScriptFiles: 153,
+  // 155 with _shared/pitchAngles.ts and its test: the angles read off the end of
+  // the topic proposal, which decide what every pitch in a sequence says.
+  edgeTypeScriptFiles: 155,
 })
 
 const EXPECTED_PHASE_KEYS = Object.freeze([
