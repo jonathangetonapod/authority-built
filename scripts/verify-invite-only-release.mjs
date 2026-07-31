@@ -29,7 +29,10 @@ const EXPECTED_COUNTS = Object.freeze({
   // 146 with _shared/promptRequirements.ts and its test: the fields a prompt
   // stage refuses to run without. 153 with plan management: the two new
   // function entrypoints, plus _shared/stripeSignature.ts and its test.
-  edgeTypeScriptFiles: 155,
+  // 153 again after _shared/promptOutputs.ts and its test were removed with the
+  // declared-output-fields feature: a stage returns its whole answer as
+  // {{<stage_id>_response}}, so nothing declares or parses a shape any more.
+  edgeTypeScriptFiles: 153,
 })
 
 const EXPECTED_PHASE_KEYS = Object.freeze([

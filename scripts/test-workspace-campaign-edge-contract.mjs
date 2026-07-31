@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 
 const edge = readFileSync('supabase/functions/workspace-client-campaigns/index.ts', 'utf8')
 const provider = readFileSync('supabase/functions/_shared/instantly.ts', 'utf8')
@@ -1037,6 +1037,29 @@ for (const removed of [
 assert.match(
   shortlistEdge,
   /\{ \.\.\.parts, instruction: fillPromptTemplate\(promptContent\(promptId\), stageVariables\) \}/u,
+)
+
+// The storage behind declared fields is gone too, not just the code that read
+// it: endpoints that accept writes nothing consumes are how a removed feature
+// comes back as half of one.
+for (const removed of [
+  'prompt-outputs-get',
+  'prompt-outputs-set',
+  'client-prompt-outputs-get',
+  'client-prompt-outputs-set',
+  'workspace_prompt_outputs',
+  'client_prompt_outputs',
+  'normalizeOutputFields',
+  'promptOutputs.ts',
+]) {
+  assert.ok(
+    !edge.includes(removed),
+    `workspace-client-campaigns must not still carry ${removed}`,
+  )
+}
+assert.ok(
+  !existsSync('supabase/functions/_shared/promptOutputs.ts'),
+  '_shared/promptOutputs.ts has no callers left and must not be reintroduced',
 )
 
 // The no-transcript rule is stated when it is true, not carried permanently.

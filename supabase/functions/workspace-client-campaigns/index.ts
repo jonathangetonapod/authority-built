@@ -26,7 +26,6 @@ import {
   generateReplyPackage,
 } from "../_shared/inboxSdr.ts";
 import { normalizeRequiredVariables } from "../_shared/promptRequirements.ts";
-import { normalizeOutputFields } from "../_shared/promptOutputs.ts";
 import { chargeCredits, logOperationCost } from "../_shared/billing.ts";
 import { resolveAiKey } from "../_shared/workspaceAiKeys.ts";
 import {
@@ -96,30 +95,6 @@ function parseRequiredVariables(value: unknown): string[] {
       error instanceof Error ? error.message : "Invalid required_variables",
     );
   }
-}
-
-/** The declared shape a stage returns; the registry is the authority on names. */
-function parseOutputFields(value: unknown): unknown[] {
-  try {
-    return normalizeOutputFields(value);
-  } catch (error) {
-    throw new HttpError(
-      400,
-      "INVALID_OUTPUT_FIELDS",
-      error instanceof Error ? error.message : "Invalid output_fields",
-    );
-  }
-}
-
-function outputsDto(rows: unknown): Record<string, unknown[]> {
-  const outputs: Record<string, unknown[]> = {};
-  for (const row of Array.isArray(rows) ? rows : []) {
-    const record = row as Record<string, unknown>;
-    const promptId = String(record.prompt_id ?? "");
-    if (!RESEARCH_PROMPT_IDS.includes(promptId)) continue;
-    outputs[promptId] = Array.isArray(record.output_fields) ? record.output_fields : [];
-  }
-  return outputs;
 }
 
 /** Absent row = nothing required, so a stage missing from the map is empty. */
@@ -2981,48 +2956,6 @@ serve(async (req) => {
       });
       return jsonResponse(req, METHODS, 200, { success: true });
     }
-
-    if (action === "prompt-outputs-get") {
-      requireOnlyKeys(body, ["action", "workspace_id"]);
-      requireCampaignManager(access);
-      const { data, error } = await context.admin
-        .from("workspace_prompt_outputs")
-        .select("prompt_id, output_fields")
-        .eq("workspace_id", workspaceId);
-      if (error) {
-        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "Stage outputs are temporarily unavailable");
-      }
-      return jsonResponse(req, METHODS, 200, { outputs: outputsDto(data) });
-    }
-
-    if (action === "prompt-outputs-set") {
-      requireOnlyKeys(body, ["action", "workspace_id", "prompt_id", "output_fields"]);
-      requireIntegrationOwner(access);
-      const promptId = requireResearchPromptId(body.prompt_id);
-      const outputFields = parseOutputFields(body.output_fields);
-      const { error } = await context.admin
-        .from("workspace_prompt_outputs")
-        .upsert({
-          workspace_id: workspaceId,
-          prompt_id: promptId,
-          output_fields: outputFields,
-          updated_by: context.user.id,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: "workspace_id,prompt_id" });
-      if (error) {
-        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "The stage outputs could not be saved");
-      }
-      await writeAudit(context.admin, {
-        workspaceId,
-        actorUserId: context.user.id,
-        action: "workspace.prompt_outputs.updated",
-        entityType: "workspace",
-        entityId: workspaceId,
-        metadata: { prompt_id: promptId, field_count: outputFields.length },
-      });
-      return jsonResponse(req, METHODS, 200, { success: true });
-    }
-
     if (action === "inbox-list") {
       requireOnlyKeys(body, ["action", "workspace_id"]);
       const connection = await readConnection(context.admin, workspaceId);
@@ -4279,49 +4212,6 @@ serve(async (req) => {
       });
       return jsonResponse(req, METHODS, 200, { success: true });
     }
-
-    if (action === "client-prompt-outputs-get") {
-      requireOnlyKeys(body, ["action", "workspace_id", "client_id"]);
-      const { data, error } = await context.admin
-        .from("client_prompt_outputs")
-        .select("prompt_id, output_fields")
-        .eq("workspace_id", workspaceId)
-        .eq("client_id", clientId);
-      if (error) {
-        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "Stage outputs are temporarily unavailable");
-      }
-      return jsonResponse(req, METHODS, 200, { outputs: outputsDto(data) });
-    }
-
-    if (action === "client-prompt-outputs-set") {
-      requireOnlyKeys(body, ["action", "workspace_id", "client_id", "prompt_id", "output_fields"]);
-      requireIntegrationOwner(access);
-      const promptId = requireClientPromptId(body.prompt_id);
-      const outputFields = parseOutputFields(body.output_fields);
-      const { error } = await context.admin
-        .from("client_prompt_outputs")
-        .upsert({
-          workspace_id: workspaceId,
-          client_id: clientId,
-          prompt_id: promptId,
-          output_fields: outputFields,
-          updated_by: context.user.id,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: "workspace_id,client_id,prompt_id" });
-      if (error) {
-        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "The stage outputs could not be saved");
-      }
-      await writeAudit(context.admin, {
-        workspaceId,
-        actorUserId: context.user.id,
-        action: "client.prompt_outputs.updated",
-        entityType: "client",
-        entityId: clientId,
-        metadata: { prompt_id: promptId, field_count: outputFields.length },
-      });
-      return jsonResponse(req, METHODS, 200, { success: true });
-    }
-
     if (action === "client-links-list") {
       requireOnlyKeys(body, ["action", "workspace_id", "client_id"]);
       const [linksResult, campaignsResult] = await Promise.all([
