@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Building2,
   Copy,
-  Coins,
   CreditCard,
   Crown,
   Eye,
@@ -31,7 +30,6 @@ import {
   WorkspaceBrandLogo,
   WorkspaceLayout,
 } from '@/components/workspace/WorkspaceLayout'
-import { WorkspaceCreditGrantPreview } from '@/components/workspace/WorkspaceCreditGrantPreview'
 import { WorkspaceAiKeysCard } from '@/components/workspace/WorkspaceAiKeysCard'
 import { useAuth } from '@/contexts/AuthContext'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
@@ -507,7 +505,6 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
       }
     : undefined
 
-  const workspaceOwner = staff.find((member) => member.role === 'owner')
 
   const settingsNavigation = [
     { href: '#workspace-general', label: 'General', description: 'Workspace identity', icon: Building2 },
@@ -519,9 +516,9 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
       ? [{ href: '#ai-keys', label: 'AI keys', description: 'Bring your own provider keys', icon: KeyRound }]
       : []),
     { href: '#workspace-access', label: 'Team & access', description: 'Users, roles, and passwords', icon: Users },
-    ...(isPlatformWorkspace
-      ? [{ href: '#workspace-credits', label: 'Credits', description: 'Manual Waterfall grants', icon: Coins }]
-      : []),
+    // No platform-only entry here. Viewing a workspace shows what its own
+    // people see, and a tenant has never had a manual-grant screen — that is
+    // platform work and lives at /app/platform/billing, against any workspace.
     ...(!isPlatformWorkspace
       ? [{ href: '/app/settings/billing', label: 'Billing', description: 'Plan and Waterfall credits', icon: CreditCard }]
       : []),
@@ -549,9 +546,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                   <div>
                     <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Settings</h1>
                     <p className="mt-1.5 max-w-2xl text-muted-foreground">
-                      {isPlatformWorkspace
-                        ? `Manage the identity, client experience, credits, and team access for ${data.workspace.name}.`
-                        : 'Manage your workspace identity, client experience, and team access.'}
+                      Manage your workspace identity, client experience, and team access.
                     </p>
                   </div>
                 </div>
@@ -988,9 +983,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Access</p>
                         <h2 id="workspace-access-title" className="mt-1 text-2xl font-semibold tracking-tight">Workspace users</h2>
                         <p className="mt-1 text-sm text-muted-foreground">
-                          {isPlatformWorkspace
-                            ? 'Manage the people who can access this workspace.'
-                            : 'Manage the people who can access your workspace.'}
+                          Manage the people who can access your workspace.
                         </p>
                       </div>
                       {platformRoster ? (
@@ -1127,20 +1120,6 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                     </Card>
                   </section>
 
-                  {/* Not gated on there being an owner: the credit goes to the
-                      workspace ledger either way, and the billing page's own
-                      top-up already grants without one. Requiring it here meant
-                      the same admin got a different answer for the same
-                      workspace depending on which route they came in by. */}
-                  {isPlatformWorkspace && (
-                    <WorkspaceCreditGrantPreview
-                      workspaceId={workspaceId}
-                      workspaceName={data.workspace.name}
-                      ownerName={workspaceOwner ? workspaceOwner.full_name || workspaceOwner.email : null}
-                      ownerEmail={workspaceOwner?.email ?? null}
-                      actorEmail={user?.email || 'Platform administrator'}
-                    />
-                  )}
                 </div>
               </div>
             </div>

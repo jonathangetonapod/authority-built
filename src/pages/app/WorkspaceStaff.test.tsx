@@ -556,7 +556,10 @@ describe('WorkspaceStaff', () => {
     expect(toastSuccess).toHaveBeenCalledWith('Workspace ownership transferred.')
   })
 
-  it('gives the platform owner native management controls in the selected workspace', async () => {
+  // Viewing a workspace shows what its own people see. Platform work — manual
+  // credit grants — is not part of that and lives at /app/platform/billing,
+  // where it can be aimed at any workspace.
+  it('shows a viewed workspace exactly what its own people would see', async () => {
     mockedUseAuth.mockReturnValue({
       user: { id: userId, email: 'platform@example.com' },
       workspace: null,
@@ -571,17 +574,12 @@ describe('WorkspaceStaff', () => {
     renderPage(workspaceId)
 
     expect(await screen.findByText('Agency Admin')).toBeInTheDocument()
-    expect(screen.getByText('Manage the identity, client experience, credits, and team access for Acme Workspace.')).toBeInTheDocument()
-    expect(screen.getByText('Manage the people who can access this workspace.')).toBeInTheDocument()
+    // The same words a workspace owner reads on their own settings page.
+    expect(screen.getByText('Manage your workspace identity, client experience, and team access.')).toBeInTheDocument()
+    expect(screen.getByText('Manage the people who can access your workspace.')).toBeInTheDocument()
     const settingsNavigation = screen.getByRole('navigation', { name: 'Settings sections' })
-    expect(within(settingsNavigation).getByRole('link', { name: /^Credits/ })).toHaveAttribute('href', '#workspace-credits')
-    const creditsSection = screen.getByRole('region', { name: 'Workspace credits' })
-    expect(within(creditsSection).getByText('Live · grants apply immediately')).toBeInTheDocument()
-    // Named after the workspace rather than the owner: a workspace called after
-    // the person who owns it turned "granted to X, not to this person" into a
-    // sentence that contradicted the card above it.
-    expect(within(creditsSection).getByText(/credits belong to the workspace, not to whoever owns it today/i)).toBeInTheDocument()
-    await waitFor(() => expect(within(creditsSection).getByLabelText('10 credits available')).toBeInTheDocument())
+    expect(within(settingsNavigation).queryByRole('link', { name: /^Credits/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Workspace credits' })).not.toBeInTheDocument()
     expect(screen.queryByText(/admin preview/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Sidebar navigation' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Organize sidebar' })).not.toBeInTheDocument()
@@ -618,96 +616,16 @@ describe('WorkspaceStaff', () => {
     expect(mockedList).toHaveBeenCalledWith(workspaceId)
   })
 
-  it('previews a manual credit grant with an explicit reason, note, and confirmation', async () => {
-    mockedUseAuth.mockReturnValue({
-      user: { id: userId, email: 'platform@example.com' },
-      workspace: null,
-      membership: null,
-      isPlatformAdmin: true,
-      refreshAccount,
-      refreshSession,
-      signOut,
-    } as never)
-
-    renderPage(workspaceId)
-
-    const creditsSection = await screen.findByRole('region', { name: 'Workspace credits' })
-    const reviewButton = within(creditsSection).getByRole('button', { name: 'Review credit grant' })
-    expect(reviewButton).toBeDisabled()
-
-    fireEvent.click(within(creditsSection).getByRole('combobox', { name: 'Reason' }))
-    fireEvent.click(await screen.findByRole('option', { name: 'Customer support' }))
-    // The reason alone arms the grant: a written justification on every top-up
-    // was friction the audit row did not need, so the note is optional now.
-    expect(reviewButton).toBeEnabled()
-
-    fireEvent.change(within(creditsSection).getByLabelText(/Internal note/), {
-      target: { value: 'Onboarding courtesy for the new workspace.' },
-    })
-    expect(reviewButton).toBeEnabled()
-    fireEvent.click(reviewButton)
-
-    const confirmation = screen.getByRole('alertdialog', { name: 'Add 100 credits to Acme Workspace?' })
-    expect(within(confirmation).getByText('Workspace Owner')).toBeInTheDocument()
-    expect(within(confirmation).getByText('Customer support')).toBeInTheDocument()
-    expect(within(confirmation).getByText('Onboarding courtesy for the new workspace.')).toBeInTheDocument()
-    fireEvent.click(within(confirmation).getByRole('button', { name: 'Add credits' }))
-
-    expect(await within(creditsSection).findByText('Granted by platform@example.com')).toBeInTheDocument()
-    expect(within(creditsSection).getByText('Balance 110')).toBeInTheDocument()
-    expect(within(creditsSection).getByText('+100 credits')).toBeInTheDocument()
-    expect(toastSuccess).toHaveBeenCalledWith('100 credits added to Acme Workspace.')
-  })
-
+  
   // A workspace whose owner was invited the ordinary way and has not signed in
   // yet has no owner row to name. The credit still goes to the workspace
   // ledger, and the billing page's own top-up grants without one, so hiding the
   // card here gave the same admin two answers for the same workspace.
-  it('still offers the grant for a workspace with no owner on the roster', async () => {
-    mockedUseAuth.mockReturnValue({
-      user: { id: userId, email: 'platform@example.com' },
-      workspace: null,
-      membership: null,
-      isPlatformAdmin: true,
-      refreshAccount,
-      refreshSession,
-      signOut,
-    } as never)
-    mockedList.mockResolvedValue({ ...ownerView, members: [{ ...admin, allowed_actions: [] }] })
-
-    renderPage(workspaceId)
-
-    const creditsSection = await screen.findByRole('region', { name: 'Workspace credits' })
-    expect(within(creditsSection).getByText('Nobody has accepted the invite yet')).toBeInTheDocument()
-    fireEvent.click(within(creditsSection).getByRole('combobox', { name: 'Reason' }))
-    fireEvent.click(await screen.findByRole('option', { name: 'Customer support' }))
-    expect(within(creditsSection).getByRole('button', { name: 'Review credit grant' })).toBeEnabled()
-  })
-
+  
   // The balance used to fall back to 0 when the read failed, and there are no
   // retries. An admin who topped this workspace up an hour ago would read the
   // 0 as the grant never landing, and grant a second time.
-  it('does not report a balance of zero when the balance could not be read', async () => {
-    mockedUseAuth.mockReturnValue({
-      user: { id: userId, email: 'platform@example.com' },
-      workspace: null,
-      membership: null,
-      isPlatformAdmin: true,
-      refreshAccount,
-      refreshSession,
-      signOut,
-    } as never)
-    vi.mocked(getWorkspaceBillingOverview).mockRejectedValue(new Error('Billing data could not be loaded.'))
-
-    renderPage(workspaceId)
-
-    const creditsSection = await screen.findByRole('region', { name: 'Workspace credits' })
-    expect(await within(creditsSection).findByText('Unavailable')).toBeInTheDocument()
-    expect(within(creditsSection).queryByLabelText('0 credits available')).not.toBeInTheDocument()
-    // And no projection is offered off a balance nobody knows.
-    expect(within(creditsSection).getByText(/could not be read, so this cannot be projected/i)).toBeInTheDocument()
-  })
-
+  
   it('lets the platform owner reset the selected workspace owner without exposing an old password', async () => {
     const resettableOwner: WorkspaceStaffMember = { ...owner, allowed_actions: ['reset_password'] }
     mockedUseAuth.mockReturnValue({
