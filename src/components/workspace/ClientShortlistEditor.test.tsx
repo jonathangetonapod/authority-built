@@ -1015,7 +1015,7 @@ describe('ClientShortlistEditor', () => {
     expect(researchProgress.getByText('In progress')).toBeInTheDocument()
     expect(researchProgress.getAllByText('Waiting')).toHaveLength(4)
     expect(screen.queryByRole('button', { name: 'View steps' })).not.toBeInTheDocument()
-    expect(screen.getByText(/research continues in the background/i)).toBeInTheDocument()
+    expect(screen.getByText(/research continues while this tab stays open/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Finalize selected pitch' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Step 3: Finalize pitch locked until research is complete' })).toBeDisabled()
 
@@ -1049,7 +1049,7 @@ describe('ClientShortlistEditor', () => {
     expect(screen.getByText(/this run stopped before it finished/i)).toBeInTheDocument()
     // The invitation that was missing: the backend released this lock long ago,
     // so running it again is available and is the way out.
-    expect(screen.queryByText(/research continues in the background/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/research continues while this tab stays open/i)).not.toBeInTheDocument()
     const researchProgress = within(screen.getByRole('list', { name: 'Podcast research progress' }))
     expect(researchProgress.queryByText('In progress')).not.toBeInTheDocument()
     expect(researchProgress.getAllByText('Done')).toHaveLength(4)

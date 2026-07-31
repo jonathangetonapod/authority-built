@@ -128,9 +128,9 @@ const pitchSteps: Array<{ id: PitchStep; step: string; title: string; detail: st
 ]
 
 const sequenceEmailSteps: Array<{ id: SequenceEmailStep; email: string; title: string; timing: string; detail: string }> = [
-  { id: 'opening', email: 'Email 1', title: 'Opening pitch', timing: 'Day 0', detail: 'Starts the outreach' },
-  { id: 'follow_up_one', email: 'Email 2', title: 'Follow-up', timing: 'Day 6', detail: 'Same thread, adds a second angle' },
-  { id: 'follow_up_two', email: 'Email 3', title: 'Close the loop', timing: 'Day 13', detail: 'Final same-thread reply' },
+  { id: 'opening', email: 'Email 1', title: 'Opening pitch', timing: 'Sends first', detail: 'Starts the outreach' },
+  { id: 'follow_up_one', email: 'Email 2', title: 'Follow-up', timing: 'Second send', detail: 'Same thread, adds a second angle' },
+  { id: 'follow_up_two', email: 'Email 3', title: 'Close the loop', timing: 'Final send', detail: 'Final same-thread reply' },
 ]
 
 const researchProgressSteps: ResearchProgressStep[] = [
@@ -1755,10 +1755,19 @@ export function ClientCampaignPrepDialog({
                             )}
                             <div className="flex gap-2 border-t px-4 py-3 text-[11px] leading-4 text-muted-foreground">
                               {researchWorking ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" /> : researchFailed ? <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" /> : <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
+                              {/*
+                                Precise about which window, because the two are
+                                no longer the same promise. The run hands itself
+                                between invocations to stay inside the platform's
+                                time limit, and this tab is what asks for the
+                                next one — so closing the panel costs nothing and
+                                closing the tab stops it. Nothing is lost either
+                                way, which is the part worth saying plainly.
+                              */}
                               <p>{researchWorking
                                 ? researchRegenerating
-                                  ? 'All six saved workspace prompts run in order. You can safely close this window and return without losing progress.'
-                                  : 'Research continues in the background. You can safely close this window and return without losing progress.'
+                                  ? 'All six saved workspace prompts run in order. Closing this panel is fine — the run continues as long as this tab stays open, and every finished stage is saved if it stops.'
+                                  : 'Research continues while this tab stays open, so closing this panel is fine. Closing the tab pauses it — every finished stage is saved, and running it again picks up from where it stopped.'
                                 : researchFailed
                                   ? 'Completed stages are saved. Retrying can continue from the stage that needs attention.'
                                   : 'Every stage is saved with this podcast, so the research does not need to run again when you return.'}</p>
@@ -1915,12 +1924,12 @@ export function ClientCampaignPrepDialog({
 
                             <div className="grid gap-4 lg:grid-cols-2">
                               <article aria-label="First follow-up preview" className="rounded-xl border p-4">
-                                <div className="flex flex-wrap items-center justify-between gap-2"><Badge variant="secondary">Email 2 · Follow-up</Badge><span className="text-[11px] font-medium text-muted-foreground">6 days later · Same thread</span></div>
+                                <div className="flex flex-wrap items-center justify-between gap-2"><Badge variant="secondary">Email 2 · Follow-up</Badge><span className="text-[11px] font-medium text-muted-foreground">Same thread</span></div>
                                 <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{draft.followUpOneBody || 'The first follow-up will appear here.'}</p>
                               </article>
 
                               <article aria-label="Second follow-up preview" className="rounded-xl border p-4">
-                                <div className="flex flex-wrap items-center justify-between gap-2"><Badge variant="secondary">Email 3 · Close the loop</Badge><span className="text-[11px] font-medium text-muted-foreground">7 days later · Same thread</span></div>
+                                <div className="flex flex-wrap items-center justify-between gap-2"><Badge variant="secondary">Email 3 · Close the loop</Badge><span className="text-[11px] font-medium text-muted-foreground">Same thread</span></div>
                                 <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{draft.followUpTwoBody || 'The final follow-up will appear here.'}</p>
                               </article>
                             </div>
@@ -1993,7 +2002,7 @@ export function ClientCampaignPrepDialog({
                     <div className="flex flex-col gap-3 border-b bg-gradient-to-br from-primary/5 to-background px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <div className="flex flex-wrap items-center gap-2"><Badge variant="secondary">{activeSequenceEmailStep.email}</Badge><Badge variant="outline">{activeSequenceEmailStep.timing}</Badge><h4 id="campaign-active-email-heading" className="font-semibold">{activeSequenceEmailStep.title}</h4></div>
-                        <p className="mt-2 text-xs leading-5 text-muted-foreground">{activeSequenceEmail === 'opening' ? 'Your personalized first note to the host or producer.' : activeSequenceEmail === 'follow_up_one' ? 'Sends 6 days later in the same thread, adding a second angle rather than bumping. Stops when the host replies.' : 'Sends 7 days after that, closes the loop respectfully, and ends the sequence.'}</p>
+                        <p className="mt-2 text-xs leading-5 text-muted-foreground">{activeSequenceEmail === 'opening' ? 'Your personalized first note to the host or producer.' : activeSequenceEmail === 'follow_up_one' ? 'Follows up in the same thread, adding a second angle rather than bumping. Stops when the host replies.' : 'Closes the loop respectfully in the same thread, and ends the sequence.'}</p>
                       </div>
                       <Badge variant="outline" className={`w-fit ${sequenceEmailReady[activeSequenceEmail] ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>{sequenceEmailReady[activeSequenceEmail] ? 'Ready' : 'Needs copy'}</Badge>
                     </div>
@@ -2126,8 +2135,8 @@ export function ClientCampaignPrepDialog({
                     : 'A valid email is required before you can continue to Research.')}
                 {activeStep === 'research' && (researchWorking
                   ? researchRegenerating
-                    ? 'Regeneration is running every saved workspace prompt in order, then writing the sequence. You can close this window and return without losing progress.'
-                    : 'Research is running in the background. You can close this window and return without losing progress.'
+                    ? 'Regeneration is running every saved workspace prompt in order, then writing the sequence. Closing this panel is fine; the run needs this tab to stay open, and every finished stage is saved if it stops.'
+                    : 'Research is running. Closing this panel is fine; the run needs this tab to stay open, and every finished stage is saved if it stops.'
                   : researchFailed
                     ? 'Research paused before the pitch could be prepared. Completed stages are saved.'
                     : 'Research is saved to this podcast and used to shape the pitch.')}
