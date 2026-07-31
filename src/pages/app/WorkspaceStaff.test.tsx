@@ -383,6 +383,24 @@ describe('WorkspaceStaff', () => {
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Workspace invitation sent.'))
   })
 
+  // The hidden file field was the styled Input, whose base classes carry
+  // h-10 w-full. tailwind-merge does not treat sr-only as conflicting with a
+  // width, so both survived: the field kept sr-only's position:absolute at a
+  // full 774px and, with no positioned ancestor, anchored to the initial
+  // containing block and stretched the document 260px past the viewport.
+  // jsdom has no layout, so the classes are what can be asserted here.
+  it('hides the logo field without giving it a width that widens the page', async () => {
+    renderPage()
+    await screen.findByText('Agency Admin')
+
+    const field = screen.getByLabelText('Workspace logo file')
+    expect(field.tagName).toBe('INPUT')
+    expect(field).toHaveClass('sr-only')
+    // These are what sr-only's 1px box loses to.
+    expect(field.className).not.toMatch(/\bw-full\b/)
+    expect(field.className).not.toMatch(/\bh-10\b/)
+  })
+
   it('uploads a workspace logo and refreshes the signed-in workspace shell', async () => {
     renderPage()
     await screen.findByText('Agency Admin')

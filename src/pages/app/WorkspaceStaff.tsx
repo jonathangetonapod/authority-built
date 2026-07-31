@@ -830,7 +830,16 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                                   <p className="text-sm leading-6 text-muted-foreground">
                                     Shown without a colored backdrop so the original artwork stays intact.
                                   </p>
-                                  <Input
+                                  {/* A native input, not the styled one. Input's
+                                      base classes carry h-10 w-full, and cn's
+                                      tailwind-merge does not know sr-only
+                                      conflicts with a width — so both survived
+                                      and the field kept sr-only's absolute
+                                      positioning at a full 774px, anchored to
+                                      the initial containing block because no
+                                      ancestor is positioned. It stretched the
+                                      document 260px past the viewport. */}
+                                  <input
                                     ref={logoInputRef}
                                     id="workspace-logo"
                                     aria-label="Workspace logo file"
