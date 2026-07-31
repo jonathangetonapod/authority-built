@@ -40,6 +40,7 @@ import {
   STAGE_RESPONSE_TARGETS,
 } from '../_shared/promptVariables.ts'
 import { splitStructuredAngles, type StructuredAngle } from '../_shared/pitchAngles.ts'
+import { thinkingForModel } from '../_shared/promptModels.ts'
 import {
   describeMissingRequirements,
   missingRequiredVariables,
@@ -898,6 +899,12 @@ async function runResearchPrompt(
       max_tokens: prompt.maxTokens,
       system: cached ? RESEARCH_SHARED_SYSTEM : prompt.system,
       messages: [{ role: 'user', content: blocks }],
+      // Sent only for the models that would otherwise think unprompted. Every
+      // stage budgets max_tokens for an answer, and on those models the same
+      // budget covers the thinking too — so a stage capped at 4,096 could
+      // spend most of it reasoning and return a truncated report that still
+      // reads like a report. Choosing a model changes the model, nothing else.
+      ...(thinkingForModel(prompt.model) ? { thinking: thinkingForModel(prompt.model) } : {}),
     }),
     // Research stages legitimately generate ~3k tokens, which takes 30-60s.
     // The old 28s cap timed out every real run the moment the API key worked.
@@ -1808,24 +1815,44 @@ serve(async (req) => {
       try {
         const { data: overrideRows } = await authContext.admin
           .from('workspace_research_prompts')
-          .select('prompt_id, content')
+          .select('prompt_id, content, model')
           .eq('workspace_id', workspaceId)
         const { data: clientOverrideRows } = await authContext.admin
           .from('client_ai_sdr_prompts')
           .select('prompt_id, content')
           .eq('workspace_id', workspaceId)
           .eq('client_id', clientId)
+        // Rows with no instructions are skipped rather than mapped: a row can
+        // now exist to carry a model choice alone, and String(null) would send
+        // the literal text "null" to the model as the stage's prompt.
         const overrides = new Map(
-          (overrideRows ?? []).map((row) => [String(row.prompt_id), String(row.content)]),
+          (overrideRows ?? [])
+            .filter((row) => typeof row.content === 'string' && row.content)
+            .map((row) => [String(row.prompt_id), String(row.content)]),
         )
         // This client's own prompt wins over the workspace house style.
         const clientOverrides = new Map(
-          (clientOverrideRows ?? []).map((row) => [String(row.prompt_id), String(row.content)]),
+          (clientOverrideRows ?? [])
+            .filter((row) => typeof row.content === 'string' && row.content)
+            .map((row) => [String(row.prompt_id), String(row.content)]),
         )
         const promptContent = (promptId: string): string =>
           clientOverrides.get(promptId)
             ?? overrides.get(promptId)
             ?? RESEARCH_PROMPT_DEFAULTS[promptId].content
+
+        // The model this workspace chose for a stage, else the stage's shipped
+        // default. Model is a workspace-level choice only — a client can carry
+        // its own wording, not its own model.
+        const promptModels = new Map(
+          (overrideRows ?? [])
+            .filter((row) => typeof row.model === 'string' && row.model)
+            .map((row) => [String(row.prompt_id), String(row.model)]),
+        )
+        const promptSpec = (promptId: string) => ({
+          ...RESEARCH_PROMPT_DEFAULTS[promptId],
+          model: promptModels.get(promptId) ?? RESEARCH_PROMPT_DEFAULTS[promptId].model,
+        })
 
         // Which fields each stage refuses to run without, resolved the same
         // way its prompt is: this client's row, else the workspace's, else
@@ -1990,7 +2017,7 @@ serve(async (req) => {
           parts: { context: string; report?: string },
         ): Promise<string> => runResearchPrompt(
           anthropicKey.apiKey,
-          RESEARCH_PROMPT_DEFAULTS[promptId],
+          promptSpec(promptId),
           { ...parts, instruction: fillPromptTemplate(promptContent(promptId), stageVariables) },
           usage,
         )
@@ -2462,7 +2489,7 @@ serve(async (req) => {
             // prompt is deliberately not offered per client (CLIENT_PROMPT_IDS).
             const { data: extractorOverrideRows } = await authContext.admin
               .from('workspace_research_prompts')
-              .select('content')
+              .select('content, model')
               .eq('workspace_id', workspaceId)
               .eq('prompt_id', 'host_name_extractor')
               .maybeSingle()
@@ -2470,6 +2497,14 @@ serve(async (req) => {
               && extractorOverrideRows.content.trim()
               ? extractorOverrideRows.content
               : RESEARCH_PROMPT_DEFAULTS.host_name_extractor.content
+            // The same row carries the model, so a stage whose model was
+            // chosen here honours it rather than silently ignoring the picker.
+            const extractorSpec = {
+              ...RESEARCH_PROMPT_DEFAULTS.host_name_extractor,
+              model: typeof extractorOverrideRows?.model === 'string' && extractorOverrideRows.model
+                ? extractorOverrideRows.model
+                : RESEARCH_PROMPT_DEFAULTS.host_name_extractor.model,
+            }
             // This stage decides the name every pitch opens with, and it used
             // to receive exactly one field. Podscan's own analyzed host and the
             // research reports corroborate the answer it is guessing at.
@@ -2489,7 +2524,7 @@ serve(async (req) => {
             const extractorCatalogRow = (extractorCatalogData ?? null) as Record<string, unknown> | null
             const extracted = await runResearchPrompt(
               anthropicKey.apiKey,
-              RESEARCH_PROMPT_DEFAULTS.host_name_extractor,
+              extractorSpec,
               fillPromptTemplate(extractorContent, {
                 ...buildPodcastVariables(extractorCatalogRow),
                 ...buildEpisodeVariables(extractorCatalogRow?.recent_episodes),
@@ -2801,7 +2836,7 @@ serve(async (req) => {
 
       const { data: overrideRows } = await authContext.admin
         .from('workspace_research_prompts')
-        .select('prompt_id, content')
+        .select('prompt_id, content, model')
         .eq('workspace_id', workspaceId)
         .in('prompt_id', ['write_email', 'clean_email'])
       const { data: clientOverrideRows } = await authContext.admin
@@ -2810,13 +2845,28 @@ serve(async (req) => {
         .eq('workspace_id', workspaceId)
         .eq('client_id', clientId)
         .in('prompt_id', ['write_email', 'clean_email'])
+      // See the research path: a row may carry only a model choice, and
+      // String(null) would reach the model as the word "null".
       const overrides = new Map(
-        (overrideRows ?? []).map((row) => [String(row.prompt_id), String(row.content)]),
+        (overrideRows ?? [])
+          .filter((row) => typeof row.content === 'string' && row.content)
+          .map((row) => [String(row.prompt_id), String(row.content)]),
       )
       // This client's own prompt wins over the workspace house style.
       const clientOverrides = new Map(
-        (clientOverrideRows ?? []).map((row) => [String(row.prompt_id), String(row.content)]),
+        (clientOverrideRows ?? [])
+          .filter((row) => typeof row.content === 'string' && row.content)
+          .map((row) => [String(row.prompt_id), String(row.content)]),
       )
+      const promptModels = new Map(
+        (overrideRows ?? [])
+          .filter((row) => typeof row.model === 'string' && row.model)
+          .map((row) => [String(row.prompt_id), String(row.model)]),
+      )
+      const promptSpec = (promptId: string) => ({
+        ...RESEARCH_PROMPT_DEFAULTS[promptId],
+        model: promptModels.get(promptId) ?? RESEARCH_PROMPT_DEFAULTS[promptId].model,
+      })
       const promptContent = (promptId: string): string =>
         clientOverrides.get(promptId)
           ?? overrides.get(promptId)
@@ -3008,7 +3058,7 @@ serve(async (req) => {
           : ''
         let draftRaw = await runResearchPrompt(
           anthropicKey.apiKey,
-          RESEARCH_PROMPT_DEFAULTS.write_email,
+          promptSpec('write_email'),
           {
             context: pitchContext,
             instruction: [
@@ -3028,7 +3078,10 @@ serve(async (req) => {
         if (/^\s*ACTIVE CONVERSATION/iu.test(draftRaw) && relationship?.state === 'in_conversation') {
           draftRaw = await runResearchPrompt(
             anthropicKey.apiKey,
-            RESEARCH_PROMPT_DEFAULTS.write_email,
+            // The workspace's model, but deliberately the canonical prompt —
+            // this retry exists because the SAVED wording refused, so only the
+            // wording falls back, not the model choice.
+            promptSpec('write_email'),
             {
               context: pitchContext,
               instruction: [
@@ -3100,7 +3153,7 @@ serve(async (req) => {
         if (flags.length > 0) {
           const revisedRaw = await runResearchPrompt(
             anthropicKey.apiKey,
-            RESEARCH_PROMPT_DEFAULTS.clean_email,
+            promptSpec('clean_email'),
             // The revision stage runs inside the pitch scope, so it can see
             // everything the draft was written from. It used to get two fields,
             // which meant it fixed flags without being able to check them.

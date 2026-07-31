@@ -28,6 +28,7 @@ import {
 import { normalizeRequiredVariables } from "../_shared/promptRequirements.ts";
 import { chargeCredits, logOperationCost } from "../_shared/billing.ts";
 import { resolveAiKey } from "../_shared/workspaceAiKeys.ts";
+import { fetchPromptModels } from "../_shared/promptModels.ts";
 import {
   type AuthContext,
   createAdminClient,
@@ -2848,16 +2849,22 @@ serve(async (req) => {
       requireCampaignManager(access);
       const { data, error } = await context.admin
         .from("workspace_research_prompts")
-        .select("prompt_id, content, updated_at")
+        .select("prompt_id, content, model, updated_at")
         .eq("workspace_id", workspaceId);
       if (error) {
         throw new HttpError(503, "PROMPTS_UNAVAILABLE", "Workspace prompts are temporarily unavailable");
       }
-      const overrides: Record<string, { content: string; updated_at: string | null }> = {};
+      const overrides: Record<string, { content: string | null; model: string | null; updated_at: string | null }> = {};
       for (const row of data ?? []) {
-        if (RESEARCH_PROMPT_IDS.includes(String(row.prompt_id)) && typeof row.content === "string") {
+        if (!RESEARCH_PROMPT_IDS.includes(String(row.prompt_id))) continue;
+        {
           overrides[String(row.prompt_id)] = {
-            content: row.content,
+            // A row can exist for a model choice alone; null content means the
+            // stage still runs the shipped instructions.
+            content: typeof row.content === "string" && row.content ? row.content : null,
+            // null means the stage runs on its shipped default, which is not
+            // the same as storing that default's id — see the migration.
+            model: typeof row.model === "string" && row.model ? row.model : null,
             updated_at: typeof row.updated_at === "string" ? row.updated_at : null,
           };
         }
@@ -2893,16 +2900,113 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, { success: true });
     }
 
+    if (action === "prompts-models") {
+      requireOnlyKeys(body, ["action", "workspace_id"]);
+      requireCampaignManager(access);
+      // Read from Anthropic rather than from a list in this repo: the usable
+      // set changes as models ship and retire, and it differs by key — a
+      // workspace on its own Anthropic credential may reach models the
+      // platform key cannot, or fewer.
+      const modelsKey = await resolveAiKey(context.admin, workspaceId, "anthropic");
+      if (!modelsKey) {
+        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "No Anthropic credential is configured, so the model list cannot be read");
+      }
+      try {
+        return jsonResponse(req, METHODS, 200, { models: await fetchPromptModels(modelsKey.apiKey) });
+      } catch (error) {
+        throw new HttpError(
+          503,
+          "PROMPTS_UNAVAILABLE",
+          error instanceof Error ? error.message : "The model list could not be read",
+        );
+      }
+    }
+
+    if (action === "prompt-model-set") {
+      requireOnlyKeys(body, ["action", "workspace_id", "prompt_id", "model"]);
+      requireIntegrationOwner(access);
+      const promptId = requireResearchPromptId(body.prompt_id);
+      // null clears the choice and returns the stage to its shipped default.
+      let model: string | null = null;
+      if (body.model !== null && body.model !== undefined && body.model !== "") {
+        const requested = requireString(body.model, "model", { max: 128 });
+        const modelKey = await resolveAiKey(context.admin, workspaceId, "anthropic");
+        if (!modelKey) {
+          throw new HttpError(503, "PROMPTS_UNAVAILABLE", "No Anthropic credential is configured, so the model cannot be verified");
+        }
+        // Checked against the live list, not a list in this repo. The value
+        // reaches Anthropic as the `model` parameter, so an unverified string
+        // here is a tenant choosing what we send upstream — and a model that
+        // does not exist would fail every run of this stage with a 404 the
+        // operator cannot act on.
+        let available: Awaited<ReturnType<typeof fetchPromptModels>>;
+        try {
+          available = await fetchPromptModels(modelKey.apiKey);
+        } catch (error) {
+          throw new HttpError(
+            503,
+            "PROMPTS_UNAVAILABLE",
+            error instanceof Error ? error.message : "The model could not be verified",
+          );
+        }
+        if (!available.some((entry) => entry.id === requested)) {
+          throw new HttpError(400, "INVALID_FIELD", `"${requested}" is not a model this workspace can use`);
+        }
+        model = requested;
+      }
+      // Upsert, because a stage whose instructions were never customized has
+      // no row yet and choosing a model must not require inventing one.
+      const { error } = await context.admin
+        .from("workspace_research_prompts")
+        .upsert({
+          workspace_id: workspaceId,
+          prompt_id: promptId,
+          model,
+          updated_by: context.user.id,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "workspace_id,prompt_id" });
+      if (error) {
+        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "The model could not be saved");
+      }
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: "workspace.research_prompts.model_updated",
+        entityType: "workspace",
+        entityId: workspaceId,
+        metadata: { prompt_id: promptId, model },
+      });
+      return jsonResponse(req, METHODS, 200, { success: true });
+    }
+
     if (action === "prompts-reset") {
       requireOnlyKeys(body, ["action", "workspace_id", "prompt_id"]);
       requireIntegrationOwner(access);
       const promptId = requireResearchPromptId(body.prompt_id);
+      // Clears the instructions, not the model. Resetting the wording someone
+      // wrote should not silently move the stage back onto a different model —
+      // those are two separate choices and the button only names one of them.
+      // The row goes only when nothing is left on it.
       const { error } = await context.admin
         .from("workspace_research_prompts")
-        .delete()
+        .update({
+          content: null,
+          updated_by: context.user.id,
+          updated_at: new Date().toISOString(),
+        })
         .eq("workspace_id", workspaceId)
         .eq("prompt_id", promptId);
       if (error) {
+        throw new HttpError(503, "PROMPTS_UNAVAILABLE", "The prompt could not be reset");
+      }
+      const { error: pruneError } = await context.admin
+        .from("workspace_research_prompts")
+        .delete()
+        .eq("workspace_id", workspaceId)
+        .eq("prompt_id", promptId)
+        .is("content", null)
+        .is("model", null);
+      if (pruneError) {
         throw new HttpError(503, "PROMPTS_UNAVAILABLE", "The prompt could not be reset");
       }
       await writeAudit(context.admin, {

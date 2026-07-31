@@ -64,6 +64,8 @@ import {
   removeWorkspaceCampaignLead,
 } from '@/services/workspaceCampaigns'
 import {
+  getWorkspacePromptModels,
+  setWorkspacePromptModel,
   getWorkspacePromptRequirements,
   getWorkspaceResearchPromptOverrides,
   setWorkspacePromptRequirements,
@@ -677,6 +679,28 @@ export function ClientCampaignPrepDialog({
     staleTime: 60_000,
   })
   const promptOverrides = promptOverridesQuery.data ?? {}
+  // Read live from Anthropic rather than from a list in this app: the usable
+  // set changes as models ship and retire, and differs by which key the
+  // workspace runs on.
+  const promptModelsQuery = useQuery({
+    queryKey: ['workspace-prompt-models', workspaceId],
+    queryFn: () => getWorkspacePromptModels(workspaceId),
+    enabled: open && showPromptSettings,
+    retry: false,
+    staleTime: 10 * 60_000,
+  })
+  const promptModels = promptModelsQuery.data ?? []
+  const setPromptModelMutation = useMutation({
+    mutationFn: ({ promptId, model }: { promptId: ResearchPromptId; model: string | null }) =>
+      setWorkspacePromptModel(workspaceId, promptId, model),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['workspace-research-prompts', workspaceId] })
+      toast.success('Stage model saved.')
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'The model could not be saved.')
+    },
+  })
 
   const inspectedStage = inspectedStageId
     ? researchProgressSteps.find((step) => step.id === inspectedStageId) ?? null
@@ -696,7 +720,7 @@ export function ClientCampaignPrepDialog({
   const promptPhases = useMemo(() => researchPromptPhases(), [])
   const promptStepNumbers = useMemo(() => researchPromptStepNumbers(promptPhases), [promptPhases])
   const selectedPromptDefault = RESEARCH_PROMPT_DEFAULTS_BY_ID[selectedPromptId]
-  const selectedPromptCustomized = Boolean(promptOverrides[selectedPromptId])
+  const selectedPromptCustomized = Boolean(promptOverrides[selectedPromptId]?.content)
   const promptDirty = promptDraft !== effectivePromptContent(selectedPromptId)
   const customPromptCount = RESEARCH_PROMPT_DEFAULTS.filter((prompt) => promptOverrides[prompt.id]).length
 
@@ -1834,6 +1858,47 @@ export function ClientCampaignPrepDialog({
                               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                 <div><p className="text-sm font-semibold">{selectedPromptDefault.label}</p><p className="mt-1 text-xs text-muted-foreground">{selectedPromptDefault.description}</p></div>
                                 <Badge variant={selectedPromptCustomized ? 'outline' : 'secondary'} className="w-fit">{selectedPromptCustomized ? 'Custom prompt' : 'Default prompt'}</Badge>
+                              </div>
+                              <div className="mt-3 rounded-lg border p-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <Label htmlFor="campaign-research-stage-model" className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Model this stage runs on</Label>
+                                  {promptModelsQuery.isError && (
+                                    <button
+                                      type="button"
+                                      className="text-[11px] font-medium text-primary underline-offset-2 hover:underline"
+                                      onClick={() => void promptModelsQuery.refetch()}
+                                    >
+                                      Retry
+                                    </button>
+                                  )}
+                                </div>
+                                <select
+                                  id="campaign-research-stage-model"
+                                  className="mt-2 h-8 w-full rounded border bg-background px-2 text-xs disabled:cursor-not-allowed disabled:opacity-60"
+                                  disabled={promptBusy || promptModelsQuery.isLoading || promptModelsQuery.isError || setPromptModelMutation.isPending}
+                                  value={promptOverrides[selectedPromptId]?.model ?? ''}
+                                  onChange={(event) => setPromptModelMutation.mutate({
+                                    promptId: selectedPromptId,
+                                    model: event.target.value === '' ? null : event.target.value,
+                                  })}
+                                >
+                                  {/* Empty means "follow the shipped default", which is not the
+                                      same as pinning that default's id — if we change the default
+                                      for a stage, a workspace that never chose should move with it. */}
+                                  <option value="">Default for this stage ({selectedPromptDefault.model})</option>
+                                  {promptModels.map((model) => (
+                                    <option key={model.id} value={model.id}>
+                                      {model.label} — {model.id}
+                                    </option>
+                                  ))}
+                                </select>
+                                <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+                                  {promptModelsQuery.isError
+                                    ? 'The model list could not be read from Anthropic, so this cannot be changed right now. Everything else on this stage still saves.'
+                                    : promptModelsQuery.isLoading
+                                      ? 'Reading the models this workspace can use…'
+                                      : 'Read live from Anthropic, so it reflects what this workspace\u2019s key can actually use. Stages run in order and share a cached copy of the research, and that cache is per model — putting one stage on a different model means it re-reads the context rather than reusing it.'}
+                                </p>
                               </div>
                               <div className="mt-3 rounded-lg border bg-muted/20 p-3">
                                 <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">System instruction (fixed)</p>

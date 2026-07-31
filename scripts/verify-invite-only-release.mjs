@@ -34,7 +34,9 @@ const EXPECTED_COUNTS = Object.freeze({
   // {{<stage_id>_response}}, so nothing declares or parses a shape any more.
   // 155 with _shared/pitchAngles.ts and its test: the angles read off the end of
   // the topic proposal, which decide what every pitch in a sequence says.
-  edgeTypeScriptFiles: 155,
+  // 157 with _shared/promptModels.ts and its test: the models a stage may run
+  // on, read live from Anthropic rather than listed in this repo.
+  edgeTypeScriptFiles: 157,
 })
 
 const EXPECTED_PHASE_KEYS = Object.freeze([

@@ -525,11 +525,55 @@ export async function setWorkspaceCampaignRunning(
 }
 
 export interface ResearchPromptOverride {
-  content: string
+  /** Null when the stage runs the shipped instructions and only its model was chosen. */
+  content: string | null
+  /** Null means the stage runs on its shipped default model. */
+  model: string | null
   updated_at: string | null
 }
 
 export type ResearchPromptOverrides = Partial<Record<string, ResearchPromptOverride>>
+
+/** A model this workspace's Anthropic key can actually use, as the API reports it. */
+export interface PromptModelOption {
+  id: string
+  label: string
+  contextTokens: number | null
+  maxOutputTokens: number | null
+  thinksByDefault: boolean
+}
+
+/**
+ * The models available to this workspace, read live from Anthropic.
+ *
+ * Not a list shipped in this app: the usable set changes as models ship and
+ * retire, and it differs by key — a workspace on its own Anthropic credential
+ * may reach models the platform key cannot, or fewer.
+ */
+export async function getWorkspacePromptModels(
+  workspaceId: string,
+): Promise<PromptModelOption[]> {
+  const data = await invokeWorkspaceCampaigns<{ models?: PromptModelOption[] }>({
+    action: 'prompts-models',
+    workspace_id: workspaceId,
+  }, 'The available models could not be loaded.')
+  return Array.isArray(data.models) ? data.models : []
+}
+
+/** Chooses the model a stage runs on. Null returns it to the shipped default. */
+export async function setWorkspacePromptModel(
+  workspaceId: string,
+  promptId: string,
+  model: string | null,
+): Promise<void> {
+  const data = await invokeWorkspaceCampaigns<{ success?: boolean }>({
+    action: 'prompt-model-set',
+    workspace_id: workspaceId,
+    prompt_id: promptId,
+    model,
+  }, 'The model could not be saved.')
+  if (data?.success !== true) throw new Error('The model could not be saved.')
+}
 
 export async function getWorkspaceResearchPromptOverrides(
   workspaceId: string,
