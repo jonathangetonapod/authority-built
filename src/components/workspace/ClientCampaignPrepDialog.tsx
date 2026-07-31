@@ -129,6 +129,16 @@ const pitchSteps: Array<{ id: PitchStep; step: string; title: string; detail: st
   { id: 'pitch', step: '3', title: 'Finalize pitch', detail: 'Edit and save the selected sequence' },
 ]
 
+/** A written sequence for one angle, as the editor holds it. */
+interface StoredPitch {
+  subject: string
+  body: string
+  followUpOneBody: string | null
+  followUpTwoBody: string | null
+  auditFlags: string[]
+  chainVersion: string | null
+}
+
 const sequenceEmailSteps: Array<{ id: SequenceEmailStep; email: string; title: string; timing: string; detail: string }> = [
   { id: 'opening', email: 'Email 1', title: 'Opening pitch', timing: 'Sends first', detail: 'Starts the outreach' },
   { id: 'follow_up_one', email: 'Email 2', title: 'Follow-up', timing: 'Second send', detail: 'Same thread, adds a second angle' },
@@ -291,7 +301,11 @@ export function ClientCampaignPrepDialog({
       // the state because the load below runs before the next render.
       setAiPitches({})
       aiPitchesRef.current = {}
-      prefetchingRef.current.clear()
+      // Writes still running belong to the previous run's angles, so they are
+      // forgotten rather than adopted — a late arrival must not land in the
+      // cache as though it were written for the angles that just replaced it.
+      inFlightPitchesRef.current.clear()
+      pitchGenerationRef.current += 1
       // One button, whole pipeline: research finishing rolls straight into
       // writing the recommended sequence, so the operator clicks once and
       // ends with finished copy. The prop-driven research check is skipped
@@ -310,14 +324,7 @@ export function ClientCampaignPrepDialog({
   // Real pitch copy comes from the write_email/clean_email prompts running
   // over the stored research with mapped variables; the local template is
   // only the placeholder while it loads (or the fallback if it fails).
-  const [aiPitches, setAiPitches] = useState<Record<string, {
-    subject: string
-    body: string
-    followUpOneBody: string | null
-    followUpTwoBody: string | null
-    auditFlags: string[]
-    chainVersion: string | null
-  }>>({})
+  const [aiPitches, setAiPitches] = useState<Record<string, StoredPitch>>({})
   const [pitchLoadingKey, setPitchLoadingKey] = useState<string | null>(null)
   const pitchKey = (podcastId: string, angleIndex: number) => `${podcastId}:${angleIndex}`
   // Latest values for the background writer below, which outlives the render
@@ -326,16 +333,80 @@ export function ClientCampaignPrepDialog({
   aiPitchesRef.current = aiPitches
   const dialogOpenRef = useRef(open)
   dialogOpenRef.current = open
-  /** Angles already written or being written in the background, by pitch key. */
-  const prefetchingRef = useRef(new Set<string>())
+  /**
+   * Pitch writes currently in flight, by pitch key.
+   *
+   * Holding the promise rather than a marker is what lets a click adopt a
+   * background write instead of racing it. Clicking an option that was already
+   * being written used to start a SECOND request for the same angle — the
+   * operator then waited out a fresh run from zero while the first one was
+   * most of the way done, which is exactly the pause that felt like a hang.
+   */
+  const inFlightPitchesRef = useRef(new Map<string, Promise<StoredPitch | null>>())
+  /**
+   * Which set of angles the writes in flight belong to.
+   *
+   * Bumped when research re-runs. Dropping the map alone was not enough: a
+   * write started for the old angles still resolves, and the cache is keyed by
+   * angle POSITION — so it would land in slot 1 of the NEW angles and be shown
+   * as copy written for an angle it never saw.
+   */
+  const pitchGenerationRef = useRef(0)
+
+  /**
+   * Writes one option, or joins the write already happening for it.
+   *
+   * The single door both the click path and the background writer go through,
+   * so an angle is never written twice concurrently however it was asked for.
+   */
+  const generatePitch = (angleIndex: number): Promise<StoredPitch | null> => {
+    if (!podcast?.id) return Promise.resolve(null)
+    const key = pitchKey(podcast.id, angleIndex)
+    const existing = inFlightPitchesRef.current.get(key)
+    if (existing) return existing
+
+    const generation = pitchGenerationRef.current
+    const request = generateClientShortlistPitch(
+      workspaceId,
+      clientId,
+      podcast.id,
+      angleIndex,
+      relationshipAcknowledged,
+    ).then((pitch) => {
+      if (!pitch?.subject || !pitch?.body) {
+        throw new Error('The pitch could not be written from research.')
+      }
+      // Written for angles that no longer exist — drop it rather than cache it.
+      if (generation !== pitchGenerationRef.current) return null
+      const stored: StoredPitch = {
+        subject: pitch.subject,
+        body: pitch.body,
+        followUpOneBody: pitch.follow_up_1_body ?? null,
+        followUpTwoBody: pitch.follow_up_2_body ?? null,
+        auditFlags: Array.isArray(pitch.audit_flags) ? pitch.audit_flags : [],
+        chainVersion: pitch.chain_version ?? null,
+      }
+      // Never overwrites: the operator may have this option open and edited.
+      setAiPitches((current) => (current[key] ? current : { ...current, [key]: stored }))
+      return stored
+    }).finally(() => {
+      // Cleared either way, so a failure can be retried by opening the option.
+      inFlightPitchesRef.current.delete(key)
+    })
+
+    inFlightPitchesRef.current.set(key, request)
+    return request
+  }
 
   /**
    * Writes the options the operator has not opened yet.
    *
    * Each option is two or three sequential model calls, so opening one to
    * compare it cost about a minute — and the panel exists to be compared, it
-   * says so. They are written in the background instead, one after another so
-   * three chains are never in flight at once.
+   * says so. They are written in the background instead, concurrently with each
+   * other: they are separate invocations server-side, and writing them one
+   * after another left the third option a full run away long after the second
+   * was ready.
    *
    * Deliberately quiet: it never touches the loading key or the draft, because
    * the operator is reading and may be editing the option they DID open. A
@@ -350,41 +421,15 @@ export function ClientCampaignPrepDialog({
   const prefetchOtherAngles = async (loadedIndex: number) => {
     if (!podcast?.id || !relationshipCanProceed) return
     const total = Math.min((podcast.ai_pitch_angles || []).length, 3)
+    const pending: Array<Promise<unknown>> = []
     for (let index = 0; index < total; index += 1) {
       if (index === loadedIndex) continue
       if (!dialogOpenRef.current) return
       const key = pitchKey(podcast.id, index)
-      if (aiPitchesRef.current[key] || prefetchingRef.current.has(key)) continue
-      prefetchingRef.current.add(key)
-      try {
-        const pitch = await generateClientShortlistPitch(
-          workspaceId,
-          clientId,
-          podcast.id,
-          index,
-          relationshipAcknowledged,
-        )
-        if (!pitch?.subject || !pitch?.body) throw new Error('empty pitch')
-        // Never overwrites: the operator may have opened this option meanwhile
-        // and had it written by the foreground path, edits and all.
-        setAiPitches((current) => (current[key] ? current : {
-          ...current,
-          [key]: {
-            subject: pitch.subject,
-            body: pitch.body,
-            followUpOneBody: pitch.follow_up_1_body ?? null,
-            followUpTwoBody: pitch.follow_up_2_body ?? null,
-            auditFlags: Array.isArray(pitch.audit_flags) ? pitch.audit_flags : [],
-            chainVersion: pitch.chain_version ?? null,
-          },
-        }))
-      } catch {
-        // Left out of the set so opening it can try again in the foreground,
-        // where the operator sees what went wrong.
-        prefetchingRef.current.delete(key)
-        return
-      }
+      if (aiPitchesRef.current[key]) continue
+      pending.push(generatePitch(index).catch(() => null))
     }
+    await Promise.all(pending)
   }
 
   const loadAiPitch = async (angleIndex: number, options?: { skipResearchCheck?: boolean }) => {
@@ -400,25 +445,11 @@ export function ClientCampaignPrepDialog({
     if (!researched && !options?.skipResearchCheck) return
     setPitchLoadingKey(key)
     try {
-      const pitch = await generateClientShortlistPitch(
-        workspaceId,
-        clientId,
-        podcast.id,
-        angleIndex,
-        relationshipAcknowledged,
-      )
-      if (!pitch?.subject || !pitch?.body) {
-        throw new Error('The pitch could not be written from research.')
-      }
-      const stored = {
-        subject: pitch.subject,
-        body: pitch.body,
-        followUpOneBody: pitch.follow_up_1_body ?? null,
-        followUpTwoBody: pitch.follow_up_2_body ?? null,
-        auditFlags: Array.isArray(pitch.audit_flags) ? pitch.audit_flags : [],
-        chainVersion: pitch.chain_version ?? null,
-      }
-      setAiPitches((current) => ({ ...current, [key]: stored }))
+      // Joins the background write when one is already running for this angle,
+      // so opening an option mid-prefetch waits out what is left of it rather
+      // than starting again from zero.
+      const stored = await generatePitch(angleIndex)
+      if (!stored) throw new Error('The pitch could not be written from research.')
       // The whole three-touch sequence is AI-written now; the template
       // follow-ups only remain as the fallback for older generations.
       const applyPitch = (current: PodcastCampaignSequenceDraft): PodcastCampaignSequenceDraft => ({

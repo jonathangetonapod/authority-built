@@ -567,6 +567,42 @@ describe('ClientShortlistEditor', () => {
     await waitFor(() => expect(vi.mocked(generateClientShortlistPitch)).toHaveBeenCalledTimes(3))
   })
 
+  // Opening an option while it is already being written in the background used
+  // to start a SECOND request for the same angle, so the operator waited out a
+  // fresh run from zero while the first was nearly done — the pause that read
+  // as a hang between clicking an option and its preview appearing.
+  it('joins a background write instead of racing it', async () => {
+    const resolvers: Array<(value: unknown) => void> = []
+    vi.mocked(generateClientShortlistPitch).mockImplementation(
+      () => new Promise((resolve) => { resolvers.push(resolve) }) as never,
+    )
+    vi.mocked(getClientShortlist).mockResolvedValue({
+      client: { id: clientId, name: 'Taylor Client' },
+      podcasts: [podcast({
+        ai_pitch_angles: [
+          { title: 'Build a durable growth system', description: 'A practical operating playbook.' },
+          { title: 'Turn complexity into momentum', description: 'How leaders simplify decisions.' },
+          { title: 'Scale without adding chaos', description: 'Systems that keep focus.' },
+        ],
+      })],
+    })
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Select sequence 1: Build a durable growth system' }))
+
+    // Option 1 resolves, which starts the background writes for 2 and 3.
+    await waitFor(() => expect(resolvers).toHaveLength(1))
+    resolvers[0]({ subject: 'One', body: 'Body one' })
+    await waitFor(() => expect(vi.mocked(generateClientShortlistPitch)).toHaveBeenCalledTimes(3))
+
+    // Opening option 2 while its background write is still running must not
+    // add a fourth request.
+    fireEvent.click(screen.getByRole('button', { name: 'Select sequence 2: Turn complexity into momentum' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Select sequence 2: Turn complexity into momentum' })).toHaveAttribute('aria-pressed', 'true'))
+    expect(vi.mocked(generateClientShortlistPitch)).toHaveBeenCalledTimes(3)
+  })
+
   it('lets only the workspace owner customize the prompt for each research stage', async () => {
     renderEditor()
     fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
