@@ -531,6 +531,42 @@ describe('ClientShortlistEditor', () => {
     expect(screen.getByRole('article', { name: 'Opening pitch preview' })).toHaveTextContent('Turn complexity into momentum')
   })
 
+  // Each option is two or three sequential model calls, so opening one to
+  // compare it cost about a minute — and this panel exists to be compared.
+  // The options not on screen are written while the operator reads the one
+  // that is.
+  it('writes the options it will be compared against in the background', async () => {
+    vi.mocked(getClientShortlist).mockResolvedValue({
+      client: { id: clientId, name: 'Taylor Client' },
+      podcasts: [podcast({
+        ai_pitch_angles: [
+          { title: 'Build a durable growth system', description: 'A practical operating playbook.' },
+          { title: 'Turn complexity into momentum', description: 'How leaders simplify decisions.' },
+          { title: 'Scale without adding chaos', description: 'Systems that keep focus.' },
+        ],
+      })],
+    })
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+
+    // Nothing is written until an option is opened.
+    expect(vi.mocked(generateClientShortlistPitch)).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Select sequence 1: Build a durable growth system' }))
+
+    // All three written: the one opened, plus the two it is compared against.
+    await waitFor(() => expect(vi.mocked(generateClientShortlistPitch)).toHaveBeenCalledTimes(3))
+    const indexes = vi.mocked(generateClientShortlistPitch).mock.calls.map((call) => call[3]).sort()
+    expect(indexes).toEqual([0, 1, 2])
+
+    // Switching costs nothing now, and the background writes never disturbed
+    // the option on screen.
+    const secondOption = screen.getByRole('button', { name: 'Select sequence 2: Turn complexity into momentum' })
+    fireEvent.click(secondOption)
+    expect(secondOption).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() => expect(vi.mocked(generateClientShortlistPitch)).toHaveBeenCalledTimes(3))
+  })
+
   it('lets only the workspace owner customize the prompt for each research stage', async () => {
     renderEditor()
     fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))

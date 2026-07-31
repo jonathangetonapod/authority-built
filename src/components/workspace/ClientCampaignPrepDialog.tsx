@@ -283,6 +283,13 @@ export function ClientCampaignPrepDialog({
       void queryClient.invalidateQueries({ queryKey: promptPreviewQueryKey })
       void queryClient.invalidateQueries({ queryKey: ['client-shortlist-research-document', workspaceId, clientId] })
       toast.success('Research complete — writing the recommended sequence.')
+      // This run proposed new angles, and the cache is keyed by angle POSITION.
+      // Left alone, option 1 of fresh research would be served the sequence
+      // written from the previous run's option 1. The ref is cleared alongside
+      // the state because the load below runs before the next render.
+      setAiPitches({})
+      aiPitchesRef.current = {}
+      prefetchingRef.current.clear()
       // One button, whole pipeline: research finishing rolls straight into
       // writing the recommended sequence, so the operator clicks once and
       // ends with finished copy. The prop-driven research check is skipped
@@ -311,10 +318,80 @@ export function ClientCampaignPrepDialog({
   }>>({})
   const [pitchLoadingKey, setPitchLoadingKey] = useState<string | null>(null)
   const pitchKey = (podcastId: string, angleIndex: number) => `${podcastId}:${angleIndex}`
+  // Latest values for the background writer below, which outlives the render
+  // that started it and must not decide anything from a stale closure.
+  const aiPitchesRef = useRef(aiPitches)
+  aiPitchesRef.current = aiPitches
+  const dialogOpenRef = useRef(open)
+  dialogOpenRef.current = open
+  /** Angles already written or being written in the background, by pitch key. */
+  const prefetchingRef = useRef(new Set<string>())
+
+  /**
+   * Writes the options the operator has not opened yet.
+   *
+   * Each option is two or three sequential model calls, so opening one to
+   * compare it cost about a minute — and the panel exists to be compared, it
+   * says so. They are written in the background instead, one after another so
+   * three chains are never in flight at once.
+   *
+   * Deliberately quiet: it never touches the loading key or the draft, because
+   * the operator is reading and may be editing the option they DID open. A
+   * failure here is swallowed for the same reason — clicking the option reports
+   * it properly, and a toast about copy nobody asked for is just noise.
+   *
+   * Every distinct angle costs a credit whether it is written now or on click,
+   * and the charge is idempotent per angle, so this changes when the credit is
+   * spent rather than how many. The exception is the option never opened, which
+   * this does pay for.
+   */
+  const prefetchOtherAngles = async (loadedIndex: number) => {
+    if (!podcast?.id || !relationshipCanProceed) return
+    const total = Math.min((podcast.ai_pitch_angles || []).length, 3)
+    for (let index = 0; index < total; index += 1) {
+      if (index === loadedIndex) continue
+      if (!dialogOpenRef.current) return
+      const key = pitchKey(podcast.id, index)
+      if (aiPitchesRef.current[key] || prefetchingRef.current.has(key)) continue
+      prefetchingRef.current.add(key)
+      try {
+        const pitch = await generateClientShortlistPitch(
+          workspaceId,
+          clientId,
+          podcast.id,
+          index,
+          relationshipAcknowledged,
+        )
+        if (!pitch?.subject || !pitch?.body) throw new Error('empty pitch')
+        // Never overwrites: the operator may have opened this option meanwhile
+        // and had it written by the foreground path, edits and all.
+        setAiPitches((current) => (current[key] ? current : {
+          ...current,
+          [key]: {
+            subject: pitch.subject,
+            body: pitch.body,
+            followUpOneBody: pitch.follow_up_1_body ?? null,
+            followUpTwoBody: pitch.follow_up_2_body ?? null,
+            auditFlags: Array.isArray(pitch.audit_flags) ? pitch.audit_flags : [],
+            chainVersion: pitch.chain_version ?? null,
+          },
+        }))
+      } catch {
+        // Left out of the set so opening it can try again in the foreground,
+        // where the operator sees what went wrong.
+        prefetchingRef.current.delete(key)
+        return
+      }
+    }
+  }
+
   const loadAiPitch = async (angleIndex: number, options?: { skipResearchCheck?: boolean }) => {
     if (!podcast?.id || !relationshipCanProceed) return
     const key = pitchKey(podcast.id, angleIndex)
-    if (aiPitches[key] || pitchLoadingKey === key) return
+    // Read through the ref, so a cache cleared moments ago — by a fresh
+    // research run, whose new angles must not be shown the old run's copy — is
+    // seen as cleared rather than as this render's stale snapshot.
+    if (aiPitchesRef.current[key] || pitchLoadingKey === key) return
     // Only the current prompt pipeline counts — a legacy ai_analyzed_at
     // stamp does not authorize pitch writing (the server enforces this too).
     const researched = podcast.research_progress?.status === 'completed'
@@ -351,6 +428,9 @@ export function ClientCampaignPrepDialog({
       })
       setDraft(applyPitch)
       setSavedDraft(applyPitch)
+      // The option on screen is ready; write the ones it will be compared
+      // against while the operator reads this one.
+      void prefetchOtherAngles(angleIndex)
     } catch (error) {
       void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
       // Whatever just changed for this podcast, the editor's field values
