@@ -1096,6 +1096,28 @@ assert.match(
 assert.match(shortlistEdge, /WHAT THIS ANGLE IS BUILT ON: \$\{angleGrounding\}/u)
 assert.match(shortlistEdge, /angleGrounding \? `WHAT THIS ANGLE IS BUILT ON/u)
 
+// The screen's idea of a dead run is anchored to the backend's. A run that dies
+// without writing a terminal status leaves the record saying "running", and the
+// modal spun on one for two days because only the backend knew the lock had
+// expired. The UI threshold is derived from this one and must stay derived: it
+// is judged on the browser's clock, so it deliberately waits longer.
+assert.match(
+  shortlistEdge,
+  /const RESEARCH_STALE_LOCK_MS = 3 \* 60 \* 1000/u,
+  'the research lock expiry is mirrored by src/lib/researchProgress.ts',
+)
+const researchProgressLib = readFileSync('src/lib/researchProgress.ts', 'utf8')
+assert.match(
+  researchProgressLib,
+  /export const RESEARCH_LOCK_STALE_AFTER_MS = 3 \* 60 \* 1000/u,
+  'src/lib/researchProgress.ts must mirror RESEARCH_STALE_LOCK_MS',
+)
+assert.match(
+  researchProgressLib,
+  /export const RESEARCH_UI_STALE_AFTER_MS = RESEARCH_LOCK_STALE_AFTER_MS \* 3/u,
+  'the UI threshold must stay derived from the lock expiry, never a second literal',
+)
+
 // The no-transcript rule is stated when it is true, not carried permanently.
 //
 // It used to sit in two shipped prompts, describing a case that may never

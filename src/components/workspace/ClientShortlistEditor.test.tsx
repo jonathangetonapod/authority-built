@@ -940,7 +940,10 @@ describe('ClientShortlistEditor', () => {
         current_stage: 'recent_episodes',
         completed_stages: ['podcast_profile', 'host_profile'],
         started_at: '2026-07-24T12:00:00.000Z',
-        updated_at: '2026-07-24T12:01:00.000Z',
+        // Written just now, because this is a run that IS going. A fixed
+        // timestamp ages into staleness and the modal correctly stops calling
+        // it live, which is the behaviour the test below it covers.
+        updated_at: new Date().toISOString(),
       },
     })
     const completedPodcast = podcast({
@@ -979,6 +982,37 @@ describe('ClientShortlistEditor', () => {
     await waitFor(() => expect(screen.getByText('Research ready · 6 of 6 steps complete')).toBeInTheDocument(), { timeout: 4_000 })
     expect(screen.getByRole('button', { name: 'Finalize selected pitch' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Go to step 3: Finalize pitch' })).toBeEnabled()
+  })
+
+  // A run that dies mid-flight — an edge function timeout, or a redeploy killing
+  // the invocation — never writes a terminal status, so the record still says
+  // "running". One stopped on 2026-07-29 and the modal was still animating its
+  // spinner on the 31st, with nothing on the other end and no way to tell.
+  it('stops calling a run live once it has gone quiet for too long', async () => {
+    vi.mocked(getClientShortlist).mockResolvedValue({
+      client: { id: clientId, name: 'Taylor Client' },
+      podcasts: [podcast({
+        research_progress: {
+          status: 'running',
+          current_stage: 'guest_fit',
+          completed_stages: ['podcast_profile', 'recent_episodes', 'host_profile', 'guest_patterns'],
+          started_at: '2026-07-29T12:40:38.115Z',
+          updated_at: '2026-07-29T12:42:38.669Z',
+        },
+      })],
+    })
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+
+    expect(screen.getByText('Research stopped · 4 of 6 steps complete')).toBeInTheDocument()
+    expect(screen.getByText(/this run stopped before it finished/i)).toBeInTheDocument()
+    // The invitation that was missing: the backend released this lock long ago,
+    // so running it again is available and is the way out.
+    expect(screen.queryByText(/research continues in the background/i)).not.toBeInTheDocument()
+    const researchProgress = within(screen.getByRole('list', { name: 'Podcast research progress' }))
+    expect(researchProgress.queryByText('In progress')).not.toBeInTheDocument()
+    expect(researchProgress.getAllByText('Done')).toHaveLength(4)
   })
 
   it('requires a valid manually entered email when no public podcast email is available', async () => {

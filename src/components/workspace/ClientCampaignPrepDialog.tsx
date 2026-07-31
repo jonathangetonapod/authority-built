@@ -74,6 +74,7 @@ import { PromptVariableTextarea } from './PromptVariableTextarea'
 import { PromptFieldPreview } from './PromptFieldPreview'
 import { PROMPT_VARIABLES } from '@/lib/promptVariables'
 import { unavailableVariableIds } from '@/lib/promptVariableMenu'
+import { isResearchRunStale } from '@/lib/researchProgress'
 import {
   RESEARCH_PROMPT_DEFAULTS,
   RESEARCH_PROMPT_DEFAULTS_BY_ID,
@@ -472,10 +473,27 @@ export function ClientCampaignPrepDialog({
   const selectedPitchAngle = pitchAngles[selectedAngleIndex] || null
   const sequenceOptionCount = Math.max(Math.min(pitchAngles.length, 3), 1)
   const researchProgress = podcast?.research_progress || null
+  // A run that dies mid-flight stops writing progress, so nothing arrives to
+  // re-render against. Without a clock of its own the modal would keep spinning
+  // until it was closed and reopened — which is exactly how a run that stopped
+  // on the 29th was still animating on the 31st.
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  const researchClaimsWork = researchProgress?.status === 'queued' || researchProgress?.status === 'running'
+  useEffect(() => {
+    if (!open || !researchClaimsWork) return
+    setNowMs(Date.now())
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [open, researchClaimsWork])
   // Only the current prompt pipeline counts as research. A legacy
   // ai_analyzed_at from the retired analysis path no longer unlocks the
   // pitch flow — those shows re-run research through the real prompts.
   const researchRegenerating = runResearchMutation.isPending && runResearchMutation.variables === podcast?.id
+  // Says it is running, but has not written progress for longer than a live run
+  // ever goes quiet. Treated as stopped rather than as working: the backend has
+  // long since released the lock, so a re-run is available and the one thing
+  // the screen must not do is keep implying it should be waited for.
+  const researchStale = !researchRegenerating && isResearchRunStale(researchProgress, nowMs)
   const visibleResearchSteps = useMemo(() => {
     const liveStatus = researchProgress?.status
     if (researchRegenerating && liveStatus !== 'running' && liveStatus !== 'queued') {
@@ -491,17 +509,20 @@ export function ClientCampaignPrepDialog({
       if (researchProgress.status === 'completed') return { ...step, status: 'complete' }
       if (completedStages.has(step.id)) return { ...step, status: 'complete' }
       if (researchProgress.current_stage === step.id) {
-        return { ...step, status: researchProgress.status === 'failed' ? 'failed' : 'active' }
+        // A stale run's current stage is where it stopped, not where it is.
+        const stopped = researchProgress.status === 'failed' || researchStale
+        return { ...step, status: stopped ? 'failed' : 'active' }
       }
       return { ...step, status: 'queued' }
     })
-  }, [researchProgress, researchRegenerating])
+  }, [researchProgress, researchRegenerating, researchStale])
   const completedResearchStepCount = visibleResearchSteps.filter((step) => step.status === 'complete').length
   const activeResearchStep = visibleResearchSteps.find((step) => step.status === 'active') || null
   const failedResearchStep = visibleResearchSteps.find((step) => step.status === 'failed') || null
   const researchComplete = !researchRegenerating
     && researchProgress?.status === 'completed'
-  const researchFailed = !researchRegenerating && researchProgress?.status === 'failed'
+  const researchFailed = !researchRegenerating
+    && (researchProgress?.status === 'failed' || researchStale)
   const selectedPitchMeta = podcast?.id ? aiPitches[pitchKey(podcast.id, selectedAngleIndex)] : undefined
   // Style checks rerun on the copy actually in the editor, so an operator's
   // own edits are held to the same standard as the generated draft.
@@ -524,12 +545,14 @@ export function ClientCampaignPrepDialog({
     if (pitchLoadingKey === key) return 'active'
     return 'queued'
   })()
-  const researchWorking = researchRegenerating || researchProgress?.status === 'queued' || researchProgress?.status === 'running'
+  const researchWorking = researchRegenerating || (researchClaimsWork && !researchStale)
   const researchStepsExpanded = !researchComplete || showResearchSteps
   const researchStatusTitle = researchRegenerating && activeResearchStep
     ? `${activeResearchStep.title} · ${completedResearchStepCount} of ${researchProgressSteps.length} prompts complete`
     : researchComplete
     ? `Research ready · ${researchProgressSteps.length} of ${researchProgressSteps.length} steps complete`
+    : researchStale
+      ? `Research stopped · ${completedResearchStepCount} of ${researchProgressSteps.length} steps complete`
     : researchFailed
       ? `Research paused · ${completedResearchStepCount} of ${researchProgressSteps.length} steps complete`
       : activeResearchStep
@@ -541,6 +564,8 @@ export function ClientCampaignPrepDialog({
     ? `Running your saved workspace prompts against live podcast data. ${activeResearchStep.detail}.`
     : researchComplete
     ? 'The research is saved to this podcast and will still be here when you return.'
+    : researchStale
+      ? `This run stopped before it finished${failedResearchStep ? ` at ${failedResearchStep.title.toLowerCase()}` : ''} and is no longer going. Everything completed before that is saved — run research again to pick it up.`
     : researchFailed
       ? researchProgress?.message || `We could not finish ${failedResearchStep?.title.toLowerCase() || 'this research stage'}. Your completed work is saved.`
       : activeResearchStep
