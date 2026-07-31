@@ -1647,12 +1647,18 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, {
         fields,
         transcript_episode_title: capturedForPreview?.transcript_episode_title ?? null,
-        researched: Boolean(doc),
+        // A half-written document is real research but not finished research;
+        // saying otherwise tells the editor a stage's fields are ready while
+        // the run that fills them is still going, or died partway.
+        researched: Boolean(doc) && doc?.complete !== false,
       })
     }
 
     if (action === 'research-run') {
-      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'shortlist_podcast_id', 'relationship_acknowledged'])
+      requireOnlyKeys(body, ['action', 'workspace_id', 'client_id', 'shortlist_podcast_id', 'relationship_acknowledged', 'continue_token'])
+      // Identifies the caller as the run already in progress rather than a
+      // second one starting. Only the run's own started_at opens the lock.
+      const continueToken = typeof body.continue_token === 'string' ? body.continue_token : null
       const shortlistPodcastId = requireUuid(body.shortlist_podcast_id, 'shortlist_podcast_id')
 
       const { data: shortlistRow, error: shortlistError } = await authContext.admin
@@ -1674,8 +1680,19 @@ serve(async (req) => {
       const existingProgress = shortlistRow.research_progress as
         | { status?: string; updated_at?: string; started_at?: string; completed_stages?: unknown }
         | null
+      // The run hands itself on between stages, and every hand-off leaves the
+      // record saying "running" with a timestamp a second old — exactly what
+      // this lock rejects. Without the token the first continuation of every
+      // run was refused as a duplicate, and the run only advanced when a human
+      // re-ran it after the lock aged out.
+      const continuingThisRun = Boolean(
+        continueToken
+        && typeof existingProgress?.started_at === 'string'
+        && existingProgress.started_at === continueToken,
+      )
       if (
-        existingProgress
+        !continuingThisRun
+        && existingProgress
         && ['queued', 'running'].includes(String(existingProgress.status))
         && typeof existingProgress.updated_at === 'string'
         && Date.now() - Date.parse(existingProgress.updated_at) < RESEARCH_STALE_LOCK_MS
@@ -1726,14 +1743,24 @@ serve(async (req) => {
        * attempt settled, so asking again is a request for fresh research and
        * gets it. That is what keeps Regenerate on a finished podcast honest.
        */
+      // blocked and failed are interrupted runs too, and they are interrupted
+      // AFTER the credit was charged. Excluding them meant a run that hit a
+      // missing required field, or any error, restarted from zero on the next
+      // attempt under a new started_at — a second charge for work already paid
+      // for, while the failure message promised it would continue.
+      const resumableStatus = ['queued', 'running', 'blocked', 'failed']
       const resuming = Boolean(
         existingProgress
-        && ['queued', 'running'].includes(String(existingProgress.status))
+        && resumableStatus.includes(String(existingProgress.status))
         && typeof existingProgress.started_at === 'string',
       )
-      const savedDocument = resuming
-        ? (shortlistRow.research_document ?? null) as Record<string, unknown> | null
-        : null
+      const priorDocument = (shortlistRow.research_document ?? null) as Record<string, unknown> | null
+      // Only a document this run left half-written may be picked up. A run
+      // interrupted before its FIRST stage saves leaves the previous run's
+      // finished document sitting there untouched — adopting it would skip
+      // every stage as already done and republish last week's research as a
+      // fresh result: charged for, and identical to what was already there.
+      const savedDocument = resuming && priorDocument?.complete === false ? priorDocument : null
       const savedStage = (key: string): string | null => {
         const value = savedDocument?.[key]
         return typeof value === 'string' && value.trim() ? value : null
@@ -1795,8 +1822,10 @@ serve(async (req) => {
           started_at: startedAt,
           updated_at: new Date().toISOString(),
         },
-        // The caller comes straight back rather than reporting this as done.
+        // The caller comes straight back rather than reporting this as done,
+        // and returns this token so the lock knows it is the same run.
         continue_required: true,
+        continue_token: startedAt,
       })
 
       const resumedStages = resuming && Array.isArray(existingProgress?.completed_stages)
@@ -2900,12 +2929,20 @@ serve(async (req) => {
         // The campaign target only exists after prep, but pitch generation
         // runs right after research — fall back to Podscan's analyzed host
         // so "Hey [first name]" is grounded instead of guessed.
-        host_name: formatPromptValue(
-          'host_name',
-          target?.host_name
-            ?? (typeof pitchCatalogRow?.host_name === 'string' ? pitchCatalogRow.host_name : null)
-            ?? (typeof pitchCatalogRow?.publisher_name === 'string' ? pitchCatalogRow.publisher_name : null),
-        ),
+        // Written through the registry so the extractor stage's own
+        // {{host_name_extractor_response}} carries this too. The field picker
+        // offers that name to the pitch prompts, and setting only the legacy
+        // {{host_name}} meant a prompt using the canonical one filled with
+        // "Not available" — the pitch opening "Hey Not available," with no
+        // error and nothing to point at.
+        ...stageOutputVariables({
+          host_name_extractor: formatPromptValue(
+            'host_name',
+            target?.host_name
+              ?? (typeof pitchCatalogRow?.host_name === 'string' ? pitchCatalogRow.host_name : null)
+              ?? (typeof pitchCatalogRow?.publisher_name === 'string' ? pitchCatalogRow.publisher_name : null),
+          ),
+        }),
         verified_email: target?.contact_email ?? null,
         // Podscan's analysis of the episode this pitch will reference.
         ...buildEpisodeVariables(storedEpisodes),

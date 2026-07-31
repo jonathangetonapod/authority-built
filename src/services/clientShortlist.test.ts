@@ -94,8 +94,8 @@ describe('clientShortlist service', () => {
     })
     const done = { status: 'completed', current_stage: null, completed_stages: [], started_at: 'x', updated_at: 'z' }
     invoke
-      .mockResolvedValueOnce({ data: { research_progress: running('host_profile'), continue_required: true }, error: null } as never)
-      .mockResolvedValueOnce({ data: { research_progress: running('guest_fit'), continue_required: true }, error: null } as never)
+      .mockResolvedValueOnce({ data: { research_progress: running('host_profile'), continue_required: true, continue_token: 'tok-1' }, error: null } as never)
+      .mockResolvedValueOnce({ data: { research_progress: running('guest_fit'), continue_required: true, continue_token: 'tok-2' }, error: null } as never)
       .mockResolvedValueOnce({ data: { research_progress: done }, error: null } as never)
 
     const seen: string[] = []
@@ -108,6 +108,13 @@ describe('clientShortlist service', () => {
     expect(result).toEqual(done)
     // Reported as it goes, so the steps tick over between invocations.
     expect(seen).toEqual(['running', 'running', 'completed'])
+    // The token proves each call is the same run continuing. Without it the
+    // run's own concurrency lock refuses every continuation as a duplicate,
+    // and the run only advances when a human re-runs it after the lock ages
+    // out — which is what was happening in production.
+    expect(invoke.mock.calls[0][1]?.body).not.toHaveProperty('continue_token')
+    expect(invoke.mock.calls[1][1]?.body).toMatchObject({ continue_token: 'tok-1' })
+    expect(invoke.mock.calls[2][1]?.body).toMatchObject({ continue_token: 'tok-2' })
   })
 
   it('returns after one call when the run finished in it', async () => {

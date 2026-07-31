@@ -1149,6 +1149,39 @@ for (const nextStage of ['host_profile', 'guest_patterns', 'guest_fit']) {
   )
 }
 assert.match(shortlistEdge, /continue_required: true/u)
+// ...and the continuation must be able to get back IN. Every hand-off leaves
+// the record saying "running" a second old, which is exactly what the
+// concurrency lock rejects — so without the token the first continuation of
+// every run was refused as a duplicate and the run only advanced when a human
+// re-ran it after the lock aged out.
+assert.match(shortlistEdge, /continue_token: startedAt,/u)
+assert.ok(
+  shortlistEdge.includes('const continuingThisRun = Boolean(')
+  && shortlistEdge.includes('&& existingProgress.started_at === continueToken,')
+  && shortlistEdge.includes('!continuingThisRun'),
+  'the run must be able to re-enter its own lock to continue itself',
+)
+// blocked and failed are interrupted AFTER the credit is charged, so they must
+// resume rather than restart — restarting mints a new started_at and charges a
+// second credit for work already paid for.
+assert.ok(
+  shortlistEdge.includes("const resumableStatus = ['queued', 'running', 'blocked', 'failed']"),
+  'an interrupted run must resume from every status it can stop on, or it is charged twice',
+)
+// Only a half-written document may be adopted. A run interrupted before its
+// first stage saves leaves the PREVIOUS run's finished document in place;
+// adopting it skips every stage and republishes old research as a fresh, paid
+// result identical to what was already there.
+assert.ok(
+  shortlistEdge.includes('const savedDocument = resuming && priorDocument?.complete === false ? priorDocument : null'),
+  'a resumed run must not adopt a completed document from an earlier run',
+)
+// A stage's model choice is only accepted where an executor honours it.
+assert.ok(
+  edge.includes('const MODEL_SELECTABLE_PROMPT_IDS = RESEARCH_PROMPT_IDS.filter(')
+  && edge.includes('(id) => id !== "inbox_reply" && id !== "inbox_nudges",'),
+  'inbox prompts run on their shipped model, so a choice for them must be refused rather than stored',
+)
 // Each stage is saved the moment it exists, or there would be nothing to
 // resume from and a killed run would start over and die in the same place.
 for (const stage of ['podcast_research', 'host_info', 'guest_info', 'find_topics']) {
@@ -1169,12 +1202,13 @@ assert.match(
   shortlistEdge,
   /const startedAt = resuming && typeof existingProgress\?\.started_at === 'string'\s*\n\s*\? existingProgress\.started_at/u,
 )
-// Only a progress record still claiming to run is resumed. A completed or
-// failed one means the last attempt settled, so asking again is a request for
-// fresh research — which is what keeps Regenerate honest.
-assert.match(
-  shortlistEdge,
-  /const resuming = Boolean\(\s*\n\s*existingProgress\s*\n\s*&& \['queued', 'running'\]\.includes\(String\(existingProgress\.status\)\)/u,
+// A completed run is not resumed — asking again there is a request for fresh
+// research, which is what keeps Regenerate honest. Every other status is an
+// interrupted run that was already charged for, so it continues.
+assert.ok(
+  shortlistEdge.includes('resumableStatus.includes(String(existingProgress.status))')
+  && !shortlistEdge.includes("resumableStatus = ['queued', 'running', 'completed'"),
+  'a completed run must start fresh; an interrupted one must continue',
 )
 // A half-written document holds real research but is not research: the pitch
 // must refuse it rather than write from a run that never reached the end.

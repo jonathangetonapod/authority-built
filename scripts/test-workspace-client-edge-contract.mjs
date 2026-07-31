@@ -207,6 +207,15 @@ for (const [promptId, prompt] of Object.entries(canonicalPrompts.prompts)) {
     denoDefaults.includes(JSON.stringify(prompt.content)),
     `Deno defaults content out of sync for prompt ${promptId}`,
   )
+  // The system field was never checked here, and this mirror is the one the
+  // run actually executes. find_topics carries its hardest requirement — that
+  // the answer ends with the machine-readable angles block — in `system` and
+  // nowhere else, so a hand edit to that string passed the whole gate while
+  // silently demoting every run to the cheaper fallback angles.
+  assert.ok(
+    denoDefaults.includes(JSON.stringify(prompt.system)),
+    `Deno defaults system prompt out of sync for prompt ${promptId}`,
+  )
 }
 assert.doesNotMatch(shortlistEdge, /\.from\('client_dashboard_podcasts'\)\.delete\(/u)
 assert.match(shortlistEdge, /podscan_email/u)
@@ -355,7 +364,17 @@ assert.match(shortlistEdge, /import \{[\s\S]*?decodeFeedText,[\s\S]*?\} from '\.
 assert.match(pitchGenerateAction, /podcast_name: formatPromptValue\(\s*'podcast_name',/u)
 assert.match(pitchGenerateAction, /podcast_description: formatPromptValue\(\s*'podcast_description',/u)
 assert.match(pitchGenerateAction, /episode_title: formatPromptValue\(\s*'episode_title',/u)
-assert.match(pitchGenerateAction, /host_name: formatPromptValue\(\s*'host_name',/u)
+// Written through the registry so the extractor stage's own
+// {{host_name_extractor_response}} carries the same value. The field picker
+// offers that name to the pitch prompts, and filling only the legacy
+// {{host_name}} left a prompt using the canonical one resolving to
+// "Not available" — the pitch opening "Hey Not available,".
+assert.ok(
+  pitchGenerateAction.includes('...stageOutputVariables({')
+  && pitchGenerateAction.includes('host_name_extractor: formatPromptValue(')
+  && pitchGenerateAction.includes("'host_name',"),
+  'the pitch path must fill the extractor stage response, not only the legacy host_name',
+)
 
 console.log('Workspace Client Edge feed-decoding checks passed')
 

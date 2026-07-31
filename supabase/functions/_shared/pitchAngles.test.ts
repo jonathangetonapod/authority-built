@@ -64,9 +64,29 @@ Deno.test('leaves the answer whole when the last fence is not the angles', () =>
 
 // The block is asked for last, but a model that adds a sign-off after it must
 // not cost us the angles.
-Deno.test('finds the block when it is not quite the final thing', () => {
-  const raw = `Proposal.\n\n${block([{ title: 'T', description: 'D', grounding: 'G' }])}`
+Deno.test('allows a short sign-off after the block', () => {
+  const raw = `${block([{ title: 'T', description: 'D', grounding: 'G' }])}\n\nLet me know which angle you prefer.`
   assertEquals(splitStructuredAngles(raw).angles.length, 1)
+})
+
+// A proposal that ignored the instruction but demonstrated the format earlier
+// leaves exactly one fence that parses. Taking it would publish an
+// illustration as the angles every pitch is written from, and delete the
+// section it was sitting in.
+Deno.test('refuses a block buried in the middle of the answer', () => {
+  const raw = [
+    'Here is the shape I will use:',
+    block([{ title: 'Example title', description: 'Example hook', grounding: 'Example moment' }]),
+    '**PRIMARY TOPIC ANGLE:**',
+    'The real angle, proposed in prose, running well past the allowance so that',
+    'the block above cannot pass as the last thing in the answer. This section',
+    'continues for long enough to be unmistakably a section rather than a',
+    'sign-off line after the block.',
+  ].join('\n\n')
+  const { prose, angles } = splitStructuredAngles(raw)
+  assertEquals(angles, [])
+  // Nothing is stripped when the block is rejected.
+  assertEquals(prose, raw.trim())
 })
 
 // Long fields are capped rather than rejected: the column they land in renders

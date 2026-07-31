@@ -352,6 +352,35 @@ export function ClientCampaignPrepDialog({
    * as copy written for an angle it never saw.
    */
   const pitchGenerationRef = useRef(0)
+  /**
+   * The angle set the cached pitches were written against.
+   *
+   * The podcast prop is fed by a shared, polled query, so the angles can change
+   * without this dialog having run anything: another operator — or the same one
+   * in a second tab, or a platform admin viewing the tenant — can re-run
+   * research for the same podcast. Bumping the generation only in this
+   * component's own mutation left those cases uncovered, and because the cache
+   * is keyed by angle POSITION the result was a sequence written for the old
+   * angle 1 shown as the new angle 1, with nothing to tell them apart.
+   */
+  const angleSignature = useMemo(
+    () => (podcast?.ai_pitch_angles || []).map((angle) => angle?.title ?? '').join('\u0000'),
+    [podcast?.ai_pitch_angles],
+  )
+  const lastAngleSignatureRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (lastAngleSignatureRef.current === null) {
+      lastAngleSignatureRef.current = angleSignature
+      return
+    }
+    if (lastAngleSignatureRef.current === angleSignature) return
+    lastAngleSignatureRef.current = angleSignature
+    // These pitches were written for angles that no longer exist.
+    setAiPitches({})
+    aiPitchesRef.current = {}
+    inFlightPitchesRef.current.clear()
+    pitchGenerationRef.current += 1
+  }, [angleSignature])
 
   /**
    * Writes one option, or joins the write already happening for it.
@@ -449,7 +478,11 @@ export function ClientCampaignPrepDialog({
       // so opening an option mid-prefetch waits out what is left of it rather
       // than starting again from zero.
       const stored = await generatePitch(angleIndex)
-      if (!stored) throw new Error('The pitch could not be written from research.')
+      // Null means the write was discarded because the angles changed under it,
+      // not that writing failed. The angle change reloads the right option on
+      // its own, so an error here would blame the click for something that
+      // worked correctly.
+      if (!stored) return
       // The whole three-touch sequence is AI-written now; the template
       // follow-ups only remain as the fallback for older generations.
       const applyPitch = (current: PodcastCampaignSequenceDraft): PodcastCampaignSequenceDraft => ({
@@ -753,7 +786,10 @@ export function ClientCampaignPrepDialog({
   const selectedPromptDefault = RESEARCH_PROMPT_DEFAULTS_BY_ID[selectedPromptId]
   const selectedPromptCustomized = Boolean(promptOverrides[selectedPromptId]?.content)
   const promptDirty = promptDraft !== effectivePromptContent(selectedPromptId)
-  const customPromptCount = RESEARCH_PROMPT_DEFAULTS.filter((prompt) => promptOverrides[prompt.id]).length
+  // Customized means someone wrote the instructions, not that a row exists.
+  // A row is also created by choosing a model, and counting those made every
+  // stage with a model claim its prompt had been rewritten.
+  const customPromptCount = RESEARCH_PROMPT_DEFAULTS.filter((prompt) => promptOverrides[prompt.id]?.content).length
 
   /**
    * Named, because anything that fills a field has to invalidate it.
@@ -1052,6 +1088,14 @@ export function ClientCampaignPrepDialog({
       toast.info('Save or discard the current prompt changes before regenerating research.')
       setActiveStep('research')
       setShowPromptSettings(true)
+      return
+    }
+    // A finished run loads its recommended sequence over the draft AND over
+    // savedDraft, so an unsaved hand-edit would be gone with nothing to revert
+    // to. Same guard the prompt editor already applies to its own unsaved text.
+    if (draftHasUnsavedEdits) {
+      toast.info('Save or discard your pitch edits first — finishing research replaces the written sequence.')
+      setActiveStep('pitch')
       return
     }
     if (researchWorking) {
@@ -1853,7 +1897,7 @@ export function ClientCampaignPrepDialog({
                                   <div className="mt-2 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-1">
                                     {phase.prompts.map((prompt) => {
                                       const selected = prompt.id === selectedPromptId
-                                      const customized = Boolean(promptOverrides[prompt.id])
+                                      const customized = Boolean(promptOverrides[prompt.id]?.content)
                                       const step = promptStepNumbers.get(prompt.id)
                                       return (
                                         <button

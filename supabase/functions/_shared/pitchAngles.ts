@@ -19,6 +19,13 @@ export interface StructuredAngle {
  * Returns the answer with the block removed, so the prose the later stages
  * read is the report rather than the report plus its own JSON appendix.
  */
+/**
+ * How much may follow the angles block before it stops being "the last thing".
+ *
+ * Room for a closing line, not for another section of the proposal.
+ */
+const TRAILING_ALLOWANCE = 240
+
 export function splitStructuredAngles(
   raw: string,
 ): { prose: string; angles: StructuredAngle[] } {
@@ -27,6 +34,15 @@ export function splitStructuredAngles(
   const matches = [...raw.matchAll(/```(?:json)?\s*([\s\S]*?)```/gu)]
   const last = matches.at(-1)
   if (!last || last.index === undefined) return { prose: raw.trim(), angles: [] }
+
+  // ...and it has to actually BE at the end. "Last fence" alone is not enough:
+  // a proposal that ignored the instruction, but demonstrated the format
+  // earlier with realistic content, leaves exactly one fence that parses — and
+  // taking it would publish an illustration as the angles the pitches are
+  // written from, while deleting whatever surrounded it. A short sign-off after
+  // the block is allowed; a whole section is not.
+  const trailing = raw.slice(last.index + last[0].length).trim()
+  if (trailing.length > TRAILING_ALLOWANCE) return { prose: raw.trim(), angles: [] }
 
   const body = last[1]
   const start = body.indexOf('{')

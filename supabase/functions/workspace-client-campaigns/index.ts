@@ -65,6 +65,16 @@ const RESEARCH_PROMPT_IDS = [
 
 // Every prompt an executor actually consumes. host_name_extractor is not
 // wired to any generator today, so it is not offered as a client override.
+// Stages whose model choice an executor actually honours.
+//
+// inbox_reply and inbox_nudges are excluded on purpose: _shared/inboxSdr.ts
+// builds its own request and runs the shipped default unconditionally, so
+// accepting a model for them would store a choice, report it back as saved,
+// and change nothing about what runs — the worst kind of setting.
+const MODEL_SELECTABLE_PROMPT_IDS = RESEARCH_PROMPT_IDS.filter(
+  (id) => id !== "inbox_reply" && id !== "inbox_nudges",
+);
+
 const CLIENT_PROMPT_IDS = RESEARCH_PROMPT_IDS.filter((id) => id !== "host_name_extractor");
 
 function requireResearchPromptId(value: unknown): string {
@@ -2926,6 +2936,13 @@ serve(async (req) => {
       requireOnlyKeys(body, ["action", "workspace_id", "prompt_id", "model"]);
       requireIntegrationOwner(access);
       const promptId = requireResearchPromptId(body.prompt_id);
+      if (!MODEL_SELECTABLE_PROMPT_IDS.includes(promptId)) {
+        throw new HttpError(
+          400,
+          "INVALID_FIELD",
+          `${promptId} always runs on its shipped model, so a model cannot be chosen for it`,
+        );
+      }
       // null clears the choice and returns the stage to its shipped default.
       let model: string | null = null;
       if (body.model !== null && body.model !== undefined && body.model !== "") {
@@ -2967,6 +2984,22 @@ serve(async (req) => {
         }, { onConflict: "workspace_id,prompt_id" });
       if (error) {
         throw new HttpError(503, "PROMPTS_UNAVAILABLE", "The model could not be saved");
+      }
+      // Returning a stage to its default leaves a row carrying nothing. An
+      // empty row still reads as an override everywhere that asks "is there a
+      // row for this stage", so it goes rather than lingering as a stage that
+      // claims to be customized and is not.
+      if (model === null) {
+        const { error: pruneError } = await context.admin
+          .from("workspace_research_prompts")
+          .delete()
+          .eq("workspace_id", workspaceId)
+          .eq("prompt_id", promptId)
+          .is("content", null)
+          .is("model", null);
+        if (pruneError) {
+          throw new HttpError(503, "PROMPTS_UNAVAILABLE", "The model could not be saved");
+        }
       }
       await writeAudit(context.admin, {
         workspaceId,

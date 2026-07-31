@@ -377,6 +377,11 @@ export async function runClientShortlistResearch(
   onProgress?: (progress: ClientShortlistResearchProgress) => void,
 ): Promise<ClientShortlistResearchProgress> {
   let progress: ClientShortlistResearchProgress | null = null
+  // Proves to the backend that this call is the same run continuing, not a
+  // second one starting. Without it every continuation is refused by the
+  // run's own concurrency lock, because the hand-off it just made left the
+  // record saying "running" a second earlier.
+  let continueToken: string | null = null
 
   for (let attempt = 0; attempt < RESEARCH_CONTINUE_LIMIT; attempt += 1) {
     const { data, error } = await supabase.functions.invoke('workspace-client-shortlist', {
@@ -386,6 +391,7 @@ export async function runClientShortlistResearch(
         client_id: clientId,
         shortlist_podcast_id: shortlistPodcastId,
         ...(relationshipAcknowledged ? { relationship_acknowledged: true } : {}),
+        ...(continueToken ? { continue_token: continueToken } : {}),
       },
     })
     if (error) throw await toFunctionError(error, 'The research run could not be started.')
@@ -397,6 +403,7 @@ export async function runClientShortlistResearch(
     // than sitting still until the last one returns.
     onProgress?.(progress)
     if (data.continue_required !== true) return progress
+    continueToken = typeof data.continue_token === 'string' ? data.continue_token : null
   }
 
   // Out of attempts with the backend still asking for more. Whatever finished
