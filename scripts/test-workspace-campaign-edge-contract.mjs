@@ -1072,6 +1072,23 @@ assert.match(
   /MACHINE-READABLE ANGLES \(required, and the last thing in your answer\)/u,
   'find_topics must return its angles as structure, not only as prose',
 )
+// Stated in the system prompt, not only in the instruction. The instruction
+// sits at the end of a prompt that already carries three other "requirements"
+// sections, and the first live run skipped the block entirely — with room to
+// spare, so it was ignored rather than truncated. The angles decide what every
+// pitch says, which makes this an output contract rather than a preference.
+assert.match(
+  canonicalPrompts.prompts.find_topics.system,
+  /Your answer ALWAYS ends with the fenced JSON angles block/u,
+  "find_topics' system prompt must require the angles block",
+)
+// The fallback stays silent to the operator and loud in the logs: a run must
+// not fail over a missing block, but which model wrote the angles must be
+// answerable without reading the database.
+assert.match(
+  shortlistEdge,
+  /find_topics returned no angles block; falling back to the structuring pass/u,
+)
 assert.match(shortlistEdge, /const split = splitStructuredAngles\(topicRaw\)\s*\n\s*topicProposal = split\.prose\s*\n\s*proposedAngles = split\.angles/u)
 assert.match(
   shortlistEdge,

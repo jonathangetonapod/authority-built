@@ -2080,6 +2080,13 @@ serve(async (req) => {
           const split = splitStructuredAngles(topicRaw)
           topicProposal = split.prose
           proposedAngles = split.angles
+          // The fallback is silent by design — a run must never fail over a
+          // missing block — but silent and invisible are different things. The
+          // angles decide what every pitch says, so which model wrote them has
+          // to be answerable from the logs rather than by reading the database.
+          if (proposedAngles.length === 0) {
+            console.warn('[Shortlist Research] find_topics returned no angles block; falling back to the structuring pass')
+          }
           await saveStage('find_topics', topicProposal)
           await saveStage('pitch_angles_structured', proposedAngles.length > 0 ? proposedAngles : null)
           await advance('find_topics', null)
