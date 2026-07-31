@@ -16,6 +16,7 @@ import {
   requireWorkspaceFeatureAccess,
   workspaceCredentialIsFresh,
   writeAudit,
+  writeAuditForCompletedWork,
 } from "../_shared/workspaceAuth.ts";
 import { generateTemporaryPassword } from "../_shared/workspaceCredentials.ts";
 import {
@@ -2934,7 +2935,10 @@ serve(async (req) => {
         throw new HttpError(503, "CREDIT_GRANT_FAILED", "The credit grant could not be recorded");
       }
       const result = data as { balance?: number; idempotent?: boolean } | null;
-      await writeAudit(admin, {
+      // The credits are already in the ledger. Failing the request because the
+      // log row would not insert tells an operator the grant did not happen,
+      // and the obvious response to that is to grant again.
+      await writeAuditForCompletedWork(admin, {
         workspaceId,
         actorUserId: user.id,
         action: "workspace.credits.granted",

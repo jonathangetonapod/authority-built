@@ -24,7 +24,7 @@ import {
   requireUuid,
   requireWorkspaceFeatureAccess,
   workspaceCredentialIsFresh,
-  writeAudit,
+  writeAuditForCompletedWork,
 } from '../_shared/workspaceAuth.ts'
 
 const METHODS = ['POST'] as const
@@ -232,7 +232,7 @@ async function handlePlanAdministration(
     })
   }
 
-  await writeAudit(admin, {
+  await writeAuditForCompletedWork(admin, {
     workspaceId: null,
     actorUserId: authContext.user.id,
     action: 'billing_plan_price_changed',
@@ -339,7 +339,7 @@ serve(async (req) => {
       )
       const url = typeof session.url === 'string' ? session.url : ''
       if (!url) throw new HttpError(502, 'STRIPE_REJECTED', 'The payment provider rejected the request')
-      await writeAudit(admin, {
+      await writeAuditForCompletedWork(admin, {
         workspaceId,
         actorUserId: authContext.user.id,
         action: 'billing_portal_opened',
@@ -378,7 +378,7 @@ serve(async (req) => {
     const url = typeof session.url === 'string' ? session.url : ''
     if (!url) throw new HttpError(502, 'STRIPE_REJECTED', 'The payment provider rejected the request')
 
-    await writeAudit(admin, {
+    await writeAuditForCompletedWork(admin, {
       workspaceId,
       actorUserId: authContext.user.id,
       action: 'billing_subscription_checkout_opened',

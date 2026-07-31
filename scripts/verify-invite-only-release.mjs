@@ -29,7 +29,7 @@ const EXPECTED_COUNTS = Object.freeze({
   // 146 with _shared/promptRequirements.ts and its test: the fields a prompt
   // stage refuses to run without. 153 with plan management: the two new
   // function entrypoints, plus _shared/stripeSignature.ts and its test.
-  edgeTypeScriptFiles: 153,
+  edgeTypeScriptFiles: 155,
 })
 
 const EXPECTED_PHASE_KEYS = Object.freeze([

@@ -23,6 +23,12 @@ assert.match(checkout, /entityId: workspaceId,/u)
 assert.doesNotMatch(checkout, /entityId: payload\.id/u)
 assert.match(checkout, /stripe_session_id: payload\.id/u)
 
+// The audit runs after Stripe has been called, so it must not be able to fail
+// the request: the session exists either way, and a 500 here strands a customer
+// who has already been sent through checkout. That is how this broke.
+assert.match(checkout, /await writeAuditForCompletedWork\(/u)
+assert.doesNotMatch(checkout, /await writeAudit\(/u)
+
 const webhook = readFileSync('supabase/functions/stripe-credit-webhook/index.ts', 'utf8')
 // Signature-verified with replay tolerance; idempotent grant keyed on event id.
 assert.match(webhook, /STRIPE_CREDIT_WEBHOOK_SECRET/u)

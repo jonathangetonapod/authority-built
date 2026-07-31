@@ -8,6 +8,7 @@ import { getCorsHeaders } from './cors.ts'
 import { HttpError } from './httpError.ts'
 
 export { HttpError } from './httpError.ts'
+import { normalizeAuditEntity } from './auditEntity.ts'
 
 export const MEMBERSHIP_COLUMNS = [
   'id',
@@ -572,18 +573,54 @@ export function inviteRedirectUrl(): string {
   throw new HttpError(500, 'SERVER_MISCONFIGURED', 'The invite redirect is not configured')
 }
 
-export async function writeAudit(admin: SupabaseClient, event: AuditEvent): Promise<void> {
-  const { error } = await admin.from('workspace_audit_log').insert({
+async function insertAudit(admin: SupabaseClient, event: AuditEvent) {
+  const { entityId, metadata } = normalizeAuditEntity(event.entityId, event.metadata)
+  return await admin.from('workspace_audit_log').insert({
     workspace_id: event.workspaceId ?? null,
     actor_user_id: event.actorUserId,
     action: event.action,
     entity_type: event.entityType,
-    entity_id: event.entityId ?? null,
-    metadata: event.metadata ?? {},
+    entity_id: entityId,
+    metadata,
   })
+}
 
+/**
+ * Audits an action, and refuses the action if it cannot be audited.
+ *
+ * Correct only while nothing irreversible has happened yet. Once an operation
+ * has had an effect outside this request — a payment provider called, a
+ * balance moved — failing it because the log write failed does not undo the
+ * effect; it only hides it and invites the caller to do it twice. Use
+ * writeAuditForCompletedWork past that point.
+ */
+export async function writeAudit(admin: SupabaseClient, event: AuditEvent): Promise<void> {
+  const { error } = await insertAudit(admin, event)
   if (error) {
     throw new HttpError(500, 'AUDIT_WRITE_FAILED', 'The operation could not be audited')
+  }
+}
+
+/**
+ * Audits work that has already happened, and never fails because of it.
+ *
+ * Twice this went the other way and took a payment path down: the Stripe
+ * session existed, the credits were granted, and the request returned 500
+ * because the log row would not insert. The effect is real whether or not it
+ * is recorded, so the record is attempted, its failure is shouted about, and
+ * the caller is told what actually happened.
+ */
+export async function writeAuditForCompletedWork(
+  admin: SupabaseClient,
+  event: AuditEvent,
+): Promise<void> {
+  try {
+    const { error } = await insertAudit(admin, event)
+    if (error) {
+      console.error(`[audit] ${event.action} completed but was not recorded`)
+    }
+  } catch (_error) {
+    console.error(`[audit] ${event.action} completed but the audit write threw`)
   }
 }
 
