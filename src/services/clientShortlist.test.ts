@@ -82,6 +82,58 @@ describe('clientShortlist service', () => {
     expect(result).toEqual(progress)
   })
 
+  // An invocation is killed at about two minutes and five sequential model
+  // calls came to roughly that, so the run stops itself between stages, saves
+  // what it has and asks to be called again. To the caller that is still one
+  // operation: it resolves when the research is finished, not when the first
+  // invocation returns.
+  it('keeps calling while the run asks to be continued', async () => {
+    const running = (stage: string) => ({
+      status: 'running', current_stage: stage,
+      completed_stages: [], started_at: 'x', updated_at: 'y',
+    })
+    const done = { status: 'completed', current_stage: null, completed_stages: [], started_at: 'x', updated_at: 'z' }
+    invoke
+      .mockResolvedValueOnce({ data: { research_progress: running('host_profile'), continue_required: true }, error: null } as never)
+      .mockResolvedValueOnce({ data: { research_progress: running('guest_fit'), continue_required: true }, error: null } as never)
+      .mockResolvedValueOnce({ data: { research_progress: done }, error: null } as never)
+
+    const seen: string[] = []
+    const result = await runClientShortlistResearch(
+      workspaceId, clientId, '33333333-3333-4333-8333-333333333333', false,
+      (progress) => seen.push(String(progress.status)),
+    )
+
+    expect(invoke).toHaveBeenCalledTimes(3)
+    expect(result).toEqual(done)
+    // Reported as it goes, so the steps tick over between invocations.
+    expect(seen).toEqual(['running', 'running', 'completed'])
+  })
+
+  it('returns after one call when the run finished in it', async () => {
+    invoke.mockResolvedValueOnce({
+      data: { research_progress: { status: 'completed', current_stage: null, completed_stages: [], started_at: 'x', updated_at: 'z' } },
+      error: null,
+    } as never)
+
+    await runClientShortlistResearch(workspaceId, clientId, '33333333-3333-4333-8333-333333333333')
+
+    expect(invoke).toHaveBeenCalledTimes(1)
+  })
+
+  // A backend that always answered "come back" must not spin here forever.
+  // Everything finished is saved, so this is an unfinished run, not a failed one.
+  it('gives up rather than looping when the run never finishes', async () => {
+    invoke.mockResolvedValue({
+      data: { research_progress: { status: 'running', current_stage: 'guest_fit', completed_stages: [], started_at: 'x', updated_at: 'y' }, continue_required: true },
+      error: null,
+    } as never)
+
+    await expect(runClientShortlistResearch(workspaceId, clientId, '33333333-3333-4333-8333-333333333333'))
+      .rejects.toThrow(/did not finish/i)
+    expect(invoke).toHaveBeenCalledTimes(8)
+  })
+
   it('ensures stored episode metadata for one shortlisted show', async () => {
     invoke.mockResolvedValueOnce({
       data: {

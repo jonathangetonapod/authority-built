@@ -351,26 +351,57 @@ export async function reorderClientShortlistFeatured(
   })
 }
 
+/**
+ * How many times a run may hand itself on before we stop asking.
+ *
+ * The run does one or two stages per invocation, so a whole run is two or three
+ * calls. The cap is well above that and exists only so a backend that always
+ * answered "come back" could not spin here forever.
+ */
+const RESEARCH_CONTINUE_LIMIT = 8
+
+/**
+ * Runs the research, continuing it as many times as the backend asks.
+ *
+ * An invocation is killed at about two minutes, and five sequential model calls
+ * came to roughly that — so the run now stops itself between stages while it
+ * still has time to answer, saves what it has, and asks to be called again. To
+ * the caller that is still one operation: it resolves when the research is
+ * finished, not when the first invocation returns.
+ */
 export async function runClientShortlistResearch(
   workspaceId: string,
   clientId: string,
   shortlistPodcastId: string,
   relationshipAcknowledged = false,
+  onProgress?: (progress: ClientShortlistResearchProgress) => void,
 ): Promise<ClientShortlistResearchProgress> {
-  const { data, error } = await supabase.functions.invoke('workspace-client-shortlist', {
-    body: {
-      action: 'research-run',
-      workspace_id: workspaceId,
-      client_id: clientId,
-      shortlist_podcast_id: shortlistPodcastId,
-      ...(relationshipAcknowledged ? { relationship_acknowledged: true } : {}),
-    },
-  })
-  if (error) throw await toFunctionError(error, 'The research run could not be started.')
-  if (!data?.research_progress || typeof data.research_progress !== 'object') {
-    throw new Error('The research response was invalid.')
+  let progress: ClientShortlistResearchProgress | null = null
+
+  for (let attempt = 0; attempt < RESEARCH_CONTINUE_LIMIT; attempt += 1) {
+    const { data, error } = await supabase.functions.invoke('workspace-client-shortlist', {
+      body: {
+        action: 'research-run',
+        workspace_id: workspaceId,
+        client_id: clientId,
+        shortlist_podcast_id: shortlistPodcastId,
+        ...(relationshipAcknowledged ? { relationship_acknowledged: true } : {}),
+      },
+    })
+    if (error) throw await toFunctionError(error, 'The research run could not be started.')
+    if (!data?.research_progress || typeof data.research_progress !== 'object') {
+      throw new Error('The research response was invalid.')
+    }
+    progress = data.research_progress as ClientShortlistResearchProgress
+    // Reported as it goes, so the steps tick over between invocations rather
+    // than sitting still until the last one returns.
+    onProgress?.(progress)
+    if (data.continue_required !== true) return progress
   }
-  return data.research_progress as ClientShortlistResearchProgress
+
+  // Out of attempts with the backend still asking for more. Whatever finished
+  // is saved, so this reads as an unfinished run rather than a failed one.
+  throw new Error('The research run did not finish. Everything completed so far is saved — run it again to continue.')
 }
 
 export async function runClientShortlistEmailSearch(

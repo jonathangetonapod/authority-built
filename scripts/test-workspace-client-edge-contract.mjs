@@ -119,7 +119,10 @@ assert.match(pitchGenerateAction, /ACTIVE CONVERSATION[\s\S]*?RESEARCH_PROMPT_DE
 assert.match(shortlistEdge, /if \(action === 'research-run'\)[\s\S]*?requireOnlyKeys\(body, \['action', 'workspace_id', 'client_id', 'shortlist_podcast_id', 'relationship_acknowledged'\]\)/u)
 assert.match(shortlistEdge, /RESEARCH_ALREADY_RUNNING/u)
 assert.match(shortlistEdge, /RESEARCH_STALE_LOCK_MS = 3 \* 60 \* 1000/u)
-assert.match(shortlistEdge, /const anthropicKey = await resolveAiKey\(authContext\.admin, workspaceId, 'anthropic'\)[\s\S]*?writeProgress\(\{ status: 'running', current_stage: 'podcast_profile', completed_stages: \[\] \}\)[\s\S]*?ensureEpisodesCaptured\(/u)
+// completed_stages seeded from the interrupted attempt rather than emptied: a
+// run the platform killed partway is continued, and the steps already ticked
+// off on screen must stay ticked instead of reappearing as work still to do.
+assert.match(shortlistEdge, /const anthropicKey = await resolveAiKey\(authContext\.admin, workspaceId, 'anthropic'\)[\s\S]*?writeProgress\(\{\s*\n\s*status: 'running',\s*\n\s*current_stage: 'podcast_profile',\s*\n\s*completed_stages: resumedStages,\s*\n\s*\}\)[\s\S]*?ensureEpisodesCaptured\(/u)
 // The charge sits between the required-field gate and the first model call.
 //
 // It used to come first, before the episode capture. It cannot any more:
@@ -130,7 +133,7 @@ assert.match(shortlistEdge, /const anthropicKey = await resolveAiKey\(authContex
 // for a podcast that could never have produced one.
 assert.match(
   shortlistEdge,
-  /await gateStage\('podcast_research'\)\s*\n\s*await chargeCredits\(authContext\.admin, \{[\s\S]*?operationType: 'research_run'[\s\S]*?byoKeyUsed,[\s\S]*?\}\)[\s\S]*?const researchReport = await runStage\('podcast_research'/u,
+  /await gateStage\('podcast_research'\)\s*\n\s*await chargeCredits\(authContext\.admin, \{[\s\S]*?operationType: 'research_run'[\s\S]*?byoKeyUsed,[\s\S]*?\}\)[\s\S]*?const researchReport = savedReport \?\? await runStage\('podcast_research'/u,
 )
 assert.match(shortlistEdge, /from\('workspace_research_prompts'\)[\s\S]*?RESEARCH_PROMPT_DEFAULTS\[promptId\]\.content/u)
 assert.match(shortlistEdge, /ai_clean_description: cleanDescription,[\s\S]*?ai_analyzed_at: completedAt,[\s\S]*?research_document:[\s\S]*?research_progress:[\s\S]*?status: 'completed'/u)

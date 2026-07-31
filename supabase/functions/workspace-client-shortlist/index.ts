@@ -1650,7 +1650,7 @@ serve(async (req) => {
 
       const { data: shortlistRow, error: shortlistError } = await authContext.admin
         .from('client_dashboard_podcasts')
-        .select('id, podcast_id, podcast_name, podcast_description, podcast_url, publisher_name, last_posted_at, research_progress')
+        .select('id, podcast_id, podcast_name, podcast_description, podcast_url, publisher_name, last_posted_at, research_progress, research_document')
         .eq('id', shortlistPodcastId)
         .eq('client_id', clientId)
         .maybeSingle()
@@ -1665,7 +1665,7 @@ serve(async (req) => {
       )
 
       const existingProgress = shortlistRow.research_progress as
-        | { status?: string; updated_at?: string }
+        | { status?: string; updated_at?: string; started_at?: string; completed_stages?: unknown }
         | null
       if (
         existingProgress
@@ -1704,7 +1704,39 @@ serve(async (req) => {
       // present. A podcast that can never be researched must not be billed for
       // discovering that.
 
-      const startedAt = new Date().toISOString()
+      /**
+       * Picking up an interrupted run rather than starting it over.
+       *
+       * The whole run used to be one invocation, and the platform stops an
+       * invocation at about two minutes. Five sequential model calls came to
+       * roughly that, so a slower show was killed partway with nothing written:
+       * no terminal status, and every finished stage thrown away. The next
+       * attempt started from zero and was killed at the same place.
+       *
+       * Stage output is saved as each one finishes now, and a run that finds an
+       * interrupted attempt continues it. "Interrupted" is exactly a progress
+       * record still claiming to run — a completed or failed one means the last
+       * attempt settled, so asking again is a request for fresh research and
+       * gets it. That is what keeps Regenerate on a finished podcast honest.
+       */
+      const resuming = Boolean(
+        existingProgress
+        && ['queued', 'running'].includes(String(existingProgress.status))
+        && typeof existingProgress.started_at === 'string',
+      )
+      const savedDocument = resuming
+        ? (shortlistRow.research_document ?? null) as Record<string, unknown> | null
+        : null
+      const savedStage = (key: string): string | null => {
+        const value = savedDocument?.[key]
+        return typeof value === 'string' && value.trim() ? value : null
+      }
+      // The resumed run keeps the original run's identity, so the credit
+      // idempotency key below matches and the workspace is charged once for the
+      // research however many attempts it takes to get through it.
+      const startedAt = resuming && typeof existingProgress?.started_at === 'string'
+        ? existingProgress.started_at
+        : new Date().toISOString()
       const writeProgress = async (progress: Record<string, unknown>) => {
         await authContext.admin
           .from('client_dashboard_podcasts')
@@ -1712,10 +1744,67 @@ serve(async (req) => {
           .eq('id', shortlistPodcastId)
           .eq('client_id', clientId)
       }
-      await writeProgress({ status: 'running', current_stage: 'podcast_profile', completed_stages: [] })
+
+      /**
+       * A stage's answer, written the moment it exists.
+       *
+       * Marked incomplete until the run finishes: a half-written document must
+       * never read as research the pitch can be generated from.
+       */
+      const partialDocument: Record<string, unknown> = { ...(savedDocument ?? {}) }
+      const saveStage = async (key: string, value: unknown) => {
+        partialDocument[key] = value
+        await authContext.admin
+          .from('client_dashboard_podcasts')
+          .update({ research_document: { ...partialDocument, complete: false } })
+          .eq('id', shortlistPodcastId)
+          .eq('client_id', clientId)
+      }
+
+      /**
+       * The run stops itself before the platform stops it.
+       *
+       * An invocation is killed at about two minutes with no warning — the
+       * process simply ends, so no catch block runs, no terminal status is
+       * written, and the screen is left waiting on something that no longer
+       * exists. Five sequential model calls came to roughly that, so the only
+       * podcast that ever finished did so with ten seconds to spare.
+       *
+       * Between stages the run checks whether it has time for another, and if
+       * not it stops cleanly: everything finished is already saved, and the
+       * reply asks the caller to come straight back for the rest on a fresh
+       * invocation with a fresh budget. The budget is well under the ceiling
+       * because it is checked BEFORE a stage, and the stage that follows may
+       * take up to its own 90-second timeout.
+       */
+      const RUN_BUDGET_MS = 60_000
+      const runDeadline = Date.now() + RUN_BUDGET_MS
+      const outOfTime = () => Date.now() > runDeadline
+      const continueResponse = (nextStage: string) => jsonResponse(req, METHODS, 200, {
+        research_progress: {
+          status: 'running',
+          current_stage: nextStage,
+          completed_stages: completedStages,
+          started_at: startedAt,
+          updated_at: new Date().toISOString(),
+        },
+        // The caller comes straight back rather than reporting this as done.
+        continue_required: true,
+      })
+
+      const resumedStages = resuming && Array.isArray(existingProgress?.completed_stages)
+        ? (existingProgress.completed_stages as unknown[]).filter((stage): stage is string => typeof stage === 'string')
+        : []
+      await writeProgress({
+        status: 'running',
+        current_stage: 'podcast_profile',
+        completed_stages: resumedStages,
+      })
 
       const usage = { input: 0, output: 0 }
-      const completedStages: string[] = []
+      // Seeded from the interrupted attempt, so the steps already ticked off on
+      // screen stay ticked rather than reappearing as work still to do.
+      const completedStages: string[] = [...resumedStages]
       try {
         const { data: overrideRows } = await authContext.admin
           .from('workspace_research_prompts')
@@ -1919,10 +2008,25 @@ serve(async (req) => {
           clientId,
           actorUserId: authContext.user.id,
           byoKeyUsed,
+          // Keyed on the run, not the attempt. A run the platform killed
+          // partway is continued under its original started_at, so finishing it
+          // costs the credit it already paid rather than another one — without
+          // this, making the run resumable would have made it billable per
+          // attempt.
+          idempotencyKey: `research:${shortlistPodcastId}:${startedAt}`,
         })
 
-        const researchReport = await runStage('podcast_research', { context: sharedContext })
-        await advance('podcast_research', 'host_profile')
+        // Each stage below runs only if the interrupted attempt did not already
+        // finish it. They still run strictly one after the other — a resumed
+        // stage reads what the one before it produced exactly as it would have
+        // done first time, whether that came from this attempt or the last.
+        const savedReport = savedStage('podcast_research')
+        const researchReport = savedReport ?? await runStage('podcast_research', { context: sharedContext })
+        if (!savedReport) {
+          await saveStage('podcast_research', researchReport)
+          await advance('podcast_research', 'host_profile')
+          if (outOfTime()) return continueResponse('host_profile')
+        }
 
         // Stages two through four reuse two cached blocks: the shared context
         // written by stage one, and the research report written here. The
@@ -1934,27 +2038,53 @@ serve(async (req) => {
         publishStageOutput('podcast_research', '(provided in the research report section above)')
         // Gated after the pointer is assigned, so a stage requiring the report
         // it reads is satisfied by the block it is about to be sent.
-        await gateStage('host_info')
-        const hostReport = await runStage('host_info', { context: sharedContext, report: reportBlock })
+        const savedHostReport = savedStage('host_info')
+        let hostReport = savedHostReport ?? ''
+        if (!savedHostReport) {
+          await gateStage('host_info')
+          hostReport = await runStage('host_info', { context: sharedContext, report: reportBlock })
+          await saveStage('host_info', hostReport)
+          await advance('host_info', 'guest_patterns')
+          if (outOfTime()) return continueResponse('guest_patterns')
+        }
         publishStageOutput('host_info', hostReport ? hostReport.slice(0, 6_000) : null)
-        await advance('host_info', 'guest_patterns')
 
-        let guestReport: string | null = null
-        if (captured?.transcript) {
-          await gateStage('guest_info')
-          guestReport = await runStage('guest_info', { context: sharedContext, report: reportBlock })
-            .catch(() => null)
+        // Resumed as a key that exists rather than as a non-empty string: a
+        // solo episode legitimately produces no guest report, and re-running
+        // the stage on every resume would keep paying to learn that again.
+        const guestAlreadyRun = Boolean(savedDocument && 'guest_info' in savedDocument)
+        let guestReport: string | null = guestAlreadyRun ? savedStage('guest_info') : null
+        if (!guestAlreadyRun) {
+          if (captured?.transcript) {
+            await gateStage('guest_info')
+            guestReport = await runStage('guest_info', { context: sharedContext, report: reportBlock })
+              .catch(() => null)
+          }
+          await saveStage('guest_info', guestReport)
+          await advance('guest_info', 'guest_fit')
+          if (outOfTime()) return continueResponse('guest_fit')
         }
         publishStageOutput('guest_info', guestReport ? guestReport.slice(0, 6_000) : null)
-        await advance('guest_info', 'guest_fit')
 
-        await gateStage('find_topics')
-        const topicRaw = await runStage('find_topics', { context: sharedContext, report: reportBlock })
-        // The angles come from the stage that proposed them, under the rules
-        // its prompt spends a section on, rather than from a paraphrase.
-        const { prose: topicProposal, angles: proposedAngles } = splitStructuredAngles(topicRaw)
+        const savedTopics = savedStage('find_topics')
+        const savedAngles = Array.isArray(savedDocument?.pitch_angles_structured)
+          ? savedDocument.pitch_angles_structured as StructuredAngle[]
+          : []
+        let topicProposal = savedTopics ?? ''
+        let proposedAngles = savedAngles
+        if (!savedTopics) {
+          await gateStage('find_topics')
+          const topicRaw = await runStage('find_topics', { context: sharedContext, report: reportBlock })
+          // The angles come from the stage that proposed them, under the rules
+          // its prompt spends a section on, rather than from a paraphrase.
+          const split = splitStructuredAngles(topicRaw)
+          topicProposal = split.prose
+          proposedAngles = split.angles
+          await saveStage('find_topics', topicProposal)
+          await saveStage('pitch_angles_structured', proposedAngles.length > 0 ? proposedAngles : null)
+          await advance('find_topics', null)
+        }
         publishStageOutput('find_topics', topicProposal ? topicProposal.slice(0, 6_000) : null)
-        await advance('find_topics', null)
 
         // Structure the narrative outputs into the shortlist's existing
         // ai_* columns so every downstream surface renders them unchanged.
@@ -2038,6 +2168,10 @@ serve(async (req) => {
               recent_guest_name: recentGuestName,
               generated_at: completedAt,
               chain_version: PITCH_CHAIN_VERSION,
+              // The run reached the end. Stage-by-stage writes leave this false
+              // while a run is in flight, and the pitch refuses to be written
+              // from a document that never got here.
+              complete: true,
             },
             research_progress: {
               status: 'completed',
@@ -2621,6 +2755,7 @@ serve(async (req) => {
           host_info?: unknown
           guest_info?: unknown
           find_topics?: unknown
+          complete?: unknown
           pitch_angles_structured?: unknown
           episodes_used?: Array<{ title?: string }>
           episode_transcript_excerpt?: unknown
@@ -2629,6 +2764,14 @@ serve(async (req) => {
         | null
       if (!researchDocument || typeof researchDocument.podcast_research !== 'string') {
         throw new HttpError(409, 'RESEARCH_REQUIRED', 'Run research for this podcast before generating the pitch')
+      }
+      // A run writes each stage as it finishes, so a document can exist and hold
+      // real research while the run that was building it is still going or was
+      // killed partway. Only a run that reached the end may be pitched from.
+      // Absent on every document written before stage-by-stage saving, which is
+      // why missing counts as complete rather than as unfinished.
+      if (researchDocument.complete === false) {
+        throw new HttpError(409, 'RESEARCH_REQUIRED', 'Research for this podcast did not finish — run it again before generating the pitch')
       }
       const angles = Array.isArray(shortlistRow.ai_pitch_angles) ? shortlistRow.ai_pitch_angles : []
       const angle = angles[angleIndex] as { title?: string; description?: string } | undefined

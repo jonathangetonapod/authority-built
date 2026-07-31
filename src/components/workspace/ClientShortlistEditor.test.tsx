@@ -611,6 +611,10 @@ describe('ClientShortlistEditor', () => {
         clientId,
         '33333333-3333-4333-8333-333333333333',
         false,
+        // The run hands itself on between stages to stay inside the platform's
+        // two-minute ceiling; this reports each invocation's progress so the
+        // steps tick over rather than sitting still until the last one returns.
+        expect.any(Function),
       )
     })
     const researchProgress = within(screen.getByRole('list', { name: 'Podcast research progress' }))

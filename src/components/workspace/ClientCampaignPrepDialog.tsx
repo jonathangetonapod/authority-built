@@ -259,6 +259,12 @@ export function ClientCampaignPrepDialog({
       clientId,
       shortlistPodcastId,
       relationshipAcknowledged,
+      // The run hands itself on between stages to stay inside the platform's
+      // two-minute ceiling, so the steps are refreshed as each invocation
+      // returns rather than only when the last one does.
+      () => {
+        void queryClient.invalidateQueries({ queryKey: shortlistQueryKey })
+      },
     ),
     onMutate: () => {
       // The shortlist poll only activates once it sees a running status, so

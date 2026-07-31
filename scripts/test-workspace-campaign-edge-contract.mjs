@@ -1072,7 +1072,7 @@ assert.match(
   /MACHINE-READABLE ANGLES \(required, and the last thing in your answer\)/u,
   'find_topics must return its angles as structure, not only as prose',
 )
-assert.match(shortlistEdge, /const \{ prose: topicProposal, angles: proposedAngles \} = splitStructuredAngles\(topicRaw\)/u)
+assert.match(shortlistEdge, /const split = splitStructuredAngles\(topicRaw\)\s*\n\s*topicProposal = split\.prose\s*\n\s*proposedAngles = split\.angles/u)
 assert.match(
   shortlistEdge,
   /const pitchAngles = proposedAngles\.length > 0\s*\n\s*\? proposedAngles\.map\(\(angle\) => \(\{ title: angle\.title, description: angle\.description \}\)\)\s*\n\s*: derivedAngles/u,
@@ -1117,6 +1117,52 @@ assert.match(
   /export const RESEARCH_UI_STALE_AFTER_MS = RESEARCH_LOCK_STALE_AFTER_MS \* 3/u,
   'the UI threshold must stay derived from the lock expiry, never a second literal',
 )
+
+// The run outlives a single invocation. The platform kills one at about two
+// minutes with no warning — no catch block, no terminal status — and five
+// sequential model calls came to roughly that, so the only podcast that ever
+// finished did so with ten seconds to spare. The run stops itself between
+// stages instead, saving as it goes and asking to be called back.
+assert.match(shortlistEdge, /const RUN_BUDGET_MS = 60_000/u)
+assert.match(shortlistEdge, /const outOfTime = \(\) => Date\.now\(\) > runDeadline/u)
+for (const nextStage of ['host_profile', 'guest_patterns', 'guest_fit']) {
+  assert.ok(
+    shortlistEdge.includes(`if (outOfTime()) return continueResponse('${nextStage}')`),
+    `the run must be able to hand itself on before ${nextStage}`,
+  )
+}
+assert.match(shortlistEdge, /continue_required: true/u)
+// Each stage is saved the moment it exists, or there would be nothing to
+// resume from and a killed run would start over and die in the same place.
+for (const stage of ['podcast_research', 'host_info', 'guest_info', 'find_topics']) {
+  assert.ok(
+    shortlistEdge.includes(`await saveStage('${stage}'`),
+    `${stage} must be saved as it finishes so a resumed run can skip it`,
+  )
+}
+// A resumed run is the SAME run: it keeps the original started_at, which is
+// what makes the credit idempotency key match. Without that, making the run
+// resumable would have made it billable per attempt.
+assert.match(
+  shortlistEdge,
+  /idempotencyKey: `research:\$\{shortlistPodcastId\}:\$\{startedAt\}`/u,
+  'a resumed research run must not be charged a second credit',
+)
+assert.match(
+  shortlistEdge,
+  /const startedAt = resuming && typeof existingProgress\?\.started_at === 'string'\s*\n\s*\? existingProgress\.started_at/u,
+)
+// Only a progress record still claiming to run is resumed. A completed or
+// failed one means the last attempt settled, so asking again is a request for
+// fresh research — which is what keeps Regenerate honest.
+assert.match(
+  shortlistEdge,
+  /const resuming = Boolean\(\s*\n\s*existingProgress\s*\n\s*&& \['queued', 'running'\]\.includes\(String\(existingProgress\.status\)\)/u,
+)
+// A half-written document holds real research but is not research: the pitch
+// must refuse it rather than write from a run that never reached the end.
+assert.match(shortlistEdge, /research_document: \{ \.\.\.partialDocument, complete: false \}/u)
+assert.match(shortlistEdge, /if \(researchDocument\.complete === false\)/u)
 
 // The no-transcript rule is stated when it is true, not carried permanently.
 //
