@@ -18,6 +18,21 @@
     "object": "JSON object rendered as readable key: value lines.",
     "episode_list": "Stored episodes rendered newest first, one dated title per line."
   },
+  "stage_responses": {
+    "_readme": "Every stage returns its whole answer as {{<stage_id>_response}}, and the generator derives those ids from the keys here — nobody names them and nobody declares them. A stage existing is what makes its variable exist, so a later prompt reaching for an earlier stage's answer types the stage's own name instead of looking up what that stage's result happens to be called. Every prompt in docs/pitch-research-prompts.json must appear here; the workspace-campaign contract script fails if one does not, which is what stops a new stage from shipping without the variable that carries its output.",
+    "_aliases": "The older, hand-named variables that already carried a stage's whole answer. They keep working and keep filling, because every shipped prompt and every prompt a workspace has saved references them by those names — a rename would break them silently and only show up as thinner pitches weeks later. Listed as aliases so the field menu can say which new name replaces which old one. Values that are NOT a stage's whole answer are deliberately absent: contact_data, audit_flags, recent_guest_name and pitch_sent are extracts and side outputs, not the response.",
+    "stages": {
+      "podcast_research": { "label": "Podcast research response", "aliases": ["research_report", "podcast_research"] },
+      "host_info": { "label": "Host identification response", "aliases": ["host_report"] },
+      "guest_info": { "label": "Guest verification response", "aliases": ["guest_report"] },
+      "host_name_extractor": { "label": "Contact name extraction response", "aliases": ["host_name"] },
+      "find_topics": { "label": "Topic alignment response", "aliases": ["topic_proposal"] },
+      "write_email": { "label": "Pitch email draft response", "aliases": ["sequence_json"] },
+      "clean_email": { "label": "Pitch email cleanup response", "aliases": [] },
+      "inbox_reply": { "label": "Inbox reply response", "aliases": [] },
+      "inbox_nudges": { "label": "Inbox nudges response", "aliases": [] }
+    }
+  },
   "variables": [
     { "id": "podcast_name", "group": "podcast", "column": "podcast_name", "type": "text", "label": "Podcast name" },
     { "id": "podcast_description", "group": "podcast", "column": "podcast_description", "type": "long_text", "label": "Description" },

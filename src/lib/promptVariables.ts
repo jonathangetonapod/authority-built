@@ -26,6 +26,12 @@ export interface PromptVariable {
   profile?: string
   /** Run-group only: the stage that produces it. */
   producedBy?: string
+  /**
+   * Older ids that carry the same value. A stage's answer was reachable by a
+   * hand-picked name before it was reachable by the stage's own name, and
+   * every shipped and saved prompt still references the hand-picked one.
+   */
+  aliases?: string[]
 }
 
 export const PROMPT_VARIABLES: PromptVariable[] = [
@@ -86,6 +92,15 @@ export const PROMPT_VARIABLES: PromptVariable[] = [
   { id: 'client_website', group: 'client', column: 'website', type: 'text', label: "Client website" },
   { id: 'client_calendar_link', group: 'client', column: 'calendar_link', type: 'text', label: "Client booking link" },
   { id: 'client_media_kit_url', group: 'client', column: 'media_kit_url', type: 'text', label: "Client media kit" },
+  { id: 'podcast_research_response', group: 'run', type: 'long_text', label: "Podcast research response", producedBy: 'podcast_research', aliases: ['research_report', 'podcast_research'] },
+  { id: 'host_info_response', group: 'run', type: 'long_text', label: "Host identification response", producedBy: 'host_info', aliases: ['host_report'] },
+  { id: 'guest_info_response', group: 'run', type: 'long_text', label: "Guest verification response", producedBy: 'guest_info', aliases: ['guest_report'] },
+  { id: 'host_name_extractor_response', group: 'run', type: 'long_text', label: "Contact name extraction response", producedBy: 'host_name_extractor', aliases: ['host_name'] },
+  { id: 'find_topics_response', group: 'run', type: 'long_text', label: "Topic alignment response", producedBy: 'find_topics', aliases: ['topic_proposal'] },
+  { id: 'write_email_response', group: 'run', type: 'long_text', label: "Pitch email draft response", producedBy: 'write_email', aliases: ['sequence_json'] },
+  { id: 'clean_email_response', group: 'run', type: 'long_text', label: "Pitch email cleanup response", producedBy: 'clean_email' },
+  { id: 'inbox_reply_response', group: 'run', type: 'long_text', label: "Inbox reply response", producedBy: 'inbox_reply' },
+  { id: 'inbox_nudges_response', group: 'run', type: 'long_text', label: "Inbox nudges response", producedBy: 'inbox_nudges' },
   { id: 'research_report', group: 'run', type: 'long_text', label: "Podcast research result", producedBy: 'podcast_research' },
   { id: 'host_report', group: 'run', type: 'long_text', label: "Host identification result", producedBy: 'host_info' },
   { id: 'guest_report', group: 'run', type: 'long_text', label: "Guest verification result", producedBy: 'guest_info' },
@@ -120,3 +135,24 @@ export const PROMPT_VARIABLE_GROUPS: Array<{ id: PromptVariableGroup; label: str
   { id: 'client', label: "Client" },
   { id: 'run', label: "Produced during the run" },
 ]
+
+/**
+ * Every id a stage's whole answer fills: its own {{stage_response}} first, then
+ * the older names for the same value.
+ *
+ * The executors write through this rather than naming fields one by one, so a
+ * stage added later carries its output to later stages without anyone
+ * remembering to wire it — which is how host_report and guest_report came to
+ * exist in the registry while sitting unfilled in one of the two run paths.
+ */
+export const STAGE_RESPONSE_TARGETS: Record<string, string[]> = {
+  podcast_research: ['podcast_research_response', 'research_report', 'podcast_research'],
+  host_info: ['host_info_response', 'host_report'],
+  guest_info: ['guest_info_response', 'guest_report'],
+  host_name_extractor: ['host_name_extractor_response', 'host_name'],
+  find_topics: ['find_topics_response', 'topic_proposal'],
+  write_email: ['write_email_response', 'sequence_json'],
+  clean_email: ['clean_email_response'],
+  inbox_reply: ['inbox_reply_response'],
+  inbox_nudges: ['inbox_nudges_response'],
+}

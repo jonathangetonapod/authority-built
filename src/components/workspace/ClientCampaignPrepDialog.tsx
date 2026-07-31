@@ -64,18 +64,14 @@ import {
   removeWorkspaceCampaignLead,
 } from '@/services/workspaceCampaigns'
 import {
-  getWorkspacePromptOutputs,
   getWorkspacePromptRequirements,
   getWorkspaceResearchPromptOverrides,
-  setWorkspacePromptOutputs,
   setWorkspacePromptRequirements,
-  type PromptOutputField,
   resetWorkspaceResearchPrompt,
   setWorkspaceResearchPrompt,
 } from '@/services/workspaceCampaigns'
 import { PromptVariableTextarea } from './PromptVariableTextarea'
 import { PromptFieldPreview } from './PromptFieldPreview'
-import { PromptOutputFields } from './PromptOutputFields'
 import { PROMPT_VARIABLES } from '@/lib/promptVariables'
 import { unavailableVariableIds } from '@/lib/promptVariableMenu'
 import {
@@ -645,29 +641,8 @@ export function ClientCampaignPrepDialog({
     staleTime: 30_000,
   })
 
-  const outputsQuery = useQuery({
-    queryKey: ['workspace-prompt-outputs', workspaceId],
-    queryFn: () => getWorkspacePromptOutputs(workspaceId),
-    enabled: open,
-    retry: false,
-    staleTime: 60_000,
-  })
-  const outputsData = outputsQuery.data
-  const promptOutputs = useMemo(() => outputsData ?? {}, [outputsData])
-
-  const saveOutputsMutation = useMutation({
-    mutationFn: ({ promptId, fields }: { promptId: ResearchPromptId; fields: PromptOutputField[] }) =>
-      setWorkspacePromptOutputs(workspaceId, promptId, fields),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['workspace-prompt-outputs', workspaceId] })
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'The stage outputs could not be saved.')
-    },
-  })
-
   // Registry fields written by this stage or a later one, which this prompt
-  // must not be offered for the same reason its own declared fields are not.
+  // must not be offered: a stage cannot read what it has not produced yet.
   const omittedVariableIds = useMemo(
     () => unavailableVariableIds(selectedPromptId, RESEARCH_PROMPT_DEFAULTS.map((prompt) => prompt.id)),
     [selectedPromptId],
@@ -693,23 +668,6 @@ export function ClientCampaignPrepDialog({
     }
     return map
   }, [promptPreviewQuery.data])
-
-  // Only the stages BEFORE this one can have written a field this prompt reads.
-  // Offering a later stage's field would let a prompt name something that
-  // cannot exist by the time it runs.
-  const upstreamOutputVariables = useMemo(() => {
-    const order = RESEARCH_PROMPT_DEFAULTS.map((prompt) => prompt.id)
-    const cutoff = order.indexOf(selectedPromptId)
-    return order.slice(0, Math.max(cutoff, 0)).flatMap((promptId) =>
-      (promptOutputs[promptId] ?? []).map((field) => ({
-        id: field.id,
-        group: 'run' as const,
-        type: 'long_text' as const,
-        label: field.description || field.label,
-        producedBy: promptId,
-      }))
-    )
-  }, [promptOutputs, selectedPromptId])
 
   const requirementsQueryKey = useMemo(
     () => ['workspace-prompt-requirements', workspaceId],
@@ -1764,7 +1722,6 @@ export function ClientCampaignPrepDialog({
                               <div className="mt-4 space-y-2">
                                 <Label htmlFor="campaign-research-stage-prompt">Prompt instructions</Label>
                                 <PromptVariableTextarea
-                                  extraVariables={upstreamOutputVariables}
                                   omitVariableIds={omittedVariableIds}
                                   availability={promptFieldAvailability}
                                   requiredVariableIds={promptRequirements[selectedPromptId] ?? []}
@@ -1777,13 +1734,6 @@ export function ClientCampaignPrepDialog({
                                   disabled={promptBusy || promptOverridesQuery.isLoading}
                                   className="min-h-48 resize-y bg-background font-mono text-sm leading-7"
                                   maxLength={20_000}
-                                />
-                              </div>
-                              <div className="mt-4">
-                                <PromptOutputFields
-                                  fields={promptOutputs[selectedPromptId] ?? []}
-                                  disabled={promptBusy || outputsQuery.isLoading}
-                                  onChange={(next) => saveOutputsMutation.mutate({ promptId: selectedPromptId, fields: next })}
                                 />
                               </div>
                               <div className="mt-4">

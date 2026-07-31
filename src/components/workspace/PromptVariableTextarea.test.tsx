@@ -72,7 +72,9 @@ describe('PromptVariableTextarea', () => {
     render(<Harness />)
     fireEvent.change(field(), { target: { value: 'Then /host' } })
     fireEvent.click((await screen.findAllByRole('option'))[0])
-    await waitFor(() => expect(field().value).toBe('Then {{host_report}}'))
+    // The host stage's own answer leads the list; {{host_report}} is the older
+    // name for the same value and now sits below it.
+    await waitFor(() => expect(field().value).toBe('Then {{host_info_response}}'))
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
   })
 
@@ -91,7 +93,7 @@ describe('PromptVariableTextarea', () => {
     fireEvent.keyDown(field(), { key: 'ArrowDown' })
     fireEvent.keyDown(field(), { key: 'Enter' })
     // Second row of the menu as drawn: the arrows walk the visible order.
-    await waitFor(() => expect(field().value).toBe('{{host_name}}'))
+    await waitFor(() => expect(field().value).toBe('{{host_name_extractor_response}}'))
   })
 
   it('holds the whole registry, grouped, with nothing capped away', async () => {

@@ -524,6 +524,18 @@ export const PromptVariableTextarea = ({
                           ? `${variable.label} — from the ${variable.producedBy} stage`
                           : variable.label)}
                       </span>
+                      {/*
+                        The older name for the same answer, shown rather than
+                        retired. Prompts written before a stage's output was
+                        reachable by the stage's own name still say
+                        {{research_report}}, and someone reading one of those
+                        needs to see that it is this row.
+                      */}
+                      {variable.aliases?.length ? (
+                        <span className="block font-mono text-[10px] leading-4 text-muted-foreground/70">
+                          {`also ${variable.aliases.map((alias) => `{{${alias}}}`).join(' ')}`}
+                        </span>
+                      ) : null}
                     </button>
                   )
                 })}

@@ -13,6 +13,36 @@ import { readFileSync, writeFileSync } from 'node:fs'
 
 const registry = JSON.parse(readFileSync('docs/prompt-variables.json', 'utf8'))
 
+/**
+ * One variable per stage, carrying that stage's whole answer.
+ *
+ * Derived rather than declared: the id is always `<stage_id>_response`, so the
+ * name of the stage is the name of the field and there is nothing to look up.
+ * Before this, reading the host stage's answer meant knowing it was called
+ * research_report's sibling `host_report` — a mapping that existed only in the
+ * registry, which is why the prompt editor needed three paragraphs explaining
+ * how a stage's output reaches the next one.
+ */
+const stageResponses = Object.entries(registry.stage_responses.stages).map(([stage, spec]) => ({
+  id: `${stage}_response`,
+  group: 'run',
+  type: 'long_text',
+  label: spec.label,
+  producedBy: stage,
+  aliases: spec.aliases,
+}))
+
+// Placed at the head of the run group rather than appended, so the field menu
+// offers a stage's own name above the older name for the same answer.
+const firstRunIndex = registry.variables.findIndex((variable) => variable.group === 'run')
+const variables = firstRunIndex === -1
+  ? [...registry.variables, ...stageResponses]
+  : [
+    ...registry.variables.slice(0, firstRunIndex),
+    ...stageResponses,
+    ...registry.variables.slice(firstRunIndex),
+  ]
+
 function entry(variable) {
   const parts = [`id: '${variable.id}'`, `group: '${variable.group}'`]
   if (variable.column) parts.push(`column: '${variable.column}'`)
@@ -20,6 +50,9 @@ function entry(variable) {
   parts.push(`type: '${variable.type}'`)
   parts.push(`label: ${JSON.stringify(variable.label)}`)
   if (variable.producedBy) parts.push(`producedBy: '${variable.producedBy}'`)
+  if (variable.aliases?.length) {
+    parts.push(`aliases: [${variable.aliases.map((alias) => `'${alias}'`).join(', ')}]`)
+  }
   return `  { ${parts.join(', ')} },`
 }
 
@@ -47,17 +80,36 @@ export interface PromptVariable {
   profile?: string
   /** Run-group only: the stage that produces it. */
   producedBy?: string
+  /**
+   * Older ids that carry the same value. A stage's answer was reachable by a
+   * hand-picked name before it was reachable by the stage's own name, and
+   * every shipped and saved prompt still references the hand-picked one.
+   */
+  aliases?: string[]
 }
 `
 
 const ARRAY = `export const PROMPT_VARIABLES: PromptVariable[] = [
-${registry.variables.map(entry).join('\n')}
+${variables.map(entry).join('\n')}
 ]
 
 /** Display order and labels for the prompt editor's field palette. */
 export const PROMPT_VARIABLE_GROUPS: Array<{ id: PromptVariableGroup; label: string }> = [
 ${Object.entries(registry.groups).map(([id, label]) => `  { id: '${id}', label: ${JSON.stringify(label)} },`).join('\n')}
 ]
+
+/**
+ * Every id a stage's whole answer fills: its own {{stage_response}} first, then
+ * the older names for the same value.
+ *
+ * The executors write through this rather than naming fields one by one, so a
+ * stage added later carries its output to later stages without anyone
+ * remembering to wire it — which is how host_report and guest_report came to
+ * exist in the registry while sitting unfilled in one of the two run paths.
+ */
+export const STAGE_RESPONSE_TARGETS: Record<string, string[]> = {
+${stageResponses.map((variable) => `  ${variable.producedBy}: [${[variable.id, ...variable.aliases].map((id) => `'${id}'`).join(', ')}],`).join('\n')}
+}
 `
 
 const FORMATTER = `
@@ -360,8 +412,8 @@ if (process.argv.includes('--check')) {
     console.error('Fold the change into scripts/generate-prompt-variables.mjs, then rerun with --check.')
     process.exit(1)
   }
-  console.log(`prompt variable registry in sync: ${registry.variables.length} variables`)
+  console.log(`prompt variable registry in sync: ${variables.length} variables`)
 } else {
   for (const [path, contents] of outputs) writeFileSync(path, contents)
-  console.log(`prompt variable registry generated: ${registry.variables.length} variables`)
+  console.log(`prompt variable registry generated: ${variables.length} variables`)
 }

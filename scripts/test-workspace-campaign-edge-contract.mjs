@@ -727,13 +727,70 @@ function mirrorVariables(source) {
       id: match[1], group: match[2], column: match[3], profile: match[4], type: match[5],
     }))
 }
-const canonicalVariables = variableRegistry.variables.map((variable) => ({
+// The per-stage response fields the generator derives, rebuilt here from the
+// rule rather than read back from the mirrors: {{<stage>_response}} carries a
+// stage's whole answer, and the naming rule is the feature. A generator that
+// started naming them anything else would pass a mirror-to-mirror comparison
+// and quietly break every prompt that reaches for a stage by its own name.
+const stageResponseSpecs = Object.entries(variableRegistry.stage_responses.stages)
+const stageResponseVariables = stageResponseSpecs.map(([stage, spec]) => ({
+  id: `${stage}_response`,
+  group: 'run',
+  column: undefined,
+  profile: undefined,
+  type: 'long_text',
+  label: spec.label,
+  producedBy: stage,
+  aliases: spec.aliases ?? [],
+}))
+// Inserted at the head of the run group, matching the generator: a stage's own
+// name is offered above the older name for the same answer.
+const firstRunIndex = variableRegistry.variables.findIndex((variable) => variable.group === 'run')
+const canonicalSource = firstRunIndex === -1
+  ? [...variableRegistry.variables, ...stageResponseVariables]
+  : [
+    ...variableRegistry.variables.slice(0, firstRunIndex),
+    ...stageResponseVariables,
+    ...variableRegistry.variables.slice(firstRunIndex),
+  ]
+const canonicalVariables = canonicalSource.map((variable) => ({
   id: variable.id,
   group: variable.group,
   column: variable.column,
   profile: variable.profile,
   type: variable.type,
 }))
+
+// A stage without a response field is a stage whose output no later prompt can
+// name. Adding a prompt and forgetting the entry fails here rather than shipping
+// a stage that silently cannot be read.
+const promptRegistry = JSON.parse(readFileSync('docs/pitch-research-prompts.json', 'utf8'))
+const stagesWithResponses = new Set(stageResponseSpecs.map(([stage]) => stage))
+for (const promptId of Object.keys(promptRegistry.prompts)) {
+  assert.ok(
+    stagesWithResponses.has(promptId),
+    `${promptId} has no stage_responses entry, so nothing can reference its output`,
+  )
+}
+for (const stage of stagesWithResponses) {
+  assert.ok(
+    Object.hasOwn(promptRegistry.prompts, stage),
+    `stage_responses names ${stage}, which is not a prompt`,
+  )
+}
+
+// An alias must name a variable that already exists: aliases are the older
+// names shipped and saved prompts still use, and one pointing at nothing would
+// declare a compatibility promise the registry does not keep.
+const declaredIds = new Set(variableRegistry.variables.map((variable) => variable.id))
+const claimedAliases = new Set()
+for (const variable of stageResponseVariables) {
+  for (const alias of variable.aliases) {
+    assert.ok(declaredIds.has(alias), `${variable.id} aliases {{${alias}}}, which is not a registry variable`)
+    assert.ok(!claimedAliases.has(alias), `{{${alias}}} is claimed as an alias by two stages`)
+    claimedAliases.add(alias)
+  }
+}
 const edgeMirror = mirrorVariables(
   readFileSync('supabase/functions/_shared/promptVariables.ts', 'utf8'),
 )
@@ -797,7 +854,7 @@ assert.match(shortlistEdge, /\.select\(PODCAST_PROMPT_COLUMNS\)/u)
 assert.match(shortlistEdge, /\.select\(PITCH_CATALOG_COLUMNS\)/u)
 assert.match(
   shortlistEdge,
-  /import \{\s*buildClientVariables,\s*buildEpisodeVariables,\s*buildPodcastVariables,\s*CLIENT_VARIABLE_COLUMNS,\s*decodeFeedText,\s*formatPromptValue,\s*isPromptVariable,\s*PODCAST_VARIABLE_COLUMNS,\s*\} from '\.\.\/_shared\/promptVariables\.ts'/u,
+  /import \{\s*buildClientVariables,\s*buildEpisodeVariables,\s*buildPodcastVariables,\s*CLIENT_VARIABLE_COLUMNS,\s*decodeFeedText,\s*formatPromptValue,\s*isPromptVariable,\s*PODCAST_VARIABLE_COLUMNS,\s*STAGE_RESPONSE_TARGETS,\s*\} from '\.\.\/_shared\/promptVariables\.ts'/u,
 )
 // Every stage builds its variables through the same helpers, so no two can
 // disagree about how much of a show they can see. Research, pitch generation
@@ -820,7 +877,12 @@ assert.match(inboxSdr, /if \(!isPromptVariable\(key\)\) return match/u)
 
 // The pitch revision stage runs in the pitch scope and gets all of it; it used
 // to receive only the draft and the flags it was being asked to fix.
-assert.match(shortlistEdge, /\.\.\.pitchVariables,\s*\n\s*sequence_json:/u)
+// The draft reaches it through the registry, so the stage's own
+// {{write_email_response}} and the older {{sequence_json}} carry the same JSON.
+assert.match(
+  shortlistEdge,
+  /\.\.\.pitchVariables,(?:\s*\/\/[^\n]*\n)*\s*\.\.\.stageOutputVariables\(\{ write_email: JSON\.stringify\(sequence\) \}\)/u,
+)
 
 // Values are formatted by declared type before filling, so a false boolean and
 // a zero cannot reach a prompt looking like missing data.
@@ -833,25 +895,49 @@ assert.match(sharedVariables, /formatPromptValue\(variable\.id, profile\[variabl
 // must never appear".
 assert.match(shortlistEdge, /if \(!isPromptVariable\(key\)\) return match/u)
 
-// Each stage's result becomes a field the stages after it can reference.
-assert.match(shortlistEdge, /stageVariables\.host_report = hostReport/u)
-assert.match(shortlistEdge, /stageVariables\.guest_report = guestReport/u)
-// ...including the first stage's. Its pointer must be seeded null and set only
-// once the report block exists: stage one is the only stage sent WITHOUT that
-// block, so an eagerly-seeded pointer aims the first prompt at nothing.
-assert.match(shortlistEdge, /research_report: null,\s*\n\s*host_report: null,/u)
+// Each stage's result becomes a field the stages after it can reference, and
+// it is published by stage rather than by field name — one value reaching the
+// stage's own {{<stage>_response}} and every older name for the same answer,
+// so the two can never disagree.
+assert.match(shortlistEdge, /publishStageOutput\('host_info', hostReport/u)
+assert.match(shortlistEdge, /publishStageOutput\('guest_info', guestReport/u)
+assert.match(shortlistEdge, /publishStageOutput\('find_topics', topicProposal/u)
 assert.match(
   shortlistEdge,
-  /const reportBlock = `<research_report>[^`]*`\s*\n\s*stageVariables\.research_report = '\(provided in the research report section above\)'/u,
+  /const publishStageOutput = \(promptId: string, value: string \| null\) => \{\s*\n\s*for \(const id of STAGE_RESPONSE_TARGETS\[promptId\] \?\? \[\]\) stageVariables\[id\] = value/u,
+)
+// ...including the first stage's. Every response field is seeded null and the
+// first stage's pointer is set only once the report block exists: stage one is
+// the only stage sent WITHOUT that block, so an eagerly-seeded pointer aims the
+// first prompt at nothing.
+assert.match(
+  shortlistEdge,
+  /Object\.values\(STAGE_RESPONSE_TARGETS\)\.flat\(\)\.map\(\(id\) => \[id, null\]\)/u,
+)
+// Seeded BEFORE baseVariables, never after: a stage response sharing a name
+// with real catalogue data (host_name) must not blank the data it shares with.
+assert.match(
+  shortlistEdge,
+  /Object\.values\(STAGE_RESPONSE_TARGETS\)\.flat\(\)\.map\(\(id\) => \[id, null\]\),\s*\n\s*\),\s*\n\s*\.\.\.baseVariables,/u,
+)
+assert.match(
+  shortlistEdge,
+  /const reportBlock = `<research_report>[^`]*`(?:\s*\/\/[^\n]*\n)*\s*publishStageOutput\('podcast_research', '\(provided in the research report section above\)'\)/u,
 )
 // ...and the pitch stage can name what research produced, not just the
 // concatenated report it used to receive.
-for (const runVariable of ['host_report', 'guest_report', 'clean_description', 'fit_reasons', 'selected_angle']) {
+for (const runVariable of ['clean_description', 'fit_reasons', 'selected_angle']) {
   assert.ok(
     new RegExp(`^\\s*${runVariable}:`, 'mu').test(shortlistEdge),
     `pitch generation must expose ${runVariable} as a prompt variable`,
   )
 }
+// The research stages reach the pitch through the registry, so a stage added
+// later arrives without anyone editing this object.
+assert.match(
+  shortlistEdge,
+  /\.\.\.stageOutputVariables\(\{\s*\n\s*podcast_research: researchReport,\s*\n\s*host_info:/u,
+)
 
 // A stage refuses to run when a field it requires is absent for this podcast.
 // The whole point is that this costs nothing, so the gate must come BEFORE the
@@ -919,39 +1005,39 @@ assert.ok(
   'the preview must read the stored capture, never refetch from Podscan',
 )
 
-// A stage can declare the fields it returns, and those become variables the
-// stages after it can name. Every research stage goes through one runner, so a
-// stage cannot be added that quietly skips the declared shape.
+// Every research stage goes through one runner, so a stage cannot be added
+// that quietly skips the shared prompt fill.
 assert.match(shortlistEdge, /const runStage = async \(/u)
 for (const stage of ['podcast_research', 'host_info', 'guest_info', 'find_topics']) {
   assert.ok(
     shortlistEdge.includes(`runStage('${stage}'`),
-    `${stage} must run through runStage so its declared outputs are read back`,
+    `${stage} must run through runStage so its output is published to later stages`,
   )
 }
-// The declared shape is appended to the prompt, never substituted for it.
-assert.match(shortlistEdge, /fillPromptTemplate\(promptContent\(promptId\), stageVariables\),\s*\n\s*buildOutputInstruction\(fields\),/u)
-// A prose answer still reaches the caller: declaring fields must not be able
-// to lose a stage's output. The named values are read out, the trailing block
-// is taken back off, and what the later stages read is the report itself —
-// with a fallback to the whole answer when a stage returned only the block.
-assert.match(shortlistEdge, /const parsed = parseOutputFields\(raw, fields\)\s*\n\s*if \(parsed\) Object\.assign\(stageVariables, parsed\)/u)
-// Stripped only when the block parsed as the declared shape. A report may end
-// on a fenced example of its own, and cutting the last fence unconditionally
-// deleted it whenever the model skipped the block or ran out of tokens.
-assert.match(shortlistEdge, /if \(fields\.length === 0 \|\| !parsed\) return raw/u)
-assert.match(shortlistEdge, /const \{ prose \} = splitOutputBlock\(raw\)\s*\n\s*return prose \|\| raw/u)
-
-const outputsInstruction = readFileSync('supabase/functions/_shared/promptOutputs.ts', 'utf8')
-// Additive, never instead-of. Asking for JSON alone stopped the report being
-// written the moment anyone named a field, and the later stages read that
-// report — a loss visible only as thinner pitches, much later.
-assert.match(outputsInstruction, /Write your full answer as normal/u)
-assert.doesNotMatch(outputsInstruction, /Return ONLY a JSON object/u)
-
-const outputsShared = readFileSync('supabase/functions/_shared/promptOutputs.ts', 'utf8')
-// A declared field may never take the name of one the run already provides.
-assert.match(outputsShared, /if \(isPromptVariable\(id\)\) \{\s*\n\s*throw new Error/u)
+// A stage's answer reaches the next stage whole.
+//
+// Stages could once declare named fields to return, which appended a trailing
+// JSON block to the prompt and parsed values back out of it — reshaping and
+// then re-stripping the answer on the way through. {{<stage>_response}} carries
+// the whole answer now, so none of that survives: no declared shape appended to
+// a prompt, and nothing cut off the end of a report on the way back.
+for (const removed of [
+  'buildOutputInstruction',
+  'parseOutputFields',
+  'splitOutputBlock',
+  'resolveOutputFields',
+  'workspace_prompt_outputs',
+  'client_prompt_outputs',
+]) {
+  assert.ok(
+    !shortlistEdge.includes(removed),
+    `the run must not reshape a stage answer through ${removed}`,
+  )
+}
+assert.match(
+  shortlistEdge,
+  /\{ \.\.\.parts, instruction: fillPromptTemplate\(promptContent\(promptId\), stageVariables\) \}/u,
+)
 
 // The no-transcript rule is stated when it is true, not carried permanently.
 //

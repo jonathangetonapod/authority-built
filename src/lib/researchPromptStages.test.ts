@@ -3,10 +3,25 @@ import { RESEARCH_PROMPT_DEFAULTS } from '@/lib/researchPromptDefaults'
 import { researchPromptPhases, researchPromptStepNumbers } from '@/lib/researchPromptStages'
 
 describe('researchPromptPhases', () => {
-  it('groups every prompt exactly once', () => {
+  it('groups every prompt this screen owns exactly once', () => {
     const grouped = researchPromptPhases().flatMap((phase) => phase.prompts.map((prompt) => prompt.id))
-    expect([...grouped].sort()).toEqual([...RESEARCH_PROMPT_DEFAULTS.map((p) => p.id)].sort())
+    const owned = RESEARCH_PROMPT_DEFAULTS
+      .map((prompt) => prompt.id)
+      .filter((id) => id !== 'inbox_reply' && id !== 'inbox_nudges')
+    expect([...grouped].sort()).toEqual([...owned].sort())
     expect(new Set(grouped).size).toBe(grouped.length)
+  })
+
+  // The inbox prompts are edited on the client's AI SDR profile, beside the
+  // profile fields they are written from. Showing them here as well was a
+  // second place to change the same prompt.
+  it('leaves the inbox prompts to the AI SDR profile', () => {
+    const shown = researchPromptPhases().flatMap((phase) => phase.prompts.map((prompt) => prompt.id))
+    expect(shown).not.toContain('inbox_reply')
+    expect(shown).not.toContain('inbox_nudges')
+    // Excluded on purpose, so they must not reappear via the catch-all that
+    // exists to surface a prompt nobody grouped.
+    expect(researchPromptPhases().some((phase) => phase.id === 'other')).toBe(false)
   })
 
   it('keeps the run in the order the stages actually execute', () => {
@@ -20,12 +35,10 @@ describe('researchPromptPhases', () => {
     ])
   })
 
-  // The inbox prompts fire when a host replies, independently of each other.
-  // Numbering them would claim a sequence that does not exist.
-  it('marks the inbox prompts as unordered', () => {
+  it('marks the run and the pitch as ordered', () => {
     const phases = researchPromptPhases()
-    expect(phases.find((phase) => phase.id === 'inbox')?.ordered).toBe(false)
     expect(phases.find((phase) => phase.id === 'run')?.ordered).toBe(true)
+    expect(phases.find((phase) => phase.id === 'pitch')?.ordered).toBe(true)
   })
 
   // A prompt added to the registry but not to a phase would disappear from the

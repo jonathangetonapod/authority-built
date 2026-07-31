@@ -213,8 +213,11 @@ export function unavailableVariableIds(
   stageOrder: readonly string[],
 ): string[] {
   const index = stageOrder.indexOf(promptId)
-  if (index === -1) return []
-  const selfOrLater = new Set(stageOrder.slice(index))
+  // Own output first, whether or not this prompt sits in the ordered run. The
+  // inbox prompts fire on their own trigger and are absent from stageOrder,
+  // and each still produces an {{inbox_reply_response}} that would otherwise
+  // be offered to the very prompt in the middle of writing it.
+  const selfOrLater = new Set(index === -1 ? [promptId] : stageOrder.slice(index))
   return PROMPT_VARIABLES
     .filter((variable) => variable.producedBy && selfOrLater.has(variable.producedBy))
     .map((variable) => variable.id)

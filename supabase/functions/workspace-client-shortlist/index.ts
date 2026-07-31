@@ -37,14 +37,8 @@ import {
   formatPromptValue,
   isPromptVariable,
   PODCAST_VARIABLE_COLUMNS,
+  STAGE_RESPONSE_TARGETS,
 } from '../_shared/promptVariables.ts'
-import {
-  buildOutputInstruction,
-  parseOutputFields,
-  splitOutputBlock,
-  type PromptOutputField,
-  resolveOutputFields,
-} from '../_shared/promptOutputs.ts'
 import {
   describeMissingRequirements,
   missingRequiredVariables,
@@ -430,6 +424,24 @@ const RESEARCH_STAGE_MAP: Record<string, string[]> = {
   guest_info: ['guest_patterns'],
   find_topics: ['guest_fit', 'pitch_angles'],
 }
+/**
+ * One value per stage, spread across every id that carries that stage's answer.
+ *
+ * A stage's result is reachable as {{<stage>_response}} and, where one already
+ * existed, under its older hand-picked name. Both are written from the same
+ * value here so the two can never disagree — which they did while each path
+ * assigned the legacy names by hand and the pitch path quietly skipped some.
+ */
+function stageOutputVariables(
+  outputs: Record<string, string | null>,
+): Record<string, string | null> {
+  const filled: Record<string, string | null> = {}
+  for (const [promptId, value] of Object.entries(outputs)) {
+    for (const id of STAGE_RESPONSE_TARGETS[promptId] ?? []) filled[id] = value
+  }
+  return filled
+}
+
 const RESEARCH_STALE_LOCK_MS = 3 * 60 * 1000
 
 const EMAIL_SEARCH_STALE_LOCK_MS = 3 * 60 * 1000
@@ -1598,13 +1610,19 @@ serve(async (req) => {
         const value = doc?.[key]
         return typeof value === 'string' && value.trim() ? value : null
       }
+      // Keyed by stage, because the document already is. The registry turns
+      // each into every id that stage's answer fills, so the editor marks
+      // {{host_info_response}} as having a value on the same evidence that
+      // marks the older {{host_report}}.
       const runVariables: Record<string, string | null> = {
-        research_report: stageOutput('podcast_research'),
-        host_report: stageOutput('host_info'),
-        guest_report: stageOutput('guest_info'),
-        topic_proposal: stageOutput('find_topics'),
+        ...stageOutputVariables({
+          podcast_research: stageOutput('podcast_research'),
+          host_info: stageOutput('host_info'),
+          guest_info: stageOutput('guest_info'),
+          find_topics: stageOutput('find_topics'),
+          host_name_extractor: stageOutput('host_name'),
+        }),
         recent_guest_name: stageOutput('recent_guest_name'),
-        host_name: stageOutput('host_name'),
       }
 
       // Capped per field: this is a preview beside an editor, not a payload.
@@ -1734,26 +1752,6 @@ serve(async (req) => {
             .eq('client_id', clientId),
         ])
 
-        // The fields each stage declares it returns. A stage with none keeps
-        // writing its single blob, exactly as before.
-        const [{ data: workspaceOutputRows }, { data: clientOutputRows }] = await Promise.all([
-          authContext.admin
-            .from('workspace_prompt_outputs')
-            .select('prompt_id, output_fields')
-            .eq('workspace_id', workspaceId),
-          authContext.admin
-            .from('client_prompt_outputs')
-            .select('prompt_id, output_fields')
-            .eq('workspace_id', workspaceId)
-            .eq('client_id', clientId),
-        ])
-        const outputFieldsFor = (promptId: string): PromptOutputField[] =>
-          resolveOutputFields(
-            promptId,
-            (clientOutputRows ?? []) as Array<{ prompt_id: string; output_fields: unknown }>,
-            (workspaceOutputRows ?? []) as Array<{ prompt_id: string; output_fields: unknown }>,
-          )
-
         // Stored episode capture: Podscan is only hit when the capture is
         // missing or stale, so research reruns are free of provider calls.
         const captured = await ensureEpisodesCaptured(authContext.admin, shortlistRow.podcast_id)
@@ -1822,23 +1820,36 @@ serve(async (req) => {
         const pointer = (tag: string, value: string | null | undefined): string | null =>
           typeof value === 'string' && value.trim() ? `(provided in ${tag} within the CONTEXT section above)` : null
         const stageVariables: Record<string, string | null> = {
-          ...baseVariables,
-          client_bio: pointer('<client>', baseVariables.client_bio),
-          podcast_description: pointer('<podcast>', baseVariables.podcast_description),
-          episode_description: pointer('<latest_episode>', baseVariables.episode_description),
-          episode_transcript: pointer('<transcript>', baseVariables.episode_transcript),
           // Each stage's result becomes a field the stages after it can use.
           // Filled in as the run advances; a stage that references one before
           // it exists gets "Not available" like any other absent field. The
           // text is only ever sent when a prompt actually references it, so an
           // unused result costs nothing.
           //
-          // research_report included: stage one is the only stage sent without
-          // a report block, so seeding the pointer here pointed the first
-          // prompt at a section that does not exist yet.
-          research_report: null,
-          host_report: null,
-          guest_report: null,
+          // Seeded from the registry rather than named one by one, so a stage
+          // added later is absent-until-written here without anyone
+          // remembering to add it — and seeded BEFORE baseVariables, so a
+          // name a stage shares with real data (host_name) keeps the data.
+          ...Object.fromEntries(
+            Object.values(STAGE_RESPONSE_TARGETS).flat().map((id) => [id, null]),
+          ),
+          ...baseVariables,
+          client_bio: pointer('<client>', baseVariables.client_bio),
+          podcast_description: pointer('<podcast>', baseVariables.podcast_description),
+          episode_description: pointer('<latest_episode>', baseVariables.episode_description),
+          episode_transcript: pointer('<transcript>', baseVariables.episode_transcript),
+        }
+
+        /**
+         * Publishes a stage's whole answer under every id that carries it.
+         *
+         * One call per stage instead of one assignment per legacy name: the
+         * stage's own {{<stage>_response}} and the older hand-picked names are
+         * the same value, and writing them separately is how a path came to
+         * fill research_report while leaving host_report null.
+         */
+        const publishStageOutput = (promptId: string, value: string | null) => {
+          for (const id of STAGE_RESPONSE_TARGETS[promptId] ?? []) stageVariables[id] = value
         }
 
         const advance = async (promptId: string, nextStage: string | null) => {
@@ -1875,40 +1886,24 @@ serve(async (req) => {
         }
 
         /**
-         * Runs a stage, and turns its answer into variables when the stage
-         * declares what it returns.
+         * Runs a stage and returns its answer, whole.
          *
-         * The declared shape is appended to the prompt rather than replacing
-         * it: the prompt says what to think about, this says what shape to
-         * answer in. A stage that answers in prose anyway still returns its
-         * blob to the caller, so declaring fields can never lose an answer.
+         * A stage used to be able to declare named fields to return, which
+         * asked the model for a trailing JSON block and parsed values out of
+         * it. The stage's answer is reachable as {{<stage>_response}} now, so
+         * the whole of it reaches the next stage without anyone declaring
+         * anything — and the answer is no longer split, reshaped or stripped
+         * on the way there.
          */
         const runStage = async (
           promptId: string,
           parts: { context: string; report?: string },
-        ): Promise<string> => {
-          const fields = outputFieldsFor(promptId)
-          const instruction = [
-            fillPromptTemplate(promptContent(promptId), stageVariables),
-            buildOutputInstruction(fields),
-          ].filter(Boolean).join('\n\n')
-          const raw = await runResearchPrompt(
-            anthropicKey.apiKey,
-            RESEARCH_PROMPT_DEFAULTS[promptId],
-            { ...parts, instruction },
-            usage,
-          )
-          const parsed = parseOutputFields(raw, fields)
-          if (parsed) Object.assign(stageVariables, parsed)
-          // Stripped only when the block parsed as the declared shape. A report
-          // may legitimately end on a fenced example — a draft opener, a code
-          // sample — and cutting the last fence off unconditionally deleted it
-          // whenever the model skipped the block or ran out of tokens. Losing
-          // the end of the report is the exact harm this whole change removes.
-          if (fields.length === 0 || !parsed) return raw
-          const { prose } = splitOutputBlock(raw)
-          return prose || raw
-        }
+        ): Promise<string> => runResearchPrompt(
+          anthropicKey.apiKey,
+          RESEARCH_PROMPT_DEFAULTS[promptId],
+          { ...parts, instruction: fillPromptTemplate(promptContent(promptId), stageVariables) },
+          usage,
+        )
 
         // The first gate runs before the charge: a podcast that can never
         // clear stage one costs nothing to reject. Later stages block after
@@ -1932,12 +1927,15 @@ serve(async (req) => {
         // written by stage one, and the research report written here. The
         // pointer becomes true at the same moment the block starts being sent.
         const reportBlock = `<research_report>\n${researchReport}\n</research_report>`
-        stageVariables.research_report = '(provided in the research report section above)'
+        // A pointer, not the text: the report is already in the cached block
+        // every later stage is sent, so filling the field with it would send
+        // the same report twice and pay for it twice.
+        publishStageOutput('podcast_research', '(provided in the research report section above)')
         // Gated after the pointer is assigned, so a stage requiring the report
         // it reads is satisfied by the block it is about to be sent.
         await gateStage('host_info')
         const hostReport = await runStage('host_info', { context: sharedContext, report: reportBlock })
-        stageVariables.host_report = hostReport ? hostReport.slice(0, 6_000) : null
+        publishStageOutput('host_info', hostReport ? hostReport.slice(0, 6_000) : null)
         await advance('host_info', 'guest_patterns')
 
         let guestReport: string | null = null
@@ -1946,11 +1944,12 @@ serve(async (req) => {
           guestReport = await runStage('guest_info', { context: sharedContext, report: reportBlock })
             .catch(() => null)
         }
-        stageVariables.guest_report = guestReport ? guestReport.slice(0, 6_000) : null
+        publishStageOutput('guest_info', guestReport ? guestReport.slice(0, 6_000) : null)
         await advance('guest_info', 'guest_fit')
 
         await gateStage('find_topics')
         const topicProposal = await runStage('find_topics', { context: sharedContext, report: reportBlock })
+        publishStageOutput('find_topics', topicProposal ? topicProposal.slice(0, 6_000) : null)
         await advance('find_topics', null)
 
         // Structure the narrative outputs into the shortlist's existing
@@ -2335,12 +2334,14 @@ serve(async (req) => {
                 ...buildEpisodeVariables(extractorCatalogRow?.recent_episodes),
                 ...buildClientVariables(extractorClientRow),
                 contact_data: contactData.slice(0, 8_000),
-                research_report: typeof researchDocument?.podcast_research === 'string'
-                  ? researchDocument.podcast_research.slice(0, 8_000)
-                  : null,
-                host_report: typeof researchDocument?.host_info === 'string'
-                  ? researchDocument.host_info.slice(0, 6_000)
-                  : null,
+                ...stageOutputVariables({
+                  podcast_research: typeof researchDocument?.podcast_research === 'string'
+                    ? researchDocument.podcast_research.slice(0, 8_000)
+                    : null,
+                  host_info: typeof researchDocument?.host_info === 'string'
+                    ? researchDocument.host_info.slice(0, 6_000)
+                    : null,
+                }),
               }),
               usage,
             ).catch(() => '')
@@ -2688,16 +2689,19 @@ serve(async (req) => {
         recent_guest_name: typeof researchDocument.recent_guest_name === 'string'
           ? researchDocument.recent_guest_name.slice(0, 200)
           : storedGuestName,
-        topic_proposal: null,
-        research_report: researchReport,
         // Research stage results, written to the document and until now
-        // readable only as the concatenated research_report.
-        host_report: typeof researchDocument.host_info === 'string'
-          ? researchDocument.host_info.slice(0, 6_000)
-          : null,
-        guest_report: typeof researchDocument.guest_info === 'string'
-          ? researchDocument.guest_info.slice(0, 6_000)
-          : null,
+        // readable only as the concatenated research_report. One entry per
+        // stage; the registry decides which ids each one fills.
+        ...stageOutputVariables({
+          podcast_research: researchReport,
+          host_info: typeof researchDocument.host_info === 'string'
+            ? researchDocument.host_info.slice(0, 6_000)
+            : null,
+          guest_info: typeof researchDocument.guest_info === 'string'
+            ? researchDocument.guest_info.slice(0, 6_000)
+            : null,
+          find_topics: null,
+        }),
         agency_relationship: describeRelationship(relationship),
         clean_description: typeof shortlistRow.ai_clean_description === 'string'
           ? shortlistRow.ai_clean_description
@@ -2759,11 +2763,18 @@ serve(async (req) => {
         client_bio: variables.client_bio ? '(provided in <client> within the CONTEXT section above)' : null,
         podcast_description: variables.podcast_description ? '(provided in <podcast> within the CONTEXT section above)' : null,
         episode_transcript: variables.episode_transcript ? '(provided in <transcript_excerpt> within the CONTEXT section above)' : null,
-        research_report: '(provided in <research_report> within the CONTEXT section above)',
-        topic_proposal: [
-          angle?.title && angle?.description ? `SELECTED ANGLE: ${angle.title} — ${angle.description}` : '',
-          topicResearch ? '(full topic research provided in <topic_research> within the CONTEXT section above)' : '',
-        ].filter(Boolean).join('\n\n') || null,
+        // Both stages' answers are already in the cached CONTEXT block, so the
+        // fields point at it instead of repeating the text. Written through
+        // the registry so {{podcast_research_response}} and the older
+        // {{research_report}} point at the same section rather than one of
+        // them arriving as the full report a second time.
+        ...stageOutputVariables({
+          podcast_research: '(provided in <research_report> within the CONTEXT section above)',
+          find_topics: [
+            angle?.title && angle?.description ? `SELECTED ANGLE: ${angle.title} — ${angle.description}` : '',
+            topicResearch ? '(full topic research provided in <topic_research> within the CONTEXT section above)' : '',
+          ].filter(Boolean).join('\n\n') || null,
+        }),
       }
 
       // Same resolution as the prompts: this client's row, else the
@@ -2909,7 +2920,9 @@ serve(async (req) => {
             // which meant it fixed flags without being able to check them.
             fillPromptTemplate(promptContent('clean_email'), {
               ...pitchVariables,
-              sequence_json: JSON.stringify(sequence),
+              // The draft is this stage's input, reachable both as the stage
+              // that wrote it and under the older name the shipped prompt uses.
+              ...stageOutputVariables({ write_email: JSON.stringify(sequence) }),
               audit_flags: flags.map((flag) => `- ${flag}`).join('\n'),
             }),
             usage,

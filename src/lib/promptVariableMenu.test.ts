@@ -60,7 +60,10 @@ describe('detectVariableTrigger', () => {
 describe('filterPromptVariables', () => {
   it('ranks an id prefix above an id substring above a label match', () => {
     const matches = filterPromptVariables('host').map((variable) => variable.id)
-    expect(matches[0]).toBe('host_report')
+    // The host stage's own answer, ahead of both the older name for it and the
+    // catalogue's host column: a stage is now reachable by the stage's name.
+    expect(matches[0]).toBe('host_info_response')
+    expect(matches).toContain('host_report')
     expect(matches).toContain('podcast_host_name')
   })
 
@@ -124,8 +127,11 @@ describe('unavailableVariableIds', () => {
     expect(hidden).not.toContain('agency_relationship')
   })
 
-  it('hides nothing for a prompt outside the run order', () => {
-    expect(unavailableVariableIds('inbox_reply', STAGES)).toEqual([])
+  it('hides its own answer from a prompt outside the run order', () => {
+    // The inbox prompts fire on their own trigger and are absent from the
+    // ordered run, so nothing later is hidden from them — but a prompt can
+    // never read the answer it is in the middle of writing.
+    expect(unavailableVariableIds('inbox_reply', STAGES)).toEqual(['inbox_reply_response'])
   })
 })
 
