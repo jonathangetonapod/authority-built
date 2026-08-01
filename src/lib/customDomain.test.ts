@@ -61,6 +61,10 @@ describe('checkDomainInput', () => {
     expect(checkDomainInput('podcasts.theiragency.com').warning).toBeNull()
   })
 
+  it('offers the subdomain under the registry suffix, not under the country code', () => {
+    expect(checkDomainInput('theiragency.co.uk').suggestion).toBe('podcasts.theiragency.co.uk')
+  })
+
   it('warns that www is usually the marketing site', () => {
     const check = checkDomainInput('www.theiragency.com')
     expect(check.ready).toBe(true)
@@ -84,5 +88,21 @@ describe('isRootDomain', () => {
     expect(isRootDomain('theiragency.co.uk')).toBe(true)
     expect(isRootDomain('podcasts.theiragency.com')).toBe(false)
     expect(isRootDomain('podcasts.theiragency.co.uk')).toBe(false)
+  })
+
+  // The suffixes the first version's length-and-label rule split both ways.
+  it('covers registry suffixes whose second label is not co/com/org', () => {
+    for (const hostname of ['theiragency.ne.jp', 'theiragency.me.uk', 'theiragency.go.id', 'theiragency.in.th']) {
+      expect(isRootDomain(hostname)).toBe(true)
+    }
+  })
+
+  it('does not call an ordinary subdomain a root domain', () => {
+    // Three labels ending in a real TLD, but co.com is not a registry suffix.
+    expect(isRootDomain('blog.co.com')).toBe(false)
+    expect(isRootDomain('podcasts.theiragency.ne.jp')).toBe(false)
+    // An unlisted suffix falls through to subdomain: a missed warning is the
+    // safe direction, a wrong one is not.
+    expect(isRootDomain('theiragency.unknownsuffix.zz')).toBe(false)
   })
 })

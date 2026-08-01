@@ -18,10 +18,53 @@ const MAX_HOSTNAME_LENGTH = 253
 const HOSTNAME_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/u
 const PLATFORM_HOSTNAME = 'getonapod.com'
 
-// Second-level registry labels common enough to matter here. theiragency.co.uk
-// is as much a root domain as theiragency.com, and warning about one but not
-// the other is the kind of gap that only shows up as a downed website.
-const REGISTRY_LABELS = new Set(['co', 'com', 'org', 'net', 'ac', 'gov', 'edu'])
+/**
+ * Registry suffixes that take a name under them, listed rather than guessed.
+ *
+ * theiragency.co.uk is as much a root domain as theiragency.com, and the shape
+ * alone cannot tell you: podcasts.theiragency.com and theiragency.co.uk both
+ * have three labels. The first version matched a handful of second-level
+ * labels against a length rule, which quietly split both ways — it missed
+ * ne.jp and me.uk, and it would have called blog.co.com a root domain.
+ *
+ * The full public suffix list is thousands of entries and a dependency; this
+ * is the reachable part of it for an agency's domain. Anything not listed
+ * falls through to being treated as a subdomain, which is the safe direction:
+ * a missed warning, not a wrong one.
+ */
+const MULTI_PART_SUFFIXES = new Set((
+  'co.uk org.uk me.uk ltd.uk plc.uk net.uk sch.uk ac.uk gov.uk nhs.uk '
+  + 'com.au net.au org.au edu.au gov.au asn.au id.au '
+  + 'co.nz net.nz org.nz ac.nz govt.nz school.nz '
+  + 'co.za org.za net.za web.za ac.za gov.za '
+  + 'com.br net.br org.br edu.br gov.br '
+  + 'co.jp ne.jp or.jp ac.jp go.jp lg.jp '
+  + 'co.in net.in org.in firm.in gen.in ind.in ac.in res.in gov.in '
+  + 'com.cn net.cn org.cn edu.cn ac.cn gov.cn '
+  + 'co.kr ne.kr or.kr re.kr pe.kr ac.kr go.kr '
+  + 'com.sg net.sg org.sg edu.sg gov.sg '
+  + 'com.hk net.hk org.hk edu.hk gov.hk '
+  + 'com.tw net.tw org.tw edu.tw gov.tw '
+  + 'com.mx net.mx org.mx edu.mx gob.mx '
+  + 'com.ar net.ar org.ar edu.ar gob.ar '
+  + 'com.co net.co org.co edu.co gov.co '
+  + 'com.tr net.tr org.tr edu.tr gov.tr '
+  + 'co.il net.il org.il ac.il gov.il '
+  + 'com.pl net.pl org.pl edu.pl gov.pl '
+  + 'com.ua net.ua org.ua in.ua kiev.ua '
+  + 'com.es org.es edu.es gob.es '
+  + 'com.ph net.ph org.ph edu.ph gov.ph '
+  + 'com.my net.my org.my edu.my gov.my '
+  + 'co.id or.id ac.id go.id web.id '
+  + 'co.th in.th ac.th go.th or.th '
+  + 'com.vn net.vn org.vn edu.vn gov.vn '
+  + 'com.pk net.pk org.pk edu.pk gov.pk '
+  + 'com.ng net.ng org.ng edu.ng gov.ng '
+  + 'co.ke or.ke ne.ke ac.ke go.ke '
+  + 'com.eg net.eg org.eg edu.eg gov.eg '
+  + 'com.sa net.sa org.sa edu.sa gov.sa '
+  + 'co.ae net.ae org.ae ac.ae gov.ae'
+).split(' '))
 
 export interface DomainInputCheck {
   /** The hostname that will be sent, once the obvious noise is stripped. */
@@ -64,7 +107,7 @@ export function normalizeDomainInput(value: string): string {
 export function isRootDomain(hostname: string): boolean {
   const labels = hostname.split('.')
   if (labels.length === 2) return true
-  if (labels.length === 3 && labels[2].length <= 3 && REGISTRY_LABELS.has(labels[1])) return true
+  if (labels.length === 3 && MULTI_PART_SUFFIXES.has(`${labels[1]}.${labels[2]}`)) return true
   return false
 }
 
