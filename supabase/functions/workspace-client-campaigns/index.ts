@@ -6480,6 +6480,7 @@ serve(async (req) => {
         );
       }
       let providerStatus = campaign.instantly_campaign_status;
+      let providerObserved: ProviderCampaign | null = null;
       if (campaign.instantly_campaign_id) {
         const apiKey = await integrationApiKey(connection);
         // Assigning a mailbox is not an instruction to rewrite three emails.
@@ -6504,6 +6505,7 @@ serve(async (req) => {
             ),
           );
           providerStatus = updated.status;
+          providerObserved = updated;
         } else {
           providerStatus = null;
         }
@@ -6512,6 +6514,16 @@ serve(async (req) => {
         .from("workspace_client_campaigns")
         .update({
           sender_accounts: next,
+          // Same reason as the settings save: keeping the previous observation
+          // makes a push that worked look like one that did not.
+          ...(providerObserved
+            ? {
+              provider_schedule: providerObserved.schedule,
+              provider_email_gap: providerObserved.emailGap,
+              provider_not_sending_status: providerObserved.notSendingStatus,
+              last_synced_at: new Date().toISOString(),
+            }
+            : {}),
           instantly_campaign_status: providerStatus,
           status: localCampaignStatus(providerStatus),
           updated_by: context.user.id,

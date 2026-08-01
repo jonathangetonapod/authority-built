@@ -418,6 +418,24 @@ describe('WorkspaceCampaignDetail', () => {
     expect(await screen.findByText('A reviewed final follow-up.')).toBeInTheDocument()
   })
 
+  // The wait belongs on the connector between two steps, where the delay
+  // happens, rather than in a settings block that made the reader map a number
+  // back onto a step.
+  it('edits each wait between the steps it separates', async () => {
+    renderPage()
+
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Sequences' }), { button: 0 })
+    const waits = await screen.findAllByRole('spinbutton')
+    expect(waits).toHaveLength(2)
+    expect(waits[0]).toHaveValue(6)
+    expect(waits[1]).toHaveValue(7)
+
+    fireEvent.change(waits[0], { target: { value: '4' } })
+    // Every day the sequence states moves with it, including the last.
+    expect(await screen.findByRole('button', { name: /Step 2.*Day 4/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Step 3.*Day 11/ })).toBeInTheDocument()
+  })
+
   // Timings come from the campaign. Written as prose they drifted, and said
   // "Wait 3 days" for a year while the campaign waited six.
   it('states which day each step lands on, from the campaign settings', async () => {
@@ -425,8 +443,8 @@ describe('WorkspaceCampaignDetail', () => {
 
     fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Sequences' }), { button: 0 })
     // Scoped to the step list: the selected step repeats its day as a badge.
-    expect(within(await screen.findByRole('button', { name: /Opening pitch/ })).getByText('Day 0')).toBeInTheDocument()
-    expect(within(screen.getByRole('button', { name: /First follow-up/ })).getByText('Day 6')).toBeInTheDocument()
-    expect(within(screen.getByRole('button', { name: /Final follow-up/ })).getByText('Day 13')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /Step 1.*Opening pitch.*Day 0/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Step 2.*First follow-up.*Day 6/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Step 3.*Final follow-up.*Day 13/ })).toBeInTheDocument()
   })
 })

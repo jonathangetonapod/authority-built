@@ -227,10 +227,16 @@ assert.doesNotMatch(
 // Keeping the previous observation made a successful save read as a failed one:
 // the panel still showed the old timezone and the mismatch notice told the
 // operator to save again, which they had just done.
-assert.match(
-  edge,
-  /providerObserved = updated;/u,
-  'a settings save must keep the provider response',
+// Both paths that push to the provider, not just one: a mailbox assignment
+// changes the campaign too, and discarding the response left the same panel
+// showing the same stale answer.
+assert.ok(
+  (edge.match(/providerObserved = updated;/gu) || []).length === 2,
+  'every save that pushes must keep the provider response',
+)
+assert.ok(
+  (edge.match(/provider_schedule: providerObserved\.schedule/gu) || []).length === 2,
+  'every save that pushes must write the observed schedule back',
 )
 assert.match(
   edge,
@@ -787,9 +793,14 @@ for (const claim of ['Monday–Friday', '9:00 AM–5:00 PM', '15\\+ minutes']) {
 }
 // Unsynced reads as unknown rather than as the old default.
 assert.match(campaignDetail, /Nothing read yet[\s\S]*?deliberately blank rather than guessed/u)
-// The day-index convention is stated where it is applied, and to the operator.
-assert.match(campaignDetail, /Instantly's API reference does not state which day index is Sunday/u)
-assert.match(campaignDetail, /Their API reference does not state it, so check this against the campaign in Instantly once/u)
+// The day-index convention is stated where it is applied, and to the operator,
+// together with where it came from. The provider documents it nowhere, and its
+// own schema example reads as Monday-to-Friday while meaning Sunday-to-Thursday
+// — so the code has to say this was established by observation, or the next
+// reader takes the example at face value exactly as this codebase once did.
+assert.match(campaignDetail, /API reference never states which weekday each index is/u)
+assert.match(campaignDetail, /established by observation[\s\S]*?Instantly showed Sunday selected and Friday clear/u)
+assert.match(campaignDetail, /does not state the mapping anywhere; this was confirmed against a real campaign/u)
 assert.match(campaignDetail, /providerTimezoneMismatch/u)
 
 // The Master Inbox connection badge was a static element reading "not

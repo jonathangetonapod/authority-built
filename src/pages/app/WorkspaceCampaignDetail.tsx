@@ -337,6 +337,12 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
       subject: previewTarget?.pitch_subject ?? null,
       body: previewTarget?.pitch_body ?? null,
       repliesInThread: false,
+      // The wait that precedes this step, edited on the connector above it.
+      waitBefore: null as null | {
+        id: string
+        value: number
+        set: (days: number) => void
+      },
     },
     {
       label: 'Step 2',
@@ -346,6 +352,11 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
       subject: null,
       body: previewTarget?.follow_up_1_body ?? null,
       repliesInThread: true,
+      waitBefore: {
+        id: 'campaign-detail-follow-up-one',
+        value: settingsFollowUpOne,
+        set: setSettingsFollowUpOne,
+      },
     },
     {
       label: 'Step 3',
@@ -355,6 +366,11 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
       subject: null,
       body: previewTarget?.follow_up_2_body ?? null,
       repliesInThread: true,
+      waitBefore: {
+        id: 'campaign-detail-follow-up-two',
+        value: settingsFollowUpTwo,
+        set: setSettingsFollowUpTwo,
+      },
     },
   ], [previewTarget, settingsFollowUpOne, settingsFollowUpTwo])
   const activeStep = sequenceSteps[sequenceStep] ?? sequenceSteps[0]
@@ -706,10 +722,25 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                     const selected = index === sequenceStep
                     return (
                       <div key={step.label}>
-                        {index > 0 && (
-                          <div className="flex items-center gap-2 py-1 pl-4 text-xs text-muted-foreground">
-                            <div className="h-4 w-px bg-border" />
-                            <span>waits {step.timing.split(' after ')[0]}</span>
+                        {/* The wait sits on the connector between two steps,
+                            where the delay actually happens, rather than in a
+                            settings block that made the reader map a number
+                            back onto a step. */}
+                        {step.waitBefore && (
+                          <div className="flex items-center gap-2 py-2 pl-3.5">
+                            <div className="h-8 w-px shrink-0 bg-border" />
+                            <Label htmlFor={step.waitBefore.id} className="text-xs text-muted-foreground">waits</Label>
+                            <Input
+                              id={step.waitBefore.id}
+                              type="number"
+                              min={1}
+                              max={60}
+                              value={step.waitBefore.value}
+                              onChange={(event) => step.waitBefore?.set(Number(event.target.value) || 1)}
+                              disabled={!canManageCampaign}
+                              className="h-8 w-16"
+                            />
+                            <span className="text-xs text-muted-foreground">days</span>
                           </div>
                         )}
                         <button
@@ -721,39 +752,25 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                           <div className="flex items-center gap-3">
                             <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${selected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{index + 1}</div>
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-semibold">{step.title}</p>
-                              <p className="text-xs text-muted-foreground">{step.landsOn}</p>
+                              <p className="truncate text-sm font-semibold">{step.label}</p>
+                              <p className="truncate text-xs text-muted-foreground">{step.title} · {step.landsOn}</p>
                             </div>
                           </div>
                         </button>
                       </div>
                     )
                   })}
-                  {/* The waits belong to the sequence, not to the sending
-                      window: the window says which hours a campaign may send
-                      in, these say how long a host is left alone between
-                      emails. */}
-                  <div className="space-y-3 rounded-xl border border-dashed p-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="campaign-detail-follow-up-one" className="text-xs">Wait before step 2</Label>
-                      <Input id="campaign-detail-follow-up-one" type="number" min={1} max={60} value={settingsFollowUpOne} onChange={(event) => setSettingsFollowUpOne(Number(event.target.value) || 1)} disabled={!canManageCampaign} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="campaign-detail-follow-up-two" className="text-xs">Wait before step 3</Label>
-                      <Input id="campaign-detail-follow-up-two" type="number" min={1} max={60} value={settingsFollowUpTwo} onChange={(event) => setSettingsFollowUpTwo(Number(event.target.value) || 1)} disabled={!canManageCampaign} />
-                    </div>
-                    <Button size="sm" className="w-full" disabled={!canManageCampaign || !settingsName.trim() || settingsMutation.isPending} onClick={() => settingsMutation.mutate()}>
-                      {settingsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save cadence
-                    </Button>
-                    <p className="text-xs text-muted-foreground">Days between emails. Which days and hours the campaign may send in are on Schedule.</p>
-                  </div>
+                  <Button size="sm" className="w-full" disabled={!canManageCampaign || !settingsName.trim() || settingsMutation.isPending} onClick={() => settingsMutation.mutate()}>
+                    {settingsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save cadence
+                  </Button>
+                  <p className="text-xs text-muted-foreground">Which days and hours the campaign may send in are on Schedule.</p>
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
-                    <CardTitle>{activeStep.title}</CardTitle>
+                    <CardTitle>{activeStep.label} · {activeStep.title}</CardTitle>
                     <CardDescription>
                       {previewTarget
                         ? `As written for ${previewTarget.podcast_name}. Every podcast carries its own three messages, prepared in Podcasts.`
