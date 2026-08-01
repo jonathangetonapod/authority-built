@@ -355,6 +355,7 @@ serve(async (req) => {
       // Setting primary was a separate click that existed for exactly one
       // reason — a second domain must not steal links from a working first —
       // so it stays manual only when a primary already exists.
+      // let, because losing the promotion race downgrades it to false below.
       let promoted = false
       if (serving) {
         const { data: existingPrimary, error: primaryError } = await admin
@@ -366,7 +367,10 @@ serve(async (req) => {
         if (primaryError) throw new HttpError(500, 'DOMAIN_REFRESH_FAILED', 'The domain could not be updated')
         promoted = !existingPrimary || existingPrimary.id === domainId
       }
-      const { error: updateError } = await admin
+      const wasPrimaryBefore = Boolean(
+        (await admin.from('workspace_domains').select('is_primary').eq('id', domainId).maybeSingle()).data?.is_primary,
+      )
+      const applyUpdate = (primary: boolean) => admin
         .from('workspace_domains')
         .update({
           status: nextStatus,
@@ -375,10 +379,49 @@ serve(async (req) => {
           activated_at: serving ? new Date().toISOString() : null,
           last_checked_at: new Date().toISOString(),
           last_error: serving ? null : servingError,
-          is_primary: promoted,
+          is_primary: primary,
         })
         .eq('id', domainId)
+      let { error: updateError } = await applyUpdate(promoted)
+      // The read-then-promote is a race two concurrent checks can both win —
+      // the once-a-minute poll plus a manual Check makes that ordinary, not
+      // exotic. The unique index is the referee: when it refuses the second
+      // promotion, the correct outcome is the same update without the crown,
+      // not a 500 that also leaves the row stuck on its old status.
+      if (updateError && promoted && updateError.code === '23505') {
+        promoted = false
+        ;({ error: updateError } = await applyUpdate(false))
+      }
       if (updateError) throw new HttpError(500, 'DOMAIN_REFRESH_FAILED', 'The domain could not be updated')
+
+      // Automatic changes to which domain links use must be findable later.
+      // The manual set_primary click writes an audit entry; a silent flip from
+      // a background check is exactly the kind an admin needs to reconstruct.
+      if (promoted && !wasPrimaryBefore) {
+        await writeAudit(admin, {
+          workspaceId: domain.workspace_id,
+          actorUserId: user.id,
+          action: 'workspace.domain.primary_set',
+          entityType: 'workspace_domain',
+          entityId: domainId,
+          metadata: { hostname: domain.hostname, via: 'refresh_auto_promote' },
+        })
+      } else if (wasPrimaryBefore && !promoted) {
+        // Any way the crown comes off, not just going dark: losing the
+        // promotion race while still serving takes it off too, and that is
+        // the least visible of the two.
+        await writeAudit(admin, {
+          workspaceId: domain.workspace_id,
+          actorUserId: user.id,
+          action: 'workspace.domain.primary_lost',
+          entityType: 'workspace_domain',
+          entityId: domainId,
+          metadata: {
+            hostname: domain.hostname,
+            reason: serving ? 'another domain is primary' : (servingError ?? 'not serving'),
+          },
+        })
+      }
 
       return jsonResponse(req, METHODS, 200, { success: true, status: nextStatus, promoted })
     }

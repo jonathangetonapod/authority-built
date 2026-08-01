@@ -99,7 +99,22 @@ assert.match(
   /promoted = !existingPrimary \|\| existingPrimary\.id === domainId/u,
   'activation must promote only when no other primary exists',
 )
-assert.match(admin, /is_primary: promoted,/u)
+assert.match(admin, /is_primary: primary,/u)
+// Two concurrent checks can both win the read-then-promote race; the unique
+// index referees, and the loser must land the same update without the crown
+// rather than 500 and leave its row stuck on the old status.
+assert.match(
+  admin,
+  /updateError\.code === '23505'[\s\S]*?applyUpdate\(false\)/u,
+  'a lost promotion race must retry without promoting',
+)
+// Silent flips of which domain links use must be reconstructable.
+assert.match(admin, /via: 'refresh_auto_promote'/u)
+// Losing the crown is auditable however it comes off — going dark, or losing
+// the promotion race while still serving.
+assert.match(admin, /wasPrimaryBefore && !promoted/u)
+assert.match(admin, /action: 'workspace\.domain\.primary_lost'/u)
+assert.match(admin, /serving \? 'another domain is primary' : \(servingError \?\? 'not serving'\)/u)
 
 // CORS stays an allowlist. Tenant origins are added from the database, never
 // by widening to a wildcard, and the response says it varies by origin so a
