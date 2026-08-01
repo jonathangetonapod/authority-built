@@ -287,7 +287,11 @@ describe('WorkspaceCampaignDetail', () => {
     renderPage()
 
     fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Options' }), { button: 0 })
-    expect(screen.getByText('Select one or more accounts to send emails from.')).toBeInTheDocument()
+    // A workspace can hold hundreds of mailboxes, so the list opens in a dialog
+    // rather than pushing every other setting off the page.
+    fireEvent.click(await screen.findByRole('button', { name: /Choose accounts|Change accounts/ }))
+
+    expect(await screen.findByText('Select one or more accounts to send emails from.')).toBeInTheDocument()
     expect(screen.getByText('active@example.com')).toBeInTheDocument()
     expect(screen.getByText('paused@example.com')).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: 'Use active@example.com' })).toBeEnabled()

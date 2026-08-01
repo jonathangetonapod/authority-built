@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Switch } from '@/components/ui/switch'
 import { PROMPT_VARIABLES } from '@/lib/promptVariables'
 import { referencedPromptVariables } from '@/lib/promptVariableMenu'
@@ -35,6 +35,16 @@ export const PromptRequiredFields = ({
   }, [content])
 
   const requiredSet = useMemo(() => new Set(required), [required])
+  /**
+   * What the switches show, which leads what has been saved.
+   *
+   * Cleared whenever the saved set arrives, so a rejected save snaps back to
+   * the truth rather than leaving the control lying about a change that did
+   * not land.
+   */
+  const [pending, setPending] = useState<Set<string> | null>(null)
+  useEffect(() => { setPending(null) }, [required])
+  const shown = pending ?? requiredSet
 
   if (fields.length === 0) {
     return (
@@ -45,9 +55,13 @@ export const PromptRequiredFields = ({
   }
 
   const toggle = (id: string, on: boolean) => {
-    const next = new Set(requiredSet)
+    const next = new Set(shown)
     if (on) next.add(id)
     else next.delete(id)
+    // The switch moves now and the save follows. Every flip is a round trip,
+    // and waiting for it meant a control that lagged behind the finger and,
+    // on a slow response, appeared not to have worked at all.
+    setPending(next)
     // Registry order, so the saved set reads the way the list is drawn.
     onChange(PROMPT_VARIABLES.filter((variable) => next.has(variable.id)).map((variable) => variable.id))
   }
@@ -66,20 +80,21 @@ export const PromptRequiredFields = ({
       </div>
       <ul className="divide-y rounded-lg border">
         {fields.map((variable) => {
-          const on = requiredSet.has(variable.id)
+          const on = shown.has(variable.id)
           return (
-            <li key={variable.id} className="flex items-center gap-3 px-3 py-2">
+            <li key={variable.id} className="flex items-center gap-3 px-3 py-1.5">
               <Switch
                 checked={on}
                 disabled={disabled}
                 aria-label={`Require ${variable.label}`}
                 onCheckedChange={(next) => toggle(variable.id, next === true)}
               />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-mono text-[11px] leading-4">{variable.id}</span>
-                <span className="block truncate text-[10px] leading-4 text-muted-foreground">
-                  {variable.label}
-                </span>
+              {/* One line per field. The id and its plain name were stacked,
+                  which doubled the height of a list whose whole job is to be
+                  scanned against the prompt beside it. */}
+              <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                <span className="truncate font-mono text-[11px] leading-5">{variable.id}</span>
+                <span className="truncate text-[10px] leading-5 text-muted-foreground">{variable.label}</span>
               </span>
               <span className={`shrink-0 text-[10px] font-medium ${on ? 'text-violet-700' : 'text-muted-foreground'}`}>
                 {on ? 'Required' : 'Optional'}

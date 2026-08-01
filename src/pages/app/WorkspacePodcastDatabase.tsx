@@ -402,8 +402,8 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
                 <SelectContent>
                   <SelectItem value="all">All podcasts</SelectItem>
                   <SelectItem value="any">Has an email</SelectItem>
-                  <SelectItem value="free">Public listing email</SelectItem>
-                  <SelectItem value="direct">Verified direct email</SelectItem>
+                  <SelectItem value="free">Public email</SelectItem>
+                  <SelectItem value="direct">👑 Verified direct email</SelectItem>
                   <SelectItem value="none">No email yet</SelectItem>
                 </SelectContent>
               </Select>
@@ -549,20 +549,20 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
                       <div className="min-w-0">
                         {podcast.direct_email ? (
                           <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            <Badge className="border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">Verified direct email</Badge>
+                            <Badge className="border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">👑 Verified direct</Badge>
                             <span className="truncate text-sm">{podcast.direct_email}</span>
                             {/* When somebody confirmed it. A direct address
                                 that was checked two years ago is a different
                                 proposition from one checked last week. */}
                             <span className="text-xs text-muted-foreground">
-                              {podcast.direct_verified_at ? `Confirmed ${formattedDate(podcast.direct_verified_at)}` : 'Not yet confirmed'}
+                              {podcast.direct_verified_at ? `Paid for and confirmed ${formattedDate(podcast.direct_verified_at)}` : 'Paid for, not yet confirmed'}
                             </span>
                           </div>
                         ) : podcast.free_podscan_email ? (
                           <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            <Badge className="border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Public listing</Badge>
+                            <Badge className="border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Public email</Badge>
                             <span className="truncate text-sm">{podcast.free_podscan_email}</span>
-                            <span className="text-xs text-muted-foreground">Published by the show, not confirmed by us</span>
+                            <span className="text-xs text-muted-foreground">Free, published by the show and not confirmed</span>
                           </div>
                         ) : (
                           <p className="text-sm text-muted-foreground">No usable public email yet</p>

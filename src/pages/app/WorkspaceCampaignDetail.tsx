@@ -5,6 +5,7 @@ import {
   AlertCircle,
   ArrowLeft,
   ArrowRight,
+  Pencil,
   ChevronDown,
   ChevronUp,
   ExternalLink,
@@ -28,7 +29,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
-import { InstantlyAccountPicker } from '@/components/workspace/InstantlyAccountPicker'
+import { InstantlyAccountPicker, type InstantlyAccountClientLink } from '@/components/workspace/InstantlyAccountPicker'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -437,6 +438,7 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
   const [campaignRunningPreview, setCampaignRunningPreview] = useState<boolean | null>(null)
   // Which row in Podcasts is showing its live delivery detail. Delivery
   // questions belong beside the delivery columns, not on the messages tab.
+  const [mailboxPickerOpen, setMailboxPickerOpen] = useState(false)
   const [expandedPodcastId, setExpandedPodcastId] = useState<string | null>(null)
   const [sequenceStep, setSequenceStep] = useState(0)
   const [previewTargetId, setPreviewTargetId] = useState<string | null>(null)
@@ -460,6 +462,24 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
     setSequenceStep(0)
     selectTab('sequences')
   }
+  /**
+   * Which mailboxes already belong to this client.
+   *
+   * A workspace can hold hundreds of sending accounts — this one holds 648 —
+   * and the picker was offering all of them with nothing to say which few are
+   * this client's. A mailbox belongs to a client by sending that client's
+   * campaign, so the answer is the campaign's own sender list rather than a
+   * second record of ownership.
+   */
+  const mailboxAssignments = useMemo(() => {
+    const byEmail = new Map<string, InstantlyAccountClientLink[]>()
+    if (!client) return byEmail
+    for (const email of campaign?.sender_accounts || []) {
+      byEmail.set(email, [{ client_id: client.id, client_name: client.name }])
+    }
+    return byEmail
+  }, [campaign?.sender_accounts, client])
+
   const previewableTargets = campaignTargets
   const previewTarget = previewableTargets.find((target) => target.id === previewTargetId)
     ?? previewableTargets[0]
@@ -647,7 +667,8 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
     return (
       <WorkspaceLayout platformWorkspace={platformWorkspace}>
         <Card><CardHeader><CardTitle>Campaign unavailable</CardTitle><CardDescription>The campaign address is invalid.</CardDescription></CardHeader><CardContent><Button asChild variant="outline"><Link to={`${baseHref}/client-campaigns`}>Back to campaigns</Link></Button></CardContent></Card>
-      </WorkspaceLayout>
+  
+    </WorkspaceLayout>
     )
   }
 
@@ -1325,8 +1346,28 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                   </CardContent>
                 </Card>
                 <Card>
-                  <CardHeader><CardTitle>Accounts to use</CardTitle><CardDescription>Select the Instantly mailboxes assigned to this client campaign.</CardDescription></CardHeader>
-                  <CardContent><InstantlyAccountPicker accounts={providerAccounts} connected={Boolean(integration?.connected)} selected={settingsSenders} onChange={setSettingsSenders} disabled={!canManageCampaign} /></CardContent>
+                  <CardHeader><CardTitle>Accounts to use</CardTitle><CardDescription>The Instantly mailboxes this campaign sends from.</CardDescription></CardHeader>
+                  {/* A workspace can hold hundreds of mailboxes — this one holds
+                      648 — and the whole list was inline, pushing every other
+                      setting off the screen. The card states the choice; the
+                      choosing happens where there is room for it. */}
+                  <CardContent className="space-y-3">
+                    {settingsSenders.size === 0 ? (
+                      <p className="text-sm text-muted-foreground">No sending account chosen yet. This campaign cannot send until one is.</p>
+                    ) : (
+                      <ul className="space-y-1 text-sm">
+                        {Array.from(settingsSenders).slice(0, 6).map((email) => (
+                          <li key={email} className="truncate font-medium">{email}</li>
+                        ))}
+                        {settingsSenders.size > 6 && (
+                          <li className="text-muted-foreground">and {settingsSenders.size - 6} more</li>
+                        )}
+                      </ul>
+                    )}
+                    <Button type="button" variant="outline" size="sm" disabled={!canManageCampaign} onClick={() => setMailboxPickerOpen(true)}>
+                      <Pencil className="mr-2 h-3.5 w-3.5" />{settingsSenders.size === 0 ? 'Choose accounts' : 'Change accounts'}
+                    </Button>
+                  </CardContent>
                 </Card>
               </div>
 
@@ -1381,6 +1422,36 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
               {runningMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {campaignRunningAction}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={mailboxPickerOpen} onOpenChange={setMailboxPickerOpen}>
+        <DialogContent className="grid max-h-[94vh] w-[calc(100%-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-4xl">
+          <DialogHeader className="border-b py-5 pl-6 pr-12 text-left">
+            <DialogTitle>Accounts to use</DialogTitle>
+            <DialogDescription>
+              Mailboxes already sending for {client?.name || 'this client'} are shown first. Choosing one here does not send anything on its own.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 overflow-y-auto px-6 py-5">
+            <InstantlyAccountPicker
+              accounts={providerAccounts}
+              connected={Boolean(integration?.connected)}
+              selected={settingsSenders}
+              onChange={setSettingsSenders}
+              disabled={!canManageCampaign}
+              assignments={mailboxAssignments}
+              defaultClientId={client?.id || null}
+            />
+          </div>
+          <DialogFooter className="gap-2 border-t px-6 py-4 sm:justify-between">
+            <div className="flex items-center gap-2" />
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" onClick={() => setMailboxPickerOpen(false)}>Cancel</Button>
+              <Button type="button" disabled={!canManageCampaign || settingsMutation.isPending} onClick={() => { settingsMutation.mutate(); setMailboxPickerOpen(false) }}>
+                {settingsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save accounts
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
