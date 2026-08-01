@@ -17,7 +17,7 @@ import {
   updateClientShortlistPodcast,
   type ClientShortlistPodcast,
 } from '@/services/clientShortlist'
-import { getWorkspaceCampaign, getWorkspaceResearchPromptOverrides, prepareWorkspaceCampaignPodcast, removeWorkspaceCampaignLead } from '@/services/workspaceCampaigns'
+import { getClientInstantlyCampaignLinks, getWorkspaceCampaign, getWorkspaceResearchPromptOverrides, prepareWorkspaceCampaignPodcast, removeWorkspaceCampaignLead } from '@/services/workspaceCampaigns'
 
 vi.mock('@/services/clientShortlist', () => ({
   addClientShortlistPodcasts: vi.fn(),
@@ -34,6 +34,10 @@ vi.mock('@/services/clientShortlist', () => ({
 }))
 vi.mock('@/services/workspaceCampaigns', () => ({
   getWorkspaceCampaign: vi.fn(),
+  // Omitting this made the dialog's links query throw, React Query swallow it,
+  // and every test exercise the no-links path — so a picker test written
+  // against the mock would have passed without rendering a picker at all.
+  getClientInstantlyCampaignLinks: vi.fn(),
   prepareWorkspaceCampaignPodcast: vi.fn(),
   removeWorkspaceCampaignLead: vi.fn(),
   getWorkspaceResearchPromptOverrides: vi.fn().mockResolvedValue({}),
@@ -158,6 +162,13 @@ describe('ClientShortlistEditor', () => {
     vi.mocked(searchClientPodcastCatalog).mockResolvedValue([])
     vi.mocked(addClientShortlistPodcasts).mockResolvedValue({ added: 1, skipped: 0, podcast_ids: ['podcast-new'] })
     vi.mocked(updateClientShortlistPodcast).mockResolvedValue(podcast())
+    // Connected with no extra links: the client's own campaign is the only
+    // send target, so no picker renders unless a test adds one.
+    vi.mocked(getClientInstantlyCampaignLinks).mockResolvedValue({
+      connected: true,
+      links: [],
+      provider_campaigns: [],
+    })
     vi.mocked(getWorkspaceCampaign).mockResolvedValue({
       integration: {} as never,
       can_manage_campaigns: true,
@@ -1028,6 +1039,66 @@ describe('ClientShortlistEditor', () => {
     // line where it can be read off without picking it out of a sentence.
     expect(within(alert).getByText('This host has already replied. (CAMPAIGN_PITCH_LOCKED)')).toBeInTheDocument()
     expect(within(alert).getByText('CAMPAIGN_PITCH_LOCKED')).toBeInTheDocument()
+  })
+
+  // One campaign is not a choice. A picker offering a single option reads as a
+  // setting somebody forgot to finish.
+  it('offers no campaign picker when there is only one place to send', async () => {
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize selected pitch' }))
+
+    expect(screen.queryByLabelText('Send to')).not.toBeInTheDocument()
+  })
+
+  // A campaign built in Instantly carries its own copy, so it must never be
+  // offered as a send target however it is linked.
+  it('offers only the campaigns a pitch actually renders in', async () => {
+    vi.mocked(getClientInstantlyCampaignLinks).mockResolvedValue({
+      connected: true,
+      links: [
+        { instantly_campaign_id: '88888888-8888-4888-8888-888888888888', campaign_name: 'Second Wave', created_at: null, sendable: true, status: 2 },
+        { instantly_campaign_id: '99999999-9999-4999-8999-999999999999', campaign_name: 'Hand Built', created_at: null, sendable: false, status: 2 },
+      ],
+      provider_campaigns: [],
+    })
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize selected pitch' }))
+
+    const picker = await screen.findByLabelText('Send to')
+    fireEvent.click(picker)
+    expect(await screen.findByRole('option', { name: 'Second Wave' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Hand Built' })).not.toBeInTheDocument()
+  })
+
+  // The confirmation exists because a live campaign emails a real stranger.
+  // Reading the client's default campaign's status instead of the chosen one
+  // skipped it entirely and promised "nothing goes out" while sending.
+  it('warns about the campaign being sent into, not the default one', async () => {
+    vi.mocked(getClientInstantlyCampaignLinks).mockResolvedValue({
+      connected: true,
+      links: [
+        { instantly_campaign_id: '88888888-8888-4888-8888-888888888888', campaign_name: 'Live Wave', created_at: null, sendable: true, status: 1 },
+      ],
+      provider_campaigns: [],
+    })
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize selected pitch' }))
+
+    // The default campaign is paused, so the send button is calm until the
+    // live one is chosen.
+    expect(screen.getByRole('button', { name: /^Send to Client Campaign$/ })).toBeInTheDocument()
+    fireEvent.click(await screen.findByLabelText('Send to'))
+    fireEvent.click(await screen.findByRole('option', { name: 'Live Wave' }))
+
+    await waitFor(() => expect(
+      screen.getByRole('button', { name: /Send to Client Campaign \(goes live\)/ }),
+    ).toBeInTheDocument())
   })
 
   // Reporting a lead that was never created sends somebody to Instantly to

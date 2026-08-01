@@ -308,6 +308,17 @@ interface ProviderSchedule {
 interface ProviderCampaign {
   id: string;
   status: number;
+  /**
+   * The opening step actually reads the pitch variables this app writes.
+   *
+   * The property that decides whether a pitch may be sent here, checked against
+   * the live sequence rather than inferred from who created the campaign or
+   * what it is called. A campaign built by hand carries its own copy, so
+   * staging a lead into it would send that copy while the screen reported the
+   * written pitch as sent. False when Instantly returned no sequence at all,
+   * which is the safe reading: unknown is not a licence to send.
+   */
+  rendersOurPitch: boolean;
   name: string;
   senderAccounts: string[];
   timezone: string;
@@ -782,6 +793,32 @@ function providerUuid(value: unknown): string | null {
     : null;
 }
 
+/**
+ * Does this sequence send the copy we write, or copy of its own?
+ *
+ * Checks the opening step for the pitch-body variable. Naming and provenance
+ * both lie — a campaign can be renamed in Instantly, and one created here can
+ * have its sequence replaced there — so the only trustworthy answer comes from
+ * the sequence itself. Anything unrecognised reads as false, because a wrong
+ * "yes" sends a host the wrong email while reporting success.
+ */
+function sequenceRendersOurPitch(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  const first = value[0];
+  if (!first || typeof first !== "object" || Array.isArray(first)) return false;
+  const steps = (first as Record<string, unknown>).steps;
+  if (!Array.isArray(steps) || steps.length === 0) return false;
+  const opening = steps[0];
+  if (!opening || typeof opening !== "object" || Array.isArray(opening)) return false;
+  const variants = (opening as Record<string, unknown>).variants;
+  if (!Array.isArray(variants)) return false;
+  return variants.some((variant) => (
+    variant && typeof variant === "object" && !Array.isArray(variant) &&
+    typeof (variant as Record<string, unknown>).body === "string" &&
+    ((variant as Record<string, unknown>).body as string).includes("{{goapPitchBody}}")
+  ));
+}
+
 function providerCampaign(value: unknown): ProviderCampaign {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new InstantlyApiError(
@@ -808,6 +845,7 @@ function providerCampaign(value: unknown): ProviderCampaign {
       return email && email.length <= 254 ? [email] : [];
     })))
     : [];
+  const rendersOurPitch = sequenceRendersOurPitch(item.sequences);
   const schedule = item.campaign_schedule &&
       typeof item.campaign_schedule === "object" &&
       !Array.isArray(item.campaign_schedule)
@@ -876,6 +914,7 @@ function providerCampaign(value: unknown): ProviderCampaign {
   return {
     id,
     status,
+    rendersOurPitch,
     name: name.slice(0, 500),
     senderAccounts,
     timezone,
@@ -1964,6 +2003,22 @@ async function stageCampaignLead(
       ),
     )
     : await ensureProviderCampaign(context, campaign, apiKey);
+  // The last gate, and the only one checked against the live sequence.
+  //
+  // Every earlier check reasons about provenance — who created the campaign,
+  // what it is linked as — and provenance can be wrong: a client can be mapped
+  // to a hand-built campaign through the Client Campaigns picker, and a
+  // campaign created here can have its sequence replaced in Instantly. Either
+  // way the lead would enter a sequence that sends its own copy while this
+  // reported the written pitch as sent. Asking the sequence is the only answer
+  // that cannot be stale.
+  if (!providerCampaignValue.rendersOurPitch) {
+    throw new HttpError(
+      409,
+      "CAMPAIGN_NOT_SENDABLE",
+      `${providerCampaignValue.name} does not use the pitch written here, so sending into it would deliver that campaign's own copy. Create a campaign from the client page and send into that instead.`,
+    );
+  }
 
   // One contact cannot be in the campaign twice under two shows: the host
   // experiences both, whatever we call them locally.
@@ -4503,7 +4558,7 @@ serve(async (req) => {
       if (linksResult.error) {
         throw new HttpError(503, "CAMPAIGN_LINKS_UNAVAILABLE", "Linked campaigns could not be loaded");
       }
-      const allLinks = (linksResult.data ?? []) as Array<Record<string, unknown>>;;
+      const allLinks = (linksResult.data ?? []) as Array<Record<string, unknown>>;
       const linkedClientByCampaign = new Map(allLinks.flatMap((row) => {
         const providerId = row.instantly_campaign_id;
         if (typeof providerId !== "string") return [];
@@ -4523,27 +4578,42 @@ serve(async (req) => {
               : []
           )),
       );
-      // Sendable means the sequence and the goap* variables are known to be
-      // there. provisioned_at records that for campaigns created from this
-      // card; the client's own campaign qualifies too, because
-      // ensureProviderCampaign built it the same way — it just predates the
-      // column and never wrote to this table.
-      const links = allLinks
-        .filter((row) => row.client_id === clientId)
-        .map((row) => {
-          const providerId = String(row.instantly_campaign_id ?? "");
-          const provisionedAt = typeof row.provisioned_at === "string"
-            ? row.provisioned_at
-            : null;
-          return {
-            instantly_campaign_id: providerId,
-            campaign_name: typeof row.campaign_name === "string" ? row.campaign_name : null,
-            created_at: typeof row.created_at === "string" ? row.created_at : null,
-            provisioned_at: provisionedAt,
-            sendable: Boolean(provisionedAt) ||
-              managedClientByCampaign.get(providerId) === clientId,
-          };
-        });
+      // Sendable is decided by the live sequence wherever Instantly answered,
+      // and only falls back to provenance when it did not. Being the client's
+      // own campaign is not enough on its own: a client can be mapped to a
+      // hand-built campaign through the Client Campaigns picker, and that
+      // campaign carries its own copy.
+      const buildLinks = (
+        rendersById: Map<string, boolean>,
+        statusById: Map<string, number>,
+      ) =>
+        allLinks
+          .filter((row) => row.client_id === clientId)
+          .map((row) => {
+            const providerId = String(row.instantly_campaign_id ?? "");
+            const provisionedAt = typeof row.provisioned_at === "string"
+              ? row.provisioned_at
+              : null;
+            return {
+              instantly_campaign_id: providerId,
+              campaign_name: typeof row.campaign_name === "string" ? row.campaign_name : null,
+              created_at: typeof row.created_at === "string" ? row.created_at : null,
+              provisioned_at: provisionedAt,
+              // The dialog warns before a send that reaches a host today, and
+              // it can only do that for the campaign actually chosen. Without
+              // this it read the client's own campaign's status and told the
+              // operator "paused, nothing goes out" while sending into a live
+              // one.
+              status: statusById.get(providerId) ?? null,
+              // Two independent positives, either of which is trustworthy on
+              // its own. Reading the live sequence is the better signal, but a
+              // provider response that omits sequences must not silently
+              // demote every campaign this app built. The send itself is gated
+              // on the live sequence regardless, so a stale yes here costs a
+              // refusal at send time rather than a wrong email.
+              sendable: rendersById.get(providerId) === true || Boolean(provisionedAt),
+            };
+          });
 
       const connection = await readConnection(context.admin, workspaceId);
       let providerCampaigns: ProviderCampaign[] = [];
@@ -4563,7 +4633,10 @@ serve(async (req) => {
       }
       return jsonResponse(req, METHODS, 200, {
         connected,
-        links,
+        links: buildLinks(
+          new Map(providerCampaigns.map((campaign) => [campaign.id, campaign.rendersOurPitch])),
+          new Map(providerCampaigns.map((campaign) => [campaign.id, campaign.status])),
+        ),
         provider_campaigns: providerCampaigns.map((campaign) => {
           const linkedClient = linkedClientByCampaign.get(campaign.id) ?? null;
           return {
@@ -4733,7 +4806,7 @@ serve(async (req) => {
       // campaign would block every future save for the client.
       const { data: existingRows, error: existingError } = await context.admin
         .from("client_instantly_campaign_links")
-        .select("instantly_campaign_id, campaign_name")
+        .select("instantly_campaign_id, campaign_name, provisioned_at")
         .eq("workspace_id", workspaceId)
         .eq("client_id", clientId);
       if (existingError) {
@@ -4743,6 +4816,19 @@ serve(async (req) => {
         ((existingRows ?? []) as Array<Record<string, unknown>>).flatMap((row) => (
           typeof row.instantly_campaign_id === "string"
             ? [[row.instantly_campaign_id, typeof row.campaign_name === "string" ? row.campaign_name : null] as const]
+            : []
+        )),
+      );
+      // Saving the list must not demote a campaign this app built. The write
+      // below deletes what was unchecked and re-inserts the rest, so without
+      // carrying this forward, unchecking a created campaign and checking it
+      // again would return it as attribution-only — permanently, with no way
+      // back except building a second campaign in Instantly.
+      const existingProvisionedById = new Map(
+        ((existingRows ?? []) as Array<Record<string, unknown>>).flatMap((row) => (
+          typeof row.instantly_campaign_id === "string" &&
+            typeof row.provisioned_at === "string"
+            ? [[row.instantly_campaign_id, row.provisioned_at] as const]
             : []
         )),
       );
@@ -4812,6 +4898,7 @@ serve(async (req) => {
             campaign_name: providerById.get(campaignId)?.name?.slice(0, 300)
               ?? existingNameById.get(campaignId)
               ?? null,
+            provisioned_at: existingProvisionedById.get(campaignId) ?? null,
             created_by: context.user.id,
           })), { onConflict: "workspace_id,instantly_campaign_id", ignoreDuplicates: true });
         if (insertError) {
@@ -4826,14 +4913,23 @@ serve(async (req) => {
         entityId: clientId,
         metadata: { count: campaignIds.length, campaign_ids: campaignIds },
       });
+      // The card writes this response straight into its cache, so anything
+      // omitted here reads as absent rather than as unchanged. Leaving these
+      // out flipped every Sendable badge to "Replies only" the moment Save was
+      // pressed, and it stayed wrong if the follow-up refetch failed.
       return jsonResponse(req, METHODS, 200, {
-        links: campaignIds.map((campaignId) => ({
-          instantly_campaign_id: campaignId,
-          campaign_name: providerById.get(campaignId)?.name
-            ?? existingNameById.get(campaignId)
-            ?? null,
-          created_at: null,
-        })),
+        links: campaignIds.map((campaignId) => {
+          const provisionedAt = existingProvisionedById.get(campaignId) ?? null;
+          const provider = providerById.get(campaignId);
+          return {
+            instantly_campaign_id: campaignId,
+            campaign_name: provider?.name ?? existingNameById.get(campaignId) ?? null,
+            created_at: null,
+            provisioned_at: provisionedAt,
+            status: provider?.status ?? null,
+            sendable: provider?.rendersOurPitch === true || Boolean(provisionedAt),
+          };
+        }),
       });
     }
 
@@ -5083,7 +5179,15 @@ serve(async (req) => {
           campaign,
           { ...target, contact_email: contactEmail, host_name: hostName } as TargetRow,
           sequence,
-          chosenProviderCampaignId,
+          // Naming the client's own campaign is the same as not choosing one.
+          // The dialog always sends an id — the own campaign is the default
+          // entry in its picker — so treating that as "chosen" would route
+          // every send down the plain read and leave ensureProviderCampaign,
+          // and with it the recovery from a campaign deleted in Instantly,
+          // unreachable from the UI.
+          chosenProviderCampaignId === campaign.instantly_campaign_id
+            ? null
+            : chosenProviderCampaignId,
         );
       }
 

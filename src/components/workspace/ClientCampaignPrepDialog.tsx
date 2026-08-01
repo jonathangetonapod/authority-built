@@ -51,6 +51,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { buildPodcastCampaignSequenceDraft, buildThreadReplySubject, type PodcastCampaignSequenceDraft } from '@/lib/campaignSequence'
 import { AgencyRelationshipNotice, PitchTrustPanel } from '@/components/workspace/PitchQualitySignals'
 import { checkPitchCopy } from '@/lib/pitchQuality'
@@ -628,13 +629,21 @@ export function ClientCampaignPrepDialog({
   // links were created here rather than linked from Instantly.
   const sendableCampaigns = useMemo(() => {
     const own = campaign?.instantly_campaign_id
-      ? [{ id: campaign.instantly_campaign_id, name: campaign.name || 'This client’s campaign' }]
+      ? [{
+        id: campaign.instantly_campaign_id,
+        name: campaign.name || 'This client’s campaign',
+        status: campaign.instantly_campaign_status ?? null,
+      }]
       : []
     const extra = (linksQuery.data?.links ?? [])
       .filter((link) => link.sendable && link.instantly_campaign_id !== campaign?.instantly_campaign_id)
-      .map((link) => ({ id: link.instantly_campaign_id, name: link.campaign_name || 'Campaign' }))
+      .map((link) => ({
+        id: link.instantly_campaign_id,
+        name: link.campaign_name || 'Campaign',
+        status: link.status ?? null,
+      }))
     return [...own, ...extra]
-  }, [campaign?.instantly_campaign_id, campaign?.name, linksQuery.data])
+  }, [campaign?.instantly_campaign_id, campaign?.instantly_campaign_status, campaign?.name, linksQuery.data])
   const [chosenCampaignId, setChosenCampaignId] = useState<string | null>(null)
   // Default to the client's own campaign, and never leave a stale choice
   // pointing at a campaign that is no longer offered.
@@ -1185,7 +1194,13 @@ export function ClientCampaignPrepDialog({
   // itself. A paused campaign holds it; a live one starts the sequence on its
   // next send window with no further approval. The operator has to be able to
   // see which of those they are about to do, before they do it.
-  const campaignIsLive = campaign?.instantly_campaign_status === 1
+  // The status of the campaign being sent into, not the client's default one.
+  // Reading the default meant that choosing a live campaign while the default
+  // was paused skipped the confirmation entirely and told the operator
+  // "nothing goes out" as a host was being emailed.
+  const campaignIsLive = chosenCampaign
+    ? chosenCampaign.status === 1
+    : campaign?.instantly_campaign_status === 1
   const submitWillSend = campaignIsLive && validEmail(normalizedEmail)
   // Reopening a podcast that is already in the campaign. Sending again updates
   // the existing lead rather than adding a second one, and the operator should
@@ -1231,7 +1246,10 @@ export function ClientCampaignPrepDialog({
         followUpTwoBody: draft.followUpTwoBody,
         pitchChainVersion: aiPitches[pitchKey(podcast.id, selectedAngleIndex)]?.chainVersion ?? null,
         instantlyCampaignId: activeCampaignId,
-      })
+      }).then((result) => ({
+        ...result,
+        sent_to_campaign_name: chosenCampaign?.name || campaign?.name || 'the client campaign',
+      }))
     },
     onSuccess: async (result) => {
       setConfirmSendOpen(false)
@@ -1248,7 +1266,11 @@ export function ClientCampaignPrepDialog({
         willSend: result.will_send,
         hostName: hostName.trim(),
         contactEmail: normalizedEmail,
-        campaignName: chosenCampaign?.name || campaign?.name || 'the client campaign',
+        // Pinned when the request went out, not read again now. Both queries
+        // behind these names can refetch during an Instantly round trip, and a
+        // confirmation naming a campaign other than the one the server used is
+        // the same lie in a different place.
+        campaignName: result.sent_to_campaign_name,
       })
       onPrepared?.()
     },
@@ -1395,7 +1417,7 @@ export function ClientCampaignPrepDialog({
             {campaign && <Badge variant="outline">{campaign.name}</Badge>}
           </div>
           <DialogTitle className="text-2xl">Write a pitch for {podcast?.podcast_name || 'this podcast'}</DialogTitle>
-          <DialogDescription>Find the right contact, research the show, and then write a thoughtful outreach sequence for {clientName}.{' '}{submitWillSend ? `${campaign?.name || 'This campaign'} is live, so sending this to Client Campaign puts the host into the sequence.` : 'Nothing sends from this modal.'}</DialogDescription>
+          <DialogDescription>Find the right contact, research the show, and then write a thoughtful outreach sequence for {clientName}.{' '}{submitWillSend ? `${chosenCampaign?.name || campaign?.name || 'This campaign'} is live, so sending this to Client Campaign puts the host into the sequence.` : 'Nothing sends from this modal.'}</DialogDescription>
         </DialogHeader>
 
         <div className="min-h-0 overflow-y-auto overscroll-contain">
@@ -2380,7 +2402,7 @@ export function ClientCampaignPrepDialog({
             <DialogHeader>
               <DialogTitle>Email {hostName.trim() || 'this host'} now?</DialogTitle>
               <DialogDescription>
-                {campaign?.name || 'This campaign'} is live. Adding this lead starts the sequence, so the
+                {chosenCampaign?.name || campaign?.name || 'This campaign'} is live. Adding this lead starts the sequence, so the
                 opening email goes to {normalizedEmail} on the next send window without another approval.
               </DialogDescription>
             </DialogHeader>
@@ -2390,7 +2412,7 @@ export function ClientCampaignPrepDialog({
               <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Sequence</dt><dd className="font-medium">Opening, then day 6 and day 13</dd></div>
             </dl>
             <p className="mt-3 text-xs leading-5 text-muted-foreground">
-              To add the lead without sending, pause {campaign?.name || 'the campaign'} in Client Campaigns first.
+              To add the lead without sending, pause {chosenCampaign?.name || campaign?.name || 'the campaign'} in Client Campaigns first.
             </p>
             <DialogFooter className="mt-5">
               <Button type="button" variant="outline" onClick={() => setConfirmSendOpen(false)} disabled={prepareMutation.isPending}>Cancel</Button>
@@ -2456,9 +2478,9 @@ export function ClientCampaignPrepDialog({
                 {activeStep === 'pitch' && (draftHasUnsavedEdits
                   ? 'You have unsaved edits. Save them before sending this sequence to Client Campaign.'
                   : alreadyStaged && !submitWillSend
-                    ? `${hostName.trim() || 'This host'} is already a lead in ${campaign?.name || 'the campaign'}. Sending again replaces the sequence on that lead rather than adding a second one, and the campaign is paused so nothing goes out.`
+                    ? `${hostName.trim() || 'This host'} is already a lead in ${chosenCampaign?.name || campaign?.name || 'the campaign'}. Sending again replaces the sequence on that lead rather than adding a second one, and the campaign is paused so nothing goes out.`
                     : submitWillSend
-                      ? `All edits are saved. Sending ${alreadyStaged ? 'updates' : 'adds'} ${hostName.trim() || 'this host'} ${alreadyStaged ? 'in' : 'to'} ${campaign?.name || 'the campaign'}, and that campaign is live, so the opening email goes out on its next send window.`
+                      ? `All edits are saved. Sending ${alreadyStaged ? 'updates' : 'adds'} ${hostName.trim() || 'this host'} ${alreadyStaged ? 'in' : 'to'} ${chosenCampaign?.name || campaign?.name || 'the campaign'}, and that campaign is live, so the opening email goes out on its next send window.`
                       : 'All edits are saved. Sending adds this host to the campaign as a lead. The campaign is paused, so nothing goes out until you start outreach.')}
               </p>
               <div className="grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
@@ -2467,9 +2489,23 @@ export function ClientCampaignPrepDialog({
                     somebody forgot to finish. */}
                 {activeStep === 'pitch' && sendableCampaigns.length > 1 && (
                   <div className="flex items-center gap-2">
-                    <Label htmlFor="send-target-campaign" className="whitespace-nowrap text-xs text-muted-foreground">
-                      Send to
-                    </Label>
+                    {/* Its own provider: this dialog is rendered from several
+                        places, and depending on one mounted in App.tsx makes it
+                        crash wherever that is not an ancestor. */}
+                    <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Label htmlFor="send-target-campaign" className="cursor-help whitespace-nowrap text-xs text-muted-foreground underline decoration-dotted underline-offset-4">
+                          Send to
+                        </Label>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        Which campaign this host joins. Only campaigns created in this app
+                        appear here — one built in Instantly carries its own copy, so a pitch
+                        sent into it would go out as that copy instead of this one.
+                      </TooltipContent>
+                    </Tooltip>
+                    </TooltipProvider>
                     <Select
                       value={activeCampaignId ?? undefined}
                       onValueChange={setChosenCampaignId}

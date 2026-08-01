@@ -91,6 +91,26 @@ const GUIDANCE: Record<string, CampaignErrorGuidance> = {
     explanation: 'Only podcasts the client has approved can join a campaign. The pitch stays saved until approval arrives.',
     remedy: { kind: 'none' },
   },
+  CAMPAIGN_NOT_SENDABLE: {
+    title: 'That campaign sends copy of its own',
+    explanation: 'Its opening email does not read the pitch written here, so sending into it would deliver whatever copy is already in Instantly — not this one. Campaigns created from the client page carry the right sequence. The draft is saved and nothing was sent.',
+    remedy: { kind: 'link', label: 'Open Clients', module: 'clients' },
+  },
+  CAMPAIGN_NOT_LINKED: {
+    title: 'That campaign is not linked to this client',
+    explanation: 'Only campaigns linked to this client can receive their pitches, which is what keeps replies attributed to the right person. Linking happens on the client page.',
+    remedy: { kind: 'link', label: 'Open Clients', module: 'clients' },
+  },
+  CAMPAIGN_LINKS_UNAVAILABLE: {
+    title: 'The linked campaigns could not be checked',
+    explanation: 'The send stopped before creating anything rather than guessing which campaign was meant. Nothing was sent.',
+    remedy: { kind: 'retry', label: 'Try again' },
+  },
+  CAMPAIGN_LINK_FAILED: {
+    title: 'The campaign was created but not linked',
+    explanation: 'It exists in Instantly with the right sequence, but the link to this client was not saved, so it cannot receive pitches yet. Linking it on the client page finishes the job — do not create a second one.',
+    remedy: { kind: 'link', label: 'Open Clients', module: 'clients' },
+  },
   CAMPAIGN_NOT_ASSIGNED: {
     title: 'This client has no Instantly campaign yet',
     explanation: 'Pitches can be written and saved before a campaign exists, but joining one needs the campaign created first. Setup happens on Client Campaigns.',

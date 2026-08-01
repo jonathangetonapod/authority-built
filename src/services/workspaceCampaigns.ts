@@ -783,6 +783,12 @@ export interface ClientInstantlyCampaignLink {
   provisioned_at?: string | null
   /** Only a provisioned campaign may be chosen as a send target. */
   sendable?: boolean
+  /**
+   * Instantly's campaign status. 1 means live, so a send reaches the host on
+   * the next window — the dialog cannot warn about that without knowing the
+   * status of the campaign actually chosen, not the client's default one.
+   */
+  status?: number | null
 }
 
 export interface ClientLinkableInstantlyCampaign {

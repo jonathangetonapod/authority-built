@@ -98,6 +98,34 @@ describe('campaignErrorGuidance', () => {
     expect(campaignErrorGuidance('INSTANTLY_PLAN_REQUIRED')?.remedy).toEqual({ kind: 'none' })
   })
 
+  // The refusals this picker introduced. Sending into a campaign that carries
+  // its own copy is the one failure the whole design exists to prevent, so the
+  // operator has to be told which campaign can receive a pitch and why.
+  it('explains why a campaign cannot receive a pitch', () => {
+    const guidance = campaignErrorGuidance('CAMPAIGN_NOT_SENDABLE')
+
+    expect(guidance?.title).toBe('That campaign sends copy of its own')
+    expect(guidance?.explanation).toMatch(/does not read the pitch written here/)
+    expect(guidance?.remedy).toEqual({ kind: 'link', label: 'Open Clients', module: 'clients' })
+  })
+
+  it('sends an unlinked campaign to the page that links it', () => {
+    expect(campaignErrorGuidance('CAMPAIGN_NOT_LINKED')?.remedy).toEqual({
+      kind: 'link',
+      label: 'Open Clients',
+      module: 'clients',
+    })
+  })
+
+  // Created but unlinked leaves a real campaign in Instantly. Telling somebody
+  // to try again would build a second one.
+  it('does not offer a retry that would create a duplicate campaign', () => {
+    const guidance = campaignErrorGuidance('CAMPAIGN_LINK_FAILED')
+
+    expect(guidance?.remedy.kind).not.toBe('retry')
+    expect(guidance?.explanation).toMatch(/do not create a second one/)
+  })
+
   // A refusal added to the edge function later must degrade to the server's own
   // words rather than to guidance somebody invented for it.
   it('has nothing to say about a code it does not know', () => {

@@ -181,8 +181,36 @@ assert.match(
   'the provisioned variable list must still carry the sequence variables',
 )
 assert.ok(
-  (edge.match(/variables: \[\.\.\.PROVISIONED_CAMPAIGN_VARIABLES\]/gu) || []).length === 2,
+  (edge.match(/variables: \[\.\.\.PROVISIONED_CAMPAIGN_VARIABLES\]/gu) || []).length >= 2,
   'both the client campaign and a created campaign must register the variables',
+)
+// The gate that decides whether a host gets the written pitch or a stranger's
+// copy. It reads the live sequence, so it cannot be satisfied by a campaign
+// that merely looks app-built, and it must run BEFORE the lead is created —
+// after would mean refusing a send that already happened.
+assert.match(
+  edge,
+  /function sequenceRendersOurPitch[\s\S]*?includes\("\{\{goapPitchBody\}\}"\)/u,
+  'sendability must be read off the live sequence',
+)
+assert.match(
+  edge,
+  /if \(!providerCampaignValue\.rendersOurPitch\) \{[\s\S]*?"CAMPAIGN_NOT_SENDABLE"[\s\S]*?\}[\s\S]*?listProviderLeads\(/u,
+  'the sequence gate must run before any lead is created',
+)
+// Naming the client's own campaign must route through ensureProviderCampaign,
+// or the recovery from a campaign deleted in Instantly becomes unreachable
+// from the dialog — which always sends an id.
+assert.match(
+  edge,
+  /chosenProviderCampaignId === campaign\.instantly_campaign_id\s*\n?\s*\?\s*null\s*\n?\s*:\s*chosenProviderCampaignId/u,
+  'choosing the client own campaign must fall back to the self-healing path',
+)
+// Saving the link list must not demote a campaign this app built.
+assert.match(
+  edge,
+  /provisioned_at: existingProvisionedById\.get\(campaignId\) \?\? null/u,
+  'client-links-set must carry provisioned_at forward',
 )
 
 const connectionProjection = edge.match(/function connectionDto[\s\S]*?return \{([\s\S]*?)\n  \};\n\}/u)?.[1]

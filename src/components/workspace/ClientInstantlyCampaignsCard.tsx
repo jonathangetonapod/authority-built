@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { InstantlyAccountPicker } from '@/components/workspace/InstantlyAccountPicker'
 import {
   createClientInstantlyCampaign,
@@ -272,15 +273,26 @@ export const ClientInstantlyCampaignsCard = ({
                       at all, stated on the row rather than discovered at send
                       time by a refusal. */}
                   {checked && savedIds.has(campaign.id) && (
-                    sendableIds.has(campaign.id) ? (
-                      <Badge variant="outline" className="shrink-0 border-emerald-300 bg-emerald-50 text-emerald-800">
-                        <Send className="mr-1 h-3 w-3" />Sendable
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="shrink-0 bg-muted text-muted-foreground">
-                        Replies only
-                      </Badge>
-                    )
+                    <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        {sendableIds.has(campaign.id) ? (
+                          <Badge variant="outline" className="shrink-0 cursor-help border-emerald-300 bg-emerald-50 text-emerald-800">
+                            <Send className="mr-1 h-3 w-3" />Sendable
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="shrink-0 cursor-help bg-muted text-muted-foreground">
+                            Replies only
+                          </Badge>
+                        )}
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        {sendableIds.has(campaign.id)
+                          ? 'Built here, so its emails read the pitch written for each podcast. Pitches can be sent into it.'
+                          : 'Built in Instantly, so it carries its own copy. Replies still get attributed to this client, but a pitch sent into it would go out as that copy instead — use Create campaign to make one that can receive pitches.'}
+                      </TooltipContent>
+                    </Tooltip>
+                    </TooltipProvider>
                   )}
                   {linkedElsewhere && (
                     <Badge variant="outline" className="shrink-0 bg-muted text-muted-foreground">
