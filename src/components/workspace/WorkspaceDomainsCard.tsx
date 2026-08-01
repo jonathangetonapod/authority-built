@@ -389,12 +389,21 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
                   // agency types into their DNS host, and a paraphrase of it is
                   // a support ticket waiting to happen.
                   <div className="rounded-lg border bg-muted/20 p-3">
-                    <p className="text-xs font-medium">The agency creates this record at their DNS host:</p>
-                    {/* Beside the record itself, because this is what someone
-                        is staring at when a domain has not moved in an hour. */}
-                    <p className="mt-1 text-xs leading-5 text-amber-800">
-                      On Cloudflare, Proxy status has to be DNS only — a grey cloud, not orange.
+                    <p className="text-xs font-medium">
+                      {domain.status === 'provisioning'
+                        ? 'The record the agency created, now confirmed in place:'
+                        : 'The agency creates this record at their DNS host:'}
                     </p>
+                    {/* Beside the record itself, because this is what someone
+                        is staring at when a domain has not moved in an hour —
+                        and only while the record is still the thing missing.
+                        Once it has propagated, pointing at DNS is the same
+                        wrong turn this whole status split exists to stop. */}
+                    {domain.status === 'awaiting_dns' && (
+                      <p className="mt-1 text-xs leading-5 text-amber-800">
+                        On Cloudflare, Proxy status has to be DNS only — a grey cloud, not orange.
+                      </p>
+                    )}
                     <dl className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
                       <div><dt className="text-muted-foreground">Type</dt><dd className="mt-0.5 font-mono">{domain.dns_record_type}</dd></div>
                       <div className="min-w-0"><dt className="text-muted-foreground">Name</dt><dd className="mt-0.5 truncate font-mono">{domain.dns_record_name}</dd></div>

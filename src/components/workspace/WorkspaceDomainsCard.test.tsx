@@ -149,6 +149,18 @@ describe('WorkspaceDomainsCard', () => {
     expect(message).toMatch(/waiting longer never fixes it/i)
   })
 
+  // The state that used to be unreachable: DNS done, certificate pending. It
+  // must not send anyone back to DNS to fix what the provider has confirmed.
+  it('stops pointing at DNS once the record has propagated', async () => {
+    vi.mocked(listWorkspaceDomains).mockResolvedValue([domain({ status: 'provisioning' })])
+    renderCard()
+
+    expect(await screen.findByText(/now confirmed in place/i)).toBeInTheDocument()
+    expect(screen.getByText(/certificate is being issued/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Proxy status has to be DNS only/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Copy instructions/i })).not.toBeInTheDocument()
+  })
+
   it('tells someone looking at a failure what to do about it', async () => {
     vi.mocked(listWorkspaceDomains).mockResolvedValue([
       domain({ status: 'failed', last_error: 'The DNS record has not been created yet' }),

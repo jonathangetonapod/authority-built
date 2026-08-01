@@ -196,6 +196,27 @@ assert.match(admin, /dnsRecordType\(record\?\.recordType\)/u)
 // Railway's own reason distinguishes "add your DNS record" from "wait".
 assert.match(admin, /certificateErrorMessage/u)
 
+// Three states, not two. Everything that was not serving used to be written
+// down as awaiting_dns, so a domain whose record had propagated and was only
+// waiting on its certificate told the operator to go and fix DNS that was
+// already correct — and the provisioning state the UI already renders was
+// never once set.
+assert.match(admin, /const DNS_RECORD_PROPAGATED = 'DNS_RECORD_STATUS_PROPAGATED'/u)
+assert.match(admin, /status: 'active' \| 'provisioning' \| 'awaiting_dns'/u)
+assert.match(admin, /const dnsPropagated = record\?\.status === DNS_RECORD_PROPAGATED/u)
+assert.match(admin, /status: dnsPropagated \? 'provisioning' : 'awaiting_dns'/u)
+assert.match(admin, /The DNS record is in place\. Waiting for the certificate to be issued/u)
+// Only the provider's own PROPAGATED promotes out of waiting. An unrecognized
+// status must not be read as progress we cannot back up.
+assert.doesNotMatch(admin, /dnsPending/u)
+assert.doesNotMatch(admin, /const nextStatus = serving \? 'active' : 'awaiting_dns'/u)
+// serving stays derived, so activation, promotion, and the audit trail all
+// continue to mean "certificate valid" rather than "not waiting on DNS".
+assert.match(admin, /const serving = nextStatus === 'active'/u)
+// A domain still has to be genuinely serving before links can be built from
+// it — provisioning is progress, not a green light.
+assert.match(admin, /domain\.status !== 'active'[\s\S]{0,200}DOMAIN_NOT_SERVING/u)
+
 // Client-facing links carry the agency's hostname; the agency's own /app does
 // not, because a client is never meant to open it.
 const linkOrigin = readFileSync('supabase/functions/_shared/workspaceOrigin.ts', 'utf8')

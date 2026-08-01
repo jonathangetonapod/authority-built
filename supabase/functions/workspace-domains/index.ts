@@ -41,6 +41,11 @@ interface RailwayDomain {
 const TRAFFIC_ROUTE = 'DNS_RECORD_PURPOSE_TRAFFIC_ROUTE'
 // The certificate enum is prefixed. There is no bare 'ISSUED'.
 const CERTIFICATE_VALID = 'CERTIFICATE_STATUS_TYPE_VALID'
+// The provider's own word that the record is live. Only this promotes a domain
+// out of "waiting for DNS" — every other value, including one Railway adds
+// later that we have never seen, leaves it waiting rather than claiming
+// progress we cannot back up.
+const DNS_RECORD_PROPAGATED = 'DNS_RECORD_STATUS_PROPAGATED'
 
 function trafficRecord(records: unknown): Record<string, unknown> | null {
   if (!Array.isArray(records)) return null
@@ -183,9 +188,24 @@ async function deleteRailwayDomain(providerDomainId: string): Promise<void> {
   )
 }
 
-async function railwayDomainServing(
+/**
+ * Where the domain has actually got to, in three states rather than two.
+ *
+ * This used to answer serving or not-serving, and everything that was not
+ * serving got written down as awaiting_dns. So a domain whose record had
+ * propagated and was only waiting on a certificate reported "Waiting for DNS"
+ * with a reason that told the operator to go and fix a DNS record that was
+ * already correct. The provisioning state existed in the UI the whole time
+ * and nothing ever set it.
+ *
+ * Only PROPAGATED promotes to provisioning. Anything else — requires-update,
+ * an unrecognized status, or no record at all — stays awaiting_dns, because
+ * the honest answer when the provider has not confirmed the record is that we
+ * are still waiting on the record.
+ */
+async function railwayDomainProgress(
   providerDomainId: string,
-): Promise<{ serving: boolean; error: string | null }> {
+): Promise<{ status: 'active' | 'provisioning' | 'awaiting_dns'; error: string | null }> {
   const { projectId } = railwayTarget()
   const data = await railwayGraphql(
     `query CustomDomain($id: String!, $projectId: String!) {
@@ -202,8 +222,7 @@ async function railwayDomainServing(
   )
   const domain = (data.customDomain ?? {}) as Record<string, unknown>
   const status = (domain.status ?? {}) as Record<string, unknown>
-  const serving = status.certificateStatus === CERTIFICATE_VALID
-  if (serving) return { serving: true, error: null }
+  if (status.certificateStatus === CERTIFICATE_VALID) return { status: 'active', error: null }
   // Railway's own message says whether DNS is missing or the certificate is
   // still issuing. That is the difference between "wait" and "fix your DNS",
   // and guessing it here would be worse than saying nothing.
@@ -211,13 +230,14 @@ async function railwayDomainServing(
     ? status.certificateErrorMessage
     : null
   const record = trafficRecord(status.dnsRecords)
-  const dnsPending = record?.status === 'DNS_RECORD_STATUS_REQUIRES_UPDATE'
+  const dnsPropagated = record?.status === DNS_RECORD_PROPAGATED
   return {
-    serving: false,
+    status: dnsPropagated ? 'provisioning' : 'awaiting_dns',
     error: providerMessage
-      ?? (dnsPending
-        ? 'The DNS record has not been created yet, or has not propagated'
-        : 'Waiting for the certificate to be issued'),
+      ?? (dnsPropagated
+        // Named as done so nobody is sent back to DNS to fix what is correct.
+        ? 'The DNS record is in place. Waiting for the certificate to be issued'
+        : 'The DNS record has not been created yet, or has not propagated'),
   }
 }
 
@@ -349,8 +369,8 @@ serve(async (req) => {
         throw new HttpError(409, 'DOMAIN_DISABLED', 'That domain is disabled')
       }
 
-      const { serving, error: servingError } = await railwayDomainServing(domain.provider_domain_id)
-      const nextStatus = serving ? 'active' : 'awaiting_dns'
+      const { status: nextStatus, error: servingError } = await railwayDomainProgress(domain.provider_domain_id)
+      const serving = nextStatus === 'active'
       // A workspace's first domain to come alive becomes the one links use.
       // Setting primary was a separate click that existed for exactly one
       // reason — a second domain must not steal links from a working first —
