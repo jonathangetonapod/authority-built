@@ -75,7 +75,10 @@ describe('checkDomainInput', () => {
 
 describe('describeDomainStatus', () => {
   it('names the next move, including when there is nothing to do', () => {
-    expect(describeDomainStatus('awaiting_dns')).toMatch(/nothing to do/i)
+    // Never a flat "just wait": a proxied record looks identical to one that
+    // has not propagated, and no amount of waiting resolves it.
+    expect(describeDomainStatus('awaiting_dns')).toMatch(/Proxied/i)
+    expect(describeDomainStatus('awaiting_dns')).toMatch(/DNS only/i)
     expect(describeDomainStatus('provisioning')).toMatch(/automatic/i)
     expect(describeDomainStatus('active')).toMatch(/live/i)
     expect(describeDomainStatus('failed')).toMatch(/press Check/i)

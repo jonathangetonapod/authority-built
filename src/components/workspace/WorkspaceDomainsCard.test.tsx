@@ -66,7 +66,7 @@ describe('WorkspaceDomainsCard', () => {
     renderCard()
     expect(await screen.findByText('How this works')).toBeInTheDocument()
     expect(screen.getByText(/Use a subdomain, not their root domain/i)).toBeInTheDocument()
-    expect(screen.getByText(/the record stays DNS only/i)).toBeInTheDocument()
+    expect(screen.getByText(/Proxy status must be DNS only/i)).toBeInTheDocument()
     expect(screen.getByText(/Every workspace serves from getonapod.com/i)).toBeInTheDocument()
   })
 
@@ -122,9 +122,31 @@ describe('WorkspaceDomainsCard', () => {
     renderCard()
 
     expect(await screen.findByText(/Waiting on the agency/i)).toBeInTheDocument()
-    expect(screen.getByText(/nothing to do here but leave it/i)).toBeInTheDocument()
     expect(screen.getByText('target.up.railway.app')).toBeInTheDocument()
+    // Beside the record, where someone stares when it has not moved.
+    expect(screen.getByText(/Proxy status has to be DNS only/i)).toBeInTheDocument()
     expect(screen.getByText(/Check is only there if you want an answer sooner/i)).toBeInTheDocument()
+  })
+
+  // The copied message is the artifact that leaves the product and does the
+  // actual work, so the step that most often gets missed has to be in it.
+  it('puts the Cloudflare step in the message sent to the agency', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    vi.mocked(listWorkspaceDomains).mockResolvedValue([domain()])
+    renderCard()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Copy instructions/i }))
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+
+    const message: string = writeText.mock.calls[0][0]
+    expect(message).toContain('CNAME')
+    expect(message).toContain('podcasts.theiragency.com')
+    expect(message).toContain('target.up.railway.app')
+    expect(message).toMatch(/"DNS only", not "Proxied"/)
+    expect(message).toMatch(/grey, not orange/)
+    // Says why waiting will not save them, because that is what they will do.
+    expect(message).toMatch(/waiting longer never fixes it/i)
   })
 
   it('tells someone looking at a failure what to do about it', async () => {

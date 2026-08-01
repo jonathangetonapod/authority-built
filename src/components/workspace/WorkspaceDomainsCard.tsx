@@ -177,7 +177,12 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
       '',
       'This is a new record on its own subdomain — it does not touch your website, your email, or any record you already have.',
       '',
-      'If your DNS is on Cloudflare, leave this record set to DNS only rather than proxied. A proxied record hides the value we check for, and the certificate will not issue.',
+      'IF YOUR DNS IS ON CLOUDFLARE, ONE MORE STEP:',
+      '',
+      '  Set Proxy status on this record to "DNS only", not "Proxied".',
+      '  The cloud icon beside the record has to be grey, not orange.',
+      '',
+      'This is the step that catches almost everyone. A proxied record makes Cloudflare answer for the address itself, so our certificate can never be issued — and it looks exactly like the record is still propagating, so waiting longer never fixes it. Nothing else about your Cloudflare setup changes.',
       '',
       'Nothing else changes on your side. Once the record exists, the certificate issues automatically — usually within the hour — and your client links switch to your domain. Reply when it is in and we will confirm it is live.',
     ].join('\n')
@@ -231,9 +236,10 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
               marketing site with it.
             </p>
             <p className="text-xs leading-5 text-muted-foreground">
-              <span className="font-medium text-foreground">If they use Cloudflare, the record stays DNS only.</span> A proxied
-              record hides the value our host checks for, so the certificate never issues and the domain sits on
-              Waiting for DNS looking like slow propagation.
+              <span className="font-medium text-foreground">If they use Cloudflare, Proxy status must be DNS only.</span> This
+              is the one that catches almost everyone. In their Cloudflare DNS list the cloud beside the record has to be
+              grey, not orange — a proxied record makes Cloudflare answer for the address itself, so the certificate can
+              never issue. It looks identical to slow propagation, which is why waiting never clears it.
             </p>
           </div>
         </div>
@@ -384,6 +390,11 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
                   // a support ticket waiting to happen.
                   <div className="rounded-lg border bg-muted/20 p-3">
                     <p className="text-xs font-medium">The agency creates this record at their DNS host:</p>
+                    {/* Beside the record itself, because this is what someone
+                        is staring at when a domain has not moved in an hour. */}
+                    <p className="mt-1 text-xs leading-5 text-amber-800">
+                      On Cloudflare, Proxy status has to be DNS only — a grey cloud, not orange.
+                    </p>
                     <dl className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
                       <div><dt className="text-muted-foreground">Type</dt><dd className="mt-0.5 font-mono">{domain.dns_record_type}</dd></div>
                       <div className="min-w-0"><dt className="text-muted-foreground">Name</dt><dd className="mt-0.5 truncate font-mono">{domain.dns_record_name}</dd></div>
