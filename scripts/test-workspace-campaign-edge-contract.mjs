@@ -204,6 +204,25 @@ assert.match(
   'the fallback zone must be a supported one',
 )
 
+// A settings save must not rewrite copy it did not write. Changing a daily
+// limit or assigning a mailbox used to PATCH the whole configuration, sequence
+// included, which silently replaced the three emails on any campaign built by
+// hand in Instantly.
+assert.match(
+  edge,
+  /if \(options\?\.includeSequence === false\) delete configuration\.sequences;/u,
+  'the sequence must be omittable from a settings save',
+)
+assert.ok(
+  (edge.match(/includeSequence: existing\.rendersOurPitch/gu) || []).length === 2,
+  'both the settings save and the mailbox assignment must gate on the live sequence',
+)
+assert.doesNotMatch(
+  edge,
+  /body: campaignConfiguration\(nextCampaign\) \}/u,
+  'the settings save must not send the sequence unconditionally',
+)
+
 // Follow-ups reply into the opening thread. Instantly threads a step with no
 // subject as a reply; giving it one starts a separate conversation, so a host
 // who ignored the pitch received three unrelated emails instead of one thread.

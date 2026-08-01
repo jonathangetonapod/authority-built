@@ -1560,8 +1560,21 @@ const PROVISIONED_CAMPAIGN_VARIABLES = [
   "goapTargetId",
 ] as const;
 
-function campaignConfiguration(campaign: CampaignRow): Record<string, unknown> {
-  return provisionedCampaignConfiguration({
+/**
+ * The provider config for a settings save.
+ *
+ * `includeSequence` decides whether the three steps go with it. Sending them
+ * keeps an app-built campaign's cadence in step with what the form shows, which
+ * is how an edited follow-up delay reaches Instantly at all. Sending them to a
+ * campaign somebody wrote by hand overwrites their copy — and it happened on a
+ * daily-limit change or a mailbox assignment, neither of which reads like an
+ * instruction to replace three emails.
+ */
+function campaignConfiguration(
+  campaign: CampaignRow,
+  options?: { includeSequence?: boolean },
+): Record<string, unknown> {
+  const configuration = provisionedCampaignConfiguration({
     providerName: providerCampaignName(campaign),
     timezone: campaign.timezone,
     dailyLimit: campaign.daily_limit,
@@ -1572,6 +1585,8 @@ function campaignConfiguration(campaign: CampaignRow): Record<string, unknown> {
     followUpOneDelayDays: campaign.follow_up_one_delay_days,
     followUpTwoDelayDays: campaign.follow_up_two_delay_days,
   });
+  if (options?.includeSequence === false) delete configuration.sequences;
+  return configuration;
 }
 
 /** Instantly's schedule is keyed "0".."6" starting at Sunday. */
@@ -6306,14 +6321,34 @@ serve(async (req) => {
       let providerStatus = campaign.instantly_campaign_status;
       if (campaign.instantly_campaign_id) {
         const apiKey = await integrationApiKey(connection);
-        const updated = providerCampaign(
-          await instantlyRequest<unknown>(
-            apiKey,
-            `/campaigns/${encodeURIComponent(campaign.instantly_campaign_id)}`,
-            { method: "PATCH", body: campaignConfiguration(nextCampaign) },
-          ),
+        // Read before writing. Whether this campaign carries our sequence or
+        // somebody else's decides what a settings save is allowed to replace,
+        // and only the live campaign can answer that.
+        const existing = await readProviderCampaignOrForget(
+          context,
+          campaign,
+          apiKey,
+          campaign.instantly_campaign_id,
         );
-        providerStatus = updated.status;
+        if (existing) {
+          const updated = providerCampaign(
+            await instantlyRequest<unknown>(
+              apiKey,
+              `/campaigns/${encodeURIComponent(campaign.instantly_campaign_id)}`,
+              {
+                method: "PATCH",
+                body: campaignConfiguration(nextCampaign, {
+                  includeSequence: existing.rendersOurPitch,
+                }),
+              },
+            ),
+          );
+          providerStatus = updated.status;
+        } else {
+          // The mapping was dead and has just been cleared. The settings still
+          // save; the next send builds the campaign they describe.
+          providerStatus = null;
+        }
       }
       const { data, error } = await context.admin
         .from("workspace_client_campaigns")
@@ -6434,20 +6469,31 @@ serve(async (req) => {
       let providerStatus = campaign.instantly_campaign_status;
       if (campaign.instantly_campaign_id) {
         const apiKey = await integrationApiKey(connection);
-        const updated = providerCampaign(
-          await instantlyRequest<unknown>(
-            apiKey,
-            `/campaigns/${encodeURIComponent(campaign.instantly_campaign_id)}`,
-            {
-              method: "PATCH",
-              body: campaignConfiguration({
-                ...campaign,
-                sender_accounts: next,
-              }),
-            },
-          ),
+        // Assigning a mailbox is not an instruction to rewrite three emails.
+        const existing = await readProviderCampaignOrForget(
+          context,
+          campaign,
+          apiKey,
+          campaign.instantly_campaign_id,
         );
-        providerStatus = updated.status;
+        if (existing) {
+          const updated = providerCampaign(
+            await instantlyRequest<unknown>(
+              apiKey,
+              `/campaigns/${encodeURIComponent(campaign.instantly_campaign_id)}`,
+              {
+                method: "PATCH",
+                body: campaignConfiguration({
+                  ...campaign,
+                  sender_accounts: next,
+                }, { includeSequence: existing.rendersOurPitch }),
+              },
+            ),
+          );
+          providerStatus = updated.status;
+        } else {
+          providerStatus = null;
+        }
       }
       const { error } = await context.admin
         .from("workspace_client_campaigns")
