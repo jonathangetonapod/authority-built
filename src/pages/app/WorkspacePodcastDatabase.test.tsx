@@ -99,7 +99,7 @@ describe('WorkspacePodcastDatabase', () => {
     expect(screen.queryByText('Workspaces building it')).not.toBeInTheDocument()
     expect(screen.getByText('The Founder Show')).toBeInTheDocument()
     expect(screen.getByText('show@example.com')).toBeInTheDocument()
-    expect(screen.getByText('Free · Podscan')).toBeInTheDocument()
+    expect(screen.getByText('Public listing')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Email availability' })).toHaveTextContent('All podcasts')
     expect(screen.getByRole('combobox', { name: 'Publishing recency' })).toHaveTextContent('Active shows')
     expect(screen.getByRole('combobox', { name: 'Audience size' })).toHaveTextContent('Any audience size')
