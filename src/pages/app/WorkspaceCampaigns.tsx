@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertCircle,
   ArrowRight,
@@ -47,7 +47,6 @@ import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { getClientShortlist, type ClientShortlistPodcast } from '@/services/clientShortlist'
 import {
   connectWorkspaceInstantly,
   disconnectWorkspaceInstantly,
@@ -58,11 +57,7 @@ import {
   type WorkspaceClientCampaign,
   type WorkspaceInstantlyIntegration,
 } from '@/services/workspaceCampaigns'
-import {
-  getWorkspaceClientDetail,
-  type WorkspaceClient,
-  type WorkspaceClientDetail,
-} from '@/services/clients'
+import { type WorkspaceClient } from '@/services/clients'
 
 type CampaignFilter = 'all' | 'attention' | 'draft' | 'active' | 'paused' | 'completed'
 type CampaignStatus = 'Needs attention' | 'Draft' | 'Active' | 'Paused' | 'Completed'
@@ -76,17 +71,21 @@ interface WorkspaceCampaignsProps {
   onRetryClients: () => void
 }
 
+/**
+ * What the operator should do next, and where that work actually happens.
+ * A row that says "Write 3 pitches" and makes you go find them is a report;
+ * one that takes you to the three is a worklist.
+ */
+interface CampaignNextAction {
+  label: string
+  href: string
+}
+
 interface CampaignSummary {
   client: WorkspaceClient
-  detail: WorkspaceClientDetail | null
-  shortlist: ClientShortlistPodcast[]
-  loading: boolean
-  error: boolean
   campaign: WorkspaceClientCampaign | null
   status: CampaignStatus
-  approvedPodcasts: number
-  missingContacts: number
-  nextAction: string
+  nextAction: CampaignNextAction
 }
 
 const filterLabels: Array<{ value: CampaignFilter; label: string }> = [
@@ -116,12 +115,9 @@ function instantlyStatusLabel(status: number): CampaignStatus {
 
 function summarizeCampaign(
   client: WorkspaceClient,
-  data: { detail: WorkspaceClientDetail; podcasts: ClientShortlistPodcast[] } | undefined,
   campaign: WorkspaceClientCampaign | null,
-  loading: boolean,
-  error: boolean,
+  baseHref: string,
 ): CampaignSummary {
-  const shortlist = data?.podcasts || []
   const missingContacts = campaign?.target_counts.needs_contact || 0
   const status: CampaignStatus = campaign?.status === 'attention'
     ? 'Needs attention'
@@ -136,34 +132,28 @@ function summarizeCampaign(
   const needsPitchCount = campaign?.target_counts.needs_pitch || 0
   const stagedCount = campaign?.target_counts.staged || 0
   const stagedSendingCount = campaign?.target_counts.staged_sending || 0
-  const nextAction = campaign?.last_error
-    ? 'Resolve campaign issue'
+  // Podcasts tab for work on leads already in the campaign; Options for a
+  // provider fault; the finder for writing a pitch, which is where Write Pitch
+  // lives — a podcast reaches the campaign only from there.
+  const podcastsHref = `${baseHref}/client-campaigns/${client.id}?tab=leads`
+  const writeHref = `${baseHref}/podcast-finder?client=${encodeURIComponent(client.id)}`
+  const nextAction: CampaignNextAction = campaign?.last_error
+    ? { label: 'Resolve campaign issue', href: `${baseHref}/client-campaigns/${client.id}?tab=options` }
     : stagedSendingCount > 0
-      ? `${stagedSendingCount} pitch${stagedSendingCount === 1 ? '' : 'es'} already sending`
+      ? { label: `${stagedSendingCount} pitch${stagedSendingCount === 1 ? '' : 'es'} already sending`, href: podcastsHref }
       : stagedCount > 0
-      ? `Launch ${stagedCount} staged pitch${stagedCount === 1 ? '' : 'es'}`
+      ? { label: `Launch ${stagedCount} staged pitch${stagedCount === 1 ? '' : 'es'}`, href: podcastsHref }
       : readyCount > 0
-      ? `Launch ${readyCount} approved pitch${readyCount === 1 ? '' : 'es'}`
+      ? { label: `Launch ${readyCount} approved pitch${readyCount === 1 ? '' : 'es'}`, href: podcastsHref }
       : needsPitchCount > 0
-        ? `Write ${needsPitchCount} pitch${needsPitchCount === 1 ? '' : 'es'}`
+        ? { label: `Write ${needsPitchCount} pitch${needsPitchCount === 1 ? '' : 'es'}`, href: writeHref }
         : missingContacts > 0
-      ? `Find ${missingContacts} contact${missingContacts === 1 ? '' : 's'}`
+      ? { label: `Find ${missingContacts} contact${missingContacts === 1 ? '' : 's'}`, href: podcastsHref }
       : (campaign?.target_counts.total || 0) > 0
-        ? 'Review custom pitches'
-        : 'Send a finished pitch'
+        ? { label: 'Review custom pitches', href: podcastsHref }
+        : { label: 'Send a finished pitch', href: writeHref }
 
-  return {
-    client,
-    detail: data?.detail || null,
-    shortlist,
-    loading,
-    error,
-    campaign,
-    status,
-    approvedPodcasts: campaign?.target_counts.total || 0,
-    missingContacts,
-    nextAction,
-  }
+  return { client, campaign, status, nextAction }
 }
 
 function CampaignStatusBadge({ status }: { status: CampaignStatus }) {
@@ -268,33 +258,15 @@ const WorkspaceCampaigns = ({
     const client = clientById.get(campaign.client_id)
     return client ? [{ campaign, client }] : []
   }), [clientById, providerBackedCampaigns])
-  const campaignQueries = useQueries({
-    queries: campaignEntries.map(({ client }) => ({
-      queryKey: ['workspace-campaign-layout', workspaceId, client.id],
-      queryFn: async () => {
-        const [detail, shortlist] = await Promise.all([
-          getWorkspaceClientDetail(workspaceId, client.id),
-          getClientShortlist(workspaceId, client.id),
-        ])
-        if (
-          detail.workspace.id !== workspaceId
-          || detail.client.id !== client.id
-          || shortlist.client.id !== client.id
-        ) {
-          throw new Error('The campaign summary did not match the workspace client.')
-        }
-        return { detail, podcasts: shortlist.podcasts }
-      },
-      retry: false,
-      staleTime: 30_000,
-    })),
-  })
-  const summaries = campaignEntries.map(({ campaign, client }, index) => summarizeCampaign(
+  // Everything this table shows comes from the overview above. It used to also
+  // fetch each client's detail and shortlist per row — two requests per client,
+  // whose payloads were never rendered. Their only visible effect was a spinner
+  // per row and, when one failed, an "Unavailable" badge on a campaign whose
+  // data was loaded and fine.
+  const summaries = campaignEntries.map(({ campaign, client }) => summarizeCampaign(
     client,
-    campaignQueries[index]?.data,
     campaign,
-    Boolean(campaignQueries[index]?.isLoading),
-    Boolean(campaignQueries[index]?.error),
+    baseHref,
   ))
 
   const [search, setSearch] = useState('')
@@ -657,7 +629,10 @@ const WorkspaceCampaigns = ({
           </div>
         </div>
 
-        {clientsLoading ? (
+        {/* The overview is what fills this table, so waiting on clients alone
+            flashed "No Instantly campaigns assigned yet" at anyone whose client
+            list resolved first. */}
+        {clientsLoading || campaignOverviewQuery.isLoading ? (
           <div className="flex min-h-64 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>
         ) : activeClients.length === 0 ? (
           <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
@@ -685,20 +660,24 @@ const WorkspaceCampaigns = ({
               {filteredSummaries.map((summary) => {
                 const metrics = campaignListMetrics(summary)
                 return (
-                  <Link key={summary.client.id} to={`${baseHref}/client-campaigns/${summary.client.id}`} className="block rounded-xl border p-4 transition-colors hover:bg-muted/30">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0"><p className="truncate font-semibold">{summary.campaign?.name || `${summary.client.name} Podcast Outreach`}</p><p className="truncate text-xs text-muted-foreground">{summary.client.name}</p></div>
-                      {summary.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CampaignStatusBadge status={summary.status} />}
-                    </div>
+                  <div key={summary.client.id} className="rounded-xl border p-4">
+                    <Link to={`${baseHref}/client-campaigns/${summary.client.id}`} className="block transition-colors hover:text-primary">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0"><p className="truncate font-semibold">{summary.campaign?.name || `${summary.client.name} Podcast Outreach`}</p><p className="truncate text-xs text-muted-foreground">{summary.client.name}</p></div>
+                        <CampaignStatusBadge status={summary.status} />
+                      </div>
+                    </Link>
                     <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                       <div><p className="text-xs text-muted-foreground">Progress</p><p className="mt-1 font-medium">{metrics.progress === null ? '—' : `${metrics.progress}%`}</p></div>
                       <div><p className="text-xs text-muted-foreground">Sent</p><p className="mt-1 font-medium">{metrics.sent.toLocaleString()}</p></div>
-                      <div><p className="text-xs text-muted-foreground">Replies</p><p className="mt-1 font-medium">{metrics.replies === null ? '—' : metrics.replies.toLocaleString()}</p></div>
-                      <div><p className="text-xs text-muted-foreground">Positive replies</p><p className="mt-1 font-medium">{metrics.positiveReplies === null ? '—' : metrics.positiveReplies.toLocaleString()}</p></div>
+                      <div className="col-span-2"><p className="text-xs text-muted-foreground">Replies</p><p className="mt-1 font-medium">{metrics.replies === null ? '—' : `${metrics.replies.toLocaleString()}${metrics.positiveReplies === null ? '' : ` · ${metrics.positiveReplies.toLocaleString()} interested`}`}</p></div>
                       <div><p className="text-xs text-muted-foreground">Staged in Instantly</p><p className={metrics.stagedSending > 0 ? 'mt-1 font-semibold text-amber-700' : 'mt-1 font-medium'}>{metrics.staged}{metrics.stagedSending > 0 ? ` · ${metrics.stagedSending} sending` : ''}</p></div>
-                      <div className="col-span-2"><p className="text-xs text-muted-foreground">Next step</p><p className="mt-1 font-medium text-primary">{summary.error ? 'Campaign data unavailable' : summary.nextAction}</p></div>
                     </div>
-                  </Link>
+                    <Link to={summary.nextAction.href} className="mt-4 flex items-center justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2 text-sm font-medium text-primary hover:bg-muted">
+                      <span><span className="block text-xs font-normal text-muted-foreground">Next step</span>{summary.nextAction.label}</span>
+                      <ArrowRight className="h-4 w-4 shrink-0" />
+                    </Link>
+                  </div>
                 )
               })}
             </div>
@@ -710,10 +689,13 @@ const WorkspaceCampaigns = ({
                     <TableHead className="min-w-64">Name</TableHead>
                     <TableHead className="min-w-44">Client</TableHead>
                     <TableHead>Status</TableHead>
+                    {/* The instruction, not just the history. It was mobile-only
+                        before, so the operators on a laptop got seven
+                        backward-looking metrics and nothing to act on. */}
+                    <TableHead className="min-w-48">Next step</TableHead>
                     <TableHead className="min-w-36">Progress</TableHead>
                     <TableHead>Sent</TableHead>
-                    <TableHead>Replies</TableHead>
-                    <TableHead>Positive replies</TableHead>
+                    <TableHead className="min-w-36">Replies</TableHead>
                     <TableHead className="min-w-32">Staged</TableHead>
                     <TableHead className="w-20 text-right">Open</TableHead>
                   </TableRow>
@@ -727,11 +709,16 @@ const WorkspaceCampaigns = ({
                           <Link to={`${baseHref}/client-campaigns/${summary.client.id}`} className="font-semibold hover:text-primary hover:underline">{summary.campaign?.name || `${summary.client.name} Podcast Outreach`}</Link>
                         </TableCell>
                         <TableCell><Link to={`${baseHref}/clients/${summary.client.id}`} className="text-sm font-medium text-muted-foreground hover:text-primary hover:underline">{summary.client.name}</Link></TableCell>
-                        <TableCell>{summary.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : summary.error ? <Badge variant="destructive">Unavailable</Badge> : <CampaignStatusBadge status={summary.status} />}</TableCell>
+                        <TableCell><CampaignStatusBadge status={summary.status} /></TableCell>
+                        <TableCell>
+                          <Link to={summary.nextAction.href} className="text-sm font-medium text-primary hover:underline">{summary.nextAction.label}</Link>
+                        </TableCell>
                         <TableCell>{metrics.progress === null ? <span className="text-muted-foreground">—</span> : <div className="flex items-center gap-2"><Progress value={metrics.progress} className="h-1.5 w-20" aria-label={`${summary.client.name} campaign progress`} /><span className="text-sm font-medium">{metrics.progress}%</span></div>}</TableCell>
                         <TableCell>{metrics.sent.toLocaleString()}</TableCell>
-                        <TableCell>{metrics.replies === null ? <span className="text-muted-foreground">—</span> : metrics.replies.toLocaleString()}</TableCell>
-                        <TableCell>{metrics.positiveReplies === null ? <span className="text-muted-foreground">—</span> : metrics.positiveReplies.toLocaleString()}</TableCell>
+                        {/* Replies and positive replies were two columns for one
+                            question. Merged, they read as an outcome and leave
+                            room for Next step without widening the table. */}
+                        <TableCell>{metrics.replies === null ? <span className="text-muted-foreground">—</span> : <span>{metrics.replies.toLocaleString()}{metrics.positiveReplies === null ? '' : <span className="text-muted-foreground"> · {metrics.positiveReplies.toLocaleString()} interested</span>}</span>}</TableCell>
                         <TableCell>
                           {metrics.staged === 0
                             ? <span className="text-muted-foreground">—</span>

@@ -18,7 +18,7 @@ import {
   Sparkles,
   UserRound,
 } from 'lucide-react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { WorkspaceLayout, type PlatformWorkspaceConfig } from '@/components/workspace/WorkspaceLayout'
 import { Badge } from '@/components/ui/badge'
@@ -188,8 +188,25 @@ function scheduleWindowLabel(schedule: WorkspaceCampaignProviderSchedule | null)
   return `${label(schedule.from)}–${label(schedule.to)}`
 }
 
+/** Allowlisted so a hand-edited ?tab= cannot blank the page. */
+const CAMPAIGN_TABS = ['analytics', 'leads', 'sequences', 'schedule', 'options']
+
 const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetailProps) => {
   const { clientId: routeClientId = '' } = useParams<{ clientId: string }>()
+  // The campaign list links straight to the work: "Write 3 pitches" opens the
+  // finder, "Launch 2 staged" opens Podcasts. Without the tab in the URL every
+  // one of those links landed on Analytics and left the operator to navigate.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab') || ''
+  const activeTab = CAMPAIGN_TABS.includes(requestedTab) ? requestedTab : 'analytics'
+  const selectTab = (tab: string) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      if (tab === 'analytics') next.delete('tab')
+      else next.set('tab', tab)
+      return next
+    }, { replace: true })
+  }
   const { user, workspace } = useAuth()
   const queryClient = useQueryClient()
   const isPlatformWorkspace = platformWorkspaceId !== undefined
@@ -445,7 +462,7 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
           </div>
         </header>
 
-        <Tabs defaultValue="analytics" className="space-y-4">
+        <Tabs value={activeTab} onValueChange={selectTab} className="space-y-4">
           <div className="overflow-x-auto pb-1">
             <TabsList className="h-auto min-w-max justify-start" aria-label="Campaign sections">
               <TabsTrigger value="analytics">Analytics</TabsTrigger>

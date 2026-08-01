@@ -200,12 +200,65 @@ describe('WorkspaceCampaigns', () => {
     expect(within(table).getByRole('columnheader', { name: 'Progress' })).toBeInTheDocument()
     expect(within(table).getByRole('columnheader', { name: 'Sent' })).toBeInTheDocument()
     expect(within(table).getByRole('columnheader', { name: 'Replies' })).toBeInTheDocument()
-    expect(within(table).getByRole('columnheader', { name: 'Positive replies' })).toBeInTheDocument()
+    // Replies and positive replies were two columns answering one question.
+    expect(within(table).queryByRole('columnheader', { name: 'Positive replies' })).not.toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Next step' })).toBeInTheDocument()
     expect(within(table).getByText('12')).toBeInTheDocument()
     expect(within(table).queryByText('active@example.com')).not.toBeInTheDocument()
     expect(screen.getByText(/Replies marked interested · 22% of 9 contacted replied/)).toBeInTheDocument()
     expect(screen.queryByText('Ready to launch')).not.toBeInTheDocument()
     expect(screen.queryByText(/Feb 16–22|podcasts in view|Current wave/i)).not.toBeInTheDocument()
+  })
+
+  // The table used to fetch each client's detail and shortlist — two requests
+  // per row — and render neither. The cost was a spinner per row and, on a
+  // failure, an "Unavailable" badge over a campaign that had loaded fine.
+  it('renders the whole table from the overview without a request per row', async () => {
+    mockedOverview.mockResolvedValue({
+      ...campaignOverview,
+      integration: connectedIntegration,
+      campaigns: [persistedCampaign],
+    })
+    renderCampaigns()
+
+    const table = await screen.findByRole('table')
+    expect(within(table).getByRole('link', { name: `${client.name} Podcast Outreach` })).toBeInTheDocument()
+    expect(mockedDetail).not.toHaveBeenCalled()
+    expect(mockedShortlist).not.toHaveBeenCalled()
+    expect(within(table).queryByText('Unavailable')).not.toBeInTheDocument()
+  })
+
+  it('sends the next step to the place that work is done', async () => {
+    mockedOverview.mockResolvedValue({
+      ...campaignOverview,
+      integration: connectedIntegration,
+      campaigns: [{
+        ...persistedCampaign,
+        target_counts: { ...persistedCampaign.target_counts, needs_pitch: 3, needs_contact: 0, staged: 0, staged_sending: 0, ready: 0 },
+      }],
+    })
+    renderCampaigns()
+
+    // Writing a pitch happens in the finder, not on the campaign page.
+    const table = await screen.findByRole('table')
+    expect(within(table).getByRole('link', { name: 'Write 3 pitches' }))
+      .toHaveAttribute('href', `/app/podcast-finder?client=${clientId}`)
+  })
+
+  it('points a launch step at the podcast list inside the campaign', async () => {
+    mockedOverview.mockResolvedValue({
+      ...campaignOverview,
+      integration: connectedIntegration,
+      campaigns: [{
+        ...persistedCampaign,
+        target_counts: { ...persistedCampaign.target_counts, staged: 2, staged_sending: 0, needs_pitch: 0, needs_contact: 0 },
+      }],
+    })
+    renderCampaigns()
+
+    const table = await screen.findByRole('table')
+    expect(within(table).getByRole('link', { name: 'Launch 2 staged pitches' }))
+      .toHaveAttribute('href', `/app/client-campaigns/${clientId}?tab=leads`)
   })
 
   it('shows the bounce rate that says a sending domain is burning', async () => {

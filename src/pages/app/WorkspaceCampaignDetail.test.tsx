@@ -85,12 +85,12 @@ const activeCampaign = {
   id: 'campaign-one', workspace_id: workspaceId, client_id: clientId, name: 'Dallas Fontaine Podcast Outreach', status: 'active', instantly_campaign_id: 'instantly-one', instantly_campaign_status: 1, sender_accounts: ['active@example.com'], timezone: 'America/New_York', daily_limit: 30, analytics: { emails_sent_count: 0, contacted_count: 0, open_count_unique: 0, reply_count_unique: 0, bounced_count: 0, unsubscribed_count: 0, total_interested: 0, total_meeting_booked: 0 }, target_counts: { total: 2, needs_contact: 1, needs_pitch: 1, ready: 0, in_outreach: 0, replied: 0, failed: 0 }, target_shortlist_podcast_ids: ['shortlist-one', 'shortlist-two'], last_synced_at: null, last_error: null, created_at: '2026-07-22T00:00:00Z', updated_at: '2026-07-22T00:00:00Z',
 } as WorkspaceClientCampaign
 
-function renderPage(platformWorkspaceId?: string) {
+function renderPage(platformWorkspaceId?: string, query = '') {
   const base = platformWorkspaceId ? `/app/workspaces/${workspaceId}` : '/app'
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`${base}/client-campaigns/${clientId}`]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter initialEntries={[`${base}/client-campaigns/${clientId}${query}`]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Routes><Route path={`${base}/client-campaigns/:clientId`} element={<WorkspaceCampaignDetail platformWorkspaceId={platformWorkspaceId} />} /></Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -105,6 +105,20 @@ describe('WorkspaceCampaignDetail', () => {
     mockedShortlist.mockResolvedValue({ client: { id: clientId, name: 'Dallas Fontaine' }, podcasts })
     mockedCampaign.mockResolvedValue(campaignState)
     mockedRunning.mockResolvedValue({ ...activeCampaign, status: 'paused' })
+  })
+
+  // The campaign list deep-links to the work: "Launch 2 staged pitches" has to
+  // arrive on Podcasts, not drop the operator on Analytics to navigate again.
+  it('opens the tab named in the address', async () => {
+    renderPage(undefined, '?tab=leads')
+
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Podcasts' })).toHaveAttribute('aria-selected', 'true'))
+  })
+
+  it('falls back to analytics when the tab in the address is not real', async () => {
+    renderPage(undefined, '?tab=not-a-tab')
+
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Analytics' })).toHaveAttribute('aria-selected', 'true'))
   })
 
   it('says why an active campaign is sending nothing', async () => {
