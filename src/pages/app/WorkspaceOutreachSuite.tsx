@@ -12,7 +12,6 @@ import {
 } from 'lucide-react'
 import { WorkspaceLayout, type PlatformWorkspaceConfig } from '@/components/workspace/WorkspaceLayout'
 import MasterInboxPreview from '@/components/workspace/MasterInboxPreview'
-import { MailboxInfraCard } from '@/components/workspace/MailboxInfraCard'
 import { MailboxesTable } from '@/components/workspace/MailboxesTable'
 import WorkspaceCampaigns from '@/pages/app/WorkspaceCampaigns'
 import { Badge } from '@/components/ui/badge'
@@ -277,11 +276,6 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
               onRetry={() => void mailboxesQuery.refetch()}
               canManage={canManage}
               clients={campaignClients}
-            />
-            <MailboxInfraCard
-              workspaceId={effectiveWorkspace.id}
-              canManage={canManage}
-              instantlyAddresses={(mailboxesQuery.data?.accounts || []).map((account) => account.email)}
             />
           </>
         )}

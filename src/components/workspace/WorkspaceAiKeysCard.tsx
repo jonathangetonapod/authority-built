@@ -17,7 +17,6 @@ import {
 const PROVIDERS = [
   { id: 'anthropic' as const, label: 'Anthropic (Claude)', placeholder: 'sk-ant-…' },
   { id: 'openai' as const, label: 'OpenAI', placeholder: 'sk-…' },
-  { id: 'winnr' as const, label: 'Winnr (sending infrastructure)', placeholder: 'wnr_…' },
 ]
 
 export function WorkspaceAiKeysCard({ workspaceId, queryScope }: { workspaceId: string; queryScope: readonly unknown[] }) {

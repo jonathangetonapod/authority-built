@@ -17,7 +17,6 @@ import {
   setWorkspaceInboxLeadInterest,
 } from '@/services/workspaceCampaigns'
 import { addOutreachSuppression, captureHostRelationshipThread } from '@/services/hostRelationships'
-import { getMailboxInfraOverview } from '@/services/mailboxInfra'
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('@/services/adminWorkspaces', () => ({ getAdminWorkspaceView: vi.fn() }))
@@ -30,14 +29,6 @@ vi.mock('@/services/clientShortlist', () => ({ getClientShortlist: vi.fn() }))
 vi.mock('@/services/hostRelationships', () => ({
   addOutreachSuppression: vi.fn().mockResolvedValue(undefined),
   captureHostRelationshipThread: vi.fn(),
-}))
-vi.mock('@/services/mailboxInfra', () => ({
-  getMailboxInfraOverview: vi.fn().mockResolvedValue({ winnr_connected: true, domains: [], orders: [] }),
-  getMailboxOrderStatus: vi.fn(),
-  retryMailboxWarming: vi.fn(),
-  searchMailboxDomains: vi.fn(),
-  createMailboxOrder: vi.fn(),
-  exportMailboxesForInstantly: vi.fn(),
 }))
 vi.mock('@/services/workspaceCampaigns', () => ({
   connectWorkspaceInstantly: vi.fn(),
@@ -344,22 +335,6 @@ describe('WorkspaceOutreachSuite', () => {
     }))
   })
 
-  it('states that buying mailboxes needs Winnr instead of offering a wizard that cannot run', async () => {
-    vi.mocked(getMailboxInfraOverview).mockResolvedValue({
-      winnr_connected: false,
-      domains: [],
-      orders: [],
-    } as never)
-
-    renderPage('mailboxes')
-
-    expect(await screen.findByRole('heading', { name: /A Winnr account is required to buy sending domains/i }))
-      .toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Connect Winnr' })).toHaveAttribute('href', '/app/settings')
-    // The purchase flow is not offered at all until Winnr is connected.
-    expect(screen.queryByLabelText('What is the client-facing brand or agency name?')).not.toBeInTheDocument()
-  })
-
   it('offers no purchase flow to a member who could not complete one', async () => {
     mockedUseAuth.mockReturnValue({
       user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
@@ -378,10 +353,10 @@ describe('WorkspaceOutreachSuite', () => {
 
     renderPage('mailboxes')
 
-    expect(await screen.findByText(/A workspace owner or admin manages them/i)).toBeInTheDocument()
+    // Mailboxes are provisioned outside this product entirely: no purchase
+    // flow renders for anyone, whatever their role.
+    await screen.findByRole('heading', { name: /Mailboxes/i })
     expect(screen.queryByText('Buy new sending domains')).not.toBeInTheDocument()
-    // And the overview is never requested, because the edge refuses it anyway.
-    expect(vi.mocked(getMailboxInfraOverview)).not.toHaveBeenCalled()
   })
 
   it('shows the workspace-safe disconnected mailbox state', async () => {
