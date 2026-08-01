@@ -646,10 +646,14 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
             <Card>
               <CardHeader><CardTitle>Outreach sequence</CardTitle><CardDescription>Research and all three messages are prepared for each show in Podcasts, then sent through this client’s associated Instantly campaign.</CardDescription></CardHeader>
               <CardContent className="space-y-3">
+                {/* Timings read from the campaign, not written here as prose.
+                    These badges said "Wait 3 days" and "Wait 5 more days" while
+                    Instantly was waiting 6 and 7 — a description of the
+                    sequence that nothing kept true. */}
                 {[
-                  { step: 'Email 1', timing: 'Send when approved', title: 'Reviewed opening pitch', detail: 'Uses the subject and message prepared for this individual podcast.' },
-                  { step: 'Email 2', timing: 'Wait 3 days', title: 'Reviewed follow-up', detail: 'Uses the first follow-up prepared for this individual podcast.' },
-                  { step: 'Email 3', timing: 'Wait 5 more days', title: 'Reviewed close', detail: 'Uses the final follow-up prepared for this individual podcast.' },
+                  { step: 'Email 1', timing: 'Sends when approved', title: 'Reviewed opening pitch', detail: 'Uses the subject and message prepared for this individual podcast.' },
+                  { step: 'Email 2', timing: `Waits ${settingsFollowUpOne} day${settingsFollowUpOne === 1 ? '' : 's'}`, title: 'Reviewed follow-up', detail: 'Replies into the opening email rather than starting a new thread.' },
+                  { step: 'Email 3', timing: `Waits ${settingsFollowUpTwo} more day${settingsFollowUpTwo === 1 ? '' : 's'}`, title: 'Reviewed close', detail: `Replies into the same thread, landing on day ${settingsFollowUpOne + settingsFollowUpTwo}.` },
                 ].map((item, index) => (
                   <div key={item.step} className="grid gap-3 rounded-xl border p-4 sm:grid-cols-[7rem_minmax(0,1fr)_9rem] sm:items-center">
                     <div className="flex items-center gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{index + 1}</div><span className="text-sm font-semibold">{item.step}</span></div>
@@ -657,7 +661,27 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                     <Badge variant="outline" className="w-fit">{item.timing}</Badge>
                   </div>
                 ))}
-                <div className="flex items-start gap-3 rounded-xl border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground"><Settings2 className="mt-0.5 h-4 w-4 shrink-0" /><p>Message preparation belongs in Podcasts. This section controls delivery cadence: text-only email, open tracking on, link tracking off, and stop on reply.</p></div>
+                {/* The waits belong to the sequence, not to the sending
+                    window: the window says which hours a campaign may send in,
+                    these say how long each host is left alone between emails. */}
+                <div className="grid gap-4 rounded-xl border p-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="campaign-detail-follow-up-one">First follow-up after</Label>
+                    <Input id="campaign-detail-follow-up-one" type="number" min={1} max={60} value={settingsFollowUpOne} onChange={(event) => setSettingsFollowUpOne(Number(event.target.value) || 1)} disabled={!canManageCampaign} />
+                    <p className="text-xs text-muted-foreground">Days after the opening email.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="campaign-detail-follow-up-two">Second follow-up after</Label>
+                    <Input id="campaign-detail-follow-up-two" type="number" min={1} max={60} value={settingsFollowUpTwo} onChange={(event) => setSettingsFollowUpTwo(Number(event.target.value) || 1)} disabled={!canManageCampaign} />
+                    <p className="text-xs text-muted-foreground">Days after the first follow-up.</p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Button disabled={!canManageCampaign || !settingsName.trim() || settingsMutation.isPending} onClick={() => settingsMutation.mutate()}>
+                      {settingsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save cadence
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 rounded-xl border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground"><Settings2 className="mt-0.5 h-4 w-4 shrink-0" /><p>Message preparation belongs in Podcasts. This section controls delivery cadence: text-only email, open tracking on, link tracking off, and stop on reply. Which days and hours the campaign may send in are on Schedule.</p></div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -737,22 +761,6 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                     <div className="space-y-2">
                       <Label htmlFor="campaign-detail-window-end">Window closes</Label>
                       <Input id="campaign-detail-window-end" type="time" value={settingsWindowEnd} onChange={(event) => setSettingsWindowEnd(event.target.value)} disabled={!canManageCampaign} />
-                    </div>
-                  </div>
-                  {/* Measured from the email before, which is how Instantly
-                      reads them and how an operator thinks about a chase. */}
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="campaign-detail-follow-up-one">First follow-up after</Label>
-                      <Input id="campaign-detail-follow-up-one" type="number" min={1} max={60} value={settingsFollowUpOne} onChange={(event) => setSettingsFollowUpOne(Number(event.target.value) || 1)} disabled={!canManageCampaign} />
-                      <p className="text-xs text-muted-foreground">Days after the opening email.</p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="campaign-detail-follow-up-two">Second follow-up after</Label>
-                      <Input id="campaign-detail-follow-up-two" type="number" min={1} max={60} value={settingsFollowUpTwo} onChange={(event) => setSettingsFollowUpTwo(Number(event.target.value) || 1)} disabled={!canManageCampaign} />
-                      <p className="text-xs text-muted-foreground">
-                        Days after the first follow-up, so the last email lands on day {settingsFollowUpOne + settingsFollowUpTwo}.
-                      </p>
                     </div>
                   </div>
                   <Button disabled={!canManageCampaign || !settingsName.trim() || settingsSendDays.length === 0 || settingsWindowStart >= settingsWindowEnd || settingsMutation.isPending} onClick={() => settingsMutation.mutate()}>{settingsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save schedule</Button>

@@ -223,6 +223,21 @@ assert.doesNotMatch(
   'the settings save must not send the sequence unconditionally',
 )
 
+// A save that pushed a change must record what the provider came back with.
+// Keeping the previous observation made a successful save read as a failed one:
+// the panel still showed the old timezone and the mismatch notice told the
+// operator to save again, which they had just done.
+assert.match(
+  edge,
+  /providerObserved = updated;/u,
+  'a settings save must keep the provider response',
+)
+assert.match(
+  edge,
+  /\.\.\.\(providerObserved[\s\S]*?provider_schedule: providerObserved\.schedule[\s\S]*?last_synced_at: new Date\(\)\.toISOString\(\)/u,
+  'the observed schedule must be written back on save',
+)
+
 // Follow-ups reply into the opening thread. Instantly threads a step with no
 // subject as a reply; giving it one starts a separate conversation, so a host
 // who ignored the pitch received three unrelated emails instead of one thread.

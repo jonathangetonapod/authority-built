@@ -6319,6 +6319,7 @@ serve(async (req) => {
         follow_up_two_delay_days: followUpTwoDelay ?? campaign.follow_up_two_delay_days,
       };
       let providerStatus = campaign.instantly_campaign_status;
+      let providerObserved: ProviderCampaign | null = null;
       if (campaign.instantly_campaign_id) {
         const apiKey = await integrationApiKey(connection);
         // Read before writing. Whether this campaign carries our sequence or
@@ -6344,6 +6345,7 @@ serve(async (req) => {
             ),
           );
           providerStatus = updated.status;
+          providerObserved = updated;
         } else {
           // The mapping was dead and has just been cleared. The settings still
           // save; the next send builds the campaign they describe.
@@ -6362,6 +6364,17 @@ serve(async (req) => {
           send_window_end: nextCampaign.send_window_end,
           follow_up_one_delay_days: nextCampaign.follow_up_one_delay_days,
           follow_up_two_delay_days: nextCampaign.follow_up_two_delay_days,
+          // What the provider holds now, taken from its own response. Leaving
+          // the previous observation in place made a successful save look like
+          // a failed one.
+          ...(providerObserved
+            ? {
+              provider_schedule: providerObserved.schedule,
+              provider_email_gap: providerObserved.emailGap,
+              provider_not_sending_status: providerObserved.notSendingStatus,
+              last_synced_at: new Date().toISOString(),
+            }
+            : {}),
           instantly_campaign_status: providerStatus,
           status: localCampaignStatus(providerStatus),
           last_error: null,
