@@ -182,6 +182,9 @@ describe('workspaceCampaigns service', () => {
         follow_up_2_subject: 'Re: A tailored guest idea',
         follow_up_2_body: 'A reviewed final follow-up.',
         pitch_chain_version: null,
+        // Omitted by the caller means the client's own campaign, which is where
+        // every send went before the picker existed.
+        instantly_campaign_id: null,
       },
     })
   })

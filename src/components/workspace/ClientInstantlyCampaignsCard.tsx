@@ -1,15 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, Link2, Loader2, RefreshCw } from 'lucide-react'
+import { AlertCircle, Link2, Loader2, Plus, RefreshCw, Send } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { InstantlyAccountPicker } from '@/components/workspace/InstantlyAccountPicker'
+import {
+  createClientInstantlyCampaign,
   getClientInstantlyCampaignLinks,
+  getWorkspaceMailboxes,
   setClientInstantlyCampaignLinks,
 } from '@/services/workspaceCampaigns'
 
@@ -81,6 +93,43 @@ export const ClientInstantlyCampaignsCard = ({
     },
   })
 
+  // Which links can receive a pitch. A campaign built by hand in Instantly
+  // carries its own sequence and none of the goap* variables, so a pitch staged
+  // into it would go out as that copy — it is linked for replies only.
+  const sendableIds = useMemo(
+    () => new Set((data?.links ?? []).filter((link) => link.sendable).map((link) => link.instantly_campaign_id)),
+    [data],
+  )
+
+  const [createOpen, setCreateOpen] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newSenders, setNewSenders] = useState<Set<string>>(new Set())
+  const mailboxesQuery = useQuery({
+    queryKey: ['workspace-mailboxes', workspaceId],
+    queryFn: () => getWorkspaceMailboxes(workspaceId),
+    enabled: createOpen,
+    retry: false,
+    staleTime: 30_000,
+  })
+  const createMutation = useMutation({
+    mutationFn: () => createClientInstantlyCampaign({
+      workspaceId,
+      clientId,
+      name: newName.trim(),
+      senderAccounts: [...newSenders],
+    }),
+    onSuccess: (link) => {
+      setCreateOpen(false)
+      setNewName('')
+      setNewSenders(new Set())
+      void queryClient.invalidateQueries({ queryKey: linksQueryKey })
+      toast.success(`${link.campaign_name || 'The campaign'} was created and linked to ${clientName}.`)
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'The campaign could not be created.')
+    },
+  })
+
   const toggle = (campaignId: string) => {
     setSelectedIds((current) => {
       const next = new Set(current ?? savedIds)
@@ -99,18 +148,25 @@ export const ClientInstantlyCampaignsCard = ({
           </CardTitle>
           <CardDescription>
             Link the Instantly campaigns that belong to {clientName}. The Master Inbox
-            attributes every reply from a linked campaign to this client.
+            attributes every reply from a linked campaign to this client. Pitches can
+            only be sent into campaigns created here, because a campaign built in
+            Instantly carries copy of its own.
           </CardDescription>
         </div>
         {canManage && (
-          <Button
-            size="sm"
-            disabled={!dirty || saveMutation.isPending}
-            onClick={() => saveMutation.mutate()}
-          >
-            {saveMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save campaigns
-          </Button>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setCreateOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />Create campaign
+            </Button>
+            <Button
+              size="sm"
+              disabled={!dirty || saveMutation.isPending}
+              onClick={() => saveMutation.mutate()}
+            >
+              {saveMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save campaigns
+            </Button>
+          </div>
         )}
       </CardHeader>
       <CardContent>
@@ -212,6 +268,20 @@ export const ClientInstantlyCampaignsCard = ({
                       {campaign.managed_client_id === clientId ? ' · Managed by this client’s app campaign' : ''}
                     </span>
                   </label>
+                  {/* The distinction that decides whether a pitch can go here
+                      at all, stated on the row rather than discovered at send
+                      time by a refusal. */}
+                  {checked && savedIds.has(campaign.id) && (
+                    sendableIds.has(campaign.id) ? (
+                      <Badge variant="outline" className="shrink-0 border-emerald-300 bg-emerald-50 text-emerald-800">
+                        <Send className="mr-1 h-3 w-3" />Sendable
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="shrink-0 bg-muted text-muted-foreground">
+                        Replies only
+                      </Badge>
+                    )
+                  )}
                   {linkedElsewhere && (
                     <Badge variant="outline" className="shrink-0 bg-muted text-muted-foreground">
                       {campaign.linked_client_name
@@ -228,6 +298,54 @@ export const ClientInstantlyCampaignsCard = ({
           )
         })()}
       </CardContent>
+
+      <Dialog open={createOpen} onOpenChange={(next) => !createMutation.isPending && setCreateOpen(next)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Create a campaign for {clientName}</DialogTitle>
+            <DialogDescription>
+              This builds the campaign in Instantly with the three-step sequence pitches
+              are written into, and links it to {clientName}. It starts paused, so nothing
+              sends until you approve outreach.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-campaign-name">Campaign name</Label>
+              <Input
+                id="new-campaign-name"
+                value={newName}
+                onChange={(event) => setNewName(event.target.value)}
+                placeholder={`${clientName} podcast outreach`}
+                maxLength={180}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Sending accounts</Label>
+              <InstantlyAccountPicker
+                accounts={mailboxesQuery.data?.accounts ?? []}
+                connected={Boolean(mailboxesQuery.data?.connected)}
+                selected={newSenders}
+                onChange={setNewSenders}
+                disabled={createMutation.isPending}
+                defaultClientId={clientId}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={createMutation.isPending}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => createMutation.mutate()}
+              disabled={!newName.trim() || newSenders.size === 0 || createMutation.isPending}
+            >
+              {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Create campaign
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

@@ -91,6 +91,80 @@ const GUIDANCE: Record<string, CampaignErrorGuidance> = {
     explanation: 'Only podcasts the client has approved can join a campaign. The pitch stays saved until approval arrives.',
     remedy: { kind: 'none' },
   },
+  CAMPAIGN_NOT_ASSIGNED: {
+    title: 'This client has no Instantly campaign yet',
+    explanation: 'Pitches can be written and saved before a campaign exists, but joining one needs the campaign created first. Setup happens on Client Campaigns.',
+    remedy: { kind: 'link', label: 'Open Client Campaigns', module: 'client-campaigns' },
+  },
+
+  // The provider family. Instantly answers for itself here, and the difference
+  // between "your key is wrong" and "the thing your key points at is gone"
+  // decides who fixes it, so they do not share one message.
+  INSTANTLY_RESOURCE_NOT_FOUND: {
+    title: 'The Instantly campaign for this client no longer exists',
+    explanation: 'This client is mapped to a campaign that has since been deleted in Instantly, so nothing can be added to it. Re-running setup on Client Campaigns builds a new one. The pitch and the podcast list here are unaffected.',
+    remedy: { kind: 'link', label: 'Open Client Campaigns', module: 'client-campaigns' },
+  },
+  INSTANTLY_KEY_REJECTED: {
+    title: 'Instantly rejected the workspace API key',
+    explanation: 'The stored key is no longer valid — usually revoked or rotated on the Instantly side. Nothing was sent. The workspace owner can reconnect on Client Campaigns.',
+    remedy: { kind: 'link', label: 'Open Client Campaigns', module: 'client-campaigns' },
+  },
+  INSTANTLY_SCOPE_REQUIRED: {
+    title: 'The Instantly key is missing a permission',
+    explanation: 'The key authenticates but is not allowed to do this. It needs campaign and lead scopes. Reconnecting with a fully scoped key resolves it.',
+    remedy: { kind: 'link', label: 'Open Client Campaigns', module: 'client-campaigns' },
+  },
+  INSTANTLY_PLAN_REQUIRED: {
+    title: 'The Instantly workspace has no active plan',
+    explanation: 'Instantly refuses API calls from a workspace without a paid plan. This is resolved in Instantly, not here.',
+    remedy: { kind: 'none' },
+  },
+  INSTANTLY_WORKSPACE_MISMATCH: {
+    title: 'The key points at a different Instantly workspace',
+    explanation: 'The stored campaigns belong to a workspace this key cannot see, so nothing here matches what Instantly returns. Reconnecting with the right key resolves it.',
+    remedy: { kind: 'link', label: 'Open Client Campaigns', module: 'client-campaigns' },
+  },
+  INSTANTLY_CREDENTIAL_INVALID: {
+    title: 'The stored Instantly key could not be read',
+    explanation: 'The saved credential failed to decrypt, so no call was made and nothing was sent. Reconnecting Instantly stores a fresh one.',
+    remedy: { kind: 'link', label: 'Open Client Campaigns', module: 'client-campaigns' },
+  },
+  INSTANTLY_SENDER_UNAVAILABLE: {
+    title: 'The sending account is not available',
+    explanation: 'The mailbox this campaign sends from is disconnected or no longer active in Instantly.',
+    remedy: { kind: 'link', label: 'Open Mailboxes', module: 'mailboxes' },
+  },
+  INSTANTLY_RATE_LIMITED: {
+    title: 'Instantly is rate limiting this workspace',
+    explanation: 'Too many requests in a short window. This clears on its own within a minute or so, and nothing was sent.',
+    remedy: { kind: 'retry', label: 'Try again' },
+  },
+  INSTANTLY_REQUEST_FAILED: {
+    title: 'Instantly could not complete the request',
+    explanation: 'The provider returned an error we do not have a specific handler for. The send stopped before anything reached a host.',
+    remedy: { kind: 'retry', label: 'Try again' },
+  },
+  INSTANTLY_RESPONSE_INVALID: {
+    title: 'Instantly returned something unreadable',
+    explanation: 'The response did not match the shape we expect, so it was rejected rather than acted on half-understood. Nothing was sent.',
+    remedy: { kind: 'retry', label: 'Try again' },
+  },
+  CAMPAIGN_PROVIDER_SETUP_FAILED: {
+    title: 'Campaign setup could not be completed',
+    explanation: 'The campaign could not be created or recovered in Instantly. Nothing was sent and the draft is intact.',
+    remedy: { kind: 'retry', label: 'Try again' },
+  },
+  CAMPAIGN_LOOKUP_FAILED: {
+    title: 'The client campaign could not be loaded',
+    explanation: 'The campaign record could not be read, so the send stopped before it began. Nothing was sent.',
+    remedy: { kind: 'retry', label: 'Try again' },
+  },
+  CAMPAIGN_TARGET_LOOKUP_FAILED: {
+    title: 'The campaign podcasts could not be loaded',
+    explanation: 'The podcast list could not be read, so the send stopped before it began. Nothing was sent.',
+    remedy: { kind: 'retry', label: 'Try again' },
+  },
 }
 
 export function campaignErrorGuidance(
@@ -109,4 +183,42 @@ export function errorCode(error: unknown): string | null {
   return error.name && error.name !== 'EdgeFunctionError' && error.name !== 'Error'
     ? error.name
     : null
+}
+
+/** The HTTP status `toFunctionError` attaches, when the failure reached a response. */
+export function errorStatus(error: unknown): number | null {
+  if (!(error instanceof Error)) return null
+  const status = (error as { status?: unknown }).status
+  return typeof status === 'number' && Number.isFinite(status) ? status : null
+}
+
+export interface CampaignErrorReport {
+  code: string | null
+  status: number | null
+  message: string
+  /** What was being acted on. Empty values are dropped rather than printed blank. */
+  context?: Record<string, string | null | undefined>
+}
+
+/**
+ * The refusal as something an operator can hand to somebody else.
+ *
+ * A code on screen is enough to act on when the guidance above covers it. When
+ * it does not — a provider fault, a refusal added to the function since this
+ * shipped — the next step is asking someone, and that conversation starts by
+ * retyping what the screen said. This builds that text instead: the code, the
+ * status, the server's own sentence, and which client, podcast, and campaign
+ * it happened on, which is exactly what a reader needs and what a screenshot
+ * of a dialog usually crops out.
+ */
+export function campaignErrorReport(report: CampaignErrorReport): string {
+  const lines = [
+    `code: ${report.code || 'none'}`,
+    `status: ${report.status ?? 'none'}`,
+    `message: ${report.message}`,
+  ]
+  for (const [key, value] of Object.entries(report.context || {})) {
+    if (typeof value === 'string' && value.trim()) lines.push(`${key}: ${value.trim()}`)
+  }
+  return lines.join('\n')
 }

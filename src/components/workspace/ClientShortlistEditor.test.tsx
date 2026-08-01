@@ -1024,8 +1024,88 @@ describe('ClientShortlistEditor', () => {
     const alert = await screen.findByRole('alert')
     expect(within(alert).getByText('This pitch can no longer be edited')).toBeInTheDocument()
     expect(within(alert).getByRole('link', { name: /Open Master Inbox/ })).toHaveAttribute('href', '/app/master-inbox')
-    // The server's own words stay on screen, so the code is still reportable.
-    expect(within(alert).getByText(/CAMPAIGN_PITCH_LOCKED/)).toBeInTheDocument()
+    // The server's own words stay on screen, and the code repeats on its own
+    // line where it can be read off without picking it out of a sentence.
+    expect(within(alert).getByText('This host has already replied. (CAMPAIGN_PITCH_LOCKED)')).toBeInTheDocument()
+    expect(within(alert).getByText('CAMPAIGN_PITCH_LOCKED')).toBeInTheDocument()
+  })
+
+  // Reporting a lead that was never created sends somebody to Instantly to
+  // look for a host who is not there. Without a contact email the edge function
+  // never calls stageCampaignLead at all, and the screen has to say so.
+  it('does not claim a lead when none was created', async () => {
+    vi.mocked(prepareWorkspaceCampaignPodcast).mockResolvedValue({
+      added: true,
+      campaign: { name: 'Taylor Client Podcast Outreach' } as never,
+      target: {} as never,
+      lead_staged: false,
+      will_send: false,
+      provider_campaign_status: 2,
+    })
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize selected pitch' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Client Campaign' }))
+
+    const confirmation = await screen.findByRole('status', { name: 'Pitch added to client campaign' })
+    expect(within(confirmation).getByRole('heading', { name: /has no lead/ })).toBeInTheDocument()
+    expect(within(confirmation).getByText(/No lead was created/)).toBeInTheDocument()
+    expect(within(confirmation).queryByText(/as a lead, with the full three-email sequence/)).not.toBeInTheDocument()
+    expect(within(confirmation).getByText('Nothing to send — no lead yet')).toBeInTheDocument()
+    // The move that finishes it, offered where the shortfall is reported.
+    expect(within(confirmation).getByRole('button', { name: 'Add a contact email' })).toBeInTheDocument()
+  })
+
+  // The refusals with no guidance are the ones that get escalated, so they are
+  // exactly the ones that have to be reportable.
+  it('names the code and status of a refusal it has no guidance for', async () => {
+    const refusal = Object.assign(
+      new Error('The mapped Instantly resource no longer exists (SOME_NEW_REFUSAL)'),
+      { status: 409 },
+    )
+    refusal.name = 'SOME_NEW_REFUSAL'
+    vi.mocked(prepareWorkspaceCampaignPodcast).mockRejectedValue(refusal)
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize selected pitch' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Client Campaign' }))
+
+    const alert = await screen.findByRole('alert')
+    // No invented guidance: the server's sentence carries the meaning.
+    expect(within(alert).getByText('This pitch was not sent to Client Campaign')).toBeInTheDocument()
+    expect(within(alert).getByText('SOME_NEW_REFUSAL · HTTP 409')).toBeInTheDocument()
+    expect(within(alert).getByRole('button', { name: /Copy details/ })).toBeInTheDocument()
+  })
+
+  it('copies the code, the status, and what it happened on', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    const refusal = Object.assign(
+      new Error('The mapped Instantly resource no longer exists (INSTANTLY_RESOURCE_NOT_FOUND)'),
+      { status: 409 },
+    )
+    refusal.name = 'INSTANTLY_RESOURCE_NOT_FOUND'
+    vi.mocked(prepareWorkspaceCampaignPodcast).mockRejectedValue(refusal)
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize selected pitch' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Client Campaign' }))
+
+    const alert = await screen.findByRole('alert')
+    // A dead campaign mapping is rebuilt on Client Campaigns, not retried here.
+    expect(within(alert).getByRole('link', { name: /Open Client Campaigns/ }))
+      .toHaveAttribute('href', '/app/client-campaigns')
+    fireEvent.click(within(alert).getByRole('button', { name: /Copy details/ }))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+    const report = writeText.mock.calls[0][0] as string
+    expect(report).toContain('code: INSTANTLY_RESOURCE_NOT_FOUND')
+    expect(report).toContain('status: 409')
+    expect(report).toContain('action: prepare-podcast')
+    expect(report).toContain('podcast: Founder Stories')
   })
 
   it('retries the send itself when the refusal was only a setup race', async () => {

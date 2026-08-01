@@ -1405,9 +1405,52 @@ function providerCampaignName(campaign: CampaignRow): string {
   return `${campaign.name.slice(0, 150)} · GOAP-${campaign.id}`;
 }
 
+/** The goap* variables the three steps below read. Registering them is what
+ * makes a written pitch render; a campaign without them sends its own copy. */
+const PROVISIONED_CAMPAIGN_VARIABLES = [
+  "goapPitchSubject",
+  "goapPitchBody",
+  "goapFollowUpOneSubject",
+  "goapFollowUpOneBody",
+  "goapFollowUpTwoSubject",
+  "goapFollowUpTwoBody",
+  "clientName",
+  "podcastName",
+  "goapTargetId",
+] as const;
+
 function campaignConfiguration(campaign: CampaignRow): Record<string, unknown> {
+  return provisionedCampaignConfiguration({
+    providerName: providerCampaignName(campaign),
+    timezone: campaign.timezone,
+    dailyLimit: campaign.daily_limit,
+    senderAccounts: campaign.sender_accounts,
+  });
+}
+
+/**
+ * The provider config for a campaign this app owns the sequence of.
+ *
+ * Shared by the client's own campaign and by the extra campaigns an operator
+ * creates from the client card, because "sendable" means exactly this shape:
+ * three steps reading the goap* variables. A campaign built by hand in Instantly
+ * has its own sequence and none of these, which is why it can be linked for
+ * reply attribution but never chosen as a send target.
+ */
+function provisionedCampaignConfiguration(input: {
+  providerName: string;
+  timezone: string;
+  dailyLimit: number;
+  senderAccounts: string[];
+}): Record<string, unknown> {
+  const campaign = {
+    name: input.providerName,
+    timezone: input.timezone,
+    daily_limit: input.dailyLimit,
+    sender_accounts: input.senderAccounts,
+  };
   return {
-    name: providerCampaignName(campaign),
+    name: input.providerName,
     is_evergreen: true,
     campaign_schedule: {
       schedules: [{
@@ -1444,7 +1487,11 @@ function campaignConfiguration(campaign: CampaignRow): Record<string, unknown> {
           delay: 7,
           delay_unit: "days",
           variants: [{
-            subject: "{{goapFollowUpOneSubject}}",
+            // Empty on purpose. Instantly threads a step with no subject as a
+            // reply to the opening email; giving it one starts a separate
+            // conversation, so a host who ignored the pitch got three unrelated
+            // emails instead of one thread they could scroll back through.
+            subject: "",
             body: "{{goapFollowUpOneBody}}",
             v_disabled: false,
           }],
@@ -1454,7 +1501,9 @@ function campaignConfiguration(campaign: CampaignRow): Record<string, unknown> {
           delay: 0,
           delay_unit: "days",
           variants: [{
-            subject: "{{goapFollowUpTwoSubject}}",
+            // Empty for the same reason as the step above: this one replies
+            // into the thread rather than opening a third.
+            subject: "",
             body: "{{goapFollowUpTwoBody}}",
             v_disabled: false,
           }],
@@ -1479,18 +1528,98 @@ function campaignConfiguration(campaign: CampaignRow): Record<string, unknown> {
   };
 }
 
+/**
+ * Drops a mapping to a campaign Instantly no longer has.
+ *
+ * A campaign deleted on the provider side left this client pointing at an ID
+ * that answers 404 forever, and nothing in the app could clear it: preparing
+ * refused, remapping refused as CAMPAIGN_ALREADY_MAPPED, and disconnecting
+ * only clears the workspace key. The client was stuck until somebody edited
+ * the row by hand. The mapping is provably dead here — Instantly was asked and
+ * said the campaign is gone — so no mapping is the only honest record, and the
+ * next attempt can build a replacement.
+ *
+ * The write is conditional on the dead ID still being the one on the row, so a
+ * racing setup that has already mapped something live is left alone.
+ */
+async function forgetDeadProviderCampaign(
+  context: AuthContext,
+  campaign: CampaignRow,
+  deadProviderCampaignId: string,
+): Promise<void> {
+  const { error } = await context.admin
+    .from("workspace_client_campaigns")
+    .update({
+      instantly_campaign_id: null,
+      instantly_campaign_status: null,
+      status: "draft",
+      provider_sync_state: "idle",
+      provider_sync_started_at: null,
+      last_error: null,
+      updated_by: context.user.id,
+    })
+    .eq("id", campaign.id)
+    .eq("workspace_id", campaign.workspace_id)
+    .eq("instantly_campaign_id", deadProviderCampaignId);
+  if (error) {
+    throw new HttpError(
+      500,
+      "CAMPAIGN_PROVIDER_MAPPING_FAILED",
+      "The stale Instantly campaign mapping could not be cleared",
+    );
+  }
+  await writeAudit(context.admin, {
+    workspaceId: campaign.workspace_id,
+    actorUserId: context.user.id,
+    action: "workspace.campaign.provider_mapping_forgotten",
+    entityType: "workspace_client_campaign",
+    entityId: campaign.id,
+    metadata: { instantly_campaign_id: deadProviderCampaignId },
+  });
+}
+
+/**
+ * The mapped campaign, or null once a dead mapping has been cleared.
+ *
+ * Only a 404 counts as dead. A rate limit, a rejected key, or a provider
+ * outage says nothing about whether the campaign exists, and forgetting a live
+ * mapping on a transient fault would orphan outreach that is still running.
+ */
+async function readProviderCampaignOrForget(
+  context: AuthContext,
+  campaign: CampaignRow,
+  apiKey: string,
+  providerCampaignId: string,
+): Promise<ProviderCampaign | null> {
+  try {
+    return providerCampaign(
+      await instantlyRequest<unknown>(
+        apiKey,
+        `/campaigns/${encodeURIComponent(providerCampaignId)}`,
+      ),
+    );
+  } catch (error) {
+    if (!(error instanceof InstantlyApiError) || error.status !== 404) throw error;
+    await forgetDeadProviderCampaign(context, campaign, providerCampaignId);
+    return null;
+  }
+}
+
 async function ensureProviderCampaign(
   context: AuthContext,
   campaign: CampaignRow,
   apiKey: string,
 ): Promise<ProviderCampaign> {
   if (campaign.instantly_campaign_id) {
-    return providerCampaign(
-      await instantlyRequest<unknown>(
-        apiKey,
-        `/campaigns/${encodeURIComponent(campaign.instantly_campaign_id)}`,
-      ),
+    const mapped = await readProviderCampaignOrForget(
+      context,
+      campaign,
+      apiKey,
+      campaign.instantly_campaign_id,
     );
+    if (mapped) return mapped;
+    // The mapping was dead and has just been cleared. Falling through builds
+    // the replacement instead of refusing with an ID nothing answers to.
   }
 
   // A timed-out Edge invocation must not strand the campaign in `creating`.
@@ -1546,12 +1675,15 @@ async function ensureProviderCampaign(
       campaign.client_id,
     );
     if (current?.instantly_campaign_id) {
-      return providerCampaign(
-        await instantlyRequest<unknown>(
-          apiKey,
-          `/campaigns/${encodeURIComponent(current.instantly_campaign_id)}`,
-        ),
+      const mapped = await readProviderCampaignOrForget(
+        context,
+        current,
+        apiKey,
+        current.instantly_campaign_id,
       );
+      // A mapping that turned out to be dead is cleared by the read above, so
+      // the retry this refusal asks for now takes the create path.
+      if (mapped) return mapped;
     }
     throw new HttpError(
       409,
@@ -1605,19 +1737,7 @@ async function ensureProviderCampaign(
       `/campaigns/${encodeURIComponent(provider.id)}/variables`,
       {
         method: "POST",
-        body: {
-          variables: [
-            "goapPitchSubject",
-            "goapPitchBody",
-            "goapFollowUpOneSubject",
-            "goapFollowUpOneBody",
-            "goapFollowUpTwoSubject",
-            "goapFollowUpTwoBody",
-            "clientName",
-            "podcastName",
-            "goapTargetId",
-          ],
-        },
+        body: { variables: [...PROVISIONED_CAMPAIGN_VARIABLES] },
       },
     );
     const { error: updateError } = await context.admin
@@ -1754,6 +1874,8 @@ function outreachCustomVariables(
 export interface StagedLeadResult {
   leadId: string;
   leadStatus: number | null;
+  /** Which Instantly campaign the lead actually landed in. */
+  providerCampaignId: string;
   /** Provider campaign status when the lead landed. 1 means it began sending. */
   campaignStatus: number | null;
   /** True when the lead entered a live sequence, so the host will be emailed. */
@@ -1784,6 +1906,9 @@ async function stageCampaignLead(
   campaign: CampaignRow,
   target: TargetRow,
   sequence: OutreachSequence,
+  // Which linked campaign the operator picked. Null means the client's own,
+  // which is the only one that existed before the picker.
+  chosenProviderCampaignId?: string | null,
 ): Promise<StagedLeadResult> {
   if (!target.contact_email) {
     throw new HttpError(
@@ -1828,11 +1953,17 @@ async function stageCampaignLead(
   }
 
   const apiKey = await integrationApiKey(connection);
-  const providerCampaignValue = await ensureProviderCampaign(
-    context,
-    campaign,
-    apiKey,
-  );
+  // A chosen campaign is read, never created: the caller has already checked it
+  // is a provisioned link for this client, and creating one here would silently
+  // invent a send target the operator did not pick.
+  const providerCampaignValue = chosenProviderCampaignId
+    ? providerCampaign(
+      await instantlyRequest<unknown>(
+        apiKey,
+        `/campaigns/${encodeURIComponent(chosenProviderCampaignId)}`,
+      ),
+    )
+    : await ensureProviderCampaign(context, campaign, apiKey);
 
   // One contact cannot be in the campaign twice under two shows: the host
   // experiences both, whatever we call them locally.
@@ -1949,6 +2080,7 @@ async function stageCampaignLead(
   return {
     leadId: lead.id,
     leadStatus: lead.status,
+    providerCampaignId: providerCampaignValue.id,
     campaignStatus: providerCampaignValue.status,
     willSend: providerCampaignValue.status === 1,
   };
@@ -4358,7 +4490,7 @@ serve(async (req) => {
       const [linksResult, campaignsResult] = await Promise.all([
         context.admin
           .from("client_instantly_campaign_links")
-          .select("client_id, instantly_campaign_id, campaign_name, created_at, client:clients!client_instantly_campaign_links_client_fk(id, name)")
+          .select("client_id, instantly_campaign_id, campaign_name, created_at, provisioned_at, client:clients!client_instantly_campaign_links_client_fk(id, name)")
           .eq("workspace_id", workspaceId)
           .limit(1_000),
         context.admin
@@ -4371,14 +4503,7 @@ serve(async (req) => {
       if (linksResult.error) {
         throw new HttpError(503, "CAMPAIGN_LINKS_UNAVAILABLE", "Linked campaigns could not be loaded");
       }
-      const allLinks = (linksResult.data ?? []) as Array<Record<string, unknown>>;
-      const links = allLinks
-        .filter((row) => row.client_id === clientId)
-        .map((row) => ({
-          instantly_campaign_id: String(row.instantly_campaign_id ?? ""),
-          campaign_name: typeof row.campaign_name === "string" ? row.campaign_name : null,
-          created_at: typeof row.created_at === "string" ? row.created_at : null,
-        }));
+      const allLinks = (linksResult.data ?? []) as Array<Record<string, unknown>>;;
       const linkedClientByCampaign = new Map(allLinks.flatMap((row) => {
         const providerId = row.instantly_campaign_id;
         if (typeof providerId !== "string") return [];
@@ -4398,6 +4523,27 @@ serve(async (req) => {
               : []
           )),
       );
+      // Sendable means the sequence and the goap* variables are known to be
+      // there. provisioned_at records that for campaigns created from this
+      // card; the client's own campaign qualifies too, because
+      // ensureProviderCampaign built it the same way — it just predates the
+      // column and never wrote to this table.
+      const links = allLinks
+        .filter((row) => row.client_id === clientId)
+        .map((row) => {
+          const providerId = String(row.instantly_campaign_id ?? "");
+          const provisionedAt = typeof row.provisioned_at === "string"
+            ? row.provisioned_at
+            : null;
+          return {
+            instantly_campaign_id: providerId,
+            campaign_name: typeof row.campaign_name === "string" ? row.campaign_name : null,
+            created_at: typeof row.created_at === "string" ? row.created_at : null,
+            provisioned_at: provisionedAt,
+            sendable: Boolean(provisionedAt) ||
+              managedClientByCampaign.get(providerId) === clientId,
+          };
+        });
 
       const connection = await readConnection(context.admin, workspaceId);
       let providerCampaigns: ProviderCampaign[] = [];
@@ -4429,6 +4575,125 @@ serve(async (req) => {
             managed_client_id: managedClientByCampaign.get(campaign.id) ?? null,
           };
         }),
+      });
+    }
+
+    // Builds a campaign this app owns the sequence of, and links it in one go.
+    //
+    // The only way to add a send target. Linking an existing Instantly campaign
+    // stays attribution-only on purpose: it carries its own copy, so a pitch
+    // staged into it would go out as that copy while the screen reported the
+    // pitch had been sent.
+    if (action === "client-links-create") {
+      requireOnlyKeys(body, [
+        "action",
+        "workspace_id",
+        "client_id",
+        "name",
+        "timezone",
+        "daily_limit",
+        "sender_accounts",
+      ]);
+      requireCampaignManager(access);
+      const name = requireString(body.name, "name", { max: 180 });
+      const timezone = campaignTimezone(body.timezone);
+      const limit = dailyLimit(body.daily_limit);
+      const senderAccounts = emailList(body.sender_accounts);
+      if (senderAccounts.length === 0) {
+        throw new HttpError(
+          400,
+          "CAMPAIGN_SENDER_REQUIRED",
+          "Select at least one active Instantly account",
+        );
+      }
+      const client = await requireWorkspaceClient(
+        context.admin,
+        workspaceId,
+        clientId,
+      );
+      const connection = await readConnection(context.admin, workspaceId);
+      if (
+        !connection || connection.status !== "connected" ||
+        !connection.api_key_ciphertext || !connection.api_key_iv
+      ) {
+        throw new HttpError(
+          409,
+          "INSTANTLY_NOT_CONNECTED",
+          "Connect Instantly before creating a campaign",
+        );
+      }
+      verifySelectedAccounts(
+        senderAccounts,
+        accountsFromSnapshot(connection.accounts_snapshot),
+      );
+      const apiKey = await integrationApiKey(connection);
+      const created = providerCampaign(
+        await instantlyRequest<unknown>(apiKey, "/campaigns", {
+          method: "POST",
+          body: provisionedCampaignConfiguration({
+            // The marker names the client, so a campaign orphaned by a failure
+            // between creating and linking is identifiable in Instantly rather
+            // than anonymous.
+            providerName: `${name.slice(0, 150)} · GOAP-${clientId}`,
+            timezone,
+            dailyLimit: limit,
+            senderAccounts,
+          }),
+        }),
+      );
+      // Created paused. A campaign that started sending the moment it existed
+      // would reach hosts before anybody chose who belongs in it.
+      if (created.status === 1) {
+        await instantlyRequest<unknown>(
+          apiKey,
+          `/campaigns/${encodeURIComponent(created.id)}/pause`,
+          { method: "POST" },
+        );
+      }
+      await instantlyRequest<unknown>(
+        apiKey,
+        `/campaigns/${encodeURIComponent(created.id)}/variables`,
+        { method: "POST", body: { variables: [...PROVISIONED_CAMPAIGN_VARIABLES] } },
+      );
+      // provisioned_at is written in the same statement that creates the link,
+      // so a row can never claim to be sendable without the sequence behind it.
+      const { error: linkError } = await context.admin
+        .from("client_instantly_campaign_links")
+        .insert({
+          workspace_id: workspaceId,
+          client_id: clientId,
+          instantly_campaign_id: created.id,
+          campaign_name: created.name.slice(0, 300),
+          provisioned_at: new Date().toISOString(),
+          created_by: context.user.id,
+        });
+      if (linkError) {
+        throw new HttpError(
+          500,
+          "CAMPAIGN_LINK_FAILED",
+          "The campaign was created in Instantly but could not be linked to this client",
+        );
+      }
+      await writeAudit(context.admin, {
+        workspaceId,
+        actorUserId: context.user.id,
+        action: "client.instantly_campaign.created",
+        entityType: "client",
+        entityId: clientId,
+        metadata: {
+          instantly_campaign_id: created.id,
+          name: created.name,
+          client_name: client.name,
+        },
+      });
+      return jsonResponse(req, METHODS, 200, {
+        link: {
+          instantly_campaign_id: created.id,
+          campaign_name: created.name,
+          created_at: new Date().toISOString(),
+          provisioned_at: new Date().toISOString(),
+          sendable: true,
+        },
       });
     }
 
@@ -4668,8 +4933,14 @@ serve(async (req) => {
         "follow_up_2_subject",
         "follow_up_2_body",
         "pitch_chain_version",
+        "instantly_campaign_id",
       ]);
       requireCampaignManager(access);
+      // Optional: callers from before the picker send nothing and keep landing
+      // in the client's own campaign.
+      const chosenProviderCampaignId = body.instantly_campaign_id == null
+        ? null
+        : requireUuid(body.instantly_campaign_id, "instantly_campaign_id");
       // Which prompt-chain revision wrote this copy — the key that makes
       // reply-rate-by-version queryable once send volume exists.
       const pitchChainVersion = body.pitch_chain_version === undefined || body.pitch_chain_version === null
@@ -4717,6 +4988,42 @@ serve(async (req) => {
           "CAMPAIGN_NOT_ASSIGNED",
           "Create or assign an Instantly campaign to this client first",
         );
+      }
+      // A chosen campaign must belong to this client, and must be one this app
+      // built the sequence for. Sending into a hand-linked campaign would
+      // deliver that campaign's own copy while reporting the written pitch as
+      // sent, so the gate is provisioned_at rather than the link existing.
+      if (
+        chosenProviderCampaignId &&
+        chosenProviderCampaignId !== campaign.instantly_campaign_id
+      ) {
+        const { data: link, error: linkError } = await context.admin
+          .from("client_instantly_campaign_links")
+          .select("instantly_campaign_id, client_id, provisioned_at")
+          .eq("workspace_id", workspaceId)
+          .eq("instantly_campaign_id", chosenProviderCampaignId)
+          .maybeSingle();
+        if (linkError) {
+          throw new HttpError(
+            503,
+            "CAMPAIGN_LINKS_UNAVAILABLE",
+            "The linked campaigns could not be checked",
+          );
+        }
+        if (!link || link.client_id !== clientId) {
+          throw new HttpError(
+            409,
+            "CAMPAIGN_NOT_LINKED",
+            "That campaign is not linked to this client",
+          );
+        }
+        if (!link.provisioned_at) {
+          throw new HttpError(
+            409,
+            "CAMPAIGN_NOT_SENDABLE",
+            "That campaign was built in Instantly and carries its own copy. Create a campaign from the client page to send this pitch into it.",
+          );
+        }
       }
       const existingTargets = await readTargets(
         context.admin,
@@ -4776,6 +5083,7 @@ serve(async (req) => {
           campaign,
           { ...target, contact_email: contactEmail, host_name: hostName } as TargetRow,
           sequence,
+          chosenProviderCampaignId,
         );
       }
 
@@ -4798,6 +5106,10 @@ serve(async (req) => {
             ? {
               instantly_lead_id: staged.leadId,
               instantly_lead_status: staged.leadStatus,
+              // Where the lead actually landed, not where it was asked to go.
+              // With several campaigns per client this is the only record of
+              // which sequence a host is in.
+              instantly_campaign_id: staged.providerCampaignId,
               lead_staged_at: stagedAt,
               lead_staged_campaign_status: staged.campaignStatus,
             }
@@ -5027,6 +5339,23 @@ serve(async (req) => {
         senderAccounts: selectedProviderCampaign?.senderAccounts ||
           senderAccounts,
       });
+      // An existing mapping has to be real before it is allowed to refuse
+      // anything. A campaign deleted in Instantly used to block both routes out
+      // at once — remapping came back CAMPAIGN_ALREADY_MAPPED, and rebuilding
+      // was skipped because an ID was still on the row — so the client had
+      // nowhere to go. Checking here means only a live campaign can refuse.
+      if (campaign.instantly_campaign_id) {
+        const mappedNow = await readProviderCampaignOrForget(
+          context,
+          campaign,
+          apiKey,
+          campaign.instantly_campaign_id,
+        );
+        if (!mappedNow) {
+          campaign = await readCampaign(context.admin, workspaceId, clientId) ||
+            campaign;
+        }
+      }
       if (
         campaign.instantly_campaign_id && requestedProviderCampaignId &&
         campaign.instantly_campaign_id !== requestedProviderCampaignId

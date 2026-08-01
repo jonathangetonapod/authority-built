@@ -359,6 +359,8 @@ export async function prepareWorkspaceCampaignPodcast(input: {
   followUpTwoSubject: string
   followUpTwoBody: string
   pitchChainVersion?: string | null
+  /** Which linked campaign to send into. Omitted means the client's own. */
+  instantlyCampaignId?: string | null
 }): Promise<{
   added: boolean
   campaign: WorkspaceClientCampaign
@@ -384,6 +386,7 @@ export async function prepareWorkspaceCampaignPodcast(input: {
     follow_up_2_subject: input.followUpTwoSubject,
     follow_up_2_body: input.followUpTwoBody,
     pitch_chain_version: input.pitchChainVersion ?? null,
+    instantly_campaign_id: input.instantlyCampaignId ?? null,
   }, 'The prepared outreach could not be pushed to the client campaign.')
 }
 
@@ -772,6 +775,14 @@ export interface ClientInstantlyCampaignLink {
   instantly_campaign_id: string
   campaign_name: string | null
   created_at: string | null
+  /**
+   * When this app built the campaign's sequence and registered the variables a
+   * written pitch renders through. Null means the campaign was made in
+   * Instantly and carries its own copy.
+   */
+  provisioned_at?: string | null
+  /** Only a provisioned campaign may be chosen as a send target. */
+  sendable?: boolean
 }
 
 export interface ClientLinkableInstantlyCampaign {
@@ -812,6 +823,33 @@ export async function setClientInstantlyCampaignLinks(
     campaign_ids: campaignIds,
   }, 'The linked Instantly campaigns could not be saved.')
   return data.links ?? []
+}
+
+/**
+ * Builds a campaign this app owns the sequence of, and links it to the client.
+ *
+ * The only way to add a send target. Linking an existing Instantly campaign
+ * attributes its replies to the client but can never receive a pitch, because
+ * it carries copy of its own.
+ */
+export async function createClientInstantlyCampaign(input: {
+  workspaceId: string
+  clientId: string
+  name: string
+  senderAccounts: string[]
+  timezone?: string
+  dailyLimit?: number
+}): Promise<ClientInstantlyCampaignLink> {
+  const data = await invokeWorkspaceCampaigns<{ link: ClientInstantlyCampaignLink }>({
+    action: 'client-links-create',
+    workspace_id: input.workspaceId,
+    client_id: input.clientId,
+    name: input.name,
+    sender_accounts: input.senderAccounts,
+    timezone: input.timezone ?? null,
+    daily_limit: input.dailyLimit ?? null,
+  }, 'The campaign could not be created in Instantly.')
+  return data.link
 }
 
 export interface WorkspaceInboxMessage {

@@ -94,6 +94,77 @@ assert.match(edge, /skip_if_in_workspace: false,[\s\S]*?skip_if_in_campaign: fal
 assert.match(edge, /CAMPAIGN_CONTACT_ALREADY_IN_OUTREACH/u)
 assert.match(edge, /\.from\("podcast_outreach_actions"\)[\s\S]*?webhook_response_status[\s\S]*?CAMPAIGN_PREVIOUS_OUTREACH_EXISTS/u)
 assert.match(edge, /\.eq\("campaign_id", campaign\.id\)[\s\S]*?\.eq\("contact_email", target\.contact_email\)/u)
+// Only a campaign this app built the sequence for may receive a pitch. A
+// hand-linked campaign carries its own copy, so staging a lead into it would
+// send that copy while the screen reported the written pitch as sent. The gate
+// is provisioned_at, not the link existing.
+assert.match(
+  edge,
+  /if \(!link\.provisioned_at\) \{[\s\S]*?"CAMPAIGN_NOT_SENDABLE"/u,
+  'an unprovisioned link must be refused as a send target',
+)
+assert.match(
+  edge,
+  /if \(!link \|\| link\.client_id !== clientId\) \{[\s\S]*?"CAMPAIGN_NOT_LINKED"/u,
+  'a campaign belonging to another client must be refused',
+)
+// The creating path is the only writer of provisioned_at, and it writes it in
+// the same statement that creates the link, so a row cannot claim to be
+// sendable without the sequence behind it.
+assert.match(
+  edge,
+  /\/variables`,\s*\n\s*\{ method: "POST", body: \{ variables: \[\.\.\.PROVISIONED_CAMPAIGN_VARIABLES\] \} \},\s*\n\s*\);[\s\S]*?provisioned_at: new Date\(\)\.toISOString\(\)/u,
+  'a link may only be marked provisioned after its variables are registered',
+)
+
+// Follow-ups reply into the opening thread. Instantly threads a step with no
+// subject as a reply; giving it one starts a separate conversation, so a host
+// who ignored the pitch received three unrelated emails instead of one thread.
+assert.match(
+  edge,
+  /subject: "",\s*\n\s*body: "\{\{goapFollowUpOneBody\}\}"/u,
+  'follow-up one must reply into the thread, not open its own',
+)
+assert.match(
+  edge,
+  /subject: "",\s*\n\s*body: "\{\{goapFollowUpTwoBody\}\}"/u,
+  'follow-up two must reply into the thread, not open its own',
+)
+// The opening email is the only step that names the conversation.
+assert.match(
+  edge,
+  /subject: "\{\{goapPitchSubject\}\}",\s*\n\s*body: "\{\{goapPitchBody\}\}"/u,
+  'the opening email must still carry the written subject',
+)
+
+// A campaign deleted in Instantly must not wedge the client forever. The
+// mapping is dropped only on a 404 — a rate limit or a rejected key says
+// nothing about whether the campaign is still there, and forgetting a live
+// mapping on a transient fault would orphan running outreach.
+assert.match(
+  edge,
+  /InstantlyApiError\) \|\| error\.status !== 404\) throw error;\s*\n\s*await forgetDeadProviderCampaign/u,
+  'only a 404 may clear the provider mapping',
+)
+// The clear is conditional on the dead ID still being the mapped one, so a
+// racing setup that already mapped something live is left alone.
+assert.match(
+  edge,
+  /instantly_campaign_id: null,[\s\S]*?\.eq\("instantly_campaign_id", deadProviderCampaignId\)/u,
+  'the mapping may only be cleared while the dead id is still the mapped one',
+)
+// Both dead ends the deleted campaign created: preparing refused with an ID
+// nothing answers to, and remapping refused as CAMPAIGN_ALREADY_MAPPED.
+assert.match(
+  edge,
+  /if \(mapped\) return mapped;[\s\S]*?provider_sync_state: "error"/u,
+  'a dead mapping must fall through to building a replacement',
+)
+assert.match(
+  edge,
+  /readProviderCampaignOrForget\([\s\S]*?\);\s*\n\s*if \(!mappedNow\) \{[\s\S]*?readCampaign\([\s\S]*?CAMPAIGN_ALREADY_MAPPED/u,
+  'only a live mapping may refuse a remap',
+)
 assert.match(edge, /provider_sync_state: "creating"[\s\S]*?\.in\("provider_sync_state", \["idle", "error"\]\)/u)
 assert.match(edge, /provider_sync_state", "creating"[\s\S]*?\.lt\("provider_sync_started_at", staleBefore\)/u)
 assert.doesNotMatch(edge, /subsequence|workspace[_ -]group/iu)
@@ -101,7 +172,18 @@ assert.match(edge, /goapFollowUpOneSubject/u)
 assert.match(edge, /goapFollowUpOneBody/u)
 assert.match(edge, /goapFollowUpTwoSubject/u)
 assert.match(edge, /goapFollowUpTwoBody/u)
-assert.match(edge, /variables: \[[\s\S]*?"goapFollowUpOneSubject"[\s\S]*?"goapFollowUpTwoBody"/u)
+// One list, shared by the client's own campaign and by every campaign created
+// from the client card. These are what a written pitch renders through, so a
+// campaign missing them would send its own copy instead.
+assert.match(
+  edge,
+  /PROVISIONED_CAMPAIGN_VARIABLES = \[[\s\S]*?"goapFollowUpOneSubject"[\s\S]*?"goapFollowUpTwoBody"/u,
+  'the provisioned variable list must still carry the sequence variables',
+)
+assert.ok(
+  (edge.match(/variables: \[\.\.\.PROVISIONED_CAMPAIGN_VARIABLES\]/gu) || []).length === 2,
+  'both the client campaign and a created campaign must register the variables',
+)
 
 const connectionProjection = edge.match(/function connectionDto[\s\S]*?return \{([\s\S]*?)\n  \};\n\}/u)?.[1]
 assert.ok(connectionProjection, 'the integration response must use an explicit DTO')
@@ -340,7 +422,20 @@ assert.match(stagingMigration, /ADD COLUMN IF NOT EXISTS lead_staged_campaign_st
 // the sequence is running, with the next step spelled out.
 assert.match(prepDialog, /setStagedResult\(\{[\s\S]*?willSend: result\.will_send/u)
 assert.match(prepDialog, /aria-label="Pitch added to client campaign"/u)
-assert.match(prepDialog, /stagedResult\.willSend \? 'Live — starts automatically' : 'Paused — nothing sends yet'/u)
+// Three outcomes, not two. "Paused" and "no lead exists" both mean nothing is
+// going out today, but only one of them is finished work — reporting a lead
+// that was never created sends somebody to Instantly to look for a host who is
+// not there.
+assert.match(
+  prepDialog,
+  /'Live — starts automatically'[\s\S]*?stagedResult\.leadStaged[\s\S]*?'Paused — nothing sends yet'[\s\S]*?'Nothing to send — no lead yet'/u,
+  'the confirmation must separate a paused campaign from a missing lead',
+)
+assert.match(
+  prepDialog,
+  /stagedResult\.leadStaged\s*\n?\s*\?\s*`\$\{stagedResult\.hostName[\s\S]*?as a lead/u,
+  'the lead sentence may only render when a lead was staged',
+)
 assert.doesNotMatch(
   prepDialog.match(/onSuccess: async \(result\) => \{[\s\S]*?\n    \},/u)[0],
   /onOpenChange\(false\)/u,

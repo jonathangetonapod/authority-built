@@ -7,9 +7,11 @@ import {
   Archive,
   ArrowLeft,
   ArrowRight,
+  Check,
   CheckCircle2,
   ChevronDown,
   Coins,
+  Copy,
   ExternalLink,
   FileSearch,
   Globe,
@@ -41,11 +43,18 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { buildPodcastCampaignSequenceDraft, buildThreadReplySubject, type PodcastCampaignSequenceDraft } from '@/lib/campaignSequence'
 import { AgencyRelationshipNotice, PitchTrustPanel } from '@/components/workspace/PitchQualitySignals'
 import { checkPitchCopy } from '@/lib/pitchQuality'
-import { campaignErrorGuidance, errorCode } from '@/lib/campaignErrorGuidance'
+import { campaignErrorGuidance, campaignErrorReport, errorCode, errorStatus } from '@/lib/campaignErrorGuidance'
 import { MY_WORKSPACE_BASE_HREF, workspaceModuleHref } from '@/lib/workspaceRoutes'
 import { safeExternalUrl } from '@/lib/externalUrl'
 import {
@@ -61,6 +70,7 @@ import {
   runClientShortlistResearch,
 } from '@/services/clientShortlist'
 import {
+  getClientInstantlyCampaignLinks,
   getWorkspaceCampaign,
   prepareWorkspaceCampaignPodcast,
   removeWorkspaceCampaignLead,
@@ -104,6 +114,12 @@ type PitchStep = 'email' | 'research' | 'pitch'
 
 interface PrepareResult {
   added: boolean
+  /**
+   * The lead reached Instantly. Without it the podcast is on the campaign list
+   * and the copy is saved, but no host exists to receive any of it — a
+   * difference the screen used to paper over.
+   */
+  leadStaged: boolean
   willSend: boolean
   hostName: string
   contactEmail: string
@@ -260,7 +276,7 @@ export function ClientCampaignPrepDialog({
   // "Try again" that retried the wrong one would email a host the operator was
   // trying to take out of the campaign.
   const [prepareError, setPrepareError] = useState<
-    { message: string; code: string | null; source: 'prepare' | 'remove' } | null
+    { message: string; code: string | null; status: number | null; source: 'prepare' | 'remove' } | null
   >(null)
   const [confirmSendOpen, setConfirmSendOpen] = useState(false)
   const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false)
@@ -570,6 +586,16 @@ export function ClientCampaignPrepDialog({
     enabled: open && Boolean(podcast),
     retry: false,
   })
+  // Which campaigns this pitch may join. Only campaigns this app built carry
+  // the sequence a written pitch renders through, so the rest of the client's
+  // links — attribution-only — never appear as a choice.
+  const linksQuery = useQuery({
+    queryKey: ['client-instantly-campaign-links', workspaceId, clientId],
+    queryFn: () => getClientInstantlyCampaignLinks(workspaceId, clientId),
+    enabled: open && Boolean(podcast),
+    retry: false,
+    staleTime: 30_000,
+  })
   // Self-healing episode metadata: the server fetches from Podscan only when
   // the stored capture is missing or stale, so opening the dialog normally
   // costs one cheap read — and fills "Latest activity" without anyone asking.
@@ -598,6 +624,25 @@ export function ClientCampaignPrepDialog({
     || ['launching', 'in_outreach', 'replied', 'completed'].includes(target.status)
   ))
   const mappedCampaign = Boolean(campaign?.instantly_campaign_id)
+  // The client's own campaign is always a target; the extra ones are whichever
+  // links were created here rather than linked from Instantly.
+  const sendableCampaigns = useMemo(() => {
+    const own = campaign?.instantly_campaign_id
+      ? [{ id: campaign.instantly_campaign_id, name: campaign.name || 'This client’s campaign' }]
+      : []
+    const extra = (linksQuery.data?.links ?? [])
+      .filter((link) => link.sendable && link.instantly_campaign_id !== campaign?.instantly_campaign_id)
+      .map((link) => ({ id: link.instantly_campaign_id, name: link.campaign_name || 'Campaign' }))
+    return [...own, ...extra]
+  }, [campaign?.instantly_campaign_id, campaign?.name, linksQuery.data])
+  const [chosenCampaignId, setChosenCampaignId] = useState<string | null>(null)
+  // Default to the client's own campaign, and never leave a stale choice
+  // pointing at a campaign that is no longer offered.
+  const activeCampaignId = chosenCampaignId
+      && sendableCampaigns.some((item) => item.id === chosenCampaignId)
+    ? chosenCampaignId
+    : sendableCampaigns[0]?.id ?? null
+  const chosenCampaign = sendableCampaigns.find((item) => item.id === activeCampaignId) ?? null
   const podcastUrl = safeExternalUrl(podcast?.podcast_url)
   const podcastImageUrl = safeExternalUrl(podcast?.podcast_image_url)
   const publicPodcastEmail = podcast?.podcast_email?.trim() || ''
@@ -1185,6 +1230,7 @@ export function ClientCampaignPrepDialog({
         followUpTwoSubject: buildThreadReplySubject(draft.subject),
         followUpTwoBody: draft.followUpTwoBody,
         pitchChainVersion: aiPitches[pitchKey(podcast.id, selectedAngleIndex)]?.chainVersion ?? null,
+        instantlyCampaignId: activeCampaignId,
       })
     },
     onSuccess: async (result) => {
@@ -1198,16 +1244,18 @@ export function ClientCampaignPrepDialog({
       // only record of an action that reaches a real person.
       setStagedResult({
         added: result.added,
+        leadStaged: result.lead_staged,
         willSend: result.will_send,
         hostName: hostName.trim(),
         contactEmail: normalizedEmail,
-        campaignName: campaign?.name || 'the client campaign',
+        campaignName: chosenCampaign?.name || campaign?.name || 'the client campaign',
       })
       onPrepared?.()
     },
     onError: (error) => setPrepareError({
       message: error instanceof Error ? error.message : 'The pitch could not be sent to Client Campaign.',
       code: errorCode(error),
+      status: errorStatus(error),
       source: 'prepare',
     }),
   })
@@ -1231,10 +1279,39 @@ export function ClientCampaignPrepDialog({
       setPrepareError({
         message: error instanceof Error ? error.message : 'The podcast could not be removed from the campaign.',
         code: errorCode(error),
+        status: errorStatus(error),
         source: 'remove',
       })
     },
   })
+
+  const [detailsCopied, setDetailsCopied] = useState(false)
+  // Clipboard access is absent in some embedded browsers and in jsdom. A copy
+  // button that throws on click would take the alert down with it, so a
+  // failure leaves the label alone and the code stays readable on screen.
+  const copyPrepareErrorDetails = () => {
+    if (!prepareError) return
+    const report = campaignErrorReport({
+      code: prepareError.code,
+      status: prepareError.status,
+      message: prepareError.message,
+      context: {
+        action: prepareError.source === 'remove' ? 'unstage-podcast' : 'prepare-podcast',
+        client: clientName,
+        podcast: podcast?.podcast_name,
+        campaign: campaign?.name,
+        workspace_id: workspaceId,
+        client_id: clientId,
+        shortlist_podcast_id: podcast?.id,
+      },
+    })
+    void Promise.resolve(navigator.clipboard?.writeText(report))
+      .then(() => {
+        setDetailsCopied(true)
+        window.setTimeout(() => setDetailsCopied(false), 2_000)
+      })
+      .catch(() => toast.error('The details could not be copied. The code is shown above.'))
+  }
 
   const prepareGuidance = campaignErrorGuidance(prepareError?.code)
   const retryPending = prepareError?.source === 'remove'
@@ -1259,32 +1336,42 @@ export function ClientCampaignPrepDialog({
                   {/* The draft is still on screen and still saved; a refusal
                       that reads as data loss makes operators redo work. */}
                   {prepareGuidance && <p className="mt-1 text-xs leading-5 text-destructive/70">{prepareError.message}</p>}
-                  {prepareRemedy && (
-                    <div className="mt-3">
-                      {prepareRemedy.kind === 'link' ? (
-                        <Button asChild type="button" size="sm" variant="outline">
-                          <Link to={workspaceModuleHref(workspaceBaseHref, prepareRemedy.module)}>{prepareRemedy.label}<ArrowRight className="ml-2 h-3.5 w-3.5" /></Link>
-                        </Button>
-                      ) : (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={retryPending}
-                          onClick={() => {
-                            const retrying = prepareError.source
-                            setPrepareError(null)
-                            if (prepareRemedy.kind === 'contact') setActiveStep('email')
-                            else if (retrying === 'remove') removeMutation.mutate()
-                            else prepareMutation.mutate()
-                          }}
-                        >
-                          {retryPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-                          {prepareRemedy.label}
-                        </Button>
-                      )}
-                    </div>
-                  )}
+                  {/* The identifying detail, always shown rather than folded
+                      away. A refusal this dialog has no guidance for is exactly
+                      the one somebody has to escalate, and the code is what
+                      makes that reportable. */}
+                  <p className="mt-2 font-mono text-[11px] leading-4 text-destructive/70">
+                    {prepareError.code || 'no code'}
+                    {prepareError.status !== null && ` · HTTP ${prepareError.status}`}
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {prepareRemedy && (prepareRemedy.kind === 'link' ? (
+                      <Button asChild type="button" size="sm" variant="outline">
+                        <Link to={workspaceModuleHref(workspaceBaseHref, prepareRemedy.module)}>{prepareRemedy.label}<ArrowRight className="ml-2 h-3.5 w-3.5" /></Link>
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={retryPending}
+                        onClick={() => {
+                          const retrying = prepareError.source
+                          setPrepareError(null)
+                          if (prepareRemedy.kind === 'contact') setActiveStep('email')
+                          else if (retrying === 'remove') removeMutation.mutate()
+                          else prepareMutation.mutate()
+                        }}
+                      >
+                        {retryPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                        {prepareRemedy.label}
+                      </Button>
+                    ))}
+                    <Button type="button" size="sm" variant="ghost" onClick={copyPrepareErrorDetails}>
+                      {detailsCopied ? <Check className="mr-2 h-3.5 w-3.5" /> : <Copy className="mr-2 h-3.5 w-3.5" />}
+                      {detailsCopied ? 'Copied' : 'Copy details'}
+                    </Button>
+                  </div>
                 </div>
                 <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => setPrepareError(null)}>Dismiss</Button>
               </div>
@@ -1316,38 +1403,70 @@ export function ClientCampaignPrepDialog({
             <div
               role="status"
               aria-label="Pitch added to client campaign"
-              className={stagedResult.willSend
+              className={stagedResult.willSend || !stagedResult.leadStaged
                 ? 'm-6 flex min-h-80 flex-col items-center justify-center rounded-2xl border border-amber-300 bg-amber-50 px-6 py-10 text-center'
                 : 'm-6 flex min-h-80 flex-col items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50/60 px-6 py-10 text-center'}
             >
-              {stagedResult.willSend
+              {/* Green is a claim that the work is finished. Without a lead it
+                  is not: the podcast is listed and nobody can be reached. */}
+              {stagedResult.willSend || !stagedResult.leadStaged
                 ? <AlertCircle className="h-10 w-10 text-amber-700" />
                 : <CheckCircle2 className="h-10 w-10 text-emerald-600" />}
               <h3 className="mt-4 text-lg font-semibold">
                 {stagedResult.willSend
                   ? `${podcast?.podcast_name || 'This podcast'} is now in a live sequence`
-                  : `${podcast?.podcast_name || 'This podcast'} was added to ${stagedResult.campaignName}`}
+                  : stagedResult.leadStaged
+                    ? `${podcast?.podcast_name || 'This podcast'} was added to ${stagedResult.campaignName}`
+                    : `${podcast?.podcast_name || 'This podcast'} was added, but has no lead`}
               </h3>
+              {/* Saying "added as a lead" when no lead exists is the failure
+                  that sends somebody to Instantly looking for a host who was
+                  never created. The sequence only attaches to a real lead. */}
               <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-                {stagedResult.hostName || 'The host'} was {stagedResult.added ? 'added' : 'updated'} in {stagedResult.campaignName} as a lead, with the full three-email sequence attached.
+                {stagedResult.leadStaged
+                  ? `${stagedResult.hostName || 'The host'} was ${stagedResult.added ? 'added' : 'updated'} in ${stagedResult.campaignName} as a lead, with the full three-email sequence attached.`
+                  : `The podcast and its sequence are saved to ${stagedResult.campaignName}. No lead was created, because there is no contact email to create one for, so nothing can reach the host yet.`}
               </p>
               <dl className="mt-5 w-full max-w-sm space-y-2 rounded-xl border bg-background/80 p-4 text-left text-xs">
-                <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Contact</dt><dd className="truncate font-medium">{stagedResult.contactEmail}</dd></div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Contact</dt>
+                  <dd className={stagedResult.contactEmail ? 'truncate font-medium' : 'truncate font-medium text-amber-800'}>
+                    {stagedResult.contactEmail || 'None yet'}
+                  </dd>
+                </div>
                 <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Campaign</dt><dd className="truncate font-medium">{stagedResult.campaignName}</dd></div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-muted-foreground">Sending</dt>
-                  <dd className={stagedResult.willSend ? 'font-semibold text-amber-800' : 'font-medium'}>
-                    {stagedResult.willSend ? 'Live — starts automatically' : 'Paused — nothing sends yet'}
+                  <dd className={stagedResult.willSend || !stagedResult.leadStaged ? 'font-semibold text-amber-800' : 'font-medium'}>
+                    {stagedResult.willSend
+                      ? 'Live — starts automatically'
+                      : stagedResult.leadStaged
+                        ? 'Paused — nothing sends yet'
+                        : 'Nothing to send — no lead yet'}
                   </dd>
                 </div>
               </dl>
               <p className="mt-4 max-w-md text-xs leading-5 text-muted-foreground">
                 {stagedResult.willSend
                   ? 'The opening email goes out on the campaign\u2019s next send window, then the two follow-ups on day 6 and day 13. To stop it, pause the campaign in Client Campaigns.'
-                  : 'Open Client Campaigns and choose Approve & start outreach when you are ready for this to send. You can keep editing the sequence until then.'}
+                  : stagedResult.leadStaged
+                    ? 'Open Client Campaigns and choose Approve & start outreach when you are ready for this to send. You can keep editing the sequence until then.'
+                    : 'Add a contact email and send again to create the lead. Approving outreach before then starts a sequence with nobody in it.'}
               </p>
               <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-                <Button asChild variant={stagedResult.willSend ? 'default' : 'outline'}><Link to={campaignHref}>Open Client Campaigns</Link></Button>
+                {/* The one move that finishes what this screen reports. */}
+                {!stagedResult.leadStaged && (
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setStagedResult(null)
+                      setActiveStep('email')
+                    }}
+                  >
+                    Add a contact email
+                  </Button>
+                )}
+                <Button asChild variant={stagedResult.willSend || !stagedResult.leadStaged ? 'outline' : 'default'}><Link to={campaignHref}>Open Client Campaigns</Link></Button>
                 <Button type="button" variant={stagedResult.willSend ? 'outline' : 'default'} onClick={() => onOpenChange(false)}>Done</Button>
               </div>
               {prepareErrorAlert && <div className="mt-6 w-full max-w-xl text-left">{prepareErrorAlert}</div>}
@@ -2342,7 +2461,31 @@ export function ClientCampaignPrepDialog({
                       ? `All edits are saved. Sending ${alreadyStaged ? 'updates' : 'adds'} ${hostName.trim() || 'this host'} ${alreadyStaged ? 'in' : 'to'} ${campaign?.name || 'the campaign'}, and that campaign is live, so the opening email goes out on its next send window.`
                       : 'All edits are saved. Sending adds this host to the campaign as a lead. The campaign is paused, so nothing goes out until you start outreach.')}
               </p>
-              <div className="grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
+              <div className="grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
+                {/* Only when there is a choice to make. One campaign needs no
+                    picker, and a picker offering one option reads as a setting
+                    somebody forgot to finish. */}
+                {activeStep === 'pitch' && sendableCampaigns.length > 1 && (
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="send-target-campaign" className="whitespace-nowrap text-xs text-muted-foreground">
+                      Send to
+                    </Label>
+                    <Select
+                      value={activeCampaignId ?? undefined}
+                      onValueChange={setChosenCampaignId}
+                      disabled={locked || prepareMutation.isPending}
+                    >
+                      <SelectTrigger id="send-target-campaign" className="h-9 w-full sm:w-56">
+                        <SelectValue placeholder="Choose a campaign" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {sendableCampaigns.map((item) => (
+                          <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
                 {activeStep === 'pitch' && alreadyStaged && (
                   <Button type="button" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setConfirmRemoveOpen(true)}>
