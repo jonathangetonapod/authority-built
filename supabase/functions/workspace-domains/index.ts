@@ -351,6 +351,21 @@ serve(async (req) => {
 
       const { serving, error: servingError } = await railwayDomainServing(domain.provider_domain_id)
       const nextStatus = serving ? 'active' : 'awaiting_dns'
+      // A workspace's first domain to come alive becomes the one links use.
+      // Setting primary was a separate click that existed for exactly one
+      // reason — a second domain must not steal links from a working first —
+      // so it stays manual only when a primary already exists.
+      let promoted = false
+      if (serving) {
+        const { data: existingPrimary, error: primaryError } = await admin
+          .from('workspace_domains')
+          .select('id')
+          .eq('workspace_id', domain.workspace_id)
+          .eq('is_primary', true)
+          .maybeSingle()
+        if (primaryError) throw new HttpError(500, 'DOMAIN_REFRESH_FAILED', 'The domain could not be updated')
+        promoted = !existingPrimary || existingPrimary.id === domainId
+      }
       const { error: updateError } = await admin
         .from('workspace_domains')
         .update({
@@ -360,12 +375,12 @@ serve(async (req) => {
           activated_at: serving ? new Date().toISOString() : null,
           last_checked_at: new Date().toISOString(),
           last_error: serving ? null : servingError,
-          ...(serving ? {} : { is_primary: false }),
+          is_primary: promoted,
         })
         .eq('id', domainId)
       if (updateError) throw new HttpError(500, 'DOMAIN_REFRESH_FAILED', 'The domain could not be updated')
 
-      return jsonResponse(req, METHODS, 200, { success: true, status: nextStatus })
+      return jsonResponse(req, METHODS, 200, { success: true, status: nextStatus, promoted })
     }
 
     if (action === 'set_primary') {

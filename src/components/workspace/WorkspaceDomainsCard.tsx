@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Copy, Globe, Loader2, RefreshCw, Star, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -96,9 +96,54 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
     onError: (error) => toast.error(error instanceof Error ? error.message : 'The domain could not be removed.'),
   })
 
+  /**
+   * Check waiting domains on a timer, quietly.
+   *
+   * DNS propagation takes minutes to hours, and the manual flow was pressing
+   * Check until it flipped — the admin as polling loop. While any domain is
+   * waiting, each gets checked once a minute; the toast-and-refresh path stays
+   * on the button, because sixty background toasts an hour is noise, and the
+   * flip to Active is visible on the row the moment a check lands it.
+   */
+  const waitingIds = (domainsQuery.data || [])
+    .filter((domain: WorkspaceDomain) => domain.status === 'awaiting_dns')
+    .map((domain: WorkspaceDomain) => domain.id)
+  const waitingKey = waitingIds.join(',')
+  useEffect(() => {
+    if (!waitingKey) return
+    const timer = window.setInterval(() => {
+      for (const domainId of waitingKey.split(',')) {
+        void Promise.resolve(refreshWorkspaceDomain(domainId))
+          .then(() => queryClient.invalidateQueries({ queryKey: ['workspace-domains'] }))
+          .catch(() => {})
+      }
+    }, 60_000)
+    return () => window.clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waitingKey])
+
   const busy = addMutation.isPending || refreshMutation.isPending
     || primaryMutation.isPending || removeMutation.isPending
   const domains = domainsQuery.data || []
+
+  /**
+   * The whole handoff in one copy. Composing the email was the manual step:
+   * three values copied separately into prose that had to explain them. This
+   * is written to be pasted to the agency — or forwarded straight to whoever
+   * runs their DNS — without editing.
+   */
+  const copyInstructions = async (domain: WorkspaceDomain) => {
+    const message = [
+      `To serve your workspace on ${domain.hostname}, add one DNS record at your domain host:`,
+      '',
+      `  Type:  ${domain.dns_record_type ?? 'CNAME'}`,
+      `  Name:  ${domain.dns_record_name ?? domain.hostname}`,
+      `  Value: ${domain.dns_record_value ?? ''}`,
+      '',
+      'Nothing else changes on your side. Once the record exists, the certificate issues automatically — usually within the hour — and your client links switch to your domain. Reply when it is in and we will confirm it is live.',
+    ].join('\n')
+    await copy(message)
+  }
 
   const copy = async (value: string) => {
     try {
@@ -180,6 +225,11 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
                     )}
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-1">
+                    {domain.status === 'awaiting_dns' && domain.dns_record_value && (
+                      <Button size="sm" variant="outline" disabled={busy} onClick={() => void copyInstructions(domain)}>
+                        <Copy className="mr-2 h-3.5 w-3.5" />Copy instructions
+                      </Button>
+                    )}
                     <Button size="sm" variant="outline" disabled={busy} onClick={() => refreshMutation.mutate(domain.id)}>
                       <RefreshCw className="mr-2 h-3.5 w-3.5" />Check
                     </Button>

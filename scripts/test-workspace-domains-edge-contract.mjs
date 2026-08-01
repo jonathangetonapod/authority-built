@@ -89,7 +89,17 @@ assert.match(admin, /RAILWAY_NOT_CONFIGURED/u)
 
 // A domain that stops serving cannot stay primary, or client links would keep
 // pointing at a hostname that no longer answers.
-assert.match(admin, /\.\.\.\(serving \? \{\} : \{ is_primary: false \}\)/u)
+// The first domain to come alive becomes the one links use — the separate
+// "set primary" click exists only to protect a working primary from a second
+// domain, so it is skipped exactly when there is nothing to protect. A check
+// that finds the domain not serving still strips primary, keeping the pairing
+// constraint honest.
+assert.match(
+  admin,
+  /promoted = !existingPrimary \|\| existingPrimary\.id === domainId/u,
+  'activation must promote only when no other primary exists',
+)
+assert.match(admin, /is_primary: promoted,/u)
 
 // CORS stays an allowlist. Tenant origins are added from the database, never
 // by widening to a wildcard, and the response says it varies by origin so a
