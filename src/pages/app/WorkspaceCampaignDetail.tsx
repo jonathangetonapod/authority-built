@@ -37,6 +37,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/contexts/AuthContext'
@@ -188,6 +189,21 @@ function leadVerificationLabel(status: number | null): string | null {
   if (status === -3) return 'Catch-all domain'
   if (status === -4) return 'Job change'
   return null
+}
+
+/**
+ * A colour for the delivery state, so a long list reads at a glance. Derived
+ * from the same function the table uses rather than a second opinion about
+ * what a target's state is.
+ */
+function deliveryDotClass(target?: WorkspaceCampaignTarget): string {
+  const label = leadDelivery(target).label
+  if (label === 'Bounced' || label === 'Delivery issue') return 'bg-destructive'
+  if (label === 'Unsubscribed' || label === 'Skipped') return 'bg-amber-500'
+  if (label === 'Replied' || label === 'Completed') return 'bg-emerald-500'
+  if (label === 'Emailed' || label === 'Queued') return 'bg-sky-500'
+  if (label === 'Previously contacted') return 'bg-sky-400'
+  return 'bg-muted-foreground/40'
 }
 
 function leadDelivery(target?: WorkspaceCampaignTarget): { label: string; detail: string; className: string } {
@@ -880,17 +896,30 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                         : 'Every podcast carries its own three messages, prepared in Podcasts.'}
                     </CardDescription>
                   </div>
+                  {/* Each option carries the state that decides whether its
+                      copy is worth reading — one written but not sent reads
+                      very differently from one already in a host's inbox — so
+                      choosing does not mean opening each in turn to find out. */}
                   {previewableTargets.length > 0 && (
-                    <select
-                      aria-label="Podcast"
-                      value={previewTarget?.id ?? ''}
-                      onChange={(event) => setPreviewTargetId(event.target.value)}
-                      className="h-9 w-full shrink-0 rounded-md border border-input bg-background px-3 text-sm sm:w-64"
-                    >
-                      {previewableTargets.map((target) => (
-                        <option key={target.id} value={target.id}>{target.podcast_name}</option>
-                      ))}
-                    </select>
+                    <Select value={previewTarget?.id ?? undefined} onValueChange={setPreviewTargetId}>
+                      <SelectTrigger aria-label="Podcast" className="h-auto w-full shrink-0 py-2 sm:w-72">
+                        <SelectValue placeholder="Choose a podcast" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-80">
+                        {previewableTargets.map((target) => {
+                          const delivery = leadDelivery(target)
+                          return (
+                            <SelectItem key={target.id} value={target.id} className="py-2">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${deliveryDotClass(target)}`} />
+                                <span className="min-w-0 flex-1 truncate">{target.podcast_name}</span>
+                                <span className="shrink-0 text-xs text-muted-foreground">{delivery.label}</span>
+                              </div>
+                            </SelectItem>
+                          )
+                        })}
+                      </SelectContent>
+                    </Select>
                   )}
                 </CardHeader>
                 <CardContent className="space-y-3">

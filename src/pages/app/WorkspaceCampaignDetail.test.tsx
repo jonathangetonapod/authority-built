@@ -408,6 +408,22 @@ function withStagedLead() {
   } as WorkspaceCampaignDetailResponse)
 }
 
+  // A long list of podcast names says nothing about which is worth opening.
+  // One written but never sent reads very differently from one already in a
+  // host's inbox.
+  it('shows each podcast delivery state in the picker', async () => {
+    renderPage()
+
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Sequences' }), { button: 0 })
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Podcast' }))
+
+    const founder = await screen.findByRole('option', { name: /Founder Show/ })
+    expect(founder).toHaveTextContent('Not emailed')
+    // The picker lists what reached the campaign, matching Podcasts. A podcast
+    // with no prepared pitch has no sequence to preview.
+    expect(screen.queryByRole('option', { name: /Operator Stories/ })).not.toBeInTheDocument()
+  })
+
   // Everything else on this page is as fresh as the last sync. A lead moves on
   // its own — it opens, it bounces, it replies — so this one is asked live.
   it('reads where a host stands from Instantly rather than from the last sync', async () => {
