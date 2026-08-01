@@ -61,7 +61,7 @@ import {
   type WorkspaceInstantlyIntegration,
 } from '@/services/workspaceCampaigns'
 import { type WorkspaceClient } from '@/services/clients'
-import { defaultInstantlyTimezone } from '@/lib/instantlyTimezones'
+import { INSTANTLY_TIMEZONES, defaultInstantlyTimezone, toInstantlyTimezone } from '@/lib/instantlyTimezones'
 import { describeSyncFreshness } from '@/lib/syncFreshness'
 
 type CampaignFilter = 'all' | 'attention' | 'draft' | 'active' | 'paused' | 'completed'
@@ -561,7 +561,7 @@ const WorkspaceCampaigns = ({
     const providerCampaign = unassignedProviderCampaigns.find((campaign) => campaign.id === providerCampaignId)
     if (!providerCampaign) return
     setCampaignName(providerCampaign.name)
-    setCampaignTimezoneDraft(providerCampaign.timezone)
+    setCampaignTimezoneDraft(toInstantlyTimezone(providerCampaign.timezone))
     setCampaignDailyLimit(providerCampaign.daily_limit)
     setSelectedSenderAccounts(new Set(providerCampaign.sender_accounts))
   }
@@ -940,7 +940,26 @@ const WorkspaceCampaigns = ({
                 <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="campaign-timezone">Sending timezone</Label>
-                  <Input id="campaign-timezone" value={campaignTimezoneDraft} onChange={(event) => setCampaignTimezoneDraft(event.target.value)} disabled={!selectedClient} />
+                  {/* A list, not free text, and not a fixed default either.
+                      Instantly pins an enum with no New York and no Los
+                      Angeles, so a typed zone could be a real one it refuses —
+                      and the hosts being emailed decide the right answer, not
+                      whatever clock the operator's laptop happens to be on. */}
+                  <select
+                    id="campaign-timezone"
+                    value={campaignTimezoneDraft}
+                    onChange={(event) => setCampaignTimezoneDraft(event.target.value)}
+                    disabled={!selectedClient}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {INSTANTLY_TIMEZONES.map((zone) => (
+                      <option key={zone} value={zone}>{zone.replace(/_/g, ' ')}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    When this campaign may email. Instantly has no New York or Los Angeles —
+                    America/Detroit and America/Dawson are those clocks.
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="campaign-daily-limit">Daily lead limit</Label>
