@@ -7,6 +7,7 @@ import {
   getClientInstantlyCampaignLinks,
   setClientInstantlyCampaignLinks,
   getWorkspaceCampaignOverview,
+  getWorkspaceCampaignSendingStatus,
   getWorkspaceMailboxes,
   getWorkspacePromptRequirements,
   getWorkspaceResearchPromptOverrides,
@@ -185,6 +186,33 @@ describe('workspaceCampaigns service', () => {
         // Omitted by the caller means the client's own campaign, which is where
         // every send went before the picker existed.
         instantly_campaign_id: null,
+      },
+    })
+  })
+
+  // The campaign object carries one integer for "why is nothing sending". This
+  // reads the provider's own account: which accounts are unavailable and why,
+  // what is queued, when the issue began.
+  it('reads the provider account of why a campaign is not sending', async () => {
+    const response = {
+      status: 'account_daily_limit_met',
+      status_message: 'Every sending account has reached its daily limit.',
+      issue_started_at: '2026-08-01T09:00:00Z',
+      last_healthy_send_at: '2026-07-31T16:00:00Z',
+      in_schedule: true,
+      accounts: { total_connected: 3, available: 0, daily_limit_hit: 2, disconnected: 1, slow_ramp_limit_hit: 0 },
+      daily_limit: { limit: 30, sent: 30, limit_hit: true },
+      follow_ups_waiting: { count: 4, earliest_wait_seconds: 3600 },
+      checked_at: '2026-08-01T12:00:00Z',
+    }
+    invoke.mockResolvedValue({ data: response, error: null })
+
+    await expect(getWorkspaceCampaignSendingStatus(workspaceId, clientId)).resolves.toEqual(response)
+    expect(invoke).toHaveBeenCalledWith('workspace-client-campaigns', {
+      body: {
+        action: 'campaign-sending-status',
+        workspace_id: workspaceId,
+        client_id: clientId,
       },
     })
   })

@@ -52,6 +52,7 @@ import { getClientShortlist, type ClientShortlistPodcast } from '@/services/clie
 import { getWorkspaceClientDetail } from '@/services/clients'
 import {
   getWorkspaceCampaign,
+  getWorkspaceCampaignSendingStatus,
   getWorkspaceTargetLeadStatus,
   saveWorkspaceCampaign,
   setWorkspaceCampaignRunning,
@@ -498,6 +499,22 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canSync, syncIsStale, campaign?.instantly_campaign_id])
 
+  /**
+   * The provider's full account of why nothing is going out.
+   *
+   * provider_not_sending_status is one integer, stored at the last sync. This
+   * reports which accounts are unavailable and why, how many follow-ups are
+   * queued and when the earliest becomes sendable, when the issue started and
+   * when the campaign last sent anything — read now, not half an hour ago.
+   */
+  const sendingStatusQuery = useQuery({
+    queryKey: ['workspace-campaign-sending-status', workspaceId, clientId],
+    queryFn: () => getWorkspaceCampaignSendingStatus(workspaceId, clientId),
+    enabled: Boolean(campaign?.instantly_campaign_id) && Boolean(integration?.connected),
+    retry: false,
+    staleTime: 60_000,
+  })
+  const sendingStatus = sendingStatusQuery.data ?? null
   // Asked of Instantly, not read from the last sync. A lead moves without
   // anybody here touching it, so a cached answer to "where does this host
   // stand" is the one thing on this page worth least.
@@ -1211,13 +1228,54 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {notSendingReason && (
-                    // Independent of whether a schedule has been read: an
-                    // active campaign sending nothing used to give no reason
-                    // at all, and the reason is the provider's to give.
-                    <p className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs leading-5 text-sky-950">
-                      <strong className="font-semibold">Not sending right now.</strong> {notSendingReason}
-                    </p>
+                  {(sendingStatus?.status_message || notSendingReason) && (
+                    // The provider's sentence where it gives one, our mapping
+                    // of its status code where it does not. An active campaign
+                    // sending nothing used to give no reason at all.
+                    <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs leading-5 text-sky-950">
+                      <p>
+                        <strong className="font-semibold">Not sending right now.</strong>{' '}
+                        {sendingStatus?.status_message || notSendingReason}
+                      </p>
+                      {sendingStatus && (
+                        <dl className="space-y-1">
+                          {sendingStatus.accounts && (
+                            <div className="flex justify-between gap-3">
+                              <dt>Sending accounts ready</dt>
+                              <dd className="font-medium">
+                                {sendingStatus.accounts.available ?? 0} of {sendingStatus.accounts.total_connected ?? 0}
+                                {(sendingStatus.accounts.disconnected ?? 0) > 0 && `, ${sendingStatus.accounts.disconnected} disconnected`}
+                                {(sendingStatus.accounts.daily_limit_hit ?? 0) > 0 && `, ${sendingStatus.accounts.daily_limit_hit} at their daily limit`}
+                              </dd>
+                            </div>
+                          )}
+                          {sendingStatus.daily_limit && (
+                            <div className="flex justify-between gap-3">
+                              <dt>Sent today</dt>
+                              <dd className="font-medium">{sendingStatus.daily_limit.sent ?? 0} of {sendingStatus.daily_limit.limit ?? 0}{sendingStatus.daily_limit.limit_hit && ' — limit reached'}</dd>
+                            </div>
+                          )}
+                          {sendingStatus.follow_ups_waiting && (sendingStatus.follow_ups_waiting.count ?? 0) > 0 && (
+                            <div className="flex justify-between gap-3">
+                              <dt>Follow-ups queued</dt>
+                              <dd className="font-medium">{sendingStatus.follow_ups_waiting.count}</dd>
+                            </div>
+                          )}
+                          {sendingStatus.last_healthy_send_at && (
+                            <div className="flex justify-between gap-3">
+                              <dt>Last healthy send</dt>
+                              <dd className="font-medium">{formatDate(sendingStatus.last_healthy_send_at)}</dd>
+                            </div>
+                          )}
+                          {sendingStatus.issue_started_at && (
+                            <div className="flex justify-between gap-3">
+                              <dt>Issue began</dt>
+                              <dd className="font-medium">{formatDate(sendingStatus.issue_started_at)}</dd>
+                            </div>
+                          )}
+                        </dl>
+                      )}
+                    </div>
                   )}
                   {providerSchedule ? (
                     <>

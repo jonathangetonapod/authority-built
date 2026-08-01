@@ -8,6 +8,7 @@ import { getClientShortlist, type ClientShortlistPodcast } from '@/services/clie
 import { getWorkspaceClientDetail, type WorkspaceClientDetail } from '@/services/clients'
 import {
   getWorkspaceCampaign,
+  getWorkspaceCampaignSendingStatus,
   getWorkspaceTargetLeadStatus,
   setWorkspaceCampaignRunning,
   type WorkspaceCampaignDetailResponse,
@@ -19,6 +20,7 @@ vi.mock('@/services/clientShortlist', () => ({ getClientShortlist: vi.fn() }))
 vi.mock('@/services/clients', () => ({ getWorkspaceClientDetail: vi.fn() }))
 vi.mock('@/services/workspaceCampaigns', () => ({
   getWorkspaceCampaign: vi.fn(),
+  getWorkspaceCampaignSendingStatus: vi.fn(),
   getWorkspaceTargetLeadStatus: vi.fn(),
   saveWorkspaceCampaign: vi.fn(),
   setWorkspaceCampaignRunning: vi.fn(),
@@ -105,6 +107,19 @@ describe('WorkspaceCampaignDetail', () => {
     mockedUseAuth.mockReturnValue({ user: { id: 'user-1' }, workspace: { id: workspaceId, name: 'Acme Workspace' } } as never)
     mockedDetail.mockResolvedValue(detail)
     mockedShortlist.mockResolvedValue({ client: { id: clientId, name: 'Dallas Fontaine' }, podcasts })
+    // Healthy by default: a campaign with nothing wrong is the ordinary case,
+    // and an undefined resolution would fail the query rather than the assertion.
+    vi.mocked(getWorkspaceCampaignSendingStatus).mockResolvedValue({
+      status: 'healthy',
+      status_message: null,
+      issue_started_at: null,
+      last_healthy_send_at: null,
+      in_schedule: true,
+      accounts: null,
+      daily_limit: null,
+      follow_ups_waiting: null,
+      checked_at: '2026-08-01T12:00:00Z',
+    })
     mockedCampaign.mockResolvedValue(campaignState)
     mockedRunning.mockResolvedValue({ ...activeCampaign, status: 'paused' })
   })

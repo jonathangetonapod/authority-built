@@ -865,6 +865,44 @@ export async function getWorkspaceTargetLeadStatus(input: {
   }, 'The delivery status could not be read from Instantly.')
 }
 
+/**
+ * Why the campaign is not sending, from the provider rather than inferred.
+ *
+ * The campaign object carries one code. This carries the reason in words, when
+ * the issue began, when the campaign last sent anything, and which sending
+ * accounts are unavailable and why.
+ */
+export interface WorkspaceCampaignSendingStatus {
+  /** Provider status code: 'healthy', 'out_of_schedule', 'daily_limit_met'… */
+  status: string | null
+  /** The provider's own sentence. Not paraphrased here. */
+  status_message: string | null
+  issue_started_at: string | null
+  last_healthy_send_at: string | null
+  in_schedule: boolean | null
+  accounts: {
+    total_connected: number | null
+    available: number | null
+    daily_limit_hit: number | null
+    disconnected: number | null
+    slow_ramp_limit_hit: number | null
+  } | null
+  daily_limit: { limit: number | null; sent: number | null; limit_hit: boolean } | null
+  follow_ups_waiting: { count: number | null; earliest_wait_seconds: number | null } | null
+  checked_at: string
+}
+
+export async function getWorkspaceCampaignSendingStatus(
+  workspaceId: string,
+  clientId: string,
+): Promise<WorkspaceCampaignSendingStatus> {
+  return await invokeWorkspaceCampaigns<WorkspaceCampaignSendingStatus>({
+    action: 'campaign-sending-status',
+    workspace_id: workspaceId,
+    client_id: clientId,
+  }, 'The sending status could not be read from Instantly.')
+}
+
 export interface ClientInstantlyCampaignLink {
   instantly_campaign_id: string
   campaign_name: string | null

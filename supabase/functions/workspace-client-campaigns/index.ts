@@ -5042,6 +5042,89 @@ serve(async (req) => {
       });
     }
 
+    // Why the campaign is not sending, in the provider's own words.
+    //
+    // The campaign object carries a single not_sending_status code, which says
+    // "outside the schedule" or "daily limit" and stops there. This endpoint
+    // reports which accounts are unavailable and why, how many follow-ups are
+    // queued and how long until the earliest is sendable, when the issue began
+    // and when the campaign last sent anything healthily. An operator asking
+    // "why has nothing gone out" gets an answer instead of a code.
+    if (action === "campaign-sending-status") {
+      requireOnlyKeys(body, ["action", "workspace_id", "client_id"]);
+      const campaign = await readCampaign(context.admin, workspaceId, clientId);
+      if (!campaign?.instantly_campaign_id) {
+        throw new HttpError(
+          409,
+          "CAMPAIGN_NOT_ASSIGNED",
+          "This client has no Instantly campaign yet, so there is no sending status to read",
+        );
+      }
+      const connection = await readConnection(context.admin, workspaceId);
+      const apiKey = await integrationApiKey(connection);
+      const raw = await instantlyRequest<unknown>(
+        apiKey,
+        `/campaigns/${encodeURIComponent(campaign.instantly_campaign_id)}/sending-status`,
+      );
+      const payload = raw && typeof raw === "object" && !Array.isArray(raw)
+        ? raw as Record<string, unknown>
+        : {};
+      const summary = payload.summary && typeof payload.summary === "object" &&
+          !Array.isArray(payload.summary)
+        ? payload.summary as Record<string, unknown>
+        : null;
+      const diagnostics = payload.diagnostics &&
+          typeof payload.diagnostics === "object" &&
+          !Array.isArray(payload.diagnostics)
+        ? payload.diagnostics as Record<string, unknown>
+        : null;
+      const nested = (source: Record<string, unknown> | null, key: string) => {
+        const value = source?.[key];
+        return value && typeof value === "object" && !Array.isArray(value)
+          ? value as Record<string, unknown>
+          : null;
+      };
+      const accounts = nested(diagnostics, "accounts_summary");
+      const unavailable = nested(accounts, "unavailable");
+      const dailyLimit = nested(diagnostics, "campaign_daily_limit");
+      const followUps = nested(diagnostics, "follow_ups_waiting");
+      const schedule = nested(diagnostics, "schedule_status");
+      return jsonResponse(req, METHODS, 200, {
+        // The provider's own words where it gives them; this app does not
+        // paraphrase a diagnosis it did not make.
+        status: nullableString(summary?.status),
+        status_message: nullableString(summary?.status_message),
+        issue_started_at: nullableString(summary?.issue_started_at),
+        last_healthy_send_at: nullableString(summary?.last_healthy_send_at),
+        in_schedule: typeof schedule?.in_schedule === "boolean"
+          ? schedule.in_schedule
+          : null,
+        accounts: accounts
+          ? {
+            total_connected: nullableWhole(accounts.total_connected),
+            available: nullableWhole(accounts.available),
+            daily_limit_hit: nullableWhole(unavailable?.daily_limit_hit),
+            disconnected: nullableWhole(unavailable?.disconnected),
+            slow_ramp_limit_hit: nullableWhole(unavailable?.slow_ramp_limit_hit),
+          }
+          : null,
+        daily_limit: dailyLimit
+          ? {
+            limit: nullableWhole(dailyLimit.limit),
+            sent: nullableWhole(dailyLimit.sent),
+            limit_hit: dailyLimit.limit_hit === true,
+          }
+          : null,
+        follow_ups_waiting: followUps
+          ? {
+            count: nullableWhole(followUps.count),
+            earliest_wait_seconds: nullableWhole(followUps.earliest_wait_time_seconds),
+          }
+          : null,
+        checked_at: new Date().toISOString(),
+      });
+    }
+
     if (action === "client-links-list") {
       requireOnlyKeys(body, ["action", "workspace_id", "client_id"]);
       const [linksResult, campaignsResult] = await Promise.all([
