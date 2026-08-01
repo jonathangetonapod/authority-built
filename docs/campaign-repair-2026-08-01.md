@@ -40,6 +40,15 @@ browser console can only show the status.
 - The sending schedule was written as days `0` through `4` under the name
   "Weekdays". Instantly indexes from Sunday, so every campaign this app had ever
   created sent Sunday through Thursday and never on Friday.
+
+  The provider documents this nowhere. The OpenAPI schema lists `"0"` through
+  `"6"` as bare booleans with no weekday names, and neither the create-campaign
+  nor the list-campaign page states the mapping; the schema's own example sets
+  `0`-`4` true and `5`-`6` false, which reads as Monday-to-Friday and is not.
+  The mapping was established by observation: this app sent `0`-`4`, and the
+  campaign showed Sunday selected and Friday clear in Instantly's own interface.
+  Anything relying on it should treat that observation, not the reference, as
+  the source.
 - The timezone was validated as "is this a real IANA name", but Instantly pins
   an enum containing neither `America/New_York` — the default in three places —
   nor `America/Los_Angeles`. Unsupported values were silently substituted by the

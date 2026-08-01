@@ -354,7 +354,10 @@ describe('WorkspaceCampaignDetail', () => {
     expect(await screen.findByText('Sunday–Thursday')).toBeInTheDocument()
     expect(screen.getByText('9:00 AM–5:00 PM')).toBeInTheDocument()
     expect(screen.getByText('15 min')).toBeInTheDocument()
-    expect(screen.getByText(/Their API reference does not state it/i)).toBeInTheDocument()
+    // The mapping is documented nowhere by the provider, so the page says where
+    // it actually came from rather than presenting it as a known fact.
+    expect(screen.getByText(/does not state the mapping anywhere/i)).toBeInTheDocument()
+    expect(screen.getByText(/confirmed against a real campaign/i)).toBeInTheDocument()
     // No mismatch warning when the two agree.
     expect(screen.queryByText(/Save the schedule to push your timezone across/i)).not.toBeInTheDocument()
   })

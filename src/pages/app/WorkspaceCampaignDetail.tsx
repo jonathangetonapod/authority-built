@@ -137,9 +137,14 @@ function Metric({ label, value, detail, icon: Icon }: { label: string; value: nu
 }
 
 /**
- * Instantly's API reference does not state which day index is Sunday, so the
- * convention lives here in one place and the page says so out loud. Guessing
- * silently is what produced a hardcoded "Monday–Friday" nobody could check.
+ * Instantly's API reference never states which weekday each index is — not in
+ * the OpenAPI schema, which lists "0" through "6" as bare booleans, and not on
+ * the create-campaign or list-campaign pages. It was established by observation
+ * on 2026-08-01: this app sent days 0-4 as a schedule it called "Weekdays", and
+ * Instantly showed Sunday selected and Friday clear. So 0 is Sunday.
+ *
+ * Kept in one place because guessing it silently is exactly what produced a
+ * hardcoded "Monday-Friday" that sent on Sundays for as long as it existed.
  */
 const SCHEDULE_DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -796,7 +801,7 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                         </p>
                       )}
                       <p className="text-xs leading-5 text-muted-foreground">
-                        Day names assume Instantly numbers days from Sunday. Their API reference does not state it, so check this against the campaign in Instantly once.
+                        Day names follow Instantly numbering days from Sunday. Their API reference does not state the mapping anywhere; this was confirmed against a real campaign.
                       </p>
                     </>
                   ) : (
