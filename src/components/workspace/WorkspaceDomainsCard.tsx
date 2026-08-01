@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Copy, Globe, Loader2, RefreshCw, Star, Trash2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Copy, Globe, Loader2, RefreshCw, Star, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { checkDomainInput, describeDomainStatus } from '@/lib/customDomain'
 import {
   addWorkspaceDomain,
   listWorkspaceDomains,
@@ -39,6 +40,32 @@ const statusStyles: Record<WorkspaceDomainStatus, string> = {
   disabled: 'border-border bg-muted text-muted-foreground',
 }
 
+/**
+ * The whole flow, stated before the form rather than discovered through it.
+ *
+ * This card is used rarely and by someone handing work to an agency who has
+ * never seen it — so the sequence, who does which part, and how long the wait
+ * is supposed to be all have to be readable without asking anyone.
+ */
+const steps = [
+  {
+    title: 'Add the hostname here',
+    body: 'Pick the workspace and enter the address their clients will see. We register it with our host and get back the one DNS record it needs.',
+  },
+  {
+    title: 'Send that record to the agency',
+    body: 'Copy instructions writes the whole message — the record and what happens next — ready to forward to whoever runs their DNS. They add one record; nothing else on their side changes.',
+  },
+  {
+    title: 'Wait for it to resolve',
+    body: 'A waiting domain re-checks itself every minute, so there is nothing to sit and press. Once the record is visible the https certificate issues on its own, usually within the hour. Waiting for DNS, then Issuing certificate, then Serving.',
+  },
+  {
+    title: 'Their links switch over',
+    body: 'The first domain that serves becomes the address this workspace builds client links from. Every domain after that takes a deliberate Use for links click, so adding one can never quietly take links away from a working one.',
+  },
+]
+
 export function WorkspaceDomainsCard({ workspaces }: Props) {
   const queryClient = useQueryClient()
   const [workspaceId, setWorkspaceId] = useState('')
@@ -55,8 +82,13 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
   })
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['workspace-domains'] })
 
+  // Checked as it is typed, and the normalized value is what gets sent — so a
+  // pasted URL becomes a hostname here rather than a 400 from the server with
+  // the wrong-looking value still sitting in the box.
+  const check = checkDomainInput(hostname)
+
   const addMutation = useMutation({
-    mutationFn: () => addWorkspaceDomain(workspaceId, hostname),
+    mutationFn: () => addWorkspaceDomain(workspaceId, check.hostname),
     onSuccess: async (domain) => {
       setHostname('')
       await refresh()
@@ -106,7 +138,10 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
    * flip to Active is visible on the row the moment a check lands it.
    */
   const waitingIds = (domainsQuery.data || [])
-    .filter((domain: WorkspaceDomain) => domain.status === 'awaiting_dns')
+    // Issuing the certificate is a wait too, and leaving it out meant a domain
+    // that had cleared DNS sat on "Issuing certificate" until someone pressed
+    // Check — the one status where the card promises it resolves on its own.
+    .filter((domain: WorkspaceDomain) => domain.status === 'awaiting_dns' || domain.status === 'provisioning')
     .map((domain: WorkspaceDomain) => domain.id)
   const waitingKey = waitingIds.join(',')
   useEffect(() => {
@@ -140,6 +175,10 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
       `  Name:  ${domain.dns_record_name ?? domain.hostname}`,
       `  Value: ${domain.dns_record_value ?? ''}`,
       '',
+      'This is a new record on its own subdomain — it does not touch your website, your email, or any record you already have.',
+      '',
+      'If your DNS is on Cloudflare, leave this record set to DNS only rather than proxied. A proxied record hides the value we check for, and the certificate will not issue.',
+      '',
       'Nothing else changes on your side. Once the record exists, the certificate issues automatically — usually within the hour — and your client links switch to your domain. Reply when it is in and we will confirm it is live.',
     ].join('\n')
     await copy(message)
@@ -164,6 +203,41 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
+        <div className="rounded-xl border bg-muted/20 p-4">
+          <p className="text-sm font-medium">How this works</p>
+          <ol className="mt-3 space-y-3">
+            {steps.map((step, index) => (
+              <li key={step.title} className="flex gap-3">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
+                  {index + 1}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium">{step.title}</p>
+                  <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{step.body}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+          {/*
+            Both of these turn a ten-minute setup into a support thread, and
+            both are invisible until they have already gone wrong: an apex
+            record takes their marketing site down, and a proxied record fails
+            in a way that just looks like waiting.
+          */}
+          <div className="mt-4 space-y-2 border-t pt-3">
+            <p className="text-xs leading-5 text-muted-foreground">
+              <span className="font-medium text-foreground">Use a subdomain, not their root domain.</span> podcasts.theiragency.com
+              leaves everything they already run untouched. theiragency.com repoints the whole domain and takes their
+              marketing site with it.
+            </p>
+            <p className="text-xs leading-5 text-muted-foreground">
+              <span className="font-medium text-foreground">If they use Cloudflare, the record stays DNS only.</span> A proxied
+              record hides the value our host checks for, so the certificate never issues and the domain sits on
+              Waiting for DNS looking like slow propagation.
+            </p>
+          </div>
+        </div>
+
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
           <div className="space-y-1.5">
             <Label htmlFor="domain-workspace">Workspace</Label>
@@ -189,11 +263,57 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
           <div className="flex items-end">
             <Button
               onClick={() => addMutation.mutate()}
-              disabled={busy || !workspaceId || hostname.trim().length < 4}
+              disabled={busy || !workspaceId || !check.ready}
             >
               {addMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Add domain
             </Button>
           </div>
+        </div>
+        {/*
+          One slot under the form, and it always says the most useful thing it
+          can: what is wrong, or what is risky, or exactly what will be added.
+          Nothing here is a surprise that arrives after pressing the button.
+        */}
+        <div className="-mt-2 space-y-2">
+          {check.problem ? (
+            <p className="flex items-start gap-2 text-xs leading-5 text-destructive">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{check.problem}</span>
+            </p>
+          ) : check.warning ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <p className="flex items-start gap-2 text-xs leading-5 text-amber-900">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{check.warning}</span>
+              </p>
+              {check.suggestion && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-2 h-7 bg-background text-xs"
+                  disabled={busy}
+                  onClick={() => setHostname(check.suggestion || '')}
+                >
+                  Use {check.suggestion} instead
+                </Button>
+              )}
+            </div>
+          ) : check.ready ? (
+            <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+              <span>
+                {check.cleaned
+                  ? <>Will be added as <span className="font-mono">{check.hostname}</span> — the extra part of what you pasted is not needed.</>
+                  : <>Ready to add as <span className="font-mono">{check.hostname}</span>.</>}
+                {' '}Nothing changes for the agency until they create the record, and nothing for their clients until it is serving.
+              </span>
+            </p>
+          ) : (
+            <p className="text-xs leading-5 text-muted-foreground">
+              The agency has to own this domain and be able to edit its DNS. A subdomain they are not already using is
+              the safe choice — podcasts.theiragency.com.
+            </p>
+          )}
         </div>
 
         {domainsQuery.isLoading ? (
@@ -204,7 +324,8 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
           </p>
         ) : domains.length === 0 ? (
           <p className="rounded-lg border border-dashed bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
-            No custom domains yet. Every workspace serves from getonapod.com until one is added.
+            No custom domains yet. Every workspace serves from getonapod.com — dashboards, onboarding forms, and the
+            links the platform emails — until one is added above.
           </p>
         ) : (
           <ul className="divide-y rounded-xl border">
@@ -251,11 +372,13 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
                   </div>
                 </div>
 
-                {domain.status === 'active' ? (
-                  <p className="flex items-center gap-2 text-xs text-emerald-800">
-                    <CheckCircle2 className="h-3.5 w-3.5" />Serving over https. Their clients never see our address.
-                  </p>
-                ) : domain.dns_record_value ? (
+                {/* The badge names a state; this says whose turn it is. */}
+                <p className={`flex items-start gap-2 text-xs leading-5 ${domain.status === 'active' ? 'text-emerald-800' : 'text-muted-foreground'}`}>
+                  {domain.status === 'active' && <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+                  <span>{describeDomainStatus(domain.status)}</span>
+                </p>
+
+                {domain.status === 'active' ? null : domain.dns_record_value ? (
                   // Printed rather than described: this is the exact record the
                   // agency types into their DNS host, and a paraphrase of it is
                   // a support ticket waiting to happen.
@@ -279,6 +402,12 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
                         </dd>
                       </div>
                     </dl>
+                    {/* Restated where the waiting actually happens, because the
+                        instinct on a pending row is to keep pressing Check. */}
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      This re-checks itself every minute — Check is only there if you want an answer sooner. It flips to
+                      Serving on its own once the record resolves and the certificate issues.
+                    </p>
                   </div>
                 ) : null}
               </li>
