@@ -11,6 +11,13 @@ export interface InstantlySendingAccount {
   status: number
   warmup_status: number | null
   daily_limit: number | null
+  /**
+   * Whether this mailbox has a signature set in Instantly. The signature is the
+   * only part of a sent email this app does not write, so a mailbox without one
+   * sends outreach that ends with no name and nothing to reply to a person
+   * about.
+   */
+  has_signature?: boolean
 }
 
 export interface WorkspaceInstantlyIntegration {
@@ -61,6 +68,13 @@ export interface WorkspaceMailboxAccount {
   warmup_emails: number | null
   warmup_limit: number | null
   health_score: number | null
+  /**
+   * Whether this mailbox has a signature set in Instantly. The signature is the
+   * only part of a sent email this app does not write, so a mailbox without one
+   * sends outreach that ends with no name and nothing to reply to a person
+   * about.
+   */
+  has_signature?: boolean
   tags: WorkspaceMailboxTag[]
   campaigns?: WorkspaceMailboxCampaignLink[]
 }

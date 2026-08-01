@@ -56,10 +56,10 @@ const podcasts = [
 
 const sentTargets = [
   {
-    id: 'target-one', shortlist_podcast_id: 'shortlist-one', podcast_id: 'podcast-one', podcast_name: 'Founder Show', podcast_url: 'https://founder.example.com', host_name: 'Jamie Host', contact_email: 'host@founder.example', selection_source: 'client_positive', wave_started_on: '2026-07-22', research_notes: 'A researched founder audience.', pitch_subject: 'A tailored guest idea', pitch_body: 'A reviewed opening pitch.', follow_up_1_subject: 'Re: A tailored guest idea', follow_up_1_body: 'A reviewed first follow-up.', follow_up_2_subject: 'Re: A tailored guest idea', follow_up_2_body: 'A reviewed final follow-up.', status: 'ready', instantly_lead_id: null, instantly_lead_status: null, email_open_count: 0, email_reply_count: 0, approved_at: null, launched_at: null, last_activity_at: null, last_error: null, prior_outreach_at: null, created_at: '2026-07-22T00:00:00Z', updated_at: '2026-07-22T00:00:00Z',
+    id: 'target-one', shortlist_podcast_id: 'shortlist-one', podcast_id: 'podcast-one', podcast_name: 'Founder Show', podcast_url: 'https://founder.example.com', host_name: 'Jamie Host', contact_email: 'host@founder.example', selection_source: 'client_positive', wave_started_on: '2026-07-22', research_notes: 'A researched founder audience.', pitch_subject: 'A tailored guest idea', pitch_body: 'A reviewed opening pitch.', follow_up_1_subject: 'Re: A tailored guest idea', follow_up_1_body: 'A reviewed first follow-up.', follow_up_2_subject: 'Re: A tailored guest idea', follow_up_2_body: 'A reviewed final follow-up.', status: 'ready', instantly_lead_id: null, instantly_lead_status: null, email_open_count: 0, email_reply_count: 0, approved_at: null, launched_at: null, last_activity_at: null, last_error: null, prior_outreach_at: null, last_contact_at: null, created_at: '2026-07-22T00:00:00Z', updated_at: '2026-07-22T00:00:00Z',
   },
   {
-    id: 'target-two', shortlist_podcast_id: 'shortlist-two', podcast_id: 'podcast-two', podcast_name: 'Operator Stories', podcast_url: null, host_name: null, contact_email: null, selection_source: 'client_positive', wave_started_on: '2026-07-22', research_notes: null, pitch_subject: null, pitch_body: null, follow_up_1_subject: null, follow_up_1_body: null, follow_up_2_subject: null, follow_up_2_body: null, status: 'draft', instantly_lead_id: null, instantly_lead_status: null, email_open_count: 0, email_reply_count: 0, approved_at: null, launched_at: null, last_activity_at: null, last_error: null, prior_outreach_at: null, created_at: '2026-07-22T00:00:00Z', updated_at: '2026-07-22T00:00:00Z',
+    id: 'target-two', shortlist_podcast_id: 'shortlist-two', podcast_id: 'podcast-two', podcast_name: 'Operator Stories', podcast_url: null, host_name: null, contact_email: null, selection_source: 'client_positive', wave_started_on: '2026-07-22', research_notes: null, pitch_subject: null, pitch_body: null, follow_up_1_subject: null, follow_up_1_body: null, follow_up_2_subject: null, follow_up_2_body: null, status: 'draft', instantly_lead_id: null, instantly_lead_status: null, email_open_count: 0, email_reply_count: 0, approved_at: null, launched_at: null, last_activity_at: null, last_error: null, prior_outreach_at: null, last_contact_at: null, created_at: '2026-07-22T00:00:00Z', updated_at: '2026-07-22T00:00:00Z',
   },
 ] as WorkspaceCampaignDetailResponse['targets']
 
@@ -407,6 +407,43 @@ function withStagedLead() {
     ],
   } as WorkspaceCampaignDetailResponse)
 }
+
+  // The row said "Emailed - sequence running" next to a cell saying the
+  // campaign was not sending. Our own status moves to in_outreach when the lead
+  // is staged, which is before anything goes out.
+  it('does not call a staged lead emailed when nothing has been sent', async () => {
+    mockedCampaign.mockResolvedValue({
+      ...campaignState,
+      targets: [
+        { ...sentTargets[0], status: 'in_outreach', instantly_lead_id: 'lead-one', instantly_lead_status: 1, last_contact_at: null },
+        sentTargets[1],
+      ],
+    } as WorkspaceCampaignDetailResponse)
+    renderPage()
+
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Podcasts' }), { button: 0 })
+    const table = await screen.findByRole('table')
+    const row = within(table).getByText('Founder Show').closest('tr') as HTMLElement
+    expect(within(row).getByText('Staged')).toBeInTheDocument()
+    expect(within(row).getByText('In the campaign, not emailed yet')).toBeInTheDocument()
+    expect(within(row).queryByText('Emailed')).not.toBeInTheDocument()
+  })
+
+  it('calls it emailed once the provider says a send happened', async () => {
+    mockedCampaign.mockResolvedValue({
+      ...campaignState,
+      targets: [
+        { ...sentTargets[0], status: 'in_outreach', instantly_lead_id: 'lead-one', instantly_lead_status: 1, last_contact_at: '2026-08-01T09:00:00Z' },
+        sentTargets[1],
+      ],
+    } as WorkspaceCampaignDetailResponse)
+    renderPage()
+
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Podcasts' }), { button: 0 })
+    const table = await screen.findByRole('table')
+    const row = within(table).getByText('Founder Show').closest('tr') as HTMLElement
+    expect(within(row).getByText('Emailed')).toBeInTheDocument()
+  })
 
   // A long list of podcast names says nothing about which is worth opening.
   // One written but never sent reads very differently from one already in a

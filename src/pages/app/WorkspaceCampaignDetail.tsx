@@ -124,6 +124,21 @@ function stageClass(stage: PitchStage): string {
  * Enum from the provider's Lead schema. An unrecognised value is reported as
  * itself rather than swallowed.
  */
+/**
+ * Is there any evidence an email actually reached this host?
+ *
+ * last_contact_at is the direct answer, but it is only filled by a sync or a
+ * live read, so its absence alone is not proof on a row written before that
+ * column existed. An open or a reply is proof of a send by other means, so
+ * either counts.
+ */
+function targetHasBeenEmailed(target?: WorkspaceCampaignTarget): boolean {
+  return Boolean(target?.last_contact_at)
+    || (target?.email_open_count ?? 0) > 0
+    || (target?.email_reply_count ?? 0) > 0
+    || Boolean(target?.launched_at)
+}
+
 function providerLeadOutcome(
   status: number | null | undefined,
 ): { label: string; detail: string; className: string } | null {
@@ -216,6 +231,14 @@ function leadDelivery(target?: WorkspaceCampaignTarget): { label: string; detail
   if (stage === 'ready') return { label: 'Not emailed', detail: 'Ready for campaign', className: 'border-slate-200 bg-slate-50 text-slate-700' }
   if (stage === 'previously-contacted') return { label: 'Previously contacted', detail: 'Earlier client outreach', className: 'border-sky-200 bg-sky-50 text-sky-800' }
   if (stage === 'launching') return { label: 'Queued', detail: 'Preparing first email', className: 'border-violet-200 bg-violet-50 text-violet-800' }
+  // "Emailed" was our own enum talking. A target moves to in_outreach when the
+  // lead is staged, which happens before anything is sent — and if the campaign
+  // is still a draft, nothing ever was. Saying it plainly here is what stops
+  // this cell contradicting the one beside it, which reads the same campaign
+  // status and correctly says nothing is going out.
+  if (stage === 'in-outreach' && !targetHasBeenEmailed(target)) {
+    return { label: 'Staged', detail: 'In the campaign, not emailed yet', className: 'border-violet-200 bg-violet-50 text-violet-800' }
+  }
   if (stage === 'in-outreach') return { label: 'Emailed', detail: 'Sequence running', className: 'border-sky-200 bg-sky-50 text-sky-800' }
   if (stage === 'replied') return { label: 'Replied', detail: 'Follow-ups stopped', className: 'border-emerald-200 bg-emerald-50 text-emerald-800' }
   if (stage === 'completed') return { label: 'Completed', detail: 'Sequence finished', className: 'border-emerald-200 bg-emerald-50 text-emerald-800' }

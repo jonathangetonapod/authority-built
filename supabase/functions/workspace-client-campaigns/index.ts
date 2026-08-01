@@ -3183,6 +3183,8 @@ serve(async (req) => {
             warmup_emails: warmup?.sent ?? null,
             warmup_limit: account.warmup_limit,
             health_score: warmup?.health_score ?? account.stat_warmup_score,
+            // The one part of a sent email this app does not write.
+            has_signature: account.has_signature,
             tags: account.tags,
             campaigns: linksByEmail.get(account.email) ?? [],
           };

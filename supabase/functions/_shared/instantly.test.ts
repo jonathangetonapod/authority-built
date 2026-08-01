@@ -76,6 +76,21 @@ Deno.test("Instantly provider values are reduced to the supported campaign DTO",
   );
 });
 
+Deno.test("a mailbox with no usable signature is reported as having none", () => {
+  // Whitespace is not a signature. An email ending in a blank line reads the
+  // same to a host as one ending in nothing.
+  for (const signature of [undefined, null, "", "   ", "\n"]) {
+    const account = safeInstantlyAccount({
+      email: "no-sig@example.com",
+      first_name: "No",
+      last_name: "Sig",
+      status: 1,
+      signature,
+    });
+    assertEquals(account?.has_signature, false, JSON.stringify(signature));
+  }
+});
+
 Deno.test("Instantly account values are reduced to mailbox-safe fields", () => {
   assertEquals(
     safeInstantlyAccount({
@@ -94,6 +109,7 @@ Deno.test("Instantly account values are reduced to mailbox-safe fields", () => {
       daily_limit: 15,
       warmup: { limit: 70, unsafe_advanced_settings: "hidden" },
       stat_warmup_score: 99,
+      signature: "  Best,\nSolar Admin  ",
       tags: [
         { id: "tag-z", label: "Zulu", description: null },
         { id: "tag-a", label: "Solar - CI 04/23/2026" },
@@ -116,6 +132,10 @@ Deno.test("Instantly account values are reduced to mailbox-safe fields", () => {
       daily_limit: 15,
       warmup_limit: 70,
       stat_warmup_score: 99,
+      // Whether one exists, never the text: the content is the workspace's
+      // business, and the question this answers is only whether outreach from
+      // this mailbox ends with a name.
+      has_signature: true,
       tags: [
         { id: "tag-a", label: "Solar - CI 04/23/2026", description: null },
         { id: "tag-z", label: "Zulu", description: null },

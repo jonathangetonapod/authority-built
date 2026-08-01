@@ -31,6 +31,16 @@ export interface InstantlyAccountSummary {
   daily_limit: number | null;
   warmup_limit: number | null;
   stat_warmup_score: number | null;
+  /**
+   * Whether this mailbox has a signature set in Instantly.
+   *
+   * The signature is the only part of a sent email this app does not write, and
+   * a mailbox without one sends outreach that ends mid-sentence — no name, no
+   * company, nothing a host can reply to a person about. Kept as a boolean
+   * rather than the text: whether it exists is the question, and the content is
+   * the workspace's business.
+   */
+  has_signature: boolean;
   tags: InstantlyAccountTag[];
 }
 
@@ -400,6 +410,8 @@ export function safeInstantlyAccount(
     daily_limit: optionalFiniteInteger(account?.daily_limit),
     warmup_limit: optionalFiniteInteger(warmup?.limit),
     stat_warmup_score: optionalPercentage(account?.stat_warmup_score),
+    has_signature: typeof account?.signature === "string" &&
+      account.signature.trim().length > 0,
     tags,
   };
 }

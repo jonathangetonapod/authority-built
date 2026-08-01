@@ -266,6 +266,13 @@ export function InstantlyAccountPicker({
                     <div className="flex shrink-0 flex-col items-end gap-1">
                       <Badge variant="outline" className={active ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : undefined}>{active ? 'Active' : 'Unavailable'}</Badge>
                       {account.daily_limit !== null && <span className="text-[11px] text-muted-foreground">{account.daily_limit.toLocaleString()}/day</span>}
+                      {/* The signature is the only part of a sent email this
+                          app does not write. Without one the pitch ends with no
+                          name and nothing a host can reply to a person about,
+                          and nothing else on this screen would say so. */}
+                      {account.has_signature === false && (
+                        <span className="text-[11px] font-medium text-amber-700">No signature</span>
+                      )}
                     </div>
                   </label>
                 )
