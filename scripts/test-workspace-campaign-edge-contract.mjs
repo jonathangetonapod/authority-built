@@ -226,6 +226,48 @@ assert.doesNotMatch(
   'the chosen campaign must not be read without the dead-link handler',
 )
 
+// Creating in Instantly and linking locally cannot share a transaction, so the
+// retry after a failure between them must converge on the campaign already
+// created rather than build a second one.
+assert.match(
+  edge,
+  /const created = orphan \?\? providerCampaign\(/u,
+  'creating a campaign must reuse an adoptable orphan first',
+)
+assert.match(
+  edge,
+  /function findAdoptableProviderCampaign[\s\S]*?parsed\.name === providerName && parsed\.rendersOurPitch/u,
+  'adoption must require an exact name and our own sequence',
+)
+assert.match(
+  edge,
+  /function findAdoptableProviderCampaign[\s\S]*?if \(error\) return null;[\s\S]*?!linked\.has\(candidate\.id\)/u,
+  'a campaign already linked to somebody must never be adopted',
+)
+
+// The claim taken at the top of ensureProviderCampaign must still be held when
+// it writes. The reaper frees a claim after five minutes, and a slow call
+// returning afterwards would otherwise overwrite the mapping that replaced it.
+assert.match(
+  edge,
+  /const claimedAt = new Date\(\)\.toISOString\(\);/u,
+  'the claim timestamp must be kept for the final write',
+)
+assert.ok(
+  (edge.match(/\.eq\("provider_sync_started_at", claimedAt\)/gu) || []).length === 2,
+  'both the success and failure writes must be conditional on the claim',
+)
+assert.match(
+  edge,
+  /if \(!written\) \{[\s\S]*?provider_setup_lost_claim[\s\S]*?orphaned_instantly_campaign_id/u,
+  'a lost claim must record the campaign it orphaned',
+)
+
+// Which campaign a lead went into is the only record of the sequence a host is
+// in, so it has to be readable and not merely written.
+assert.match(edge, /"instantly_lead_status",\s*\n\s*"instantly_campaign_id",/u)
+assert.match(edge, /instantly_campaign_id: target\.instantly_campaign_id,/u)
+
 // Saving the link list must not demote a campaign this app built.
 assert.match(
   edge,

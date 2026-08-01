@@ -173,6 +173,12 @@ export interface WorkspaceCampaignTarget {
   status: WorkspaceCampaignTargetStatus
   instantly_lead_id: string | null
   instantly_lead_status: number | null
+  /**
+   * Which Instantly campaign this lead was staged into. Null on targets with no
+   * lead, and on rows written before a client could hold several campaigns —
+   * both mean the client's own campaign, which is where they went.
+   */
+  instantly_campaign_id: string | null
   email_open_count: number
   email_reply_count: number
   approved_at: string | null

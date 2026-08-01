@@ -170,6 +170,7 @@ const TARGET_COLUMNS = [
   "status",
   "instantly_lead_id",
   "instantly_lead_status",
+  "instantly_campaign_id",
   "email_open_count",
   "email_reply_count",
   "approved_at",
@@ -273,6 +274,8 @@ interface TargetRow {
     | "failed";
   instantly_lead_id: string | null;
   instantly_lead_status: number | null;
+  /** Which Instantly campaign this lead was staged into. */
+  instantly_campaign_id: string | null;
   email_open_count: number;
   email_reply_count: number;
   approved_at: string | null;
@@ -655,6 +658,7 @@ function targetDto(target: TargetRow) {
     status: target.status,
     instantly_lead_id: target.instantly_lead_id,
     instantly_lead_status: target.instantly_lead_status,
+    instantly_campaign_id: target.instantly_campaign_id,
     email_open_count: target.email_open_count,
     email_reply_count: target.email_reply_count,
     approved_at: target.approved_at,
@@ -1720,11 +1724,16 @@ async function ensureProviderCampaign(
     );
   }
 
+  // Kept, so the writes at the end of this function can prove they still hold
+  // the claim they took. The reaper above frees a claim after five minutes; a
+  // slow-but-live invocation that comes back after that must not overwrite the
+  // mapping whichever caller replaced it has already written.
+  const claimedAt = new Date().toISOString();
   const { data: claimed, error: claimError } = await context.admin
     .from("workspace_client_campaigns")
     .update({
       provider_sync_state: "creating",
-      provider_sync_started_at: new Date().toISOString(),
+      provider_sync_started_at: claimedAt,
       last_error: null,
       updated_by: context.user.id,
     })
@@ -1813,7 +1822,11 @@ async function ensureProviderCampaign(
         body: { variables: [...PROVISIONED_CAMPAIGN_VARIABLES] },
       },
     );
-    const { error: updateError } = await context.admin
+    // Conditional on still holding the claim. Without this, a call the reaper
+    // had already given up on would come back and overwrite a mapping written
+    // by the caller that replaced it, stranding that campaign in Instantly with
+    // nothing pointing at it.
+    const { data: written, error: updateError } = await context.admin
       .from("workspace_client_campaigns")
       .update({
         instantly_campaign_id: provider.id,
@@ -1826,7 +1839,11 @@ async function ensureProviderCampaign(
         updated_by: context.user.id,
       })
       .eq("id", campaign.id)
-      .eq("workspace_id", campaign.workspace_id);
+      .eq("workspace_id", campaign.workspace_id)
+      .eq("provider_sync_state", "creating")
+      .eq("provider_sync_started_at", claimedAt)
+      .select("id")
+      .maybeSingle();
     if (updateError) {
       throw new HttpError(
         500,
@@ -1834,9 +1851,43 @@ async function ensureProviderCampaign(
         "The Instantly campaign mapping could not be saved",
       );
     }
+    if (!written) {
+      // The claim was lost. Whatever is mapped now is the live campaign, and
+      // the one just created is an orphan — recorded so it is findable in
+      // Instantly rather than merely leaked.
+      await writeAudit(context.admin, {
+        workspaceId: campaign.workspace_id,
+        actorUserId: context.user.id,
+        action: "workspace.campaign.provider_setup_lost_claim",
+        entityType: "workspace_client_campaign",
+        entityId: campaign.id,
+        metadata: { orphaned_instantly_campaign_id: provider.id },
+      });
+      const current = await readCampaign(
+        context.admin,
+        campaign.workspace_id,
+        campaign.client_id,
+      );
+      if (current?.instantly_campaign_id) {
+        const mapped = await readProviderCampaignOrForget(
+          context,
+          current,
+          apiKey,
+          current.instantly_campaign_id,
+        );
+        if (mapped) return mapped;
+      }
+      throw new HttpError(
+        409,
+        "CAMPAIGN_SETUP_IN_PROGRESS",
+        "This campaign is already being prepared. Try again in a moment.",
+      );
+    }
     return provider;
   } catch (error) {
     const safe = safeInstantlyError(error);
+    // Same condition: a failure this call is no longer responsible for must not
+    // push a live mapping back into "attention".
     await context.admin
       .from("workspace_client_campaigns")
       .update({
@@ -1847,7 +1898,9 @@ async function ensureProviderCampaign(
         updated_by: context.user.id,
       })
       .eq("id", campaign.id)
-      .eq("workspace_id", campaign.workspace_id);
+      .eq("workspace_id", campaign.workspace_id)
+      .eq("provider_sync_state", "creating")
+      .eq("provider_sync_started_at", claimedAt);
     throw error;
   }
 }
@@ -2001,6 +2054,53 @@ async function readChosenProviderCampaign(
       "That campaign no longer exists in Instantly, so it is no longer offered as a send target. Choose another campaign, or create one from the client page.",
     );
   }
+}
+
+/**
+ * A campaign this app already built for this exact request, linked to nobody.
+ *
+ * Creating in Instantly and linking locally cannot share a transaction, so a
+ * failure between them leaves a campaign that exists and is referenced by
+ * nothing. Retrying is what an operator does next, and without this it built a
+ * second one every time. Adoption is deliberately narrow: the name must match
+ * exactly, the sequence must render our pitch, and no link may already point at
+ * it — an unrelated campaign that happens to share a name is never taken.
+ */
+async function findAdoptableProviderCampaign(
+  context: AuthContext,
+  workspaceId: string,
+  apiKey: string,
+  providerName: string,
+): Promise<ProviderCampaign | null> {
+  const query = new URLSearchParams({ limit: "20", search: providerName });
+  const response = await instantlyRequest<unknown>(apiKey, "/campaigns", { query });
+  const items = response && typeof response === "object" && !Array.isArray(response)
+    ? (response as Record<string, unknown>).items
+    : null;
+  if (!Array.isArray(items)) return null;
+  const candidates = items.flatMap((item) => {
+    try {
+      const parsed = providerCampaign(item);
+      return parsed.name === providerName && parsed.rendersOurPitch ? [parsed] : [];
+    } catch {
+      return [];
+    }
+  });
+  if (candidates.length === 0) return null;
+  const { data: linkedRows, error } = await context.admin
+    .from("client_instantly_campaign_links")
+    .select("instantly_campaign_id")
+    .eq("workspace_id", workspaceId)
+    .in("instantly_campaign_id", candidates.map((candidate) => candidate.id));
+  // Unknown linkage is not a licence to adopt: taking a campaign that is
+  // already somebody's would move it between clients silently.
+  if (error) return null;
+  const linked = new Set(
+    ((linkedRows ?? []) as Array<Record<string, unknown>>).flatMap((row) => (
+      typeof row.instantly_campaign_id === "string" ? [row.instantly_campaign_id] : []
+    )),
+  );
+  return candidates.find((candidate) => !linked.has(candidate.id)) ?? null;
 }
 
 async function stageCampaignLead(
@@ -4767,14 +4867,29 @@ serve(async (req) => {
         accountsFromSnapshot(connection.accounts_snapshot),
       );
       const apiKey = await integrationApiKey(connection);
-      const created = providerCampaign(
+      // The marker names the client, so a campaign left behind by a failure
+      // between creating and linking is identifiable rather than anonymous.
+      const providerName = `${name.slice(0, 150)} · GOAP-${clientId}`;
+      // Recover that campaign instead of building a second one.
+      //
+      // Creating in Instantly and linking here cannot be one transaction, so a
+      // failure between them leaves a real campaign with nothing pointing at
+      // it, and the obvious response — press the button again — used to
+      // duplicate it. Adopting a campaign that carries this exact name and is
+      // linked to nobody makes the retry converge instead of multiply. It must
+      // still render our pitch, so an unrelated campaign that happens to share
+      // a name is never adopted.
+      const orphan = await findAdoptableProviderCampaign(
+        context,
+        workspaceId,
+        apiKey,
+        providerName,
+      );
+      const created = orphan ?? providerCampaign(
         await instantlyRequest<unknown>(apiKey, "/campaigns", {
           method: "POST",
           body: provisionedCampaignConfiguration({
-            // The marker names the client, so a campaign orphaned by a failure
-            // between creating and linking is identifiable in Instantly rather
-            // than anonymous.
-            providerName: `${name.slice(0, 150)} · GOAP-${clientId}`,
+            providerName,
             timezone,
             dailyLimit: limit,
             senderAccounts,
