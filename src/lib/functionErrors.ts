@@ -35,8 +35,23 @@ export async function toFunctionError(error: unknown, fallback: string): Promise
     }
   }
 
-  const result = new Error(message)
+  // The code goes in the visible text, not just on `name`.
+  //
+  // An edge function refuses with a specific check — CAMPAIGN_PITCH_LOCKED,
+  // CAMPAIGN_CONTACT_SUPPRESSED — and roughly thirty of them share one status.
+  // The browser console prints the status and can never print the body, so
+  // without the code on screen, identifying which check fired meant opening
+  // DevTools and reading the response by hand. Callers render `message`, so
+  // this is the one place that puts it where it is already being read.
+  const result = new Error(displayMessage(message, code))
   result.name = code || 'EdgeFunctionError'
   Object.assign(result, { status, retryAfterSeconds, concurrencyLimit })
   return result
+}
+
+function displayMessage(message: string, code: string | null): string {
+  if (!code) return message
+  // A message that already names its code does not need it twice.
+  if (message.includes(code)) return message
+  return `${message} (${code})`
 }
