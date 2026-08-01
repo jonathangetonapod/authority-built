@@ -451,6 +451,40 @@ function withStagedLead() {
     }))
   })
 
+  // Verified against a real lead: Instantly omits these fields entirely rather
+  // than returning null, so an uncontacted lead renders as zeros and "Not yet"
+  // everywhere — true, and indistinguishable from a broken panel.
+  it('says nothing has been sent rather than showing a grid of zeros', async () => {
+    vi.mocked(getWorkspaceTargetLeadStatus).mockResolvedValue({
+      lead: {
+        id: 'lead-one',
+        email: 'host@founder.example',
+        status: 1,
+        email_open_count: 0,
+        email_reply_count: 0,
+        email_click_count: 0,
+        email_opened_step: null,
+        email_replied_step: null,
+        lt_interest_status: null,
+        verification_status: null,
+        timestamp_last_contact: null,
+        timestamp_last_open: null,
+        timestamp_last_reply: null,
+        timestamp_last_click: null,
+      },
+      deleted_upstream: false,
+      checked_at: '2026-08-01T12:00:00Z',
+    })
+    withStagedLead()
+    renderPage()
+
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Podcasts' }), { button: 0 })
+    fireEvent.click(await screen.findByRole('button', { name: /Founder Show/ }))
+
+    expect(await screen.findByText(/nothing has been sent to this host yet/i)).toBeInTheDocument()
+    expect(screen.queryByText('Last opened')).not.toBeInTheDocument()
+  })
+
   // A lead deleted upstream is an answer, not a fault: nothing is running
   // because there is nothing left to run.
   it('says plainly when the lead no longer exists in Instantly', async () => {

@@ -60,6 +60,7 @@ import {
   setWorkspaceCampaignRunning,
   updateWorkspaceCampaignSettings,
   type WorkspaceCampaignProviderSchedule,
+  type WorkspaceTargetLeadStatus,
   type WorkspaceCampaignTarget,
 } from '@/services/workspaceCampaigns'
 
@@ -145,6 +146,23 @@ function providerLeadOutcome(
  * unrecognised value is reported as itself: a code this build predates is
  * still worth showing rather than rendering as nothing.
  */
+/**
+ * Has anything actually happened to this lead?
+ *
+ * A lead created but never emailed omits most of its fields entirely — they
+ * are absent from the payload, not null — so every counter reads zero and
+ * every timestamp reads "not yet". True, and indistinguishable from a broken
+ * panel.
+ */
+function leadHasActivity(lead: WorkspaceTargetLeadStatus): boolean {
+  return lead.email_open_count > 0
+    || lead.email_reply_count > 0
+    || lead.email_click_count > 0
+    || Boolean(lead.timestamp_last_contact)
+    || Boolean(lead.lt_interest_status)
+    || Boolean(lead.verification_status)
+}
+
 function leadStatusBadge(status: number | null): { label: string; className: string } {
   if (status === 1) return { label: 'Sequence running', className: 'border-sky-200 bg-sky-50 text-sky-800' }
   if (status === 2) return { label: 'Paused', className: 'border-violet-200 bg-violet-50 text-violet-800' }
@@ -1132,6 +1150,19 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                       <p className="mt-4 text-sm text-amber-800">
                         This lead no longer exists in Instantly, so no further emails will go out to this host.
                       </p>
+                    ) : leadStatusQuery.data?.lead && !leadHasActivity(leadStatusQuery.data.lead) ? (
+                      /* A lead that exists but has never been contacted reports
+                         every field as absent, which renders as a grid of
+                         zeros and five "Not yet"s — accurate, and reads as
+                         broken. Say the one true thing instead. */
+                      <div className="mt-4 space-y-2">
+                        <Badge variant="outline" className={leadStatusBadge(leadStatusQuery.data.lead.status).className}>
+                          {leadStatusBadge(leadStatusQuery.data.lead.status).label}
+                        </Badge>
+                        <p className="text-sm text-muted-foreground">
+                          The lead is in the campaign, but nothing has been sent to this host yet, so there is no delivery activity to report.
+                        </p>
+                      </div>
                     ) : leadStatusQuery.data?.lead ? (
                       <div className="mt-4 space-y-3">
                         <div className="flex flex-wrap items-center gap-2">
