@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
   AlertCircle,
   ArrowLeft,
   ArrowRight,
+  ChevronDown,
+  ChevronUp,
   ExternalLink,
   Inbox,
   Loader2,
@@ -432,6 +434,9 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
   const [settingsFollowUpOne, setSettingsFollowUpOne] = useState(6)
   const [settingsFollowUpTwo, setSettingsFollowUpTwo] = useState(7)
   const [campaignRunningPreview, setCampaignRunningPreview] = useState<boolean | null>(null)
+  // Which row in Podcasts is showing its live delivery detail. Delivery
+  // questions belong beside the delivery columns, not on the messages tab.
+  const [expandedPodcastId, setExpandedPodcastId] = useState<string | null>(null)
   const [sequenceStep, setSequenceStep] = useState(0)
   const [previewTargetId, setPreviewTargetId] = useState<string | null>(null)
 
@@ -497,13 +502,13 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
   // anybody here touching it, so a cached answer to "where does this host
   // stand" is the one thing on this page worth least.
   const leadStatusQuery = useQuery({
-    queryKey: ['workspace-target-lead-status', workspaceId, clientId, previewTarget?.shortlist_podcast_id ?? 'none'],
+    queryKey: ['workspace-target-lead-status', workspaceId, clientId, expandedPodcastId ?? 'none'],
     queryFn: () => getWorkspaceTargetLeadStatus({
       workspaceId,
       clientId,
-      shortlistPodcastId: previewTarget!.shortlist_podcast_id,
+      shortlistPodcastId: expandedPodcastId!,
     }),
-    enabled: Boolean(previewTarget?.instantly_lead_id),
+    enabled: Boolean(expandedPodcastId && targetByShortlistId.get(expandedPodcastId)?.instantly_lead_id),
     retry: false,
     staleTime: 0,
   })
@@ -824,7 +829,8 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                           const contactEmail = target?.contact_email || podcast.podcast_email
                           const podcastUrl = podcast.podcast_url ? safeExternalUrl(podcast.podcast_url) : null
                           return (
-                            <TableRow key={podcast.id}>
+                            <Fragment key={podcast.id}>
+                            <TableRow>
                               <TableCell><div className="flex items-center gap-3">{podcast.podcast_image_url ? <img src={podcast.podcast_image_url} alt="" className="h-10 w-10 rounded-lg border object-cover" /> : <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted"><Mic2 className="h-4 w-4" /></div>}<div className="min-w-0"><p className="font-semibold">{podcast.podcast_name}</p>{podcastUrl && <a href={podcastUrl} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground hover:text-primary">Open podcast<ExternalLink className="ml-1 inline h-3 w-3" /></a>}</div></div></TableCell>
                               <TableCell><p className="font-medium">{target?.host_name || podcast.publisher_name || 'Host needed'}</p><p className="text-xs text-muted-foreground">{contactEmail || 'Email not found'}</p></TableCell>
                               <TableCell><Badge variant="outline" className={delivery.className}>{delivery.label}</Badge><p className="mt-1 text-xs text-muted-foreground">{delivery.detail}</p></TableCell>
@@ -832,8 +838,58 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                               <TableCell className="text-center font-medium tabular-nums">{target?.email_reply_count || 0}</TableCell>
                               <TableCell><span className="text-sm text-muted-foreground">{formatDate(target?.last_activity_at || target?.updated_at || podcast.feedback_updated_at || podcast.updated_at)}</span></TableCell>
                               <TableCell><p className={`text-sm ${nextSend.kind === 'due' ? 'font-medium' : 'text-muted-foreground'}`} title={explainNextSend(nextSend)}>{describeNextSend(nextSend)}</p>{nextSend.kind === 'due' && <p className="text-xs text-muted-foreground">if nothing holds it up</p>}</TableCell>
-                              <TableCell className="text-right"><Button type="button" size="sm" variant="ghost" className="text-primary" onClick={() => openPodcastInSequences(podcast.id)}>Open in Sequences<ArrowRight className="ml-2 h-3.5 w-3.5" /></Button></TableCell>
+                              <TableCell className="text-right"><div className="flex items-center justify-end gap-1">{target?.instantly_lead_id && <Button type="button" size="sm" variant="ghost" onClick={() => setExpandedPodcastId((current) => (current === podcast.id ? null : podcast.id))} aria-expanded={expandedPodcastId === podcast.id} aria-label={`Delivery detail for ${podcast.podcast_name}`}>{expandedPodcastId === podcast.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}</Button>}<Button type="button" size="sm" variant="ghost" className="text-primary" onClick={() => openPodcastInSequences(podcast.id)}>Open in Sequences<ArrowRight className="ml-2 h-3.5 w-3.5" /></Button></div></TableCell>
                             </TableRow>
+                            {/* Delivery detail sits under the delivery
+                                columns. It was on the Sequences tab, which is
+                                about the messages, and answering "where does
+                                this host stand" there meant leaving the place
+                                that already asks it. */}
+                            {expandedPodcastId === podcast.id && (
+                              <TableRow className="bg-muted/20 hover:bg-muted/20">
+                                <TableCell colSpan={8} className="p-4">
+                                  <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Where this host stands</p>
+                                      <p className="mt-1 text-sm text-muted-foreground">Read from Instantly just now, not from the stored counts above.</p>
+                                    </div>
+                                    <Button size="sm" variant="outline" disabled={leadStatusQuery.isFetching} onClick={() => void leadStatusQuery.refetch()}>
+                                      {leadStatusQuery.isFetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Check again
+                                    </Button>
+                                  </div>
+                                  {leadStatusQuery.isLoading ? (
+                                    <p className="mt-3 text-sm text-muted-foreground">Reading the lead…</p>
+                                  ) : leadStatusQuery.isError ? (
+                                    <p className="mt-3 text-sm text-destructive">{leadStatusQuery.error instanceof Error ? leadStatusQuery.error.message : 'The delivery status could not be read.'}</p>
+                                  ) : leadStatusQuery.data?.deleted_upstream ? (
+                                    <p className="mt-3 text-sm text-amber-800">This lead no longer exists in Instantly, so no further emails will go out to this host.</p>
+                                  ) : leadStatusQuery.data?.lead && !leadHasActivity(leadStatusQuery.data.lead) ? (
+                                    <p className="mt-3 text-sm text-muted-foreground">Nothing has been sent to this host yet, so there is no delivery activity to report.</p>
+                                  ) : leadStatusQuery.data?.lead ? (
+                                    <div className="mt-3 space-y-3">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        {leadInterestLabel(leadStatusQuery.data.lead.lt_interest_status) && <Badge variant="outline">{leadInterestLabel(leadStatusQuery.data.lead.lt_interest_status)}</Badge>}
+                                        {leadVerificationLabel(leadStatusQuery.data.lead.verification_status) && <Badge variant="outline">{leadVerificationLabel(leadStatusQuery.data.lead.verification_status)}</Badge>}
+                                      </div>
+                                      <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+                                        {[
+                                          { label: 'Clicks', value: String(leadStatusQuery.data.lead.email_click_count) },
+                                          { label: 'Last emailed', value: leadStatusQuery.data.lead.timestamp_last_contact ? formatDate(leadStatusQuery.data.lead.timestamp_last_contact) : 'Not yet' },
+                                          { label: 'Last opened', value: leadStatusQuery.data.lead.timestamp_last_open ? formatDate(leadStatusQuery.data.lead.timestamp_last_open) : 'Not yet' },
+                                          { label: 'Last replied', value: leadStatusQuery.data.lead.timestamp_last_reply ? formatDate(leadStatusQuery.data.lead.timestamp_last_reply) : 'Not yet' },
+                                        ].map((row) => (
+                                          <div key={row.label} className="flex justify-between gap-3">
+                                            <dt className="text-muted-foreground">{row.label}</dt>
+                                            <dd className="font-medium">{row.value}</dd>
+                                          </div>
+                                        ))}
+                                      </dl>
+                                    </div>
+                                  ) : null}
+                                </TableCell>
+                              </TableRow>
+                            )}
+                            </Fragment>
                           )
                         })}
                       </TableBody>
@@ -1003,70 +1059,6 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                         <p className="text-xs text-muted-foreground">Contact</p>
                         <p className="mt-1 break-all font-medium">{previewTarget.contact_email || 'No contact email'}</p>
                       </div>
-                    </div>
-                  )}
-                  {previewTarget?.instantly_lead_id && (
-                    <div className="rounded-xl border p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Where this host stands</p>
-                          <p className="mt-1 text-sm text-muted-foreground">Read from Instantly, not from the last sync.</p>
-                        </div>
-                        <Button size="sm" variant="outline" disabled={leadStatusQuery.isFetching} onClick={() => void leadStatusQuery.refetch()}>
-                          {leadStatusQuery.isFetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Check again
-                        </Button>
-                      </div>
-                      {leadStatusQuery.isLoading ? (
-                        <p className="mt-4 text-sm text-muted-foreground">Reading the lead…</p>
-                      ) : leadStatusQuery.isError ? (
-                        <p className="mt-4 text-sm text-destructive">
-                          {leadStatusQuery.error instanceof Error ? leadStatusQuery.error.message : 'The delivery status could not be read.'}
-                        </p>
-                      ) : leadStatusQuery.data?.deleted_upstream ? (
-                        <p className="mt-4 text-sm text-amber-800">
-                          This lead no longer exists in Instantly, so no further emails will go out to this host.
-                        </p>
-                      ) : leadStatusQuery.data?.lead && !leadHasActivity(leadStatusQuery.data.lead) ? (
-                        <div className="mt-4 space-y-2">
-                          <Badge variant="outline" className={leadStatusBadge(leadStatusQuery.data.lead.status).className}>
-                            {leadStatusBadge(leadStatusQuery.data.lead.status).label}
-                          </Badge>
-                          <p className="text-sm text-muted-foreground">
-                            The lead is in the campaign, but nothing has been sent to this host yet, so there is no delivery activity to report.
-                          </p>
-                        </div>
-                      ) : leadStatusQuery.data?.lead ? (
-                        <div className="mt-4 space-y-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant="outline" className={leadStatusBadge(leadStatusQuery.data.lead.status).className}>
-                              {leadStatusBadge(leadStatusQuery.data.lead.status).label}
-                            </Badge>
-                            {leadInterestLabel(leadStatusQuery.data.lead.lt_interest_status) && (
-                              <Badge variant="outline">{leadInterestLabel(leadStatusQuery.data.lead.lt_interest_status)}</Badge>
-                            )}
-                            {leadVerificationLabel(leadStatusQuery.data.lead.verification_status) && (
-                              <Badge variant="outline">{leadVerificationLabel(leadStatusQuery.data.lead.verification_status)}</Badge>
-                            )}
-                          </div>
-                          <div className="grid gap-3 sm:grid-cols-3">
-                            <div className="rounded-lg bg-muted/25 p-3"><p className="text-xs text-muted-foreground">Opens</p><p className="mt-1 text-lg font-bold">{leadStatusQuery.data.lead.email_open_count}</p></div>
-                            <div className="rounded-lg bg-muted/25 p-3"><p className="text-xs text-muted-foreground">Replies</p><p className="mt-1 text-lg font-bold">{leadStatusQuery.data.lead.email_reply_count}</p></div>
-                            <div className="rounded-lg bg-muted/25 p-3"><p className="text-xs text-muted-foreground">Clicks</p><p className="mt-1 text-lg font-bold">{leadStatusQuery.data.lead.email_click_count}</p></div>
-                          </div>
-                          <dl className="space-y-1 text-sm">
-                            {[
-                              { label: 'Last emailed', value: leadStatusQuery.data.lead.timestamp_last_contact },
-                              { label: 'Last opened', value: leadStatusQuery.data.lead.timestamp_last_open },
-                              { label: 'Last replied', value: leadStatusQuery.data.lead.timestamp_last_reply },
-                            ].map((row) => (
-                              <div key={row.label} className="flex justify-between gap-3">
-                                <dt className="text-muted-foreground">{row.label}</dt>
-                                <dd className="font-medium">{row.value ? formatDate(row.value) : 'Not yet'}</dd>
-                              </div>
-                            ))}
-                          </dl>
-                        </div>
-                      ) : null}
                     </div>
                   )}
                   <div className="flex flex-wrap items-center gap-2">

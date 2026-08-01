@@ -487,13 +487,12 @@ function withStagedLead() {
     withStagedLead()
     renderPage()
 
-    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Sequences' }), { button: 0 })
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Podcasts' }), { button: 0 })
+    fireEvent.click(await screen.findByRole('button', { name: /Delivery detail for Founder Show/i }))
 
-    expect(await screen.findByText('Sequence running')).toBeInTheDocument()
-    expect(screen.getByText('Meeting booked')).toBeInTheDocument()
+    expect(await screen.findByText('Meeting booked')).toBeInTheDocument()
     expect(screen.getByText('Address verified')).toBeInTheDocument()
-    const opens = screen.getByText('Opens').closest('div') as HTMLElement
-    expect(within(opens).getByText('3')).toBeInTheDocument()
+    expect(screen.getByText(/Read from Instantly just now/i)).toBeInTheDocument()
     expect(getWorkspaceTargetLeadStatus).toHaveBeenCalledWith(expect.objectContaining({
       shortlistPodcastId: 'shortlist-one',
     }))
@@ -526,7 +525,8 @@ function withStagedLead() {
     withStagedLead()
     renderPage()
 
-    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Sequences' }), { button: 0 })
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Podcasts' }), { button: 0 })
+    fireEvent.click(await screen.findByRole('button', { name: /Delivery detail for Founder Show/i }))
 
     expect(await screen.findByText(/nothing has been sent to this host yet/i)).toBeInTheDocument()
     expect(screen.queryByText('Last opened')).not.toBeInTheDocument()
@@ -543,7 +543,8 @@ function withStagedLead() {
     withStagedLead()
     renderPage()
 
-    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Sequences' }), { button: 0 })
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Podcasts' }), { button: 0 })
+    fireEvent.click(await screen.findByRole('button', { name: /Delivery detail for Founder Show/i }))
 
     expect(await screen.findByText(/no longer exists in Instantly/i)).toBeInTheDocument()
   })
