@@ -71,15 +71,15 @@ for (const signature of [
 // hostname would point a client at a domain answering with a certificate error.
 const addBlock = admin.slice(admin.indexOf("if (action === 'add')"), admin.indexOf("if (action === 'refresh')"))
 assert.ok(
-  addBlock.indexOf('createRailwayDomain(hostname)') < addBlock.indexOf(".from('workspace_domains')\n        .insert("),
-  'the Railway domain must be created before the row is recorded',
+  addBlock.indexOf('createProviderDomain(provider, hostname)') < addBlock.indexOf(".from('workspace_domains')\n        .insert("),
+  'the provider domain must be created before the row is recorded',
 )
 // And if recording fails, the domain is handed back rather than left as an
-// orphan that blocks the hostname forever.
-assert.match(addBlock, /await deleteRailwayDomain\(created\.id\)\.catch\(\(\) => undefined\)/u)
-// A hostname already claimed is refused before Railway is called at all.
+// orphan that blocks the hostname forever — to whichever provider took it.
+assert.match(addBlock, /await deleteProviderDomain\(provider, created\.id\)\.catch\(\(\) => undefined\)/u)
+// A hostname already claimed is refused before any provider is called at all.
 assert.ok(
-  addBlock.indexOf("'HOSTNAME_TAKEN'") < addBlock.indexOf('createRailwayDomain(hostname)'),
+  addBlock.indexOf("'HOSTNAME_TAKEN'") < addBlock.indexOf('createProviderDomain(provider, hostname)'),
   'a taken hostname must be refused before Railway is called',
 )
 // Provider failures carry the provider's own status and body: a dead token is
@@ -110,6 +110,45 @@ assert.match(
 )
 // Silent flips of which domain links use must be reconstructable.
 assert.match(admin, /via: 'refresh_auto_promote'/u)
+// A second provider, chosen per row rather than globally. Railway could not
+// say why a domain was stuck — an hour in VALIDATING_OWNERSHIP with a null
+// error message — and an operator cannot act on that, nor can the card explain
+// it. Cloudflare reports validation failures as text.
+const cloudflare = readFileSync('supabase/functions/_shared/cloudflareSaas.ts', 'utf8')
+assert.match(cloudflare, /CLOUDFLARE_API_TOKEN/u)
+assert.match(cloudflare, /CLOUDFLARE_ZONE_ID/u)
+// The CNAME target is the zone's fallback origin, which Cloudflare does not
+// return per hostname — configuration, not a parsed response field.
+assert.match(cloudflare, /CLOUDFLARE_SAAS_FALLBACK_ORIGIN/u)
+assert.match(cloudflare, /dnsRecordValue: fallbackOrigin/u)
+// Cloudflare answers 200 with success:false, so the status code is not the
+// check — and their message is the reason this provider exists, so it is
+// carried through rather than replaced.
+assert.match(cloudflare, /!response\.ok \|\| payload\.success === false/u)
+assert.match(cloudflare, /Cloudflare refused the request: \$\{message\}/u)
+// One CNAME, not a second TXT record for the agency to get wrong.
+assert.match(cloudflare, /ssl: \{ method: 'http', type: 'dv' \}/u)
+// The same three states, and nothing is called provisioning until the provider
+// has confirmed the record — ownership active is Cloudflare's word for it.
+assert.match(cloudflare, /if \(ssl\.status === 'active'\) return \{ status: 'active', error: null \}/u)
+assert.match(cloudflare, /const ownershipVerified = result\.status === 'active'/u)
+assert.match(cloudflare, /status: ownershipVerified \? 'provisioning' : 'awaiting_dns'/u)
+
+// Read per row, so flipping the env var cannot strand a domain that is already
+// serving behind an API that has never heard of it. Only new domains follow
+// the setting.
+assert.match(admin, /Deno\.env\.get\('CUSTOM_DOMAIN_PROVIDER'\)/u)
+assert.match(admin, /function providerOfRow\(value: unknown\): DomainProvider/u)
+assert.match(admin, /providerDomainProgress\(\s*providerOfRow\(domain\.provider\)/u)
+assert.match(admin, /deleteProviderDomain\(providerOfRow\(domain\.provider\), domain\.provider_domain_id\)/u)
+assert.match(admin, /const provider = providerForNewDomains\(\)/u)
+// The row records which provider took it, because that decides which API
+// refreshes and removes it for the rest of its life.
+assert.match(admin, /select\('id,workspace_id,hostname,status,provider,provider_domain_id'\)/u)
+assert.match(admin, /select\('id,workspace_id,hostname,provider,provider_domain_id'\)/u)
+// A rollback hands the domain back to whichever provider took it.
+assert.match(admin, /deleteProviderDomain\(provider, created\.id\)\.catch/u)
+
 // Losing the crown is auditable however it comes off — going dark, or losing
 // the promotion race while still serving.
 assert.match(admin, /wasPrimaryBefore && !promoted/u)

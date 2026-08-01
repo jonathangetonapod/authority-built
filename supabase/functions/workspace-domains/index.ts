@@ -12,6 +12,13 @@ import {
   requireUuid,
   writeAudit,
 } from '../_shared/workspaceAuth.ts'
+import {
+  cloudflareHostnameProgress,
+  createCloudflareHostname,
+  deleteCloudflareHostname,
+  type ProviderDomain,
+  type ProviderProgress,
+} from '../_shared/cloudflareSaas.ts'
 
 /**
  * Attaches a custom hostname to a workspace and drives it to serving.
@@ -241,6 +248,44 @@ async function railwayDomainProgress(
   }
 }
 
+/**
+ * Which provider handles a domain, and which handles the next one added.
+ *
+ * Read per row, not globally: a workspace already serving on a Railway domain
+ * must keep being refreshed and removed through Railway after the platform
+ * switches, or flipping the env var would strand every live domain behind an
+ * API that has never heard of it. Only new domains follow the setting.
+ */
+type DomainProvider = 'railway' | 'cloudflare'
+
+function providerForNewDomains(): DomainProvider {
+  return Deno.env.get('CUSTOM_DOMAIN_PROVIDER')?.trim() === 'cloudflare' ? 'cloudflare' : 'railway'
+}
+
+function providerOfRow(value: unknown): DomainProvider {
+  return value === 'cloudflare' ? 'cloudflare' : 'railway'
+}
+
+function createProviderDomain(provider: DomainProvider, hostname: string): Promise<ProviderDomain> {
+  if (provider === 'cloudflare') return createCloudflareHostname(hostname)
+  return createRailwayDomain(hostname).then((created) => ({
+    id: created.id,
+    dnsRecordType: created.dnsRecordType ?? 'CNAME',
+    dnsRecordName: created.dnsRecordName ?? hostname,
+    dnsRecordValue: created.dnsRecordValue,
+  }))
+}
+
+function providerDomainProgress(provider: DomainProvider, providerDomainId: string): Promise<ProviderProgress> {
+  if (provider === 'cloudflare') return cloudflareHostnameProgress(providerDomainId)
+  return railwayDomainProgress(providerDomainId)
+}
+
+function deleteProviderDomain(provider: DomainProvider, providerDomainId: string): Promise<void> {
+  if (provider === 'cloudflare') return deleteCloudflareHostname(providerDomainId)
+  return deleteRailwayDomain(providerDomainId)
+}
+
 function normalizeHostname(value: string): string {
   const hostname = value
     .trim()
@@ -320,25 +365,29 @@ serve(async (req) => {
         )
       }
 
-      const created = await createRailwayDomain(hostname)
+      const provider = providerForNewDomains()
+      const created = await createProviderDomain(provider, hostname)
       const { data: inserted, error: insertError } = await admin
         .from('workspace_domains')
         .insert({
           workspace_id: workspaceId,
           hostname,
           status: 'awaiting_dns',
-          provider: 'railway',
+          // Recorded, because it decides which API refreshes and removes this
+          // row for the rest of its life.
+          provider,
           provider_domain_id: created.id,
-          dns_record_type: created.dnsRecordType ?? 'CNAME',
-          dns_record_name: created.dnsRecordName ?? hostname,
+          dns_record_type: created.dnsRecordType,
+          dns_record_name: created.dnsRecordName,
           dns_record_value: created.dnsRecordValue,
         })
         .select('id,hostname,status,dns_record_type,dns_record_name,dns_record_value')
         .maybeSingle()
       if (insertError || !inserted) {
-        // Railway holds a domain this database will not serve. Hand it back
-        // rather than leaving an orphan that blocks the hostname forever.
-        await deleteRailwayDomain(created.id).catch(() => undefined)
+        // The provider holds a domain this database will not serve. Hand it
+        // back rather than leaving an orphan that blocks the hostname forever,
+        // and hand it back to whichever provider took it.
+        await deleteProviderDomain(provider, created.id).catch(() => undefined)
         throw new HttpError(500, 'DOMAIN_ADD_FAILED', 'The domain could not be recorded')
       }
 
@@ -358,7 +407,7 @@ serve(async (req) => {
       const domainId = requireUuid(body.domain_id, 'domain_id')
       const { data: domain, error: domainError } = await admin
         .from('workspace_domains')
-        .select('id,workspace_id,hostname,status,provider_domain_id')
+        .select('id,workspace_id,hostname,status,provider,provider_domain_id')
         .eq('id', domainId)
         .maybeSingle()
       if (domainError) throw new HttpError(500, 'DOMAIN_REFRESH_FAILED', 'The domain could not be read')
@@ -369,7 +418,10 @@ serve(async (req) => {
         throw new HttpError(409, 'DOMAIN_DISABLED', 'That domain is disabled')
       }
 
-      const { status: nextStatus, error: servingError } = await railwayDomainProgress(domain.provider_domain_id)
+      const { status: nextStatus, error: servingError } = await providerDomainProgress(
+        providerOfRow(domain.provider),
+        domain.provider_domain_id,
+      )
       const serving = nextStatus === 'active'
       // A workspace's first domain to come alive becomes the one links use.
       // Setting primary was a separate click that existed for exactly one
@@ -489,12 +541,14 @@ serve(async (req) => {
     const domainId = requireUuid(body.domain_id, 'domain_id')
     const { data: domain } = await admin
       .from('workspace_domains')
-      .select('id,workspace_id,hostname,provider_domain_id')
+      .select('id,workspace_id,hostname,provider,provider_domain_id')
       .eq('id', domainId)
       .maybeSingle()
     if (!domain) throw new HttpError(404, 'DOMAIN_NOT_FOUND', 'That domain is unavailable')
 
-    if (domain.provider_domain_id) await deleteRailwayDomain(domain.provider_domain_id)
+    if (domain.provider_domain_id) {
+      await deleteProviderDomain(providerOfRow(domain.provider), domain.provider_domain_id)
+    }
     const { error: deleteError } = await admin
       .from('workspace_domains')
       .delete()

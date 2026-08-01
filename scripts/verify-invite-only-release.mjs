@@ -36,7 +36,9 @@ const EXPECTED_COUNTS = Object.freeze({
   // the topic proposal, which decide what every pitch in a sequence says.
   // 157 with _shared/promptModels.ts and its test: the models a stage may run
   // on, read live from Anthropic rather than listed in this repo.
-  edgeTypeScriptFiles: 157,
+  // 158 with _shared/cloudflareSaas.ts: the second custom-domain provider, kept
+  // because the first could not say why a domain was stuck.
+  edgeTypeScriptFiles: 158,
 })
 
 const EXPECTED_PHASE_KEYS = Object.freeze([
