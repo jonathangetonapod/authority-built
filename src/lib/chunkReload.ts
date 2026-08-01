@@ -13,10 +13,29 @@
  * "Something went wrong" in the moment before the reload navigates away.
  *
  * So a reload, once decided, cancels everything that follows it.
+ *
+ * Cancelling is not free. Vite's helper ends in `baseModule().catch(handle)`,
+ * and a handler that cancels returns undefined — so a cancelled entry-chunk
+ * failure leaves the import RESOLVED with undefined rather than rejected.
+ * React.lazy then reads `.default` off undefined and throws during render,
+ * which is the same error boundary this file exists to keep off the screen.
+ * `chunkReloadScheduled` lets `lazyRoute` recognise that undefined and hold
+ * Suspense until the reload lands.
  */
 
 const RELOAD_MARK = 'chunk-reload-at'
 const RELOAD_WINDOW_MS = 30_000
+
+let reloadScheduled = false
+
+/** True once this page has committed to reloading and is on its way out. */
+export function chunkReloadScheduled(): boolean {
+  return reloadScheduled
+}
+
+export function resetChunkReloadScheduledForTests(): void {
+  reloadScheduled = false
+}
 
 export interface ChunkReloadEnvironment {
   storage: Pick<Storage, 'getItem' | 'setItem'>
@@ -44,6 +63,7 @@ export function createChunkReloadHandler(
     if (lastReload && now - Number(lastReload) < RELOAD_WINDOW_MS) return
 
     reloadInFlight = true
+    reloadScheduled = true
     environment.storage.setItem(RELOAD_MARK, String(now))
     event.preventDefault()
     environment.reload()
