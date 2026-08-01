@@ -1,6 +1,5 @@
 import { AlertTriangle, CheckCircle2, Clock, Handshake, MessageSquare, ShieldCheck, Ban } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { countWords, wordCountStatus, type PitchWordTarget } from '@/lib/pitchQuality'
 import type { ClientShortlistAgencyRelationship } from '@/services/clientShortlist'
 
 /**
@@ -191,30 +190,5 @@ export const PitchTrustPanel = ({ auditFlags, liveIssues = [], grounding, genera
         </div>
       </div>
     </div>
-  )
-}
-
-interface PitchWordCountProps {
-  text: string
-  target: PitchWordTarget
-}
-
-/** Live length feedback against the research-backed target for this email. */
-export const PitchWordCount = ({ text, target }: PitchWordCountProps) => {
-  const count = countWords(text)
-  const status = wordCountStatus(count, target)
-  const tone = status === 'ideal'
-    ? 'text-emerald-700'
-    : status === 'over'
-      ? 'text-destructive'
-      : status === 'long'
-        ? 'text-amber-700'
-        : 'text-muted-foreground'
-  return (
-    <span className={`text-[11px] font-medium tabular-nums ${tone}`}>
-      {count} {count === 1 ? 'word' : 'words'}
-      <span className="font-normal text-muted-foreground"> · aim for {target.min}–{target.max}</span>
-      {status === 'over' && <span className="ml-1 font-semibold">too long for a cold pitch</span>}
-    </span>
   )
 }

@@ -3,7 +3,6 @@ import {
   checkPitchCopy,
   countWords,
   PITCH_WORD_TARGETS,
-  wordCountStatus,
 } from '@/lib/pitchQuality'
 
 describe('pitchQuality', () => {
@@ -13,16 +12,6 @@ describe('pitchQuality', () => {
     expect(PITCH_WORD_TARGETS.opening).toEqual({ min: 100, max: 130 })
     expect(PITCH_WORD_TARGETS.follow_up_one).toEqual({ min: 50, max: 80 })
     expect(PITCH_WORD_TARGETS.follow_up_two).toEqual({ min: 40, max: 60 })
-  })
-
-  it('grades length against the target with a tolerance band before failing it', () => {
-    const target = PITCH_WORD_TARGETS.opening
-    expect(wordCountStatus(0, target)).toBe('short')
-    expect(wordCountStatus(80, target)).toBe('short')
-    expect(wordCountStatus(115, target)).toBe('ideal')
-    expect(wordCountStatus(130, target)).toBe('ideal')
-    expect(wordCountStatus(145, target)).toBe('long')
-    expect(wordCountStatus(200, target)).toBe('over')
   })
 
   it('counts words without being fooled by extra whitespace', () => {

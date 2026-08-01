@@ -46,16 +46,6 @@ export function countWords(text: string): number {
   return text.trim().split(/\s+/u).filter(Boolean).length
 }
 
-export type PitchCopyStatus = 'short' | 'ideal' | 'long' | 'over'
-
-export function wordCountStatus(count: number, target: PitchWordTarget): PitchCopyStatus {
-  if (count === 0 || count < target.min) return 'short'
-  if (count <= target.max) return 'ideal'
-  // A modest overrun is worth flagging softly; well past the cap is the
-  // failure mode hosts actually complain about.
-  return count <= Math.round(target.max * 1.2) ? 'long' : 'over'
-}
-
 /**
  * Style issues an operator can fix while editing. Deliberately excludes the
  * claim audit — whether a fact is supported can only be judged against the

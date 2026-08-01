@@ -43,8 +43,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { buildPodcastCampaignSequenceDraft, buildThreadReplySubject, type PodcastCampaignSequenceDraft } from '@/lib/campaignSequence'
-import { AgencyRelationshipNotice, PitchTrustPanel, PitchWordCount } from '@/components/workspace/PitchQualitySignals'
-import { checkPitchCopy, PITCH_WORD_TARGETS } from '@/lib/pitchQuality'
+import { AgencyRelationshipNotice, PitchTrustPanel } from '@/components/workspace/PitchQualitySignals'
+import { checkPitchCopy } from '@/lib/pitchQuality'
 import { safeExternalUrl } from '@/lib/externalUrl'
 import {
   type ClientShortlistEmailUnlockStageId,
@@ -2155,29 +2155,20 @@ export function ClientCampaignPrepDialog({
                             <p className="text-[11px] leading-4 text-muted-foreground">Plain and specific beats clever. Hosts open on the idea, not the wording.</p>
                           </div>
                           <div className="space-y-2">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <Label htmlFor="campaign-pitch-body">Opening email</Label>
-                              <PitchWordCount text={draft.pitchBody} target={PITCH_WORD_TARGETS.opening} />
-                            </div>
+                            <Label htmlFor="campaign-pitch-body">Opening email</Label>
                             <Textarea id="campaign-pitch-body" value={draft.pitchBody} onChange={(event) => updateDraft('pitchBody', event.target.value)} className="min-h-72 resize-y" maxLength={20_000} />
                           </div>
                         </>
                       )}
                       {activeSequenceEmail === 'follow_up_one' && (
                         <div className="space-y-2">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <Label htmlFor="campaign-follow-up-one-body">Follow-up 1 reply</Label>
-                            <PitchWordCount text={draft.followUpOneBody} target={PITCH_WORD_TARGETS.follow_up_one} />
-                          </div>
+                          <Label htmlFor="campaign-follow-up-one-body">Follow-up 1 reply</Label>
                           <Textarea id="campaign-follow-up-one-body" value={draft.followUpOneBody} onChange={(event) => updateDraft('followUpOneBody', event.target.value)} className="min-h-64 resize-y" maxLength={20_000} />
                         </div>
                       )}
                       {activeSequenceEmail === 'follow_up_two' && (
                         <div className="space-y-2">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <Label htmlFor="campaign-follow-up-two-body">Follow-up 2 reply</Label>
-                            <PitchWordCount text={draft.followUpTwoBody} target={PITCH_WORD_TARGETS.follow_up_two} />
-                          </div>
+                          <Label htmlFor="campaign-follow-up-two-body">Follow-up 2 reply</Label>
                           <Textarea id="campaign-follow-up-two-body" value={draft.followUpTwoBody} onChange={(event) => updateDraft('followUpTwoBody', event.target.value)} className="min-h-64 resize-y" maxLength={20_000} />
                         </div>
                       )}
