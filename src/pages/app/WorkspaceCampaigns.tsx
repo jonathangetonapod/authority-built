@@ -5,6 +5,9 @@ import {
   ArrowRight,
   BarChart3,
   CheckCircle2,
+  ChevronDown,
+  ChevronsUpDown,
+  ChevronUp,
   KeyRound,
   Loader2,
   Mail,
@@ -58,6 +61,7 @@ import {
   type WorkspaceInstantlyIntegration,
 } from '@/services/workspaceCampaigns'
 import { type WorkspaceClient } from '@/services/clients'
+import { describeSyncFreshness } from '@/lib/syncFreshness'
 
 type CampaignFilter = 'all' | 'attention' | 'draft' | 'active' | 'paused' | 'completed'
 type CampaignStatus = 'Needs attention' | 'Draft' | 'Active' | 'Paused' | 'Completed'
@@ -96,6 +100,20 @@ const filterLabels: Array<{ value: CampaignFilter; label: string }> = [
   { value: 'paused', label: 'Paused' },
   { value: 'completed', label: 'Completed' },
 ]
+
+/** Worst first: the default order answers "what needs me?" before anything else. */
+const statusPriority: Record<CampaignStatus, number> = {
+  'Needs attention': 0,
+  Draft: 1,
+  Active: 2,
+  Paused: 3,
+  Completed: 4,
+}
+
+type SortColumn = 'default' | 'name' | 'client' | 'status' | 'progress' | 'sent' | 'replies' | 'staged'
+
+/** Sorting these opens on the largest value: the question is always "who has the most?". */
+const descendingFirst = new Set<SortColumn>(['progress', 'sent', 'replies', 'staged'])
 
 const statusClasses: Record<CampaignStatus, string> = {
   'Needs attention': 'border-amber-200 bg-amber-50 text-amber-800',
@@ -179,6 +197,60 @@ function campaignListMetrics(summary: CampaignSummary) {
     // would say they are reaching hosts right now.
     stagedSending: campaign?.target_counts.staged_sending ?? 0,
   }
+}
+
+function sortValue(summary: CampaignSummary, column: SortColumn): string | number {
+  const metrics = campaignListMetrics(summary)
+  switch (column) {
+    case 'name':
+      return (summary.campaign?.name || `${summary.client.name} Podcast Outreach`).toLowerCase()
+    case 'client':
+      return summary.client.name.toLowerCase()
+    case 'status':
+      return statusPriority[summary.status]
+    // A campaign with nothing to report sorts below a real zero rather than
+    // above it: "—" is not an achievement.
+    case 'progress':
+      return metrics.progress ?? -1
+    case 'sent':
+      return metrics.sent
+    case 'replies':
+      return metrics.replies ?? -1
+    case 'staged':
+      return metrics.staged
+    default:
+      return 0
+  }
+}
+
+/**
+ * Declared at module scope on purpose. Defined inside the page it would be a
+ * new component type on every render, so React would remount each header and
+ * the sort button would lose focus on the very click that used it.
+ */
+function SortableHead({
+  column,
+  label,
+  className,
+  sort,
+  onToggle,
+}: {
+  column: SortColumn
+  label: string
+  className?: string
+  sort: { column: SortColumn; direction: 'asc' | 'desc' }
+  onToggle: (column: SortColumn) => void
+}) {
+  const active = sort.column === column
+  const Icon = !active ? ChevronsUpDown : sort.direction === 'asc' ? ChevronUp : ChevronDown
+  return (
+    <TableHead className={className} aria-sort={!active ? 'none' : sort.direction === 'asc' ? 'ascending' : 'descending'}>
+      <button type="button" onClick={() => onToggle(column)} className="inline-flex items-center gap-1 hover:text-foreground">
+        {label}
+        <Icon className={`h-3.5 w-3.5 ${active ? 'text-foreground' : 'text-muted-foreground/60'}`} aria-hidden="true" />
+      </button>
+    </TableHead>
+  )
 }
 
 function SummaryMetric({
@@ -271,6 +343,11 @@ const WorkspaceCampaigns = ({
 
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<CampaignFilter>('all')
+  // 'default' is the needs-attention-first order, and is what the page opens on.
+  const [sort, setSort] = useState<{ column: SortColumn; direction: 'asc' | 'desc' }>({
+    column: 'default',
+    direction: 'asc',
+  })
   const [clientGroupFilter, setClientGroupFilter] = useState('all')
   const [createOpen, setCreateOpen] = useState(false)
   const [createStep, setCreateStep] = useState<1 | 2>(1)
@@ -365,6 +442,20 @@ const WorkspaceCampaigns = ({
     onError: (error) => toast.error(error instanceof Error ? error.message : 'The campaign draft could not be saved.'),
   })
 
+  // Third click returns to needs-attention-first rather than stranding the
+  // operator in an order they can only leave by reloading.
+  const toggleSort = (column: SortColumn) => {
+    setSort((current) => {
+      if (current.column !== column) {
+        return { column, direction: descendingFirst.has(column) ? 'desc' : 'asc' }
+      }
+      const opened = descendingFirst.has(column) ? 'desc' : 'asc'
+      return current.direction === opened
+        ? { column, direction: opened === 'asc' ? 'desc' : 'asc' }
+        : { column: 'default', direction: 'asc' }
+    })
+  }
+
   const selectedClient = activeClients.find((client) => client.id === selectedClientId) || null
   const normalizedSearch = search.trim().toLowerCase()
   const filteredSummaries = summaries.filter((summary) => {
@@ -380,16 +471,32 @@ const WorkspaceCampaigns = ({
       || (filter === 'completed' && summary.status === 'Completed')
     return matchesSearch && matchesClient && matchesFilter
   }).sort((left, right) => {
-    const priority: Record<CampaignStatus, number> = {
-      'Needs attention': 0,
-      Draft: 1,
-      Active: 2,
-      Paused: 3,
-      Completed: 4,
+    // Ties always fall back to client name, so re-sorting never reshuffles rows
+    // that compare equal and the list stays readable between clicks.
+    const byClient = left.client.name.localeCompare(right.client.name)
+    if (sort.column === 'default') {
+      return statusPriority[left.status] - statusPriority[right.status] || byClient
     }
-    return priority[left.status] - priority[right.status]
-      || left.client.name.localeCompare(right.client.name)
+    const leftValue = sortValue(left, sort.column)
+    const rightValue = sortValue(right, sort.column)
+    const ordered = typeof leftValue === 'number' && typeof rightValue === 'number'
+      ? leftValue - rightValue
+      : String(leftValue).localeCompare(String(rightValue))
+    return (sort.direction === 'asc' ? ordered : -ordered) || byClient
   })
+
+  const syncFreshness = useMemo(
+    () => describeSyncFreshness(summaries.map((summary) => summary.campaign?.last_synced_at), Date.now()),
+    [summaries],
+  )
+  const sendingNow = useMemo(() => {
+    const sending = summaries.filter((summary) => (summary.campaign?.target_counts.staged_sending || 0) > 0)
+    return {
+      pitches: sending.reduce((total, summary) => total + (summary.campaign?.target_counts.staged_sending || 0), 0),
+      campaigns: sending.length,
+      href: sending.length === 0 ? null : `${baseHref}/client-campaigns/${sending[0].client.id}?tab=leads`,
+    }
+  }, [baseHref, summaries])
 
   const activeCount = summaries.filter((summary) => summary.status === 'Active').length
   const sentCount = summaries.reduce((total, summary) => (
@@ -596,6 +703,41 @@ const WorkspaceCampaigns = ({
         />
       </div>
 
+      {/* Every number above arrives only when somebody presses Refresh totals,
+          and without this they look equally current at one minute or one
+          fortnight old. */}
+      {integration?.connected && syncFreshness && (
+        <p className={`flex items-center gap-2 text-xs ${syncFreshness.stale ? 'font-medium text-amber-700' : 'text-muted-foreground'}`}>
+          {syncFreshness.stale && <AlertCircle className="h-3.5 w-3.5 shrink-0" />}
+          {syncFreshness.label}
+        </p>
+      )}
+
+      {/* Pitches added to a campaign that was already live start sending on the
+          next window without anyone pressing launch. That is the one state on
+          this page where real hosts are being emailed right now, and it was
+          only ever a cell in a table. */}
+      {sendingNow.pitches > 0 && (
+        <div className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p className="font-semibold">
+                {sendingNow.pitches} pitch{sendingNow.pitches === 1 ? '' : 'es'} {sendingNow.pitches === 1 ? 'is' : 'are'} already emailing hosts
+              </p>
+              <p className="mt-0.5 text-amber-800">
+                Added to {sendingNow.campaigns === 1 ? 'a campaign that was' : `${sendingNow.campaigns} campaigns that were`} already live, so {sendingNow.pitches === 1 ? 'it sends' : 'they send'} on the next window without a launch.
+              </p>
+            </div>
+          </div>
+          {sendingNow.href && (
+            <Button asChild size="sm" variant="outline" className="shrink-0 border-amber-300 bg-white hover:bg-amber-100">
+              <Link to={sendingNow.href}>Review{sendingNow.campaigns === 1 ? '' : ' first campaign'}<ArrowRight className="ml-2 h-4 w-4" /></Link>
+            </Button>
+          )}
+        </div>
+      )}
+
       <Card className="overflow-hidden">
         <div className="border-b border-border bg-muted/15 p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -686,17 +828,17 @@ const WorkspaceCampaigns = ({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="min-w-64">Name</TableHead>
-                    <TableHead className="min-w-44">Client</TableHead>
-                    <TableHead>Status</TableHead>
+                    <SortableHead column="name" label="Name" className="min-w-64" sort={sort} onToggle={toggleSort} />
+                    <SortableHead column="client" label="Client" className="min-w-44" sort={sort} onToggle={toggleSort} />
+                    <SortableHead column="status" label="Status" sort={sort} onToggle={toggleSort} />
                     {/* The instruction, not just the history. It was mobile-only
                         before, so the operators on a laptop got seven
                         backward-looking metrics and nothing to act on. */}
                     <TableHead className="min-w-48">Next step</TableHead>
-                    <TableHead className="min-w-36">Progress</TableHead>
-                    <TableHead>Sent</TableHead>
-                    <TableHead className="min-w-36">Replies</TableHead>
-                    <TableHead className="min-w-32">Staged</TableHead>
+                    <SortableHead column="progress" label="Progress" className="min-w-36" sort={sort} onToggle={toggleSort} />
+                    <SortableHead column="sent" label="Sent" sort={sort} onToggle={toggleSort} />
+                    <SortableHead column="replies" label="Replies" className="min-w-36" sort={sort} onToggle={toggleSort} />
+                    <SortableHead column="staged" label="Staged" className="min-w-32" sort={sort} onToggle={toggleSort} />
                     <TableHead className="w-20 text-right">Open</TableHead>
                   </TableRow>
                 </TableHeader>

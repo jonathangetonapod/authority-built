@@ -145,14 +145,17 @@ const Location = () => {
   return <output data-testid="location">{`${location.pathname}${location.search}`}</output>
 }
 
-function renderCampaigns() {
+const secondClientId = '77777777-7777-4777-8777-777777777777'
+const secondClient: WorkspaceClient = { ...client, id: secondClientId, name: 'Ana Boyd', email: 'ana@example.com' }
+
+function renderCampaigns(clients: WorkspaceClient[] = [client]) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={['/app/client-campaigns']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <WorkspaceCampaigns
           workspaceId={workspaceId}
-          clients={[client]}
+          clients={clients}
           clientsLoading={false}
           clientsError={null}
           baseHref="/app"
@@ -259,6 +262,93 @@ describe('WorkspaceCampaigns', () => {
     const table = await screen.findByRole('table')
     expect(within(table).getByRole('link', { name: 'Launch 2 staged pitches' }))
       .toHaveAttribute('href', `/app/client-campaigns/${clientId}?tab=leads`)
+  })
+
+  // Pitches added to a live campaign send on the next window with nobody
+  // pressing launch. It was a table cell; it is the one state on this page
+  // where real hosts are being emailed right now.
+  it('raises staged pitches that are already emailing hosts to the top of the page', async () => {
+    mockedOverview.mockResolvedValue({
+      ...campaignOverview,
+      integration: connectedIntegration,
+      campaigns: [{
+        ...persistedCampaign,
+        target_counts: { ...persistedCampaign.target_counts, staged: 5, staged_sending: 3 },
+      }],
+    })
+    renderCampaigns()
+
+    expect(await screen.findByText('3 pitches are already emailing hosts')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /^Review/ })).toHaveAttribute('href', `/app/client-campaigns/${clientId}?tab=leads`)
+  })
+
+  it('says nothing about sending when no staged pitch is live', async () => {
+    mockedOverview.mockResolvedValue({
+      ...campaignOverview,
+      integration: connectedIntegration,
+      campaigns: [{
+        ...persistedCampaign,
+        target_counts: { ...persistedCampaign.target_counts, staged: 5, staged_sending: 0 },
+      }],
+    })
+    renderCampaigns()
+
+    await screen.findByRole('table')
+    expect(screen.queryByText(/already emailing hosts/)).not.toBeInTheDocument()
+  })
+
+  // Totals arrive only when somebody presses Refresh totals, so their age has
+  // to be on screen next to them.
+  it('marks totals that have not been synced in over a day', async () => {
+    mockedOverview.mockResolvedValue({
+      ...campaignOverview,
+      integration: connectedIntegration,
+      campaigns: [{ ...persistedCampaign, last_synced_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() }],
+    })
+    renderCampaigns()
+
+    expect(await screen.findByText('Totals synced 3 days ago')).toBeInTheDocument()
+  })
+
+  it('sorts the table by the column the operator picks', async () => {
+    mockedOverview.mockResolvedValue({
+      ...campaignOverview,
+      integration: connectedIntegration,
+      campaigns: [
+        { ...persistedCampaign, target_counts: { ...persistedCampaign.target_counts, staged: 1, staged_sending: 0 } },
+        {
+          ...persistedCampaign,
+          id: '88888888-8888-4888-8888-888888888888',
+          client_id: secondClientId,
+          name: 'Ana Boyd Podcast Outreach',
+          instantly_campaign_id: '99999999-9999-4999-8999-999999999999',
+          target_counts: { ...persistedCampaign.target_counts, staged: 9, staged_sending: 0 },
+        },
+      ],
+      provider_campaigns: [],
+    })
+    renderCampaigns([client, secondClient])
+
+    const table = await screen.findByRole('table')
+    const names = () => within(table).getAllByRole('row').slice(1)
+      .map((row) => within(row).getAllByRole('cell')[1].textContent)
+
+    // Default order is status first, then client name alphabetically.
+    expect(names()).toEqual(['Ana Boyd', 'Dallas Fontaine'])
+
+    // Staged opens on the largest, because the question is "who has the most?".
+    fireEvent.click(within(table).getByRole('button', { name: 'Staged' }))
+    expect(names()).toEqual(['Ana Boyd', 'Dallas Fontaine'])
+    expect(within(table).getByRole('columnheader', { name: 'Staged' })).toHaveAttribute('aria-sort', 'descending')
+
+    fireEvent.click(within(table).getByRole('button', { name: 'Staged' }))
+    expect(names()).toEqual(['Dallas Fontaine', 'Ana Boyd'])
+    expect(within(table).getByRole('columnheader', { name: 'Staged' })).toHaveAttribute('aria-sort', 'ascending')
+
+    // A third click returns to the default rather than stranding the operator.
+    fireEvent.click(within(table).getByRole('button', { name: 'Staged' }))
+    expect(within(table).getByRole('columnheader', { name: 'Staged' })).toHaveAttribute('aria-sort', 'none')
+    expect(names()).toEqual(['Ana Boyd', 'Dallas Fontaine'])
   })
 
   it('shows the bounce rate that says a sending domain is burning', async () => {
