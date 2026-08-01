@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeNextSend, projectNextSend } from '@/lib/nextSend'
+import { describeNextSend, explainNextSend, projectNextSend } from '@/lib/nextSend'
 
 const base = {
   leadStatus: 1,
@@ -62,7 +62,19 @@ describe('projectNextSend', () => {
   // and must never read as a promise.
   it('never claims more than the earliest it could go', () => {
     const result = projectNextSend({ ...base, lastContactAt: '2026-08-05T14:00:00Z' }, wed)
-    expect(describeNextSend(result)).toMatch(/^No earlier than/)
+    expect(describeNextSend(result)).toMatch(/^Not before/)
+    expect(explainNextSend(result)).toMatch(/earliest this host could next be emailed/)
     if (result.kind === 'due') expect(result.approximate).toBe(true)
+  })
+
+  // A column is scanned down, not read across. A sentence in every row buries
+  // the one row that differs from the others.
+  it('gives a table a phrase and a tooltip the sentence', () => {
+    const held = projectNextSend({ ...base, campaignStatus: 0 }, wed)
+    expect(describeNextSend(held)).toBe('Campaign not started')
+    expect(explainNextSend(held)).toMatch(/nothing goes out until it is started/)
+
+    const bounced = projectNextSend({ ...base, leadStatus: -1 }, wed)
+    expect(describeNextSend(bounced)).toBe('Bounced')
   })
 })

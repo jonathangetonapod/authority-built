@@ -42,7 +42,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/contexts/AuthContext'
 import { INSTANTLY_TIMEZONES, defaultInstantlyTimezone, toInstantlyTimezone } from '@/lib/instantlyTimezones'
-import { describeNextSend, projectNextSend } from '@/lib/nextSend'
+import { describeNextSend, explainNextSend, projectNextSend } from '@/lib/nextSend'
 import { safeExternalUrl } from '@/lib/externalUrl'
 import { workspaceLogoUrl } from '@/lib/workspaceLogo'
 import { MY_WORKSPACE_BASE_HREF, selectedWorkspaceBaseHref } from '@/lib/workspaceRoutes'
@@ -53,6 +53,7 @@ import {
   getWorkspaceTargetLeadStatus,
   saveWorkspaceCampaign,
   setWorkspaceCampaignRunning,
+  syncWorkspaceCampaign,
   updateWorkspaceCampaignSettings,
   type WorkspaceCampaignProviderSchedule,
   type WorkspaceTargetLeadStatus,
@@ -360,8 +361,9 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
   const validAddress = UUID_PATTERN.test(workspaceId) && UUID_PATTERN.test(clientId)
   const baseHref = isPlatformWorkspace ? selectedWorkspaceBaseHref(workspaceId) : MY_WORKSPACE_BASE_HREF
 
+  const campaignQueryKey = [isPlatformWorkspace ? 'platform' : 'tenant', user?.id || 'unknown', 'workspace', workspaceId, 'campaign-layout', clientId] as const
   const campaignQuery = useQuery({
-    queryKey: [isPlatformWorkspace ? 'platform' : 'tenant', user?.id || 'unknown', 'workspace', workspaceId, 'campaign-layout', clientId],
+    queryKey: campaignQueryKey,
     queryFn: async () => {
       const [detail, shortlist, campaignState] = await Promise.all([
         getWorkspaceClientDetail(workspaceId, clientId),
@@ -459,6 +461,38 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
   const previewPodcast = previewTarget
     ? campaignPodcasts.find((podcast) => podcast.id === previewTarget.shortlist_podcast_id) ?? null
     : null
+  /**
+   * Freshen the page on arrival, without asking anybody to.
+   *
+   * The scheduled sweep runs every thirty minutes, so opening this page could
+   * show numbers that old with nothing saying so — and the fix was a button
+   * somebody had to know to press. Arriving on stale data now refreshes it in
+   * the background and the table updates when it lands.
+   *
+   * Guarded by the timestamp rather than fired on every mount: a page opened
+   * three times in a minute should call Instantly once, and their rate limit is
+   * a shared resource across every client in the workspace.
+   */
+  const lastSyncedAt = campaign?.last_synced_at ?? null
+  const syncIsStale = !lastSyncedAt
+    || Date.now() - new Date(lastSyncedAt).getTime() > 3 * 60_000
+  const backgroundSync = useMutation({
+    mutationFn: () => syncWorkspaceCampaign(workspaceId, clientId),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: campaignQueryKey }) },
+    // Silent on purpose. This was not asked for, so its failure is not the
+    // operator's problem to read — the page still shows the last good data,
+    // and every panel that states its own age keeps stating it.
+    onError: () => {},
+  })
+  const canSync = Boolean(campaign?.instantly_campaign_id) && integration?.connected
+  useEffect(() => {
+    if (!canSync || !syncIsStale || backgroundSync.isPending) return
+    backgroundSync.mutate()
+    // Keyed to the campaign and its freshness: re-running on every render, or
+    // on an unrelated state change, would hammer the provider.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canSync, syncIsStale, campaign?.instantly_campaign_id])
+
   // Asked of Instantly, not read from the last sync. A lead moves without
   // anybody here touching it, so a cached answer to "where does this host
   // stand" is the one thing on this page worth least.
@@ -770,7 +804,7 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                   </div>
                   <div className="hidden overflow-x-auto md:block">
                     <Table>
-                      <TableHeader><TableRow><TableHead className="min-w-64">Podcast</TableHead><TableHead className="min-w-48">Contact</TableHead><TableHead className="min-w-40">Delivery</TableHead><TableHead className="text-center">Opens</TableHead><TableHead className="text-center">Replies</TableHead><TableHead>Last activity</TableHead><TableHead className="min-w-44">Next email</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+                      <TableHeader><TableRow><TableHead className="min-w-64">Podcast</TableHead><TableHead className="min-w-48">Contact</TableHead><TableHead className="min-w-40">Delivery</TableHead><TableHead className="text-center">Opens</TableHead><TableHead className="text-center">Replies</TableHead><TableHead>Last activity</TableHead><TableHead className="min-w-44">Next email due</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
                       <TableBody>
                         {campaignPodcasts.map((podcast) => {
                           const target = targetByShortlistId.get(podcast.id)
@@ -797,7 +831,7 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                               <TableCell className="text-center font-medium tabular-nums">{target?.email_open_count || 0}</TableCell>
                               <TableCell className="text-center font-medium tabular-nums">{target?.email_reply_count || 0}</TableCell>
                               <TableCell><span className="text-sm text-muted-foreground">{formatDate(target?.last_activity_at || target?.updated_at || podcast.feedback_updated_at || podcast.updated_at)}</span></TableCell>
-                              <TableCell><p className={`text-sm ${nextSend.kind === 'due' ? 'font-medium' : 'text-muted-foreground'}`}>{describeNextSend(nextSend)}</p>{nextSend.kind === 'due' && <p className="text-xs text-muted-foreground">if nothing holds it up</p>}</TableCell>
+                              <TableCell><p className={`text-sm ${nextSend.kind === 'due' ? 'font-medium' : 'text-muted-foreground'}`} title={explainNextSend(nextSend)}>{describeNextSend(nextSend)}</p>{nextSend.kind === 'due' && <p className="text-xs text-muted-foreground">if nothing holds it up</p>}</TableCell>
                               <TableCell className="text-right"><Button type="button" size="sm" variant="ghost" className="text-primary" onClick={() => openPodcastInSequences(podcast.id)}>Open in Sequences<ArrowRight className="ml-2 h-3.5 w-3.5" /></Button></TableCell>
                             </TableRow>
                           )

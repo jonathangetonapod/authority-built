@@ -29,10 +29,16 @@ export interface NextSendInputs {
 }
 
 export type NextSendProjection =
-  /** Nothing further will be sent, and the reason is settled. */
-  | { kind: 'none'; reason: string }
+  /**
+   * Nothing further will be sent, and the reason is settled.
+   *
+   * `summary` is for a table cell and `reason` for anywhere with room. A column
+   * is scanned down, not read across, so a sentence in every row buries the one
+   * row that differs.
+   */
+  | { kind: 'none'; summary: string; reason: string }
   /** Held by something an operator can change. */
-  | { kind: 'held'; reason: string }
+  | { kind: 'held'; summary: string; reason: string }
   /** The earliest it could go out. Never a promise that it will. */
   | { kind: 'due'; at: Date; approximate: true }
 
@@ -59,20 +65,20 @@ function weekdayInZone(date: Date, timezone: string): number {
 }
 
 export function projectNextSend(input: NextSendInputs, now: Date = new Date()): NextSendProjection {
-  if (input.leadStatus === 3) return { kind: 'none', reason: 'The sequence has finished for this host.' }
-  if (input.leadStatus === -1) return { kind: 'none', reason: 'The address bounced, so nothing further will be sent.' }
-  if (input.leadStatus === -2) return { kind: 'none', reason: 'The host unsubscribed, so nothing further will be sent.' }
-  if (input.leadStatus === -3) return { kind: 'none', reason: 'Instantly skipped this lead, so nothing is queued.' }
-  if (input.leadStatus === 2) return { kind: 'held', reason: 'This lead is paused in Instantly.' }
-  if (input.campaignStatus !== 1) return { kind: 'held', reason: 'The campaign is not sending, so nothing goes out until it is started.' }
-  if (!input.sendDays.length) return { kind: 'held', reason: 'The campaign has no sending days selected.' }
+  if (input.leadStatus === 3) return { kind: 'none', summary: 'Sequence finished', reason: 'The sequence has finished for this host.' }
+  if (input.leadStatus === -1) return { kind: 'none', summary: 'Bounced', reason: 'The address bounced, so nothing further will be sent.' }
+  if (input.leadStatus === -2) return { kind: 'none', summary: 'Unsubscribed', reason: 'The host unsubscribed, so nothing further will be sent.' }
+  if (input.leadStatus === -3) return { kind: 'none', summary: 'Skipped', reason: 'Instantly skipped this lead, so nothing is queued.' }
+  if (input.leadStatus === 2) return { kind: 'held', summary: 'Lead paused', reason: 'This lead is paused in Instantly.' }
+  if (input.campaignStatus !== 1) return { kind: 'held', summary: 'Campaign not started', reason: 'The campaign is not sending, so nothing goes out until it is started.' }
+  if (!input.sendDays.length) return { kind: 'held', summary: 'No sending days', reason: 'The campaign has no sending days selected.' }
 
   // Never contacted: the next open window is the first email, and that one is
   // not a guess about which step comes next.
   const earliest = input.lastContactAt
     ? new Date(new Date(input.lastContactAt).getTime() + input.followUpOneDelayDays * 86_400_000)
     : now
-  if (Number.isNaN(earliest.getTime())) return { kind: 'held', reason: 'The last send time could not be read.' }
+  if (Number.isNaN(earliest.getTime())) return { kind: 'held', summary: 'Unknown', reason: 'The last send time could not be read.' }
 
   const from = earliest.getTime() > now.getTime() ? earliest : now
   const days = new Set(input.sendDays)
@@ -91,12 +97,19 @@ export function projectNextSend(input: NextSendInputs, now: Date = new Date()): 
       approximate: true,
     }
   }
-  return { kind: 'held', reason: 'No sending day falls within the next two weeks.' }
+  return { kind: 'held', summary: 'No sending day soon', reason: 'No sending day falls within the next two weeks.' }
 }
 
-/** One line for a table cell. Always reads as an estimate. */
+/** A phrase for a table cell. Always reads as an estimate. */
 export function describeNextSend(projection: NextSendProjection): string {
-  if (projection.kind === 'none' || projection.kind === 'held') return projection.reason
+  if (projection.kind === 'none' || projection.kind === 'held') return projection.summary
   const when = projection.at.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-  return `No earlier than ${when}`
+  return `Not before ${when}`
+}
+
+/** The whole explanation, for a tooltip or anywhere with room for a sentence. */
+export function explainNextSend(projection: NextSendProjection): string {
+  if (projection.kind === 'none' || projection.kind === 'held') return projection.reason
+  const when = projection.at.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+  return `The earliest this host could next be emailed is ${when}. A daily limit, a paused campaign or a sending account at its own limit can each push it later.`
 }
