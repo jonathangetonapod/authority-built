@@ -270,6 +270,18 @@ assert.match(
   'the fresh counts must be folded back into the target',
 )
 
+// Projecting the next send needs when we last emailed, which is not the same
+// as when the lead record last moved. last_activity_at is written from
+// timestamp_updated and shifts on an open or an interest edit, so it cannot
+// answer the question.
+assert.match(
+  edge,
+  /last_contact_at: lead\.timestamp_last_contact/u,
+  'the last contact time must be stored from the provider field of that name',
+)
+assert.match(edge, /"instantly_campaign_id",\s*\n\s*"last_contact_at",/u)
+assert.match(edge, /last_contact_at: target\.last_contact_at,/u)
+
 // Follow-ups reply into the opening thread. Instantly threads a step with no
 // subject as a reply; giving it one starts a separate conversation, so a host
 // who ignored the pitch received three unrelated emails instead of one thread.

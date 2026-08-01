@@ -42,6 +42,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/contexts/AuthContext'
 import { INSTANTLY_TIMEZONES, defaultInstantlyTimezone, toInstantlyTimezone } from '@/lib/instantlyTimezones'
+import { describeNextSend, projectNextSend } from '@/lib/nextSend'
 import { safeExternalUrl } from '@/lib/externalUrl'
 import { workspaceLogoUrl } from '@/lib/workspaceLogo'
 import { MY_WORKSPACE_BASE_HREF, selectedWorkspaceBaseHref } from '@/lib/workspaceRoutes'
@@ -746,12 +747,23 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                   </div>
                   <div className="hidden overflow-x-auto md:block">
                     <Table>
-                      <TableHeader><TableRow><TableHead className="min-w-64">Podcast</TableHead><TableHead className="min-w-48">Contact</TableHead><TableHead className="min-w-40">Delivery</TableHead><TableHead className="text-center">Opens</TableHead><TableHead className="text-center">Replies</TableHead><TableHead>Last activity</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+                      <TableHeader><TableRow><TableHead className="min-w-64">Podcast</TableHead><TableHead className="min-w-48">Contact</TableHead><TableHead className="min-w-40">Delivery</TableHead><TableHead className="text-center">Opens</TableHead><TableHead className="text-center">Replies</TableHead><TableHead>Last activity</TableHead><TableHead className="min-w-44">Next email</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
                       <TableBody>
                         {campaignPodcasts.map((podcast) => {
                           const target = targetByShortlistId.get(podcast.id)
                           const stage = pitchStage(target)
                           const delivery = leadDelivery(target)
+                          // Instantly reports nothing forward-looking, so this
+                          // is our own arithmetic and is worded as such.
+                          const nextSend = projectNextSend({
+                            leadStatus: target?.instantly_lead_status ?? null,
+                            campaignStatus: campaign?.instantly_campaign_status ?? null,
+                            lastContactAt: target?.last_contact_at ?? null,
+                            sendDays: campaign?.send_days ?? [1, 2, 3, 4, 5],
+                            windowStart: campaign?.send_window_start ?? '09:00',
+                            timezone: campaign?.timezone ?? 'America/Detroit',
+                            followUpOneDelayDays: campaign?.follow_up_one_delay_days ?? 6,
+                          })
                           const contactEmail = target?.contact_email || podcast.podcast_email
                           const podcastUrl = podcast.podcast_url ? safeExternalUrl(podcast.podcast_url) : null
                           return (
@@ -762,6 +774,7 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                               <TableCell className="text-center font-medium tabular-nums">{target?.email_open_count || 0}</TableCell>
                               <TableCell className="text-center font-medium tabular-nums">{target?.email_reply_count || 0}</TableCell>
                               <TableCell><span className="text-sm text-muted-foreground">{formatDate(target?.last_activity_at || target?.updated_at || podcast.feedback_updated_at || podcast.updated_at)}</span></TableCell>
+                              <TableCell><p className={`text-sm ${nextSend.kind === 'due' ? 'font-medium' : 'text-muted-foreground'}`}>{describeNextSend(nextSend)}</p>{nextSend.kind === 'due' && <p className="text-xs text-muted-foreground">if nothing holds it up</p>}</TableCell>
                               <TableCell className="text-right"><Button type="button" size="sm" variant="ghost" className="text-primary" onClick={() => openPodcastInSequences(podcast.id)}>Open in Sequences<ArrowRight className="ml-2 h-3.5 w-3.5" /></Button></TableCell>
                             </TableRow>
                           )

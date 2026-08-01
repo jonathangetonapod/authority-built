@@ -199,6 +199,11 @@ export interface WorkspaceCampaignTarget {
   lead_staged_at: string | null
   /** Provider campaign status when the lead was staged: 1 means it began sending. */
   lead_staged_campaign_status: number | null
+  /**
+   * When an email last went out to this host. Null means none has. Distinct
+   * from last_activity_at, which moves on any change to the lead record.
+   */
+  last_contact_at: string | null
   last_activity_at: string | null
   last_error: string | null
   prior_outreach_at: string | null

@@ -81,6 +81,7 @@ const SQL_INPUTS = [
   'supabase/migrations/20260801000100_sendable_client_campaign_links.sql',
   'supabase/migrations/20260801000200_campaign_schedule_settings.sql',
   'supabase/migrations/20260801000300_campaign_timezone_supported_default.sql',
+  'supabase/migrations/20260801000400_target_last_contact.sql',
   'supabase/tests/20260720_invite_only_workspace_verification.sql',
   'supabase/tests/20260721_workspace_guest_resources_behavior.sql',
   'supabase/tests/20260722_subagency_workspace_foundation_behavior.sql',
