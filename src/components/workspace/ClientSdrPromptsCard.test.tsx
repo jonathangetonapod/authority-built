@@ -48,8 +48,10 @@ const renderCard = (canManage = true) => render(
 )
 
 /** Opens a stage's editor by its heading button. */
+// A prompt opens in a dialog now rather than expanding in place, so the title
+// appears twice once it is open: on the row and in the dialog heading.
 const openStage = async (title: string) => {
-  fireEvent.click(await screen.findByText(title))
+  fireEvent.click(await screen.findByRole('button', { name: new RegExp(`Edit ${title}`, 'i') }))
 }
 
 describe('ClientSdrPromptsCard inbox model', () => {
@@ -144,7 +146,7 @@ describe('ClientSdrPromptsCard inbox model', () => {
   it('reads the model list only once an inbox stage is open', async () => {
     renderCard()
     // The card lands closed; most visits never touch the model.
-    await screen.findByText('Reply instructions')
+    await screen.findAllByText('Reply instructions')
     expect(mockedModels).not.toHaveBeenCalled()
 
     await openStage('Reply instructions')
