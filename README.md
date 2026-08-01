@@ -483,6 +483,7 @@ Confirm the deployment commit, inspect the HTML asset references, purge only the
 - [`docs/api/README.md`](docs/api/README.md) — API documentation index
 - [`docs/pitch-research-prompts.json`](docs/pitch-research-prompts.json) — canonical research and pitch prompt set (generated mirrors are held in sync by contract scripts)
 - [`docs/production-cutover-2026-07-21.md`](docs/production-cutover-2026-07-21.md) — historical sanitized release evidence
+- [`docs/campaign-repair-2026-08-01.md`](docs/campaign-repair-2026-08-01.md) — client campaign defects found and repaired, including the Instantly day-index and timezone-enum traps
 
 Some historical documents describe legacy global admin tools. The current source, migrations, tests, and tenant contracts take precedence when those documents conflict.
 
