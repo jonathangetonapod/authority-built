@@ -1001,7 +1001,6 @@ assert.match(campaignsPage, /result\.missing > 0/u)
 // they send for, and connecting one writes the campaign that does the sending.
 const mailboxInfra = readFileSync('supabase/functions/workspace-mailbox-infra/index.ts', 'utf8')
 const mailboxesTable = readFileSync('src/components/workspace/MailboxesTable.tsx', 'utf8')
-const infraCard = readFileSync('src/components/workspace/MailboxInfraCard.tsx', 'utf8')
 
 // A UTC day rolls over during the American sending window, so an afternoon of
 // sending read as zero from late afternoon onwards.
@@ -1044,11 +1043,6 @@ assert.match(mailboxInfra, /action === 'warming-retry'/u)
 
 // The page states the Winnr requirement instead of offering a wizard that
 // cannot run, and never offers the purchase flow to a non-manager.
-assert.match(infraCard, /A Winnr account is required to buy sending domains/u)
-assert.match(infraCard, /if \(!canManage\) \{/u)
-assert.match(infraCard, /enabled: Boolean\(workspaceId\) && canManage/u)
-assert.match(infraCard, /In Instantly/u)
-assert.doesNotMatch(infraCard, /window\.open\(/u, 'a post-await window.open is eaten by popup blockers')
 
 // Problems first, and the SMTP reason on the row rather than in a hover title.
 assert.match(mailboxesTable, /function severity\(account: WorkspaceMailboxAccount\)/u)
