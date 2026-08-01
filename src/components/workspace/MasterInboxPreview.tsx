@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { describeWait, sortThreadsForAttention, waitIsOverdue } from '@/lib/inboxAttention'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -287,12 +287,26 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
    */
   const persistDraftEdit = useMemo(() => {
     let timer: number | null = null
+    let pending: (() => void) | null = null
+    let pendingThreadKey: string | null = null
     return (thread: WorkspaceInboxThread, body: string) => {
       const clientId = thread.campaign?.client?.id
       if (!thread.thread_key || !clientId) return
-      if (timer !== null) window.clearTimeout(timer)
+      // Members can type, but their save would 403 — and the cache patch ran
+      // before the server call, so their edits looked persisted in-session and
+      // reverted on the next refetch: the exact "work survived when it did
+      // not" this feature exists to end. No save, no cache lie.
+      if (!canManage) return
       const threadKey = thread.thread_key
-      timer = window.setTimeout(() => {
+      if (timer !== null) {
+        window.clearTimeout(timer)
+        // A pending save for a DIFFERENT thread is work about to be lost, not
+        // a keystroke to coalesce — flush it now. Cancelling it outright was
+        // how switching threads inside the debounce window silently dropped
+        // the previous thread's edit.
+        if (pending && pendingThreadKey !== threadKey) pending()
+      }
+      const flush = () => {
         // The cached list is what a re-opened thread restores from, so it has
         // to carry the edit too — the server copy alone only helps after a
         // refetch, and switching threads and back is faster than one.
@@ -302,8 +316,16 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
             ? {
               ...current,
               threads: current.threads.map((item) => (
-                item.thread_key === threadKey && item.state?.draft
-                  ? { ...item, state: { ...item.state, draft: { ...item.state.draft, body } } }
+                item.thread_key === threadKey && item.state
+                  ? {
+                    ...item,
+                    state: {
+                      ...item.state,
+                      draft: item.state.draft
+                        ? { ...item.state.draft, body }
+                        : { subject: '', body, nudges: [], based_on_email_id: null, generated_at: null },
+                    },
+                  }
                   : item
               )),
             }
@@ -317,9 +339,13 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
           client_id: clientId,
           draft_body: body,
         })).catch(() => {})
-      }, 900)
+        if (pending === flush) { pending = null; pendingThreadKey = null; timer = null }
+      }
+      pending = flush
+      pendingThreadKey = threadKey
+      timer = window.setTimeout(flush, 900)
     }
-  }, [workspaceId, queryClient])
+  }, [workspaceId, queryClient, canManage])
 
   const counts = useMemo(() => ({
     interested: threads.filter((thread) => thread.interested).length,
@@ -364,6 +390,19 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
     || threads.find((thread) => thread.id === selectedThreadId)
     || linkedThread
     || null
+  // A deep link lands through the fallback above without running openThread,
+  // which is where a persisted draft is restored — so the one entry path built
+  // for returning to a conversation was the one that rendered it empty. Runs
+  // once per link target, then normal selection takes over.
+  const hydratedLinkRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!linkedThread || selectedThreadId) return
+    if (hydratedLinkRef.current === linkedThread.id) return
+    hydratedLinkRef.current = linkedThread.id
+    openThread(linkedThread.id)
+    // openThread is stable enough for this purpose and not memoized.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedThread, selectedThreadId])
   // Both sides of the conversation. Loaded on request rather than with the
   // list: it is one provider call per thread, and most triage never needs it.
   const threadMessagesQuery = useQuery({

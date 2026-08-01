@@ -922,6 +922,26 @@ assert.match(masterInbox, /enabled: showFullThread && Boolean\(workspaceId\) && 
 // History is per-conversation and must not carry across threads.
 assert.match(masterInbox, /setSelectedThreadId\(threadId\)[\s\S]{0,220}setShowFullThread\(false\)/u)
 
+// Draft edits are debounced, and every way that debounce could eat an edit is
+// a silent one — the operator sees typed text either way.
+const persistDraft = masterInbox.match(/const persistDraftEdit = useMemo\(\(\) => \{[\s\S]*?\}, \[workspaceId, queryClient, canManage\]\)/u)
+assert.ok(persistDraft, 'persistDraftEdit must stay a canManage-aware memo')
+// A member's save 403s, and the cache patch runs before the call — so their
+// edits looked persisted in-session and reverted on the next refetch.
+assert.match(persistDraft[0], /if \(!canManage\) return/u)
+// Switching threads inside the debounce window is a pending save for another
+// thread: flush it, never cancel it.
+assert.match(persistDraft[0], /if \(pending && pendingThreadKey !== threadKey\) pending\(\)/u)
+// A thread with no generated draft still has to accept a first hand-written
+// one; gating the cache patch on an existing draft dropped exactly those.
+assert.match(persistDraft[0], /item\.thread_key === threadKey && item\.state\b/u)
+assert.match(persistDraft[0], /draft: item\.state\.draft[\s\S]{0,160}based_on_email_id: null/u)
+
+// A deep link resolves through the fallback rather than openThread, which is
+// where a saved draft is restored — so the one path built for returning to a
+// conversation was the one that rendered it empty.
+assert.match(masterInbox, /hydratedLinkRef\.current = linkedThread\.id\s*\n\s*openThread\(linkedThread\.id\)/u)
+
 // "Not ready" now names the fields, instead of sending the operator to hunt.
 assert.match(masterInbox, /missingSdrFields/u)
 assert.match(masterInbox, /threadClient\?\.ai_sdr_profile_ready === false/u)
