@@ -96,6 +96,11 @@ const GUIDANCE: Record<string, CampaignErrorGuidance> = {
     explanation: 'Its opening email does not read the pitch written here, so sending into it would deliver whatever copy is already in Instantly — not this one. Campaigns created from the client page carry the right sequence. The draft is saved and nothing was sent.',
     remedy: { kind: 'link', label: 'Open Clients', module: 'clients' },
   },
+  CAMPAIGN_LINK_DELETED: {
+    title: 'That campaign was deleted in Instantly',
+    explanation: 'It has been dropped as a send target, so it will not be offered again. The pitch and the podcast list are untouched — pick another campaign, or create one from the client page.',
+    remedy: { kind: 'link', label: 'Open Clients', module: 'clients' },
+  },
   CAMPAIGN_NOT_LINKED: {
     title: 'That campaign is not linked to this client',
     explanation: 'Only campaigns linked to this client can receive their pitches, which is what keeps replies attributed to the right person. Linking happens on the client page.',

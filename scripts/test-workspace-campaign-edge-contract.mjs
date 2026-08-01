@@ -206,6 +206,26 @@ assert.match(
   /chosenProviderCampaignId === campaign\.instantly_campaign_id\s*\n?\s*\?\s*null\s*\n?\s*:\s*chosenProviderCampaignId/u,
   'choosing the client own campaign must fall back to the self-healing path',
 )
+// A linked campaign deleted in Instantly must stop being offered, rather than
+// 404ing on every send while still showing as a send target. Only a 404 counts,
+// for the same reason it does on the client's own mapping.
+assert.match(
+  edge,
+  /function readChosenProviderCampaign[\s\S]*?error\.status !== 404\) throw error;[\s\S]*?forgetDeadCampaignLink\([\s\S]*?"CAMPAIGN_LINK_DELETED"/u,
+  'a deleted linked campaign must be dropped as a send target and named',
+)
+assert.match(
+  edge,
+  /forgetDeadCampaignLink[\s\S]*?\.update\(\{ provisioned_at: null \}\)[\s\S]*?\.eq\("workspace_id", workspaceId\)/u,
+  'clearing a dead link must stay inside the workspace',
+)
+// The chosen read must go through that path, not a bare request.
+assert.doesNotMatch(
+  edge,
+  /chosenProviderCampaignId\s*\n?\s*\?\s*providerCampaign\(/u,
+  'the chosen campaign must not be read without the dead-link handler',
+)
+
 // Saving the link list must not demote a campaign this app built.
 assert.match(
   edge,

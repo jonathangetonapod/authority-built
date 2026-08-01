@@ -109,6 +109,17 @@ describe('campaignErrorGuidance', () => {
     expect(guidance?.remedy).toEqual({ kind: 'link', label: 'Open Clients', module: 'clients' })
   })
 
+  // A deleted linked campaign used to surface as INSTANTLY_RESOURCE_NOT_FOUND,
+  // whose guidance rebuilds the client's OWN campaign — a different campaign,
+  // leaving this one still offered and the next send failing the same way.
+  it('does not send a deleted link off to rebuild the wrong campaign', () => {
+    const guidance = campaignErrorGuidance('CAMPAIGN_LINK_DELETED')
+
+    expect(guidance?.title).toBe('That campaign was deleted in Instantly')
+    expect(guidance?.remedy).toEqual({ kind: 'link', label: 'Open Clients', module: 'clients' })
+    expect(guidance?.remedy).not.toEqual(campaignErrorGuidance('INSTANTLY_RESOURCE_NOT_FOUND')?.remedy)
+  })
+
   it('sends an unlinked campaign to the page that links it', () => {
     expect(campaignErrorGuidance('CAMPAIGN_NOT_LINKED')?.remedy).toEqual({
       kind: 'link',

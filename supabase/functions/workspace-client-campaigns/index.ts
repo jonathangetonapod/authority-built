@@ -1618,6 +1618,40 @@ async function forgetDeadProviderCampaign(
 }
 
 /**
+ * Stops offering a linked campaign that Instantly no longer has.
+ *
+ * The same wedge as a dead client mapping, one row over: the link keeps its
+ * provisioned_at, keeps showing as a send target, and every send 404s. Clearing
+ * only provisioned_at rather than deleting the row leaves the link visible so
+ * an operator can see what happened and uncheck it — and the campaign is gone,
+ * so it can no longer receive replies to attribute either way.
+ */
+async function forgetDeadCampaignLink(
+  context: AuthContext,
+  workspaceId: string,
+  providerCampaignId: string,
+): Promise<void> {
+  const { error } = await context.admin
+    .from("client_instantly_campaign_links")
+    .update({ provisioned_at: null })
+    .eq("workspace_id", workspaceId)
+    .eq("instantly_campaign_id", providerCampaignId);
+  if (error) {
+    // The refusal below is the point; failing to record why must not replace a
+    // precise "that campaign is gone" with a database error.
+    console.error("[workspace-client-campaigns] dead link not cleared");
+    return;
+  }
+  await writeAudit(context.admin, {
+    workspaceId,
+    actorUserId: context.user.id,
+    action: "client.instantly_campaign_link.deleted_upstream",
+    entityType: "client_instantly_campaign_link",
+    entityId: providerCampaignId,
+  });
+}
+
+/**
  * The mapped campaign, or null once a dead mapping has been cleared.
  *
  * Only a 404 counts as dead. A rate limit, a rejected key, or a provider
@@ -1936,6 +1970,39 @@ export interface StagedLeadResult {
  * It deliberately does NOT activate the campaign. Activation stays with the
  * explicit launch action.
  */
+/**
+ * The chosen linked campaign, or a refusal naming what became of it.
+ *
+ * A campaign deleted in Instantly used to surface here as a bare 404, and the
+ * guidance for that code sends the operator to rebuild the client's *own*
+ * campaign — which is a different campaign and leaves this one still offered,
+ * so the same send fails again. The link is dropped as a send target and the
+ * refusal says so, which is the difference between a fix and a loop.
+ */
+async function readChosenProviderCampaign(
+  context: AuthContext,
+  workspaceId: string,
+  apiKey: string,
+  providerCampaignId: string,
+): Promise<ProviderCampaign> {
+  try {
+    return providerCampaign(
+      await instantlyRequest<unknown>(
+        apiKey,
+        `/campaigns/${encodeURIComponent(providerCampaignId)}`,
+      ),
+    );
+  } catch (error) {
+    if (!(error instanceof InstantlyApiError) || error.status !== 404) throw error;
+    await forgetDeadCampaignLink(context, workspaceId, providerCampaignId);
+    throw new HttpError(
+      409,
+      "CAMPAIGN_LINK_DELETED",
+      "That campaign no longer exists in Instantly, so it is no longer offered as a send target. Choose another campaign, or create one from the client page.",
+    );
+  }
+}
+
 async function stageCampaignLead(
   context: AuthContext,
   // Nullable on purpose: integrationApiKey turns a missing or disconnected
@@ -1996,11 +2063,11 @@ async function stageCampaignLead(
   // is a provisioned link for this client, and creating one here would silently
   // invent a send target the operator did not pick.
   const providerCampaignValue = chosenProviderCampaignId
-    ? providerCampaign(
-      await instantlyRequest<unknown>(
-        apiKey,
-        `/campaigns/${encodeURIComponent(chosenProviderCampaignId)}`,
-      ),
+    ? await readChosenProviderCampaign(
+      context,
+      campaign.workspace_id,
+      apiKey,
+      chosenProviderCampaignId,
     )
     : await ensureProviderCampaign(context, campaign, apiKey);
   // The last gate, and the only one checked against the live sequence.
