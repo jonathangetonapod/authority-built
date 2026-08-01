@@ -30,13 +30,6 @@ import { InstantlyAccountPicker } from '@/components/workspace/InstantlyAccountP
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -384,7 +377,6 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
     podcast.visibility === 'visible'
     && persistedPodcastIds.has(podcast.id)
   )), [data?.shortlist.podcasts, persistedPodcastIds])
-  const [selectedPodcastId, setSelectedPodcastId] = useState<string | null>(null)
   const [settingsName, setSettingsName] = useState('')
   const [settingsTimezone, setSettingsTimezone] = useState(defaultInstantlyTimezone())
   const [settingsDailyLimit, setSettingsDailyLimit] = useState(30)
@@ -401,34 +393,46 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
   const [sequenceStep, setSequenceStep] = useState(0)
   const [previewTargetId, setPreviewTargetId] = useState<string | null>(null)
 
-  const selectedPodcast = campaignPodcasts.find((podcast) => podcast.id === selectedPodcastId) || null
-  const selectedTarget = selectedPodcast ? targetByShortlistId.get(selectedPodcast.id) || null : null
 
   // The campaign holds variables, not copy — every podcast carries its own
   // three messages. So a sequence preview has to be a preview OF something,
   // and showing the variable names would tell an operator nothing about what
   // a host actually receives.
-  // Asked of Instantly when the drawer opens, not read from the last sync. A
-  // lead moves without anybody here touching it, so a cached answer to "where
-  // does this host stand" is the one number on this page worth least.
-  const leadStatusQuery = useQuery({
-    queryKey: ['workspace-target-lead-status', workspaceId, clientId, selectedPodcast?.id ?? 'none'],
-    queryFn: () => getWorkspaceTargetLeadStatus({
-      workspaceId,
-      clientId,
-      shortlistPodcastId: selectedPodcast!.id,
-    }),
-    enabled: Boolean(selectedPodcast && selectedTarget?.instantly_lead_id),
-    retry: false,
-    staleTime: 0,
-  })
-  const previewableTargets = useMemo(
-    () => campaignTargets.filter((target) => target.pitch_body?.trim()),
-    [campaignTargets],
-  )
+  /**
+   * Opening a podcast means opening it in Sequences.
+   *
+   * It used to open a drawer that repeated the sequence in prose — including
+   * its own hardcoded "Wait 3 days" for a campaign that waits six. One place
+   * shows a podcast's messages now, and that place reads its timings from the
+   * campaign.
+   */
+  const openPodcastInSequences = (shortlistPodcastId: string) => {
+    const target = campaignTargets.find((item) => item.shortlist_podcast_id === shortlistPodcastId)
+    if (target) setPreviewTargetId(target.id)
+    setSequenceStep(0)
+    selectTab('sequences')
+  }
+  const previewableTargets = campaignTargets
   const previewTarget = previewableTargets.find((target) => target.id === previewTargetId)
     ?? previewableTargets[0]
     ?? null
+  const previewPodcast = previewTarget
+    ? campaignPodcasts.find((podcast) => podcast.id === previewTarget.shortlist_podcast_id) ?? null
+    : null
+  // Asked of Instantly, not read from the last sync. A lead moves without
+  // anybody here touching it, so a cached answer to "where does this host
+  // stand" is the one thing on this page worth least.
+  const leadStatusQuery = useQuery({
+    queryKey: ['workspace-target-lead-status', workspaceId, clientId, previewTarget?.shortlist_podcast_id ?? 'none'],
+    queryFn: () => getWorkspaceTargetLeadStatus({
+      workspaceId,
+      clientId,
+      shortlistPodcastId: previewTarget!.shortlist_podcast_id,
+    }),
+    enabled: Boolean(previewTarget?.instantly_lead_id),
+    retry: false,
+    staleTime: 0,
+  })
   const sequenceSteps = useMemo(() => [
     {
       label: 'Step 1',
@@ -631,8 +635,6 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
   const podcastReplyRate = emailedPodcastCount > 0 ? Math.round((repliedPodcastCount / emailedPodcastCount) * 100) : 0
   const providerAccounts = integration?.accounts || []
   const canManageCampaign = Boolean(campaignState?.can_manage_campaigns)
-  const selectedHostName = selectedTarget?.host_name || selectedPodcast?.publisher_name || 'Host not identified'
-  const selectedContactEmail = selectedTarget?.contact_email || selectedPodcast?.podcast_email || 'No contact email found'
 
   return (
     <WorkspaceLayout platformWorkspace={platformWorkspace}>
@@ -717,11 +719,11 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                       const delivery = leadDelivery(target)
                       const contactEmail = target?.contact_email || podcast.podcast_email
                       return (
-                        <button key={podcast.id} type="button" onClick={() => setSelectedPodcastId(podcast.id)} className="w-full rounded-xl border p-4 text-left hover:bg-muted/30">
+                        <button key={podcast.id} type="button" onClick={() => openPodcastInSequences(podcast.id)} className="w-full rounded-xl border p-4 text-left hover:bg-muted/30">
                           <div className="flex items-start justify-between gap-3"><p className="font-semibold">{podcast.podcast_name}</p><Badge variant="outline" className={stageClass(stage)}>{stageLabel(stage)}</Badge></div>
                           <p className="mt-2 text-xs text-muted-foreground">{target?.host_name || podcast.publisher_name || 'Host not identified'} · {contactEmail || 'Contact needed'}</p>
                           <div className="mt-3 flex items-center justify-between gap-3 text-xs"><span className="font-medium">{delivery.label} · {delivery.detail}</span><span className="text-muted-foreground">{target?.email_open_count || 0} opens · {target?.email_reply_count || 0} replies</span></div>
-                          <p className="mt-3 text-sm font-medium text-primary">{stage === 'failed' ? 'View issue' : 'View details'}<ArrowRight className="ml-1 inline h-3.5 w-3.5" /></p>
+                          <p className="mt-3 text-sm font-medium text-primary">{stage === 'failed' ? 'View issue' : 'Open in Sequences'}<ArrowRight className="ml-1 inline h-3.5 w-3.5" /></p>
                         </button>
                       )
                     })}
@@ -744,7 +746,7 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                               <TableCell className="text-center font-medium tabular-nums">{target?.email_open_count || 0}</TableCell>
                               <TableCell className="text-center font-medium tabular-nums">{target?.email_reply_count || 0}</TableCell>
                               <TableCell><span className="text-sm text-muted-foreground">{formatDate(target?.last_activity_at || target?.updated_at || podcast.feedback_updated_at || podcast.updated_at)}</span></TableCell>
-                              <TableCell className="text-right"><Button type="button" size="sm" variant="ghost" className="text-primary" onClick={() => setSelectedPodcastId(podcast.id)}>{stage === 'failed' ? 'View issue' : 'View details'}<ArrowRight className="ml-2 h-3.5 w-3.5" /></Button></TableCell>
+                              <TableCell className="text-right"><Button type="button" size="sm" variant="ghost" className="text-primary" onClick={() => openPodcastInSequences(podcast.id)}>Open in Sequences<ArrowRight className="ml-2 h-3.5 w-3.5" /></Button></TableCell>
                             </TableRow>
                           )
                         })}
@@ -878,12 +880,12 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                         : 'Every podcast carries its own three messages, prepared in Podcasts.'}
                     </CardDescription>
                   </div>
-                  {previewableTargets.length > 1 && (
+                  {previewableTargets.length > 0 && (
                     <select
-                      aria-label="Preview message for"
+                      aria-label="Podcast"
                       value={previewTarget?.id ?? ''}
                       onChange={(event) => setPreviewTargetId(event.target.value)}
-                      className="h-9 w-full shrink-0 rounded-md border border-input bg-background px-3 text-sm sm:w-56"
+                      className="h-9 w-full shrink-0 rounded-md border border-input bg-background px-3 text-sm sm:w-64"
                     >
                       {previewableTargets.map((target) => (
                         <option key={target.id} value={target.id}>{target.podcast_name}</option>
@@ -892,6 +894,82 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                   )}
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  {previewTarget && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-lg bg-muted/25 p-3">
+                        <p className="text-xs text-muted-foreground">Host</p>
+                        <p className="mt-1 truncate font-medium">{previewTarget.host_name || 'Not identified'}</p>
+                      </div>
+                      <div className="rounded-lg bg-muted/25 p-3">
+                        <p className="text-xs text-muted-foreground">Contact</p>
+                        <p className="mt-1 break-all font-medium">{previewTarget.contact_email || 'No contact email'}</p>
+                      </div>
+                    </div>
+                  )}
+                  {previewTarget?.instantly_lead_id && (
+                    <div className="rounded-xl border p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Where this host stands</p>
+                          <p className="mt-1 text-sm text-muted-foreground">Read from Instantly, not from the last sync.</p>
+                        </div>
+                        <Button size="sm" variant="outline" disabled={leadStatusQuery.isFetching} onClick={() => void leadStatusQuery.refetch()}>
+                          {leadStatusQuery.isFetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Check again
+                        </Button>
+                      </div>
+                      {leadStatusQuery.isLoading ? (
+                        <p className="mt-4 text-sm text-muted-foreground">Reading the lead…</p>
+                      ) : leadStatusQuery.isError ? (
+                        <p className="mt-4 text-sm text-destructive">
+                          {leadStatusQuery.error instanceof Error ? leadStatusQuery.error.message : 'The delivery status could not be read.'}
+                        </p>
+                      ) : leadStatusQuery.data?.deleted_upstream ? (
+                        <p className="mt-4 text-sm text-amber-800">
+                          This lead no longer exists in Instantly, so no further emails will go out to this host.
+                        </p>
+                      ) : leadStatusQuery.data?.lead && !leadHasActivity(leadStatusQuery.data.lead) ? (
+                        <div className="mt-4 space-y-2">
+                          <Badge variant="outline" className={leadStatusBadge(leadStatusQuery.data.lead.status).className}>
+                            {leadStatusBadge(leadStatusQuery.data.lead.status).label}
+                          </Badge>
+                          <p className="text-sm text-muted-foreground">
+                            The lead is in the campaign, but nothing has been sent to this host yet, so there is no delivery activity to report.
+                          </p>
+                        </div>
+                      ) : leadStatusQuery.data?.lead ? (
+                        <div className="mt-4 space-y-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="outline" className={leadStatusBadge(leadStatusQuery.data.lead.status).className}>
+                              {leadStatusBadge(leadStatusQuery.data.lead.status).label}
+                            </Badge>
+                            {leadInterestLabel(leadStatusQuery.data.lead.lt_interest_status) && (
+                              <Badge variant="outline">{leadInterestLabel(leadStatusQuery.data.lead.lt_interest_status)}</Badge>
+                            )}
+                            {leadVerificationLabel(leadStatusQuery.data.lead.verification_status) && (
+                              <Badge variant="outline">{leadVerificationLabel(leadStatusQuery.data.lead.verification_status)}</Badge>
+                            )}
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-3">
+                            <div className="rounded-lg bg-muted/25 p-3"><p className="text-xs text-muted-foreground">Opens</p><p className="mt-1 text-lg font-bold">{leadStatusQuery.data.lead.email_open_count}</p></div>
+                            <div className="rounded-lg bg-muted/25 p-3"><p className="text-xs text-muted-foreground">Replies</p><p className="mt-1 text-lg font-bold">{leadStatusQuery.data.lead.email_reply_count}</p></div>
+                            <div className="rounded-lg bg-muted/25 p-3"><p className="text-xs text-muted-foreground">Clicks</p><p className="mt-1 text-lg font-bold">{leadStatusQuery.data.lead.email_click_count}</p></div>
+                          </div>
+                          <dl className="space-y-1 text-sm">
+                            {[
+                              { label: 'Last emailed', value: leadStatusQuery.data.lead.timestamp_last_contact },
+                              { label: 'Last opened', value: leadStatusQuery.data.lead.timestamp_last_open },
+                              { label: 'Last replied', value: leadStatusQuery.data.lead.timestamp_last_reply },
+                            ].map((row) => (
+                              <div key={row.label} className="flex justify-between gap-3">
+                                <dt className="text-muted-foreground">{row.label}</dt>
+                                <dd className="font-medium">{row.value ? formatDate(row.value) : 'Not yet'}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="outline">{activeStep.timing}</Badge>
                     <Badge variant="outline">{activeStep.landsOn}</Badge>
@@ -919,6 +997,30 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                         )}
                     </div>
                   </div>
+                  {/* Also recovered: the research and angles behind the
+                      pitch. Collapsed, because it explains the copy rather
+                      than being the copy. */}
+                  {previewPodcast && (previewTarget?.research_notes || previewPodcast.ai_fit_reasons?.length || previewPodcast.ai_pitch_angles?.length) ? (
+                    <details className="rounded-xl border bg-muted/15 p-4">
+                      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold"><Sparkles className="h-4 w-4 text-primary" />Pitch context</summary>
+                      {previewTarget?.research_notes ? <div className="mt-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Research notes</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{previewTarget.research_notes}</p></div> : null}
+                      {previewPodcast.ai_fit_reasons?.length ? <div className="mt-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Why this show fits</p><ul className="mt-2 space-y-2 text-sm text-muted-foreground">{previewPodcast.ai_fit_reasons.slice(0, 3).map((reason) => <li key={reason} className="flex gap-2"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />{reason}</li>)}</ul></div> : null}
+                      {previewPodcast.ai_pitch_angles?.length ? <div className="mt-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Suggested talking points</p><div className="mt-2 space-y-2">{previewPodcast.ai_pitch_angles.slice(0, 3).map((angle) => <div key={angle.title} className="rounded-lg bg-background p-3"><p className="text-sm font-medium">{angle.title}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{angle.description}</p></div>)}</div></div> : null}
+                    </details>
+                  ) : null}
+                  {/* Recovered from the drawer this replaced. A blocked
+                      second launch is the one thing on that screen an operator
+                      cannot work out from anything else shown. */}
+                  {previewTarget && (
+                    <div className="rounded-xl border border-dashed bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
+                      {previewTarget.prior_outreach_at && !previewTarget.launched_at
+                        ? `Earlier outreach was recorded for this client on ${formatDate(previewTarget.prior_outreach_at)}. A second launch is blocked to prevent duplicate contact.`
+                        : previewTarget.last_error
+                        || (previewTarget.launched_at
+                          ? `Outreach started ${formatDate(previewTarget.launched_at)}. Reply activity updates automatically.`
+                          : 'This final sequence is ready for outreach. Launch or pause delivery for the entire campaign from Options.')}
+                    </div>
+                  )}
                   <div className="flex items-start gap-3 rounded-xl border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground">
                     <Settings2 className="mt-0.5 h-4 w-4 shrink-0" />
                     <p>A preview, not an editor. Messages are written per podcast in Podcasts; this section sets the delivery cadence — text-only email, open tracking on, link tracking off, and stop on reply.</p>
@@ -1095,147 +1197,6 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
         </Tabs>
       </div>
 
-      <Sheet open={Boolean(selectedPodcast)} onOpenChange={(open) => { if (!open) setSelectedPodcastId(null) }}>
-        <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:max-w-2xl lg:max-w-3xl">
-          {selectedPodcast && (
-            <>
-              <SheetHeader className="border-b p-5 pr-12 sm:p-6 sm:pr-12">
-                <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className={stageClass(pitchStage(selectedTarget || undefined))}>{stageLabel(pitchStage(selectedTarget || undefined))}</Badge><Badge variant="outline">Final sequence</Badge></div>
-                <SheetTitle className="text-2xl">{selectedPodcast.podcast_name}</SheetTitle>
-                <SheetDescription>Final contact and approved three-email sequence for this campaign.</SheetDescription>
-              </SheetHeader>
-
-              <div className="space-y-6 p-5 sm:p-6">
-                <section className="rounded-xl border p-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Host contact</p>
-                    <p className="mt-1 text-sm text-muted-foreground">Finalized when this podcast was sent to the campaign.</p>
-                  </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-lg bg-muted/25 p-3">
-                      <p className="text-xs font-medium text-muted-foreground">Host name</p>
-                      <p className="mt-1 font-medium">{selectedHostName}</p>
-                    </div>
-                    <div className="rounded-lg bg-muted/25 p-3">
-                      <p className="text-xs font-medium text-muted-foreground">Contact email</p>
-                      <p className="mt-1 break-all font-medium">{selectedContactEmail}</p>
-                    </div>
-                  </div>
-                </section>
-
-                {selectedTarget?.instantly_lead_id && (
-                  <section className="rounded-xl border p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Where this host stands</p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          {leadStatusQuery.data?.checked_at
-                            ? `Read from Instantly just now, not from the last sync.`
-                            : 'Read from Instantly, not from the last sync.'}
-                        </p>
-                      </div>
-                      <Button size="sm" variant="outline" disabled={leadStatusQuery.isFetching} onClick={() => void leadStatusQuery.refetch()}>
-                        {leadStatusQuery.isFetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Check again
-                      </Button>
-                    </div>
-                    {leadStatusQuery.isLoading ? (
-                      <p className="mt-4 text-sm text-muted-foreground">Reading the lead…</p>
-                    ) : leadStatusQuery.isError ? (
-                      <p className="mt-4 text-sm text-destructive">
-                        {leadStatusQuery.error instanceof Error ? leadStatusQuery.error.message : 'The delivery status could not be read.'}
-                      </p>
-                    ) : leadStatusQuery.data?.deleted_upstream ? (
-                      /* A deleted lead is an answer, not a fault: nothing is
-                         running because there is nothing left to run. */
-                      <p className="mt-4 text-sm text-amber-800">
-                        This lead no longer exists in Instantly, so no further emails will go out to this host.
-                      </p>
-                    ) : leadStatusQuery.data?.lead && !leadHasActivity(leadStatusQuery.data.lead) ? (
-                      /* A lead that exists but has never been contacted reports
-                         every field as absent, which renders as a grid of
-                         zeros and five "Not yet"s — accurate, and reads as
-                         broken. Say the one true thing instead. */
-                      <div className="mt-4 space-y-2">
-                        <Badge variant="outline" className={leadStatusBadge(leadStatusQuery.data.lead.status).className}>
-                          {leadStatusBadge(leadStatusQuery.data.lead.status).label}
-                        </Badge>
-                        <p className="text-sm text-muted-foreground">
-                          The lead is in the campaign, but nothing has been sent to this host yet, so there is no delivery activity to report.
-                        </p>
-                      </div>
-                    ) : leadStatusQuery.data?.lead ? (
-                      <div className="mt-4 space-y-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant="outline" className={leadStatusBadge(leadStatusQuery.data.lead.status).className}>
-                            {leadStatusBadge(leadStatusQuery.data.lead.status).label}
-                          </Badge>
-                          {leadInterestLabel(leadStatusQuery.data.lead.lt_interest_status) && (
-                            <Badge variant="outline">{leadInterestLabel(leadStatusQuery.data.lead.lt_interest_status)}</Badge>
-                          )}
-                          {leadVerificationLabel(leadStatusQuery.data.lead.verification_status) && (
-                            <Badge variant="outline">{leadVerificationLabel(leadStatusQuery.data.lead.verification_status)}</Badge>
-                          )}
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-3">
-                          <div className="rounded-lg bg-muted/25 p-3"><p className="text-xs text-muted-foreground">Opens</p><p className="mt-1 text-lg font-bold">{leadStatusQuery.data.lead.email_open_count}</p></div>
-                          <div className="rounded-lg bg-muted/25 p-3"><p className="text-xs text-muted-foreground">Replies</p><p className="mt-1 text-lg font-bold">{leadStatusQuery.data.lead.email_reply_count}</p></div>
-                          <div className="rounded-lg bg-muted/25 p-3"><p className="text-xs text-muted-foreground">Clicks</p><p className="mt-1 text-lg font-bold">{leadStatusQuery.data.lead.email_click_count}</p></div>
-                        </div>
-                        <dl className="space-y-1 text-sm">
-                          {[
-                            { label: 'Last emailed', value: leadStatusQuery.data.lead.timestamp_last_contact },
-                            { label: 'Last opened', value: leadStatusQuery.data.lead.timestamp_last_open },
-                            { label: 'Last replied', value: leadStatusQuery.data.lead.timestamp_last_reply },
-                          ].map((row) => (
-                            <div key={row.label} className="flex justify-between gap-3">
-                              <dt className="text-muted-foreground">{row.label}</dt>
-                              <dd className="font-medium">{row.value ? formatDate(row.value) : 'Not yet'}</dd>
-                            </div>
-                          ))}
-                        </dl>
-                      </div>
-                    ) : null}
-                  </section>
-                )}
-
-                <section className="space-y-4">
-                  <div><h3 className="font-semibold">Final three-email sequence</h3><p className="mt-1 text-sm text-muted-foreground">Read-only copy approved before this podcast entered the campaign.</p></div>
-                  <div className="space-y-3 rounded-xl border p-4">
-                    <Badge variant="secondary">Email 1 · Opening pitch</Badge>
-                    <div><p className="text-xs font-medium text-muted-foreground">Subject line</p><p className="mt-1 rounded-lg bg-muted/25 p-3 text-sm font-medium">{selectedTarget?.pitch_subject || 'Subject unavailable'}</p></div>
-                    <div><p className="text-xs font-medium text-muted-foreground">Opening email</p><p className="mt-1 whitespace-pre-wrap rounded-lg bg-muted/25 p-3 text-sm leading-6">{selectedTarget?.pitch_body || 'Opening email unavailable'}</p></div>
-                  </div>
-                  <div className="space-y-3 rounded-xl border p-4">
-                    <div><Badge variant="secondary">Email 2 · Follow-up</Badge><p className="mt-2 text-xs text-muted-foreground">Wait 3 days and reply in the original thread.</p></div>
-                    <div><p className="text-xs font-medium text-muted-foreground">Follow-up 1 reply</p><p className="mt-1 whitespace-pre-wrap rounded-lg bg-muted/25 p-3 text-sm leading-6">{selectedTarget?.follow_up_1_body || 'First follow-up unavailable'}</p></div>
-                  </div>
-                  <div className="space-y-3 rounded-xl border p-4">
-                    <div><Badge variant="secondary">Email 3 · Close the loop</Badge><p className="mt-2 text-xs text-muted-foreground">Wait 5 more days and reply in the same thread.</p></div>
-                    <div><p className="text-xs font-medium text-muted-foreground">Follow-up 2 reply</p><p className="mt-1 whitespace-pre-wrap rounded-lg bg-muted/25 p-3 text-sm leading-6">{selectedTarget?.follow_up_2_body || 'Final follow-up unavailable'}</p></div>
-                  </div>
-                  <div className="rounded-xl border border-dashed bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
-                    {selectedTarget?.prior_outreach_at && !selectedTarget.launched_at
-                      ? `Earlier outreach was recorded for this client on ${formatDate(selectedTarget.prior_outreach_at)}. A second launch is blocked to prevent duplicate contact.`
-                      : selectedTarget?.last_error
-                      || (selectedTarget?.launched_at
-                        ? `Outreach started ${formatDate(selectedTarget.launched_at)}. Reply activity updates automatically.`
-                        : 'This final sequence is ready for outreach. Launch or pause delivery for the entire campaign from Options.')}
-                  </div>
-                </section>
-
-                {(selectedTarget?.research_notes || selectedPodcast.ai_fit_reasons?.length || selectedPodcast.ai_pitch_angles?.length) && (
-                  <details className="rounded-xl border bg-muted/15 p-4">
-                    <summary className="flex cursor-pointer list-none items-center gap-2 font-semibold"><Sparkles className="h-4 w-4 text-primary" />Pitch context</summary>
-                    {selectedTarget?.research_notes ? <div className="mt-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Research notes</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{selectedTarget.research_notes}</p></div> : null}
-                    {selectedPodcast.ai_fit_reasons?.length ? <div className="mt-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Why this show fits</p><ul className="mt-2 space-y-2 text-sm text-muted-foreground">{selectedPodcast.ai_fit_reasons.slice(0, 3).map((reason) => <li key={reason} className="flex gap-2"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />{reason}</li>)}</ul></div> : null}
-                    {selectedPodcast.ai_pitch_angles?.length ? <div className="mt-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Suggested talking points</p><div className="mt-2 space-y-2">{selectedPodcast.ai_pitch_angles.slice(0, 3).map((angle) => <div key={angle.title} className="rounded-lg bg-background p-3"><p className="text-sm font-medium">{angle.title}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{angle.description}</p></div>)}</div></div> : null}
-                  </details>
-                )}
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
 
       {/* Activating does two things, and only one of them is obvious. The
           second — that Send to Client Campaign stops being a staging action and

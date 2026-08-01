@@ -177,17 +177,12 @@ describe('WorkspaceCampaignDetail', () => {
     expect(founderRow).not.toBeNull()
     expect(within(founderRow as HTMLElement).getByText('Not emailed')).toBeInTheDocument()
     expect(within(founderRow as HTMLElement).getByText('Ready for campaign')).toBeInTheDocument()
-    fireEvent.click(within(founderRow as HTMLElement).getByRole('button', { name: /view details/i }))
-    expect(await screen.findByRole('heading', { name: 'Founder Show' })).toBeInTheDocument()
-    expect(screen.getByText('Final contact and approved three-email sequence for this campaign.')).toBeInTheDocument()
-    expect(screen.getAllByText('Final sequence').length).toBeGreaterThan(0)
+    fireEvent.click(within(founderRow as HTMLElement).getByRole('button', { name: /open in sequences/i }))
+    // The copy lives in one place now, with its timings read from the campaign
+    // rather than repeated as prose in a drawer.
+    expect(await screen.findByText('A reviewed opening pitch.')).toBeInTheDocument()
     expect(screen.getByText('A tailored guest idea')).toBeInTheDocument()
-    expect(screen.getByText('A reviewed opening pitch.')).toBeInTheDocument()
-    expect(screen.getByText('A reviewed first follow-up.')).toBeInTheDocument()
-    expect(screen.getByText('A reviewed final follow-up.')).toBeInTheDocument()
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
-    expect(screen.getByText(/reply in the original thread/i)).toBeInTheDocument()
-    expect(screen.getByText(/reply in the same thread/i)).toBeInTheDocument()
+    expect(screen.getByText(/As written for Founder Show/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Save contact' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /approve & start outreach/i })).not.toBeInTheDocument()
@@ -236,7 +231,7 @@ describe('WorkspaceCampaignDetail', () => {
     expect(within(founderRow as HTMLElement).getByText('Previously contacted')).toBeInTheDocument()
     expect(within(founderRow as HTMLElement).getByText('Earlier client outreach')).toBeInTheDocument()
 
-    fireEvent.click(within(founderRow as HTMLElement).getByRole('button', { name: /view details/i }))
+    fireEvent.click(within(founderRow as HTMLElement).getByRole('button', { name: /open in sequences/i }))
     expect(await screen.findByText(/A second launch is blocked to prevent duplicate contact/i)).toBeInTheDocument()
   })
 
@@ -439,13 +434,13 @@ function withStagedLead() {
     withStagedLead()
     renderPage()
 
-    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Podcasts' }), { button: 0 })
-    fireEvent.click(await screen.findByRole('button', { name: /Founder Show/ }))
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Sequences' }), { button: 0 })
 
     expect(await screen.findByText('Sequence running')).toBeInTheDocument()
     expect(screen.getByText('Meeting booked')).toBeInTheDocument()
     expect(screen.getByText('Address verified')).toBeInTheDocument()
-    expect(screen.getByText('3')).toBeInTheDocument()
+    const opens = screen.getByText('Opens').closest('div') as HTMLElement
+    expect(within(opens).getByText('3')).toBeInTheDocument()
     expect(getWorkspaceTargetLeadStatus).toHaveBeenCalledWith(expect.objectContaining({
       shortlistPodcastId: 'shortlist-one',
     }))
@@ -478,8 +473,7 @@ function withStagedLead() {
     withStagedLead()
     renderPage()
 
-    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Podcasts' }), { button: 0 })
-    fireEvent.click(await screen.findByRole('button', { name: /Founder Show/ }))
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Sequences' }), { button: 0 })
 
     expect(await screen.findByText(/nothing has been sent to this host yet/i)).toBeInTheDocument()
     expect(screen.queryByText('Last opened')).not.toBeInTheDocument()
@@ -496,8 +490,7 @@ function withStagedLead() {
     withStagedLead()
     renderPage()
 
-    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Podcasts' }), { button: 0 })
-    fireEvent.click(await screen.findByRole('button', { name: /Founder Show/ }))
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Sequences' }), { button: 0 })
 
     expect(await screen.findByText(/no longer exists in Instantly/i)).toBeInTheDocument()
   })
