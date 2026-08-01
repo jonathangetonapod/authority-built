@@ -45,6 +45,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { buildPodcastCampaignSequenceDraft, buildThreadReplySubject, type PodcastCampaignSequenceDraft } from '@/lib/campaignSequence'
 import { AgencyRelationshipNotice, PitchTrustPanel } from '@/components/workspace/PitchQualitySignals'
 import { checkPitchCopy } from '@/lib/pitchQuality'
+import { campaignErrorGuidance, errorCode } from '@/lib/campaignErrorGuidance'
+import { MY_WORKSPACE_BASE_HREF, workspaceModuleHref } from '@/lib/workspaceRoutes'
 import { safeExternalUrl } from '@/lib/externalUrl'
 import {
   type ClientShortlistEmailUnlockStageId,
@@ -252,7 +254,14 @@ export function ClientCampaignPrepDialog({
   // Held rather than toasted. Suppression, a duplicate contact, and a locked
   // pitch are situations to act on, not notifications to catch before they
   // fade, and the operator still has a draft on screen to fix.
-  const [prepareError, setPrepareError] = useState<string | null>(null)
+  // The code travels with the message so the alert can offer the move that
+  // resolves this particular refusal rather than a generic apology. `source`
+  // travels with it because sending and removing share this one alert, and a
+  // "Try again" that retried the wrong one would email a host the operator was
+  // trying to take out of the campaign.
+  const [prepareError, setPrepareError] = useState<
+    { message: string; code: string | null; source: 'prepare' | 'remove' } | null
+  >(null)
   const [confirmSendOpen, setConfirmSendOpen] = useState(false)
   const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false)
   const [emailRoute, setEmailRoute] = useState<EmailRoute>('podcast')
@@ -1196,7 +1205,11 @@ export function ClientCampaignPrepDialog({
       })
       onPrepared?.()
     },
-    onError: (error) => setPrepareError(error instanceof Error ? error.message : 'The pitch could not be sent to Client Campaign.'),
+    onError: (error) => setPrepareError({
+      message: error instanceof Error ? error.message : 'The pitch could not be sent to Client Campaign.',
+      code: errorCode(error),
+      source: 'prepare',
+    }),
   })
   const removeMutation = useMutation({
     mutationFn: () => {
@@ -1215,9 +1228,67 @@ export function ClientCampaignPrepDialog({
     },
     onError: (error) => {
       setConfirmRemoveOpen(false)
-      setPrepareError(error instanceof Error ? error.message : 'The podcast could not be removed from the campaign.')
+      setPrepareError({
+        message: error instanceof Error ? error.message : 'The podcast could not be removed from the campaign.',
+        code: errorCode(error),
+        source: 'remove',
+      })
     },
   })
+
+  const prepareGuidance = campaignErrorGuidance(prepareError?.code)
+  const retryPending = prepareError?.source === 'remove'
+    ? removeMutation.isPending
+    : prepareMutation.isPending
+  const prepareRemedy = prepareGuidance && prepareGuidance.remedy.kind !== 'none'
+    ? prepareGuidance.remedy
+    : null
+  // campaignHref is `${base}/client-campaigns/${clientId}`, so the workspace
+  // base is what precedes it — the dialog is given no other route context.
+  const workspaceBaseHref = campaignHref.split('/client-campaigns')[0] || MY_WORKSPACE_BASE_HREF
+
+  // Rendered on the success screen as well as the editor. The removal offered
+  // right after a send is an undo, and the footer that used to hold this alert
+  // is gone by then — so a failed undo said nothing at all.
+  const prepareErrorAlert = prepareError ? (
+              <div role="alert" className="mb-3 flex gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-destructive">{prepareGuidance?.title || 'This pitch was not sent to Client Campaign'}</p>
+                  <p className="mt-1 text-xs leading-5 text-destructive/90">{prepareGuidance?.explanation || prepareError.message}</p>
+                  {/* The draft is still on screen and still saved; a refusal
+                      that reads as data loss makes operators redo work. */}
+                  {prepareGuidance && <p className="mt-1 text-xs leading-5 text-destructive/70">{prepareError.message}</p>}
+                  {prepareRemedy && (
+                    <div className="mt-3">
+                      {prepareRemedy.kind === 'link' ? (
+                        <Button asChild type="button" size="sm" variant="outline">
+                          <Link to={workspaceModuleHref(workspaceBaseHref, prepareRemedy.module)}>{prepareRemedy.label}<ArrowRight className="ml-2 h-3.5 w-3.5" /></Link>
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={retryPending}
+                          onClick={() => {
+                            const retrying = prepareError.source
+                            setPrepareError(null)
+                            if (prepareRemedy.kind === 'contact') setActiveStep('email')
+                            else if (retrying === 'remove') removeMutation.mutate()
+                            else prepareMutation.mutate()
+                          }}
+                        >
+                          {retryPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                          {prepareRemedy.label}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => setPrepareError(null)}>Dismiss</Button>
+              </div>
+  ) : null
 
   const submitDisabled = !podcast
     || !mappedCampaign
@@ -1279,6 +1350,7 @@ export function ClientCampaignPrepDialog({
                 <Button asChild variant={stagedResult.willSend ? 'default' : 'outline'}><Link to={campaignHref}>Open Client Campaigns</Link></Button>
                 <Button type="button" variant={stagedResult.willSend ? 'outline' : 'default'} onClick={() => onOpenChange(false)}>Done</Button>
               </div>
+              {prepareErrorAlert && <div className="mt-6 w-full max-w-xl text-left">{prepareErrorAlert}</div>}
               {/* The undo. Most valuable in exactly the moment it is offered:
                   right after a send the operator did not mean to make. */}
               <Button
@@ -2241,16 +2313,7 @@ export function ClientCampaignPrepDialog({
 
         {podcast && !locked && !stagedResult && !campaignQuery.isLoading && (
           <footer aria-label="Pitch actions" className="shrink-0 border-t bg-muted/20 px-4 pb-5 pt-4 sm:px-6 sm:pb-6">
-            {prepareError && (
-              <div role="alert" className="mb-3 flex gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold text-destructive">This pitch was not sent to Client Campaign</p>
-                  <p className="mt-1 text-xs leading-5 text-destructive/90">{prepareError}</p>
-                </div>
-                <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => setPrepareError(null)}>Dismiss</Button>
-              </div>
-            )}
+            {prepareErrorAlert}
             <div className="flex flex-col gap-4 rounded-2xl border bg-background p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
               <p className="max-w-xl text-xs leading-5 text-muted-foreground">
                 {activeStep === 'email' && (!relationshipCanProceed

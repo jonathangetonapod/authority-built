@@ -374,8 +374,14 @@ assert.match(unstageAction[0], /action: "workspace\.client_campaign\.lead_remove
 assert.match(provider, /method\?: "GET" \| "POST" \| "PATCH" \| "DELETE"/u)
 assert.match(prepDialog, /removeWorkspaceCampaignLead/u)
 assert.match(prepDialog, /cannot recall what has/u)
-// A refused send stays on screen next to the draft it refers to.
-assert.match(prepDialog, /const \[prepareError, setPrepareError\] = useState<string \| null>\(null\)/u)
+// A refused send stays on screen next to the draft it refers to, carrying the
+// code that identifies which check refused and which action it refused.
+assert.match(prepDialog, /const \[prepareError, setPrepareError\] = useState<[\s\S]{0,200}source: 'prepare' \| 'remove'[\s\S]{0,40}>\(null\)/u)
+// Sending and removing share one alert; a retry wired to the wrong one would
+// email a host the operator was trying to take out of the campaign.
+assert.match(prepDialog, /else if \(retrying === 'remove'\) removeMutation\.mutate\(\)/u)
+// The undo offered right after a send needs the alert the footer no longer has.
+assert.match(prepDialog, /\{prepareErrorAlert && <div className="mt-6 w-full max-w-xl text-left">/u)
 assert.match(prepDialog, /role="alert"[\s\S]*?This pitch was not sent to Client Campaign/u)
 assert.doesNotMatch(
   prepDialog.match(/const prepareMutation = useMutation\(\{[\s\S]*?\n  \}\)/u)[0],

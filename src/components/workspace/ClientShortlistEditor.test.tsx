@@ -1009,6 +1009,69 @@ describe('ClientShortlistEditor', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+  // A refusal that only says no leaves the operator holding a finished draft
+  // with nowhere to take it. Each known code carries the move that follows it.
+  it('offers the move that resolves a refusal instead of just naming it', async () => {
+    const refusal = new Error('This host has already replied. (CAMPAIGN_PITCH_LOCKED)')
+    refusal.name = 'CAMPAIGN_PITCH_LOCKED'
+    vi.mocked(prepareWorkspaceCampaignPodcast).mockRejectedValue(refusal)
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize selected pitch' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Client Campaign' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByText('This pitch can no longer be edited')).toBeInTheDocument()
+    expect(within(alert).getByRole('link', { name: /Open Master Inbox/ })).toHaveAttribute('href', '/app/master-inbox')
+    // The server's own words stay on screen, so the code is still reportable.
+    expect(within(alert).getByText(/CAMPAIGN_PITCH_LOCKED/)).toBeInTheDocument()
+  })
+
+  it('retries the send itself when the refusal was only a setup race', async () => {
+    const racing = new Error('This campaign is already being prepared. (CAMPAIGN_SETUP_IN_PROGRESS)')
+    racing.name = 'CAMPAIGN_SETUP_IN_PROGRESS'
+    vi.mocked(prepareWorkspaceCampaignPodcast).mockRejectedValueOnce(racing)
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize selected pitch' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Client Campaign' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByText('The campaign is still being created')).toBeInTheDocument()
+    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }))
+
+    await waitFor(() => expect(vi.mocked(prepareWorkspaceCampaignPodcast)).toHaveBeenCalledTimes(2))
+  })
+
+  // Sending and removing share one alert. A "Try again" wired to the wrong one
+  // would email a host the operator was trying to take out of the campaign.
+  it('does not send the pitch when retrying a failed removal', async () => {
+    const racing = new Error('This campaign is already being prepared. (CAMPAIGN_SETUP_IN_PROGRESS)')
+    racing.name = 'CAMPAIGN_SETUP_IN_PROGRESS'
+    vi.mocked(removeWorkspaceCampaignLead).mockRejectedValueOnce(racing)
+    vi.mocked(prepareWorkspaceCampaignPodcast).mockClear()
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize selected pitch' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Client Campaign' }))
+    await screen.findByText(/Added to/i)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Remove from campaign/i }))
+    // Radix makes the rest of the page inert, so the confirmation's button is
+    // the only one bearing this label once the dialog is open.
+    await screen.findByRole('button', { name: 'Keep in campaign' })
+    fireEvent.click(screen.getAllByRole('button', { name: /Remove from campaign/i }).at(-1))
+
+    const alert = await screen.findByRole('alert')
+    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }))
+
+    await waitFor(() => expect(vi.mocked(removeWorkspaceCampaignLead)).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(prepareWorkspaceCampaignPodcast)).toHaveBeenCalledTimes(1)
+  })
+
   it('shows live backend research progress and holds the pitch until every stage finishes', async () => {
     const runningPodcast = podcast({
       research_progress: {
