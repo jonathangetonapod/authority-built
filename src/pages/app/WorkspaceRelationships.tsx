@@ -46,6 +46,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { useAuth } from '@/contexts/AuthContext'
 import { decodeFeedText } from '@/lib/feedText'
+import { describeQuiet, quietConversations } from '@/lib/relationshipAttention'
 import { sortRelationships, type RelationshipSort } from '@/lib/relationshipSort'
 import { MY_WORKSPACE_BASE_HREF, selectedWorkspaceBaseHref } from '@/lib/workspaceRoutes'
 import { workspaceLogoUrl } from '@/lib/workspaceLogo'
@@ -318,6 +319,9 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
 
   // Live and warm relationships are the ones worth acting on; count them so
   // the header answers "what do we have" before any scrolling.
+  // The count of live conversations is not the actionable fact — which of
+  // them has gone silent is. Recency sort puts exactly those at the bottom.
+  const quiet = useMemo(() => quietConversations(relationships), [relationships])
   const counts = useMemo(() => ({
     live: relationships.filter((row) => row.derived_state === 'in_conversation').length,
     placed: relationships.filter((row) => row.derived_state === 'booked').length,
@@ -514,6 +518,35 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
             </div>
           </div>
         </div>
+
+        {quiet.length > 0 && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <p className="text-sm font-semibold text-amber-900">
+              {quiet.length === 1
+                ? 'A live conversation is going quiet'
+                : `${quiet.length} live conversations are going quiet`}
+            </p>
+            <p className="mt-0.5 text-xs leading-5 text-amber-800">
+              Hosts mid-conversation with no touch in five days. Silence here is how a placement dies.
+            </p>
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              {quiet.slice(0, 6).map((row) => (
+                <button
+                  key={row.podcast_id}
+                  type="button"
+                  onClick={() => { setOpenPodcastId(row.podcast_id); setActiveView('overview') }}
+                  className="flex items-center gap-2 rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100"
+                >
+                  <span className="max-w-48 truncate">{decodeFeedText(row.podcast_name ?? 'Show not identified')}</span>
+                  <span className="tabular-nums text-amber-700">{describeQuiet(row.last_contacted_at)}</span>
+                </button>
+              ))}
+              {quiet.length > 6 && (
+                <span className="self-center text-xs text-amber-800">and {quiet.length - 6} more</span>
+              )}
+            </div>
+          </div>
+        )}
 
         {!canManage && (
           <div className="flex gap-3 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">

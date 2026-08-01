@@ -282,6 +282,22 @@ assert.match(
 assert.match(edge, /"instantly_campaign_id",\s*\n\s*"last_contact_at",/u)
 assert.match(edge, /last_contact_at: target\.last_contact_at,/u)
 
+// An operator's edit to a reply draft persists, and merges into the stored
+// draft rather than replacing it — the provenance fields (which email it
+// answers, when it was generated) must survive a human touching the body.
+// Restoring the original AI draft over an edit looks like the work survived
+// when it did not.
+assert.match(
+  edge,
+  /"cancel_auto_send", "draft_body"\]/u,
+  'the thread-state action must accept the edited draft body',
+)
+assert.match(
+  edge,
+  /mergedDraft = \{ \.\.\.existingDraft, body: draftBody, edited_at: new Date\(\)\.toISOString\(\) \}/u,
+  'a draft edit must merge, preserving provenance',
+)
+
 // Follow-ups reply into the opening thread. Instantly threads a step with no
 // subject as a reply; giving it one starts a separate conversation, so a host
 // who ignored the pitch received three unrelated emails instead of one thread.

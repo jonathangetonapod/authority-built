@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { describeWait, sortThreadsForAttention, waitIsOverdue } from '@/lib/inboxAttention'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
@@ -274,6 +275,51 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
   const [draftClassification, setDraftClassification] = useState<WorkspaceInboxReplyClassification | null>(null)
   const [draftNudges, setDraftNudges] = useState<WorkspaceInboxNudge[]>([])
   const [sentThreadIds, setSentThreadIds] = useState<Set<string>>(new Set())
+  /**
+   * Persist the operator's edits as they type, debounced.
+   *
+   * The AI draft is stored server-side and restored on open, but edits lived
+   * only in this component — so leaving and returning restored the original
+   * draft over the human's version, which looks like the work survived when it
+   * did not. Keyed to the thread and client captured at edit time, never at
+   * flush time, so a queued save can only ever land on the thread it was
+   * written in.
+   */
+  const persistDraftEdit = useMemo(() => {
+    let timer: number | null = null
+    return (thread: WorkspaceInboxThread, body: string) => {
+      const clientId = thread.campaign?.client?.id
+      if (!thread.thread_key || !clientId) return
+      if (timer !== null) window.clearTimeout(timer)
+      const threadKey = thread.thread_key
+      timer = window.setTimeout(() => {
+        // The cached list is what a re-opened thread restores from, so it has
+        // to carry the edit too — the server copy alone only helps after a
+        // refetch, and switching threads and back is faster than one.
+        queryClient.setQueryData(
+          ['workspace-inbox', workspaceId],
+          (current: { threads: WorkspaceInboxThread[] } | undefined) => (current
+            ? {
+              ...current,
+              threads: current.threads.map((item) => (
+                item.thread_key === threadKey && item.state?.draft
+                  ? { ...item, state: { ...item.state, draft: { ...item.state.draft, body } } }
+                  : item
+              )),
+            }
+            : current),
+        )
+        // Fire-and-forget on purpose: a failed background save must not
+        // interrupt typing, and the worst case is the pre-edit draft — exactly
+        // what the operator had before this feature existed.
+        void Promise.resolve(setWorkspaceInboxThreadStatus(workspaceId, {
+          thread_key: threadKey,
+          client_id: clientId,
+          draft_body: body,
+        })).catch(() => {})
+      }, 900)
+    }
+  }, [workspaceId, queryClient])
 
   const counts = useMemo(() => ({
     interested: threads.filter((thread) => thread.interested).length,
@@ -294,7 +340,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
   }, [threads, selectedClient, sentThreadIds])
   const visibleThreads = useMemo(() => {
     const query = search.trim().toLowerCase()
-    return threads.filter((thread) => {
+    const filtered = threads.filter((thread) => {
       if (scope === 'interested' ? !thread.interested : thread.interested) return false
       if (selectedClient && thread.campaign?.client?.id !== selectedClient.id) return false
       const status = threadStatus(thread, sentThreadIds)
@@ -307,6 +353,9 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
       }
       return true
     })
+    // Attention order, not arrival order. The host who has waited longest for
+    // an answer leads; recency only orders what is already handled.
+    return sortThreadsForAttention(filtered, (item) => threadStatus(item, sentThreadIds))
   }, [threads, scope, search, selectedClient, filter, sentThreadIds])
   const linkedThread = requestedThreadKey
     ? threads.find((thread) => thread.thread_key === requestedThreadKey) || null
@@ -804,10 +853,28 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                         ? <Badge variant="secondary" className="px-1.5 py-0 text-[10px] font-medium">{thread.campaign.client.name}</Badge>
                         : <Badge variant="outline" className="border-amber-200 bg-amber-50 px-1.5 py-0 text-[10px] text-amber-800">Unmapped</Badge>}
                       {(() => {
-                        const pill = statusPill[threadStatus(thread, sentThreadIds)]
-                        return pill
-                          ? <Badge variant="outline" className={cn('px-1.5 py-0 text-[10px]', pill.className)}>{pill.label}</Badge>
+                        const status = threadStatus(thread, sentThreadIds)
+                        const pill = statusPill[status]
+                        const wait = status === 'needs_reply' || status === 'review'
+                          ? describeWait(thread.received_at)
                           : null
+                        return (
+                          <>
+                            {pill && <Badge variant="outline" className={cn('px-1.5 py-0 text-[10px]', pill.className)}>{pill.label}</Badge>}
+                            {/* How long this host has been waiting on us. Two
+                                days of silence after a warm reply is where a
+                                booking starts dying, so past that it turns
+                                amber. */}
+                            {wait && (
+                              <span className={cn(
+                                'text-[10px] font-medium tabular-nums',
+                                waitIsOverdue(thread.received_at) ? 'text-amber-700' : 'text-muted-foreground',
+                              )}>
+                                {wait}
+                              </span>
+                            )}
+                          </>
+                        )
                       })()}
                     </div>
                   </button>
@@ -995,7 +1062,10 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                     </div>
                     <Textarea
                       value={draftBody}
-                      onChange={(event) => setDraftBody(event.target.value)}
+                      onChange={(event) => {
+                        setDraftBody(event.target.value)
+                        persistDraftEdit(selectedThread, event.target.value)
+                      }}
                       placeholder="Draft with AI, or write the reply yourself…"
                       aria-label="Reply body"
                       className="min-h-36"

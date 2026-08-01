@@ -4591,7 +4591,7 @@ serve(async (req) => {
     }
 
     if (action === "inbox-thread-state") {
-      requireOnlyKeys(body, ["action", "workspace_id", "thread_key", "client_id", "status", "nudges_paused", "lead_email", "cancel_auto_send"]);
+      requireOnlyKeys(body, ["action", "workspace_id", "thread_key", "client_id", "status", "nudges_paused", "lead_email", "cancel_auto_send", "draft_body"]);
       if (!["owner", "admin", "platform_admin"].includes(access.role)) {
         throw new HttpError(403, "WORKSPACE_ACCESS_REQUIRED", "Workspace manager access is required");
       }
@@ -4608,16 +4608,41 @@ serve(async (req) => {
       // Clearing the eligibility stamp is how a human takes a queued reply
       // back: the dispatch sweep only considers rows that still carry one.
       const cancelAutoSend = body.cancel_auto_send === true;
-      if (status === null && nudgesPaused === null && !cancelAutoSend) {
-        throw new HttpError(400, "INVALID_FIELD", "Provide status, nudges_paused, or cancel_auto_send");
+      // The operator's edited reply, persisted as they type. Restoring the
+      // original AI draft over a human's edits is worse than losing the draft
+      // outright: it looks like the work survived when it did not.
+      const draftBody = body.draft_body === undefined
+        ? undefined
+        : requireString(body.draft_body, "draft_body", { max: 20_000 });
+      if (status === null && nudgesPaused === null && !cancelAutoSend && draftBody === undefined) {
+        throw new HttpError(400, "INVALID_FIELD", "Provide status, nudges_paused, cancel_auto_send, or draft_body");
       }
       await requireWorkspaceClient(context.admin, workspaceId, stateClientId);
+      // An edit merges into the stored draft rather than replacing it, so the
+      // provenance fields — which email it answers, when it was generated —
+      // survive the human touching the body.
+      let mergedDraft: Record<string, unknown> | undefined
+      if (draftBody !== undefined) {
+        const { data: existingState } = await context.admin
+          .from("workspace_inbox_thread_state")
+          .select("draft")
+          .eq("workspace_id", workspaceId)
+          .eq("thread_key", threadKey)
+          .maybeSingle();
+        const existingDraft = existingState?.draft &&
+            typeof existingState.draft === "object" &&
+            !Array.isArray(existingState.draft)
+          ? existingState.draft as Record<string, unknown>
+          : {};
+        mergedDraft = { ...existingDraft, body: draftBody, edited_at: new Date().toISOString() };
+      }
       const { error: stateError } = await context.admin
         .from("workspace_inbox_thread_state")
         .upsert({
           workspace_id: workspaceId,
           thread_key: threadKey,
           client_id: stateClientId,
+          ...(mergedDraft !== undefined ? { draft: mergedDraft } : {}),
           ...(status !== null ? { status } : {}),
           ...(nudgesPaused !== null ? { nudges_paused: nudgesPaused } : {}),
           ...(cancelAutoSend

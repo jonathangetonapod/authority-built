@@ -228,6 +228,29 @@ describe('WorkspaceRelationships', () => {
     expect(screen.getByText('Interested in revisiting this in Q3.')).toBeInTheDocument()
   })
 
+  // The header counted live conversations; which of them had gone silent —
+  // the actionable fact — was invisible, buried by the recency sort.
+  it('surfaces live conversations going quiet, longest silence first', async () => {
+    const quietDate = new Date(Date.now() - 8 * 86_400_000).toISOString()
+    mockedList.mockResolvedValue([
+      { ...relationship, podcast_id: 'show-quiet', podcast_name: 'Gone Quiet FM', derived_state: 'in_conversation', last_contacted_at: quietDate },
+      { ...relationship, podcast_id: 'show-fresh', podcast_name: 'Fresh Talk', derived_state: 'in_conversation', last_contacted_at: new Date().toISOString() },
+      relationship,
+    ])
+    renderPage()
+
+    expect(await screen.findByText('A live conversation is going quiet')).toBeInTheDocument()
+    const chip = screen.getByRole('button', { name: /Gone Quiet FM.*quiet 8d/ })
+    expect(chip).toBeInTheDocument()
+    // A conversation touched today is unhurried, not stalled.
+    expect(screen.queryByRole('button', { name: /Fresh Talk.*quiet/ })).not.toBeInTheDocument()
+
+    // The chip opens the relationship rather than leaving the operator to find
+    // it at the bottom of a recency-sorted list.
+    fireEvent.click(chip)
+    expect(await screen.findByRole('heading', { name: 'Gone Quiet FM' })).toBeInTheDocument()
+  })
+
   it('lets a manager add a relationship before outreach exists', async () => {
     renderPage()
     await screen.findByText('Founder & Operator')

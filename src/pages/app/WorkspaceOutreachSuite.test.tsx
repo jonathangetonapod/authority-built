@@ -9,6 +9,7 @@ import { getWorkspaceClients, getWorkspaceClientSdrContext } from '@/services/cl
 import {
   getWorkspaceCampaignOverview,
   getWorkspaceInboxThreads,
+  setWorkspaceInboxThreadStatus,
   getWorkspaceMailboxes,
   getWorkspaceInboxThreadMessages,
   setWorkspaceMailboxClient,
@@ -867,6 +868,63 @@ describe('WorkspaceOutreachSuite', () => {
       defaultWorkspaceId,
       expect.objectContaining({ subject: 'Re: operator systems', reply_to_id: 'message-one' }),
     ))
+  })
+
+  // The AI draft is persisted server-side and restored on open, but an
+  // operator's edits lived only in component state — leaving and returning
+  // restored the original draft over their version, which looks like the work
+  // survived when it did not.
+  it('persists an edited reply draft after the operator pauses typing', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const clientId = '22222222-2222-4222-8222-222222222222'
+      vi.mocked(getWorkspaceInboxThreads).mockResolvedValue({
+        connected: true,
+        threads: [{
+          id: 'message-one',
+          thread_id: 'thread-one',
+          message_id: 'provider-message-one',
+          eaccount: 'sdr@example.com',
+          subject: 'Re: operator systems',
+          from_email: 'morgan@example.com',
+          to_email: 'sdr@example.com',
+          body_text: 'Interested in revisiting this in Q3.',
+          received_at: '2026-07-21T12:00:00.000Z',
+          is_unread: true,
+          interested: true,
+          lead_email: 'morgan@example.com',
+          campaign: {
+            campaign_id: 'campaign-one',
+            campaign_name: 'Taylor outreach',
+            client: { id: clientId, name: 'Taylor Client' },
+          },
+          thread_key: 'thread-one',
+          relationship: null,
+        }],
+      } as never)
+
+      renderPage('master-inbox')
+      fireEvent.click(await screen.findByRole('button', { name: /morgan@example\.com.*operator systems/i }))
+      fireEvent.change(screen.getByLabelText('Reply body'), { target: { value: 'Edited by a human.' } })
+
+      // Nothing saves mid-keystroke; the debounce waits for the pause.
+      expect(setWorkspaceInboxThreadStatus).not.toHaveBeenCalledWith(
+        defaultWorkspaceId,
+        expect.objectContaining({ draft_body: expect.anything() }),
+      )
+      await vi.advanceTimersByTimeAsync(1_000)
+
+      expect(setWorkspaceInboxThreadStatus).toHaveBeenCalledWith(
+        defaultWorkspaceId,
+        expect.objectContaining({
+          thread_key: 'thread-one',
+          client_id: clientId,
+          draft_body: 'Edited by a human.',
+        }),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('loads a selected workspace and scopes every suite route to it', async () => {

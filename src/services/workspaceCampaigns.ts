@@ -1171,6 +1171,11 @@ export async function setWorkspaceInboxThreadStatus(
     status?: 'needs_reply' | 'booked' | 'archived'
     nudges_paused?: boolean
     lead_email?: string
+    /**
+     * The operator's edited reply body, persisted as they type so navigating
+     * away cannot silently restore the original AI draft over their edits.
+     */
+    draft_body?: string
   },
 ): Promise<{ booking_id: string | null }> {
   return await invokeWorkspaceCampaigns<{ success: boolean; booking_id: string | null }>({
