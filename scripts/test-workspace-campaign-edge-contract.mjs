@@ -629,7 +629,10 @@ assert.match(config, /\[functions\.inbox-enroll-tick\]\nverify_jwt = false/u)
 
 // Per-client AI SDR prompts: owner-gated writes, inbox ids only, and the
 // generator resolves client -> workspace -> shipped default.
-assert.match(edge, /const CLIENT_PROMPT_IDS = RESEARCH_PROMPT_IDS\.filter\(\(id\) => id !== "host_name_extractor"\)/u)
+// Every stage is client-overridable. The extractor exclusion mirrored the AI
+// SDR card's curation, but the research-flow editor offers every stage — the
+// filter only meant one stage that saved everywhere else 400ed there.
+assert.match(edge, /const CLIENT_PROMPT_IDS = RESEARCH_PROMPT_IDS;/u)
 assert.match(edge, /action === "client-prompts-set"[\s\S]*?requireIntegrationOwner\(access\)/u)
 assert.match(edge, /action === "client-prompts-reset"[\s\S]*?requireIntegrationOwner\(access\)/u)
 assert.match(sdrShared, /from\('client_ai_sdr_prompts'\)[\s\S]*?\.eq\('client_id', clientId\)/u)

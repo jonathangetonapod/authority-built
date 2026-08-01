@@ -854,17 +854,24 @@ export function ClientCampaignPrepDialog({
     const text = value.trim().replace(/\s+/gu, ' ')
     return text.length > max ? `${text.slice(0, max)}…` : text
   }
+  // The chain the run itself resolves: client, then workspace, then shipped.
+  // Every derived flag below must read this, not one layer of it — comparing
+  // the draft against the wrong layer made a client-level prompt register as
+  // an unsaved edit at open, which locked stage switching, closing the editor,
+  // and running research behind a save nobody had made.
   const effectivePromptContent = (promptId: ResearchPromptId): string =>
-    promptOverrides[promptId]?.content ?? RESEARCH_PROMPT_DEFAULTS_BY_ID[promptId].content
+    clientPrompts[promptId]?.content
+      ?? promptOverrides[promptId]?.content
+      ?? RESEARCH_PROMPT_DEFAULTS_BY_ID[promptId].content
   const promptPhases = useMemo(() => researchPromptPhases(), [])
   const promptStepNumbers = useMemo(() => researchPromptStepNumbers(promptPhases), [promptPhases])
   const selectedPromptDefault = RESEARCH_PROMPT_DEFAULTS_BY_ID[selectedPromptId]
-  const selectedPromptCustomized = Boolean(promptOverrides[selectedPromptId]?.content)
+  const selectedPromptCustomized = Boolean(clientPrompts[selectedPromptId]?.content ?? promptOverrides[selectedPromptId]?.content)
   const promptDirty = promptDraft !== effectivePromptContent(selectedPromptId)
   // Customized means someone wrote the instructions, not that a row exists.
   // A row is also created by choosing a model, and counting those made every
   // stage with a model claim its prompt had been rewritten.
-  const customPromptCount = RESEARCH_PROMPT_DEFAULTS.filter((prompt) => promptOverrides[prompt.id]?.content).length
+  const customPromptCount = RESEARCH_PROMPT_DEFAULTS.filter((prompt) => clientPrompts[prompt.id]?.content ?? promptOverrides[prompt.id]?.content).length
 
   /**
    * Named, because anything that fills a field has to invalidate it.
@@ -2110,8 +2117,8 @@ export function ClientCampaignPrepDialog({
                         <section id="campaign-research-prompt-settings" aria-labelledby="campaign-research-prompt-heading" className="mt-4 overflow-hidden rounded-xl border bg-background shadow-sm">
                           <div className="flex flex-col gap-3 border-b bg-muted/20 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
                             <div>
-                              <div className="flex flex-wrap items-center gap-2"><h4 id="campaign-research-prompt-heading" className="text-sm font-semibold">Workspace research prompts</h4><Badge variant="secondary">Owner controls</Badge>{customPromptCount > 0 && <Badge variant="outline">{customPromptCount} customized</Badge>}</div>
-                              <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">Choose a stage and adjust the instructions used the next time research runs. Changes apply across this workspace and do not interrupt research already in progress.</p>
+                              <div className="flex flex-wrap items-center gap-2"><h4 id="campaign-research-prompt-heading" className="text-sm font-semibold">Research prompts</h4><Badge variant="secondary">Owner controls</Badge>{customPromptCount > 0 && <Badge variant="outline">{customPromptCount} customized</Badge>}</div>
+                              <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">Choose a stage and adjust the instructions used the next time research runs. Saving applies to this client only and does not interrupt research already in progress.</p>
                             </div>
                           </div>
 
@@ -2128,7 +2135,7 @@ export function ClientCampaignPrepDialog({
                                   <div className="mt-2 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-1">
                                     {phase.prompts.map((prompt) => {
                                       const selected = prompt.id === selectedPromptId
-                                      const customized = Boolean(promptOverrides[prompt.id]?.content)
+                                      const customized = Boolean(clientPrompts[prompt.id]?.content ?? promptOverrides[prompt.id]?.content)
                                       const step = promptStepNumbers.get(prompt.id)
                                       return (
                                         <button

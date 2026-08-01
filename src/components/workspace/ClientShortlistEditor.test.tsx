@@ -17,7 +17,7 @@ import {
   updateClientShortlistPodcast,
   type ClientShortlistPodcast,
 } from '@/services/clientShortlist'
-import { getClientInstantlyCampaignLinks, getWorkspaceCampaign, getWorkspaceResearchPromptOverrides, prepareWorkspaceCampaignPodcast, removeWorkspaceCampaignLead } from '@/services/workspaceCampaigns'
+import { getClientInstantlyCampaignLinks, getClientSdrPrompts, getWorkspaceCampaign, getWorkspaceResearchPromptOverrides, prepareWorkspaceCampaignPodcast, removeWorkspaceCampaignLead } from '@/services/workspaceCampaigns'
 
 vi.mock('@/services/clientShortlist', () => ({
   addClientShortlistPodcasts: vi.fn(),
@@ -125,6 +125,10 @@ describe('ClientShortlistEditor', () => {
     vi.clearAllMocks()
     vi.mocked(ensureClientShortlistEpisodes).mockResolvedValue({ episodes: [], last_posted_at: null, episodes_fetched_at: null })
     vi.mocked(getWorkspaceResearchPromptOverrides).mockResolvedValue({})
+    // restoreMocks wipes the factory default, so without this the client layer
+    // resolves undefined and every other test exercises the prompt editor
+    // against an ERRORED query rather than a client with no prompts of its own.
+    vi.mocked(getClientSdrPrompts).mockResolvedValue({})
     // Research and email searches stay pending so tests can assert the in-flight UI.
     vi.mocked(runClientShortlistResearch).mockImplementation(() => new Promise(() => {}))
     vi.mocked(runClientShortlistEmailSearch).mockImplementation(() => new Promise(() => {}))
@@ -626,7 +630,7 @@ describe('ClientShortlistEditor', () => {
     expect(editPrompts).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(editPrompts)
 
-    const promptSettings = within(screen.getByRole('region', { name: 'Workspace research prompts' }))
+    const promptSettings = within(screen.getByRole('region', { name: 'Research prompts' }))
     expect(screen.getByRole('button', { name: 'Close prompt editor' })).toHaveAttribute('aria-expanded', 'true')
     expect(promptSettings.getByText('Owner controls')).toBeInTheDocument()
     expect(promptSettings.getByRole('navigation', { name: 'Research prompt stages' })).toBeInTheDocument()
@@ -717,13 +721,42 @@ describe('ClientShortlistEditor', () => {
     expect(screen.getAllByText(/all six saved workspace prompts run in order/i).length).toBeGreaterThan(0)
   })
 
+  // The regression this pins: every derived flag compared the draft against
+  // the WORKSPACE layer while the editor seeded from the CLIENT layer, so a
+  // client-level prompt registered as an unsaved edit at open — locking stage
+  // switching, closing, and research behind a save nobody had made.
+  it('opens clean on a client that already carries its own prompt', async () => {
+    vi.mocked(getClientSdrPrompts).mockResolvedValue({
+      podcast_research: { content: 'Client-specific research instructions.', updated_at: '2026-08-01T00:00:00Z' },
+    })
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit stage prompts' }))
+
+    const promptSettings = within(screen.getByRole('region', { name: 'Research prompts' }))
+    // The editor shows what this client's runs actually use.
+    await waitFor(() => expect(
+      (promptSettings.getByLabelText('Prompt for Podcast research') as HTMLTextAreaElement).value,
+    ).toBe('Client-specific research instructions.'))
+    expect(promptSettings.getByText('Custom prompt')).toBeInTheDocument()
+
+    // Not dirty at rest: switching stages must not demand saving an edit
+    // nobody made.
+    const stageNav = within(promptSettings.getByRole('navigation', { name: 'Research prompt stages' }))
+    fireEvent.click(stageNav.getByRole('button', { name: /Host identification/ }))
+    expect(
+      (promptSettings.getByLabelText('Prompt for Host identification') as HTMLTextAreaElement).value,
+    ).toContain('Identif')
+  })
+
   it('keeps workspace research prompt controls owner-only', async () => {
     renderEditor('admin')
     fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
 
     expect(screen.queryByRole('button', { name: 'Edit stage prompts' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('region', { name: 'Workspace research prompts' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Research prompts' })).not.toBeInTheDocument()
   })
 
   it('reuses a globally unlocked direct email after the modal is closed and reopened', async () => {

@@ -79,7 +79,11 @@ const MODEL_SELECTABLE_PROMPT_IDS = RESEARCH_PROMPT_IDS.filter(
   (id) => id !== "inbox_nudges",
 );
 
-const CLIENT_PROMPT_IDS = RESEARCH_PROMPT_IDS.filter((id) => id !== "host_name_extractor");
+// Every stage, including the mechanical ones. The extractor was excluded to
+// mirror the AI SDR card's curation, but the research-flow editor offers every
+// stage and the run's resolution honours a client row for any of them — so the
+// exclusion only meant one stage that saved everywhere else 400ed here.
+const CLIENT_PROMPT_IDS = RESEARCH_PROMPT_IDS;
 
 function requireResearchPromptId(value: unknown): string {
   if (typeof value !== "string" || !RESEARCH_PROMPT_IDS.includes(value)) {
