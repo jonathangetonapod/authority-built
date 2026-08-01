@@ -430,7 +430,7 @@ export const ClientSdrPromptsCard = ({
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button type="button" variant="outline" onClick={() => setExpanded(null)} disabled={busy}>Close</Button>
+                    <Button type="button" variant="outline" onClick={() => setExpanded(null)} disabled={busy}>Cancel</Button>
                     {canManage && (
                       <Button type="button" disabled={!dirty || busy} onClick={() => saveMutation.mutate({ id: prompt.id, content: value })}>
                         {saveMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save prompt

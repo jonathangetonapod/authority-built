@@ -1423,7 +1423,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
         }}
       >
         <DialogContent
-          className="grid max-h-[94vh] w-[calc(100%-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-3xl"
+          className="grid max-h-[94vh] w-[calc(100%-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-4xl"
           onEscapeKeyDown={(event) => {
             if (sdrBusy) event.preventDefault()
           }}
@@ -1477,12 +1477,17 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                 </div>
                 {sdrError && <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive" role="alert">{sdrError}</p>}
               </div>
-              <DialogFooter className="border-t px-6 py-4">
-                <Button type="button" variant="outline" disabled={sdrBusy} onClick={closeSdrFieldEditor}>Cancel</Button>
-                <Button type="button" disabled={sdrBusy || !sdrDraftChanged} onClick={() => void saveSdrProfile()}>
-                  {sdrBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Save section
-                </Button>
+              {/* Same footer shape as the prompt editor: anything destructive
+                  or secondary on the left, the decision on the right. */}
+              <DialogFooter className="gap-2 border-t px-6 py-4 sm:justify-between">
+                <div className="flex items-center gap-2" />
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="outline" disabled={sdrBusy} onClick={closeSdrFieldEditor}>Cancel</Button>
+                  <Button type="button" disabled={sdrBusy || !sdrDraftChanged} onClick={() => void saveSdrProfile()}>
+                    {sdrBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Save section
+                  </Button>
+                </div>
               </DialogFooter>
             </>
           )}
