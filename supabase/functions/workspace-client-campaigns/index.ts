@@ -757,6 +757,9 @@ function emailList(value: unknown): string[] {
  * "is this a real timezone" let a legal-looking value through to a provider
  * that would not take it.
  */
+/** US Eastern, chosen because Instantly has no America/New_York. */
+const DEFAULT_CAMPAIGN_TIMEZONE = "America/Detroit";
+
 const INSTANTLY_TIMEZONES = new Set([
   "Etc/GMT+12", "Etc/GMT+11", "Etc/GMT+10", "America/Anchorage", "America/Dawson",
   "America/Creston", "America/Chihuahua", "America/Boise", "America/Belize",
@@ -935,7 +938,10 @@ function providerCampaign(value: unknown): ProviderCampaign {
   const timezone = typeof firstSchedule?.timezone === "string" &&
       firstSchedule.timezone.trim() && firstSchedule.timezone.length <= 100
     ? firstSchedule.timezone.trim()
-    : "America/New_York";
+    // US Eastern, and a zone Instantly actually carries. America/New_York is
+    // not in its enum, so falling back to that produced a value we could read
+    // but never send back.
+    : DEFAULT_CAMPAIGN_TIMEZONE;
   const dailyLimit = typeof item.daily_limit === "number" &&
       Number.isInteger(item.daily_limit) && item.daily_limit >= 1 &&
       item.daily_limit <= 1_000
@@ -1222,7 +1228,7 @@ async function ensureLocalCampaign(
       workspace_id: workspaceId,
       client_id: client.id,
       name: input?.name || `${client.name} Podcast Outreach`,
-      timezone: input?.timezone || "America/New_York",
+      timezone: input?.timezone || DEFAULT_CAMPAIGN_TIMEZONE,
       daily_limit: input?.dailyLimit || 30,
       sender_accounts: input?.senderAccounts || [],
       created_by: context.user.id,

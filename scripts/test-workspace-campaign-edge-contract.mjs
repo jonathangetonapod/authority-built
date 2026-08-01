@@ -170,6 +170,40 @@ assert.match(
   'existing campaigns must default to Monday through Friday',
 )
 
+// Instantly pins a timezone enum that has no America/New_York, so validating
+// "is this a real IANA zone" let a legal value through to a provider that would
+// not take it, and the campaign got scheduled on some other clock in silence.
+assert.match(
+  edge,
+  /const INSTANTLY_TIMEZONES = new Set\(\[[\s\S]*?"America\/Detroit"/u,
+  'the accepted timezone list must be pinned in the function',
+)
+// Scoped to the list itself: the name legitimately appears just below, in the
+// table that maps it to the zone Instantly does carry.
+const timezoneSetStart = edge.indexOf('const INSTANTLY_TIMEZONES = new Set([')
+const timezoneSetBody = edge.slice(timezoneSetStart, edge.indexOf(']);', timezoneSetStart))
+assert.ok(
+  timezoneSetStart !== -1 && !timezoneSetBody.includes('"America/New_York"'),
+  'America/New_York must never be offered as a sending timezone',
+)
+assert.match(
+  edge,
+  /if \(INSTANTLY_TIMEZONES\.has\(timezone\)\) return timezone;[\s\S]*?"CAMPAIGN_TIMEZONE_UNSUPPORTED"/u,
+  'an unsupported zone must be refused, not passed through',
+)
+// Every fallback has to land on a zone the provider accepts, or the default
+// path reintroduces exactly the value the check above rejects.
+assert.doesNotMatch(
+  edge,
+  /\|\| "America\/New_York"/u,
+  'no fallback may default to a zone Instantly refuses',
+)
+assert.match(
+  edge,
+  /const DEFAULT_CAMPAIGN_TIMEZONE = "America\/Detroit";/u,
+  'the fallback zone must be a supported one',
+)
+
 // Follow-ups reply into the opening thread. Instantly threads a step with no
 // subject as a reply; giving it one starts a separate conversation, so a host
 // who ignored the pitch received three unrelated emails instead of one thread.
