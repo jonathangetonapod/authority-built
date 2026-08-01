@@ -4668,7 +4668,10 @@ serve(async (req) => {
           .select("id, shortlist_podcast_id, podcast_id, podcast_name, podcast_url, host_name")
           .eq("workspace_id", workspaceId)
           .eq("client_id", stateClientId)
-          .ilike("contact_email", leadEmail)
+          // Escaped, not raw: an address is an exact (case-insensitive) match,
+          // and % or _ in one must match literally rather than wildcard into
+          // a different target within the client.
+          .ilike("contact_email", leadEmail.replace(/([\\%_])/gu, "\\$1"))
           .limit(1)
           .maybeSingle();
         if (target?.id) {
