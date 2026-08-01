@@ -931,15 +931,25 @@ function providerCampaign(value: unknown): ProviderCampaign {
   };
 }
 
-async function listProviderCampaigns(apiKey: string): Promise<ProviderCampaign[]> {
+/**
+ * Every campaign, and whether that is genuinely every campaign.
+ *
+ * The page cap means a long-enough list comes back short, and the difference
+ * matters: a campaign missing from a COMPLETE listing has been deleted, while
+ * one missing from a truncated listing may be perfectly alive further down.
+ * Treating those the same would either leave dead campaigns showing as
+ * sendable, or mark a large workspace's working campaigns dead.
+ */
+async function listProviderCampaignPage(
+  apiKey: string,
+): Promise<{ campaigns: ProviderCampaign[]; complete: boolean }> {
   const campaigns = new Map<string, ProviderCampaign>();
   let startingAfter = "";
+  let complete = false;
   for (let page = 0; page < MAX_PROVIDER_CAMPAIGN_PAGES; page += 1) {
     const query = new URLSearchParams({ limit: "100" });
     if (startingAfter) query.set("starting_after", startingAfter);
-    const value = await instantlyRequest<unknown>(apiKey, "/campaigns", {
-      query,
-    });
+    const value = await instantlyRequest<unknown>(apiKey, "/campaigns", { query });
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       throw new InstantlyApiError(
         502,
@@ -962,14 +972,25 @@ async function listProviderCampaigns(apiKey: string): Promise<ProviderCampaign[]
     const next = typeof response.next_starting_after === "string"
       ? response.next_starting_after.trim()
       : "";
-    if (!next || next === startingAfter) break;
+    // Running out of pages is the only way to know nothing was left behind.
+    if (!next || next === startingAfter) {
+      complete = true;
+      break;
+    }
     startingAfter = next;
   }
-  return Array.from(campaigns.values()).sort((left, right) => (
-    (right.timestampUpdated || right.timestampCreated || "").localeCompare(
-      left.timestampUpdated || left.timestampCreated || "",
-    ) || left.name.localeCompare(right.name)
-  ));
+  return {
+    campaigns: Array.from(campaigns.values()).sort((left, right) => (
+      (right.timestampUpdated || right.timestampCreated || "").localeCompare(
+        left.timestampUpdated || left.timestampCreated || "",
+      ) || left.name.localeCompare(right.name)
+    )),
+    complete,
+  };
+}
+
+async function listProviderCampaigns(apiKey: string): Promise<ProviderCampaign[]> {
+  return (await listProviderCampaignPage(apiKey)).campaigns;
 }
 
 async function verifyProviderReadAccess(apiKey: string): Promise<void> {
@@ -4753,6 +4774,8 @@ serve(async (req) => {
       const buildLinks = (
         rendersById: Map<string, boolean>,
         statusById: Map<string, number>,
+        /** The listing held every campaign, so absence from it means deleted. */
+        listingComplete: boolean,
       ) =>
         allLinks
           .filter((row) => row.client_id === clientId)
@@ -4772,27 +4795,38 @@ serve(async (req) => {
               // operator "paused, nothing goes out" while sending into a live
               // one.
               status: statusById.get(providerId) ?? null,
-              // Two independent positives, either of which is trustworthy on
-              // its own. Reading the live sequence is the better signal, but a
-              // provider response that omits sequences must not silently
-              // demote every campaign this app built. The send itself is gated
-              // on the live sequence regardless, so a stale yes here costs a
-              // refusal at send time rather than a wrong email.
-              sendable: rendersById.get(providerId) === true || Boolean(provisionedAt),
+              /**
+               * Gone from a complete listing means deleted, and a deleted
+               * campaign can receive nothing. Only when the listing was
+               * truncated — or unavailable — does absence prove nothing, and
+               * then provenance is the better guess than a flat no.
+               *
+               * The send is gated on the live sequence either way, so an
+               * optimistic yes here costs a refusal rather than a wrong email.
+               */
+              missing_from_provider: listingComplete && !statusById.has(providerId),
+              sendable: rendersById.get(providerId) === true ||
+                (Boolean(provisionedAt) &&
+                  !(listingComplete && !statusById.has(providerId))),
             };
           });
 
       const connection = await readConnection(context.admin, workspaceId);
       let providerCampaigns: ProviderCampaign[] = [];
       let connected = false;
+      // Absence only means deleted when the listing was exhaustive. Anything
+      // less and a campaign past the page cap would be reported as gone.
+      let listingComplete = false;
       if (
         connection && connection.status === "connected" &&
         connection.api_key_ciphertext && connection.api_key_iv
       ) {
         try {
-          providerCampaigns = await listProviderCampaigns(
+          const listed = await listProviderCampaignPage(
             await integrationApiKey(connection, false),
           );
+          providerCampaigns = listed.campaigns;
+          listingComplete = listed.complete;
           connected = true;
         } catch (_error) {
           connected = false;
@@ -4803,6 +4837,7 @@ serve(async (req) => {
         links: buildLinks(
           new Map(providerCampaigns.map((campaign) => [campaign.id, campaign.rendersOurPitch])),
           new Map(providerCampaigns.map((campaign) => [campaign.id, campaign.status])),
+          listingComplete,
         ),
         provider_campaigns: providerCampaigns.map((campaign) => {
           const linkedClient = linkedClientByCampaign.get(campaign.id) ?? null;

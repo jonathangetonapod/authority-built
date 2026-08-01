@@ -795,6 +795,12 @@ export interface ClientInstantlyCampaignLink {
    * status of the campaign actually chosen, not the client's default one.
    */
   status?: number | null
+  /**
+   * The campaign is gone from Instantly, established against a listing known to
+   * be exhaustive. False when the listing was truncated or unavailable, where
+   * absence proves nothing.
+   */
+  missing_from_provider?: boolean
 }
 
 export interface ClientLinkableInstantlyCampaign {

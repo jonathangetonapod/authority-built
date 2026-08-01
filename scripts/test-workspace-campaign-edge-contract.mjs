@@ -268,6 +268,25 @@ assert.match(
 assert.match(edge, /"instantly_lead_status",\s*\n\s*"instantly_campaign_id",/u)
 assert.match(edge, /instantly_campaign_id: target\.instantly_campaign_id,/u)
 
+// "Gone from Instantly" may only be claimed against an exhaustive listing. The
+// page cap means a large workspace comes back short, and calling those
+// campaigns deleted would strip send targets that work perfectly.
+assert.match(
+  edge,
+  /if \(!next \|\| next === startingAfter\) \{\s*\n\s*complete = true;/u,
+  'completeness must mean the pages actually ran out',
+)
+assert.match(
+  edge,
+  /missing_from_provider: listingComplete && !statusById\.has\(providerId\)/u,
+  'a campaign may only be called deleted when the listing was complete',
+)
+assert.match(
+  edge,
+  /sendable: rendersById\.get\(providerId\) === true \|\|\s*\n?\s*\(Boolean\(provisionedAt\) &&\s*\n?\s*!\(listingComplete && !statusById\.has\(providerId\)\)\)/u,
+  'a campaign known to be deleted must not be offered as sendable',
+)
+
 // Saving the link list must not demote a campaign this app built.
 assert.match(
   edge,

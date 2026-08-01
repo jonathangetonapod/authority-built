@@ -101,6 +101,18 @@ export const ClientInstantlyCampaignsCard = ({
     () => new Set((data?.links ?? []).filter((link) => link.sendable).map((link) => link.instantly_campaign_id)),
     [data],
   )
+  // The server's answer, not this component's. A row is built here for any link
+  // absent from the fetched campaigns, but that listing is capped, so absence
+  // alone would call a working campaign deleted in a large workspace. The
+  // server only sets this when it knows the listing was exhaustive.
+  const deletedIds = useMemo(
+    () => new Set(
+      (data?.links ?? [])
+        .filter((link) => link.missing_from_provider)
+        .map((link) => link.instantly_campaign_id),
+    ),
+    [data],
+  )
 
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState('')
@@ -276,7 +288,11 @@ export const ClientInstantlyCampaignsCard = ({
                     <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        {sendableIds.has(campaign.id) ? (
+                        {deletedIds.has(campaign.id) ? (
+                          <Badge variant="outline" className="shrink-0 cursor-help border-destructive/40 bg-destructive/5 text-destructive">
+                            Deleted in Instantly
+                          </Badge>
+                        ) : sendableIds.has(campaign.id) ? (
                           <Badge variant="outline" className="shrink-0 cursor-help border-emerald-300 bg-emerald-50 text-emerald-800">
                             <Send className="mr-1 h-3 w-3" />Sendable
                           </Badge>
@@ -287,9 +303,11 @@ export const ClientInstantlyCampaignsCard = ({
                         )}
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs">
-                        {sendableIds.has(campaign.id)
-                          ? 'Built here, so its emails read the pitch written for each podcast. Pitches can be sent into it.'
-                          : 'Built in Instantly, so it carries its own copy. Replies still get attributed to this client, but a pitch sent into it would go out as that copy instead — use Create campaign to make one that can receive pitches.'}
+                        {deletedIds.has(campaign.id)
+                          ? 'This campaign no longer exists in Instantly, so it can neither send nor receive replies. Uncheck it and press Save campaigns to remove it.'
+                          : sendableIds.has(campaign.id)
+                            ? 'Built here, so its emails read the pitch written for each podcast. Pitches can be sent into it.'
+                            : 'Built in Instantly, so it carries its own copy. Replies still get attributed to this client, but a pitch sent into it would go out as that copy instead — use Create campaign to make one that can receive pitches.'}
                       </TooltipContent>
                     </Tooltip>
                     </TooltipProvider>

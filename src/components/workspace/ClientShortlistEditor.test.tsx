@@ -1074,6 +1074,27 @@ describe('ClientShortlistEditor', () => {
     expect(screen.queryByRole('option', { name: 'Hand Built' })).not.toBeInTheDocument()
   })
 
+  // A campaign the server knows is gone cannot receive anything, so it must not
+  // be offered — the send would only refuse.
+  it('does not offer a campaign that Instantly no longer has', async () => {
+    vi.mocked(getClientInstantlyCampaignLinks).mockResolvedValue({
+      connected: true,
+      links: [
+        { instantly_campaign_id: '88888888-8888-4888-8888-888888888888', campaign_name: 'Second Wave', created_at: null, sendable: true, status: 2 },
+        { instantly_campaign_id: '99999999-9999-4999-8999-999999999999', campaign_name: 'Deleted Wave', created_at: null, sendable: false, status: null, missing_from_provider: true },
+      ],
+      provider_campaigns: [],
+    })
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to research' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize selected pitch' }))
+
+    fireEvent.click(await screen.findByLabelText('Send to'))
+    expect(await screen.findByRole('option', { name: 'Second Wave' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Deleted Wave' })).not.toBeInTheDocument()
+  })
+
   // The confirmation exists because a live campaign emails a real stranger.
   // Reading the client's default campaign's status instead of the chosen one
   // skipped it entirely and promised "nothing goes out" while sending.
