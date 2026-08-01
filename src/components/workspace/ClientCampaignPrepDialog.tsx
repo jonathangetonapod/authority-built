@@ -82,8 +82,9 @@ import {
   getWorkspacePromptRequirements,
   getWorkspaceResearchPromptOverrides,
   setWorkspacePromptRequirements,
-  resetWorkspaceResearchPrompt,
-  setWorkspaceResearchPrompt,
+  getClientSdrPrompts,
+  resetClientSdrPrompt,
+  setClientSdrPrompt,
 } from '@/services/workspaceCampaigns'
 import { PromptVariableTextarea } from './PromptVariableTextarea'
 import { PromptFieldPreview } from './PromptFieldPreview'
@@ -806,6 +807,17 @@ export function ClientCampaignPrepDialog({
     staleTime: 60_000,
   })
   const promptOverrides = promptOverridesQuery.data ?? {}
+  // The layer that actually runs for this client. Editing here used to show
+  // and save the workspace text while a client override silently won at run
+  // time — an operator edited a prompt in the research flow, saw "saved", and
+  // nothing changed for the client in front of them.
+  const clientPromptsQuery = useQuery({
+    queryKey: ['client-sdr-prompts', workspaceId, clientId],
+    queryFn: () => getClientSdrPrompts(workspaceId, clientId),
+    enabled: open,
+    retry: false,
+  })
+  const clientPrompts = clientPromptsQuery.data ?? {}
   // Read live from Anthropic rather than from a list in this app: the usable
   // set changes as models ship and retire, and differs by which key the
   // workspace runs on.
@@ -982,22 +994,27 @@ export function ClientCampaignPrepDialog({
   })
 
   const savePromptMutation = useMutation({
+    // The client layer, not the workspace one. An edit made inside a client's
+    // research flow is about the client in front of you, and the client layer
+    // is the one the run resolves first — saving anywhere else is a save that
+    // does not take effect.
     mutationFn: ({ promptId, content }: { promptId: ResearchPromptId; content: string }) =>
-      setWorkspaceResearchPrompt(workspaceId, promptId, content),
+      setClientSdrPrompt(workspaceId, clientId, promptId, content),
     onSuccess: (_result, variables) => {
-      void queryClient.invalidateQueries({ queryKey: ['workspace-research-prompts', workspaceId] })
-      toast.success(`${RESEARCH_PROMPT_DEFAULTS_BY_ID[variables.promptId].label} prompt saved for this workspace.`)
+      void queryClient.invalidateQueries({ queryKey: ['client-sdr-prompts', workspaceId, clientId] })
+      toast.success(`${RESEARCH_PROMPT_DEFAULTS_BY_ID[variables.promptId].label} prompt saved for ${clientName} only.`)
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'The prompt could not be saved.')
     },
   })
   const resetPromptMutation = useMutation({
-    mutationFn: (promptId: ResearchPromptId) => resetWorkspaceResearchPrompt(workspaceId, promptId),
+    mutationFn: (promptId: ResearchPromptId) => resetClientSdrPrompt(workspaceId, clientId, promptId),
     onSuccess: (_result, promptId) => {
-      void queryClient.invalidateQueries({ queryKey: ['workspace-research-prompts', workspaceId] })
-      setPromptDraft(RESEARCH_PROMPT_DEFAULTS_BY_ID[promptId].content)
-      toast.success(`${RESEARCH_PROMPT_DEFAULTS_BY_ID[promptId].label} restored to the default prompt.`)
+      void queryClient.invalidateQueries({ queryKey: ['client-sdr-prompts', workspaceId, clientId] })
+      // Back to what the rest of the workspace uses, not to the shipped text.
+      setPromptDraft(promptOverrides[promptId]?.content ?? RESEARCH_PROMPT_DEFAULTS_BY_ID[promptId].content)
+      toast.success(`${RESEARCH_PROMPT_DEFAULTS_BY_ID[promptId].label} back on the workspace default for ${clientName}.`)
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'The prompt could not be reset.')
@@ -1022,11 +1039,12 @@ export function ClientCampaignPrepDialog({
   // Keep the draft in sync with saved overrides unless the owner is mid-edit.
   useEffect(() => {
     if (promptTouched) return
-    const effective = promptOverrides[selectedPromptId]?.content
+    const effective = clientPrompts[selectedPromptId]?.content
+      ?? promptOverrides[selectedPromptId]?.content
       ?? RESEARCH_PROMPT_DEFAULTS_BY_ID[selectedPromptId].content
     setPromptDraft(effective)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [promptOverridesQuery.data, selectedPromptId, promptTouched])
+  }, [promptOverridesQuery.data, clientPromptsQuery.data, selectedPromptId, promptTouched])
 
   useEffect(() => {
     if (!open) {

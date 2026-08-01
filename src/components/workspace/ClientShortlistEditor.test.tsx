@@ -41,6 +41,9 @@ vi.mock('@/services/workspaceCampaigns', () => ({
   prepareWorkspaceCampaignPodcast: vi.fn(),
   removeWorkspaceCampaignLead: vi.fn(),
   getWorkspaceResearchPromptOverrides: vi.fn().mockResolvedValue({}),
+  getClientSdrPrompts: vi.fn().mockResolvedValue({}),
+  setClientSdrPrompt: vi.fn().mockResolvedValue(undefined),
+  resetClientSdrPrompt: vi.fn().mockResolvedValue(undefined),
   setWorkspaceResearchPrompt: vi.fn().mockResolvedValue(undefined),
   resetWorkspaceResearchPrompt: vi.fn().mockResolvedValue(undefined),
 }))
@@ -662,10 +665,15 @@ describe('ClientShortlistEditor', () => {
 
     fireEvent.change(prompt, { target: { value: 'Use {{podcast_name}} to create a concise workspace-specific show brief.' } })
     expect(promptSettings.getByRole('button', { name: 'Save prompt' })).toBeEnabled()
-    const { setWorkspaceResearchPrompt } = await import('@/services/workspaceCampaigns')
+    // Saved to the CLIENT layer — the one the run resolves first. This editor
+    // used to save the workspace layer, so an edit made here was silently
+    // shadowed by any client override and changed nothing for the client in
+    // front of the operator.
+    const { setClientSdrPrompt } = await import('@/services/workspaceCampaigns')
     fireEvent.click(promptSettings.getByRole('button', { name: 'Save prompt' }))
-    await waitFor(() => expect(vi.mocked(setWorkspaceResearchPrompt)).toHaveBeenCalledWith(
+    await waitFor(() => expect(vi.mocked(setClientSdrPrompt)).toHaveBeenCalledWith(
       workspaceId,
+      clientId,
       'podcast_research',
       'Use {{podcast_name}} to create a concise workspace-specific show brief.',
     ))
