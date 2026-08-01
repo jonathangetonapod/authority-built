@@ -61,6 +61,7 @@ import {
   type WorkspaceInstantlyIntegration,
 } from '@/services/workspaceCampaigns'
 import { type WorkspaceClient } from '@/services/clients'
+import { defaultInstantlyTimezone } from '@/lib/instantlyTimezones'
 import { describeSyncFreshness } from '@/lib/syncFreshness'
 
 type CampaignFilter = 'all' | 'attention' | 'draft' | 'active' | 'paused' | 'completed'
@@ -355,7 +356,7 @@ const WorkspaceCampaigns = ({
   const [selectedProviderCampaignId, setSelectedProviderCampaignId] = useState('new')
   const [campaignName, setCampaignName] = useState('')
   const [campaignTimezoneDraft, setCampaignTimezoneDraft] = useState(() => (
-    Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York'
+    defaultInstantlyTimezone()
   ))
   const [campaignDailyLimit, setCampaignDailyLimit] = useState(30)
   const [selectedSenderAccounts, setSelectedSenderAccounts] = useState<Set<string>>(new Set())
@@ -535,7 +536,7 @@ const WorkspaceCampaigns = ({
     setSelectedClientId('')
     setSelectedProviderCampaignId('new')
     setCampaignName('')
-    setCampaignTimezoneDraft(Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York')
+    setCampaignTimezoneDraft(defaultInstantlyTimezone())
     setCampaignDailyLimit(30)
     setSelectedSenderAccounts(new Set())
   }
@@ -552,7 +553,7 @@ const WorkspaceCampaigns = ({
     setSelectedProviderCampaignId(providerCampaignId)
     if (providerCampaignId === 'new') {
       setCampaignName(selectedClient ? `${selectedClient.name} Podcast Outreach` : '')
-      setCampaignTimezoneDraft(Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York')
+      setCampaignTimezoneDraft(defaultInstantlyTimezone())
       setCampaignDailyLimit(30)
       setSelectedSenderAccounts(new Set())
       return

@@ -46,6 +46,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/contexts/AuthContext'
+import { INSTANTLY_TIMEZONES, defaultInstantlyTimezone, toInstantlyTimezone } from '@/lib/instantlyTimezones'
 import { safeExternalUrl } from '@/lib/externalUrl'
 import { workspaceLogoUrl } from '@/lib/workspaceLogo'
 import { MY_WORKSPACE_BASE_HREF, selectedWorkspaceBaseHref } from '@/lib/workspaceRoutes'
@@ -191,6 +192,25 @@ function scheduleWindowLabel(schedule: WorkspaceCampaignProviderSchedule | null)
 /** Allowlisted so a hand-edited ?tab= cannot blank the page. */
 const CAMPAIGN_TABS = ['analytics', 'leads', 'sequences', 'schedule', 'options']
 
+// Instantly keys its schedule from Sunday. Naming each index here is what
+// stops the next person writing 0-4 and meaning Monday to Friday.
+const SEND_DAY_OPTIONS = [
+  { index: 0, label: 'Sun' },
+  { index: 1, label: 'Mon' },
+  { index: 2, label: 'Tue' },
+  { index: 3, label: 'Wed' },
+  { index: 4, label: 'Thu' },
+  { index: 5, label: 'Fri' },
+  { index: 6, label: 'Sat' },
+] as const
+
+function formatSendDays(days: number[]): string {
+  const labels = SEND_DAY_OPTIONS.filter((day) => days.includes(day.index)).map((day) => day.label)
+  if (labels.length === 0) return 'no days'
+  if (labels.length === 1) return labels[0]
+  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`
+}
+
 const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetailProps) => {
   const { clientId: routeClientId = '' } = useParams<{ clientId: string }>()
   // The campaign list links straight to the work: "Write 3 pitches" opens the
@@ -274,9 +294,17 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
   )), [data?.shortlist.podcasts, persistedPodcastIds])
   const [selectedPodcastId, setSelectedPodcastId] = useState<string | null>(null)
   const [settingsName, setSettingsName] = useState('')
-  const [settingsTimezone, setSettingsTimezone] = useState('America/New_York')
+  const [settingsTimezone, setSettingsTimezone] = useState(defaultInstantlyTimezone())
   const [settingsDailyLimit, setSettingsDailyLimit] = useState(30)
   const [settingsSenders, setSettingsSenders] = useState<Set<string>>(new Set())
+  // Instantly indexes days from Sunday, and this app used to write 0-4 under
+  // the name "Weekdays" — which sent on Sunday and never on Friday. The picker
+  // below labels each index so the mistake cannot be made silently again.
+  const [settingsSendDays, setSettingsSendDays] = useState<number[]>([1, 2, 3, 4, 5])
+  const [settingsWindowStart, setSettingsWindowStart] = useState('09:00')
+  const [settingsWindowEnd, setSettingsWindowEnd] = useState('17:00')
+  const [settingsFollowUpOne, setSettingsFollowUpOne] = useState(6)
+  const [settingsFollowUpTwo, setSettingsFollowUpTwo] = useState(7)
   const [campaignRunningPreview, setCampaignRunningPreview] = useState<boolean | null>(null)
 
   const selectedPodcast = campaignPodcasts.find((podcast) => podcast.id === selectedPodcastId) || null
@@ -284,9 +312,14 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
 
   useEffect(() => {
     setSettingsName(campaign?.name || (client ? `${client.name} Podcast Outreach` : ''))
-    setSettingsTimezone(campaign?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York')
+    setSettingsTimezone(toInstantlyTimezone(campaign?.timezone))
     setSettingsDailyLimit(campaign?.daily_limit || 30)
     setSettingsSenders(new Set(campaign?.sender_accounts || []))
+    setSettingsSendDays(campaign?.send_days?.length ? campaign.send_days : [1, 2, 3, 4, 5])
+    setSettingsWindowStart(campaign?.send_window_start || '09:00')
+    setSettingsWindowEnd(campaign?.send_window_end || '17:00')
+    setSettingsFollowUpOne(campaign?.follow_up_one_delay_days || 6)
+    setSettingsFollowUpTwo(campaign?.follow_up_two_delay_days || 7)
   }, [campaign, client])
 
   const refreshCampaignData = async () => {
@@ -320,6 +353,11 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
         timezone: settingsTimezone.trim(),
         dailyLimit: settingsDailyLimit,
         senderAccounts: Array.from(settingsSenders),
+        sendDays: settingsSendDays,
+        sendWindowStart: settingsWindowStart,
+        sendWindowEnd: settingsWindowEnd,
+        followUpOneDelayDays: settingsFollowUpOne,
+        followUpTwoDelayDays: settingsFollowUpTwo,
       }
       return campaign
         ? await updateWorkspaceCampaignSettings(common)
@@ -635,8 +673,21 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="campaign-detail-timezone">Sending timezone</Label>
-                      <Input id="campaign-detail-timezone" value={settingsTimezone} onChange={(event) => setSettingsTimezone(event.target.value)} disabled={!canManageCampaign} />
-                      <p className="text-xs text-muted-foreground">An IANA name, like America/Bogota. The daily window below is interpreted in this timezone.</p>
+                      {/* A list, not free text. Instantly pins an enum that
+                          omits America/New_York and America/Los_Angeles, so a
+                          typed-in zone could be a real one it would not take. */}
+                      <select
+                        id="campaign-detail-timezone"
+                        value={settingsTimezone}
+                        onChange={(event) => setSettingsTimezone(event.target.value)}
+                        disabled={!canManageCampaign}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {INSTANTLY_TIMEZONES.map((zone) => (
+                          <option key={zone} value={zone}>{zone.replace(/_/g, ' ')}</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-muted-foreground">Only the zones Instantly offers. It has no New York or Los Angeles; America/Detroit and America/Dawson are the same clocks. The window below is read in this zone.</p>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="campaign-detail-limit">Daily lead limit</Label>
@@ -644,7 +695,67 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                       <p className="text-xs text-muted-foreground">The most new podcast hosts this campaign may email in a day, across every sending account.</p>
                     </div>
                   </div>
-                  <Button disabled={!canManageCampaign || !settingsName.trim() || settingsMutation.isPending} onClick={() => settingsMutation.mutate()}>{settingsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save schedule</Button>
+                  <div className="space-y-2">
+                    <Label>Sending days</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {SEND_DAY_OPTIONS.map((day) => {
+                        const selected = settingsSendDays.includes(day.index)
+                        return (
+                          <Button
+                            key={day.index}
+                            type="button"
+                            size="sm"
+                            variant={selected ? 'default' : 'outline'}
+                            disabled={!canManageCampaign}
+                            aria-pressed={selected}
+                            onClick={() => setSettingsSendDays((current) => (
+                              current.includes(day.index)
+                                ? current.filter((value) => value !== day.index)
+                                : [...current, day.index].sort((a, b) => a - b)
+                            ))}
+                          >
+                            {day.label}
+                          </Button>
+                        )
+                      })}
+                    </div>
+                    {settingsSendDays.length === 0 ? (
+                      <p className="text-xs font-medium text-destructive">
+                        A campaign with no sending day never sends. Choose at least one.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Sends on {formatSendDays(settingsSendDays)}, between the hours below.
+                      </p>
+                    )}
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="campaign-detail-window-start">Window opens</Label>
+                      <Input id="campaign-detail-window-start" type="time" value={settingsWindowStart} onChange={(event) => setSettingsWindowStart(event.target.value)} disabled={!canManageCampaign} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="campaign-detail-window-end">Window closes</Label>
+                      <Input id="campaign-detail-window-end" type="time" value={settingsWindowEnd} onChange={(event) => setSettingsWindowEnd(event.target.value)} disabled={!canManageCampaign} />
+                    </div>
+                  </div>
+                  {/* Measured from the email before, which is how Instantly
+                      reads them and how an operator thinks about a chase. */}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="campaign-detail-follow-up-one">First follow-up after</Label>
+                      <Input id="campaign-detail-follow-up-one" type="number" min={1} max={60} value={settingsFollowUpOne} onChange={(event) => setSettingsFollowUpOne(Number(event.target.value) || 1)} disabled={!canManageCampaign} />
+                      <p className="text-xs text-muted-foreground">Days after the opening email.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="campaign-detail-follow-up-two">Second follow-up after</Label>
+                      <Input id="campaign-detail-follow-up-two" type="number" min={1} max={60} value={settingsFollowUpTwo} onChange={(event) => setSettingsFollowUpTwo(Number(event.target.value) || 1)} disabled={!canManageCampaign} />
+                      <p className="text-xs text-muted-foreground">
+                        Days after the first follow-up, so the last email lands on day {settingsFollowUpOne + settingsFollowUpTwo}.
+                      </p>
+                    </div>
+                  </div>
+                  <Button disabled={!canManageCampaign || !settingsName.trim() || settingsSendDays.length === 0 || settingsWindowStart >= settingsWindowEnd || settingsMutation.isPending} onClick={() => settingsMutation.mutate()}>{settingsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save schedule</Button>
                 </CardContent>
               </Card>
               <Card>

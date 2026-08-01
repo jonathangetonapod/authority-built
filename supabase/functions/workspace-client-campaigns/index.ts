@@ -135,6 +135,11 @@ const CAMPAIGN_COLUMNS = [
   "sender_accounts",
   "timezone",
   "daily_limit",
+  "send_days",
+  "send_window_start",
+  "send_window_end",
+  "follow_up_one_delay_days",
+  "follow_up_two_delay_days",
   "provider_schedule",
   "provider_email_gap",
   "provider_not_sending_status",
@@ -232,6 +237,12 @@ interface CampaignRow {
   sender_accounts: string[];
   timezone: string;
   daily_limit: number;
+  /** Days this campaign may send, indexed as Instantly does: 0 is Sunday. */
+  send_days: number[];
+  send_window_start: string;
+  send_window_end: string;
+  follow_up_one_delay_days: number;
+  follow_up_two_delay_days: number;
   provider_schedule: Record<string, unknown> | null;
   provider_email_gap: number | null;
   provider_not_sending_status: number | null;
@@ -622,6 +633,14 @@ function campaignDto(campaign: CampaignRow, targets: TargetRow[] = []) {
     sender_accounts: campaign.sender_accounts,
     timezone: campaign.timezone,
     daily_limit: campaign.daily_limit,
+    // What this app asked for, which is what the settings form edits. The
+    // provider_schedule below is what Instantly reports back, and the two
+    // disagreeing is exactly what an operator needs to be able to see.
+    send_days: campaign.send_days,
+    send_window_start: campaign.send_window_start,
+    send_window_end: campaign.send_window_end,
+    follow_up_one_delay_days: campaign.follow_up_one_delay_days,
+    follow_up_two_delay_days: campaign.follow_up_two_delay_days,
     provider_schedule: campaign.provider_schedule ?? null,
     provider_email_gap: campaign.provider_email_gap ?? null,
     provider_not_sending_status: campaign.provider_not_sending_status ?? null,
@@ -729,18 +748,70 @@ function emailList(value: unknown): string[] {
   return emails;
 }
 
+/**
+ * The only zones Instantly's schedule accepts.
+ *
+ * Not every IANA name: their campaign schema pins an enum, and it omits some
+ * common ones — America/New_York and America/Los_Angeles are both absent, while
+ * America/Detroit and America/Dawson cover the same offsets. Validating against
+ * "is this a real timezone" let a legal-looking value through to a provider
+ * that would not take it.
+ */
+const INSTANTLY_TIMEZONES = new Set([
+  "Etc/GMT+12", "Etc/GMT+11", "Etc/GMT+10", "America/Anchorage", "America/Dawson",
+  "America/Creston", "America/Chihuahua", "America/Boise", "America/Belize",
+  "America/Chicago", "America/Bahia_Banderas", "America/Regina", "America/Bogota",
+  "America/Detroit", "America/Indiana/Marengo", "America/Caracas", "America/Asuncion",
+  "America/Glace_Bay", "America/Campo_Grande", "America/Anguilla", "America/Santiago",
+  "America/St_Johns", "America/Sao_Paulo", "America/Argentina/La_Rioja",
+  "America/Araguaina", "America/Godthab", "America/Montevideo", "America/Bahia",
+  "America/Noronha", "America/Scoresbysund", "Atlantic/Cape_Verde", "Africa/Casablanca",
+  "America/Danmarkshavn", "Europe/Isle_of_Man", "Atlantic/Canary", "Africa/Abidjan",
+  "Arctic/Longyearbyen", "Europe/Belgrade", "Africa/Ceuta", "Europe/Sarajevo",
+  "Africa/Algiers", "Africa/Windhoek", "Asia/Nicosia", "Asia/Beirut", "Africa/Cairo",
+  "Asia/Damascus", "Europe/Bucharest", "Africa/Blantyre", "Europe/Helsinki",
+  "Europe/Istanbul", "Asia/Jerusalem", "Africa/Tripoli", "Asia/Amman", "Asia/Baghdad",
+  "Europe/Kaliningrad", "Asia/Aden", "Africa/Addis_Ababa", "Europe/Kirov",
+  "Europe/Astrakhan", "Asia/Tehran", "Asia/Dubai", "Asia/Baku", "Indian/Mahe",
+  "Asia/Tbilisi", "Asia/Yerevan", "Asia/Kabul", "Antarctica/Mawson",
+  "Asia/Yekaterinburg", "Asia/Karachi", "Asia/Kolkata", "Asia/Colombo",
+  "Asia/Kathmandu", "Antarctica/Vostok", "Asia/Dhaka", "Asia/Rangoon",
+  "Antarctica/Davis", "Asia/Novokuznetsk", "Asia/Hong_Kong", "Asia/Krasnoyarsk",
+  "Asia/Brunei", "Australia/Perth", "Asia/Taipei", "Asia/Choibalsan", "Asia/Irkutsk",
+  "Asia/Dili", "Asia/Pyongyang", "Australia/Adelaide", "Australia/Darwin",
+  "Australia/Brisbane", "Australia/Melbourne", "Antarctica/DumontDUrville",
+  "Australia/Currie", "Asia/Chita", "Antarctica/Macquarie", "Asia/Sakhalin",
+  "Pacific/Auckland", "Etc/GMT-12", "Pacific/Fiji", "Asia/Anadyr", "Asia/Kamchatka",
+  "Etc/GMT-13", "Pacific/Apia",
+]);
+
+/** What to offer when somebody asks for a zone Instantly does not carry. */
+const TIMEZONE_SUBSTITUTES: Record<string, string> = {
+  "America/New_York": "America/Detroit",
+  "America/Toronto": "America/Detroit",
+  "America/Los_Angeles": "America/Dawson",
+  "America/Vancouver": "America/Dawson",
+  "America/Denver": "America/Boise",
+  "America/Phoenix": "America/Creston",
+  "Europe/London": "Europe/Isle_of_Man",
+  "Europe/Dublin": "Europe/Isle_of_Man",
+  "Europe/Paris": "Arctic/Longyearbyen",
+  "Europe/Berlin": "Arctic/Longyearbyen",
+  "Europe/Madrid": "Arctic/Longyearbyen",
+  "Australia/Sydney": "Australia/Melbourne",
+};
+
 function campaignTimezone(value: unknown): string {
   const timezone = requireString(value, "timezone", { max: 100 });
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
-  } catch {
-    throw new HttpError(
-      400,
-      "INVALID_FIELD",
-      "timezone must be a valid IANA timezone",
-    );
-  }
-  return timezone;
+  if (INSTANTLY_TIMEZONES.has(timezone)) return timezone;
+  const substitute = TIMEZONE_SUBSTITUTES[timezone];
+  throw new HttpError(
+    400,
+    "CAMPAIGN_TIMEZONE_UNSUPPORTED",
+    substitute
+      ? `Instantly does not offer ${timezone}. Use ${substitute}, which is the same clock.`
+      : `Instantly does not offer ${timezone} as a sending timezone. Choose one from the list.`,
+  );
 }
 
 function dailyLimit(value: unknown): number {
@@ -1489,7 +1560,73 @@ function campaignConfiguration(campaign: CampaignRow): Record<string, unknown> {
     timezone: campaign.timezone,
     dailyLimit: campaign.daily_limit,
     senderAccounts: campaign.sender_accounts,
+    sendDays: campaign.send_days,
+    windowStart: campaign.send_window_start,
+    windowEnd: campaign.send_window_end,
+    followUpOneDelayDays: campaign.follow_up_one_delay_days,
+    followUpTwoDelayDays: campaign.follow_up_two_delay_days,
   });
+}
+
+/** Instantly's schedule is keyed "0".."6" starting at Sunday. */
+const SEND_DAY_KEYS = ["0", "1", "2", "3", "4", "5", "6"] as const;
+
+/**
+ * The days a campaign may send, as Instantly indexes them.
+ *
+ * Refuses an empty list rather than storing it: a campaign with no sending day
+ * never sends, and would otherwise sit in the list looking active while nothing
+ * left the building.
+ */
+function sendDayList(value: unknown): number[] {
+  if (!Array.isArray(value)) {
+    throw new HttpError(400, "INVALID_FIELD", "send_days must be a list of days");
+  }
+  const days = new Set<number>();
+  for (const candidate of value) {
+    if (
+      typeof candidate !== "number" || !Number.isInteger(candidate) ||
+      candidate < 0 || candidate > 6
+    ) {
+      throw new HttpError(
+        400,
+        "INVALID_FIELD",
+        "send_days must contain whole numbers from 0 (Sunday) to 6 (Saturday)",
+      );
+    }
+    days.add(candidate);
+  }
+  if (days.size === 0) {
+    throw new HttpError(
+      400,
+      "CAMPAIGN_NO_SENDING_DAY",
+      "Choose at least one day for this campaign to send on",
+    );
+  }
+  return [...days].sort((left, right) => left - right);
+}
+
+function timeOfDayValue(value: unknown, field: string): string {
+  const raw = requireString(value, field, { max: 5 });
+  if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(raw)) {
+    throw new HttpError(400, "INVALID_FIELD", `${field} must be a 24-hour HH:MM time`);
+  }
+  return raw;
+}
+
+function followUpDelay(value: unknown, field: string): number | null {
+  if (value === undefined || value === null) return null;
+  if (
+    typeof value !== "number" || !Number.isInteger(value) || value < 1 ||
+    value > 60
+  ) {
+    throw new HttpError(
+      400,
+      "INVALID_FIELD",
+      `${field} must be a whole number of days between 1 and 60`,
+    );
+  }
+  return value;
 }
 
 /**
@@ -1506,6 +1643,11 @@ function provisionedCampaignConfiguration(input: {
   timezone: string;
   dailyLimit: number;
   senderAccounts: string[];
+  sendDays?: number[];
+  windowStart?: string;
+  windowEnd?: string;
+  followUpOneDelayDays?: number;
+  followUpTwoDelayDays?: number;
 }): Record<string, unknown> {
   const campaign = {
     name: input.providerName,
@@ -1513,22 +1655,26 @@ function provisionedCampaignConfiguration(input: {
     daily_limit: input.dailyLimit,
     sender_accounts: input.senderAccounts,
   };
+  // Monday to Friday. This used to be written as days 0 through 4 under the
+  // name "Weekdays", but 0 is Sunday, so every campaign built here sent on
+  // Sunday and never on Friday.
+  const sendDays = new Set(input.sendDays?.length ? input.sendDays : [1, 2, 3, 4, 5]);
+  const days = Object.fromEntries(
+    SEND_DAY_KEYS.map((key) => [key, sendDays.has(Number(key))]),
+  );
+  const followUpOneDelay = input.followUpOneDelayDays ?? 6;
+  const followUpTwoDelay = input.followUpTwoDelayDays ?? 7;
   return {
     name: input.providerName,
     is_evergreen: true,
     campaign_schedule: {
       schedules: [{
-        name: "Weekdays",
-        timing: { from: "09:00", to: "17:00" },
-        days: {
-          "0": true,
-          "1": true,
-          "2": true,
-          "3": true,
-          "4": true,
-          "5": false,
-          "6": false,
+        name: "Sending window",
+        timing: {
+          from: input.windowStart ?? "09:00",
+          to: input.windowEnd ?? "17:00",
         },
+        days,
         timezone: campaign.timezone,
       }],
     },
@@ -1536,9 +1682,11 @@ function provisionedCampaignConfiguration(input: {
       steps: [
         {
           type: "email",
-          // Research-backed cadence: first follow-up ~day 6, second ~day 13.
-          // Under 3 days reads desperate; each follow-up must add new value.
-          delay: 6,
+          // Instantly reads a step's delay as the wait before the NEXT email,
+          // so the opening step carries the gap to follow-up one. Default six
+          // days: under three reads as pestering, and each follow-up has to
+          // add something new.
+          delay: followUpOneDelay,
           delay_unit: "days",
           variants: [{
             subject: "{{goapPitchSubject}}",
@@ -1548,7 +1696,7 @@ function provisionedCampaignConfiguration(input: {
         },
         {
           type: "email",
-          delay: 7,
+          delay: followUpTwoDelay,
           delay_unit: "days",
           variants: [{
             // Empty on purpose. Instantly threads a step with no subject as a
@@ -6083,12 +6231,45 @@ serve(async (req) => {
         "timezone",
         "daily_limit",
         "sender_accounts",
+        "send_days",
+        "send_window_start",
+        "send_window_end",
+        "follow_up_one_delay_days",
+        "follow_up_two_delay_days",
       ]);
       requireCampaignManager(access);
       const name = requireString(body.name, "name", { max: 180 });
       const timezone = campaignTimezone(body.timezone);
       const limit = dailyLimit(body.daily_limit);
       const senderAccounts = emailList(body.sender_accounts);
+      // All optional: a caller from before these were editable sends none of
+      // them and keeps whatever the campaign already has.
+      const sendDays = body.send_days === undefined || body.send_days === null
+        ? null
+        : sendDayList(body.send_days);
+      const windowStart = body.send_window_start === undefined ||
+          body.send_window_start === null
+        ? null
+        : timeOfDayValue(body.send_window_start, "send_window_start");
+      const windowEnd = body.send_window_end === undefined ||
+          body.send_window_end === null
+        ? null
+        : timeOfDayValue(body.send_window_end, "send_window_end");
+      if (windowStart && windowEnd && windowStart >= windowEnd) {
+        throw new HttpError(
+          400,
+          "INVALID_FIELD",
+          "The sending window must start before it ends",
+        );
+      }
+      const followUpOneDelay = followUpDelay(
+        body.follow_up_one_delay_days,
+        "follow_up_one_delay_days",
+      );
+      const followUpTwoDelay = followUpDelay(
+        body.follow_up_two_delay_days,
+        "follow_up_two_delay_days",
+      );
       const campaign = await readCampaign(context.admin, workspaceId, clientId);
       if (!campaign) {
         throw new HttpError(
@@ -6102,12 +6283,19 @@ serve(async (req) => {
         senderAccounts,
         accountsFromSnapshot(connection?.accounts_snapshot),
       );
+      // Omitted fields keep what the campaign already has, so this stays a
+      // partial update for callers that predate the schedule controls.
       const nextCampaign: CampaignRow = {
         ...campaign,
         name,
         timezone,
         daily_limit: limit,
         sender_accounts: senderAccounts,
+        send_days: sendDays ?? campaign.send_days,
+        send_window_start: windowStart ?? campaign.send_window_start,
+        send_window_end: windowEnd ?? campaign.send_window_end,
+        follow_up_one_delay_days: followUpOneDelay ?? campaign.follow_up_one_delay_days,
+        follow_up_two_delay_days: followUpTwoDelay ?? campaign.follow_up_two_delay_days,
       };
       let providerStatus = campaign.instantly_campaign_status;
       if (campaign.instantly_campaign_id) {
@@ -6128,6 +6316,11 @@ serve(async (req) => {
           timezone,
           daily_limit: limit,
           sender_accounts: senderAccounts,
+          send_days: nextCampaign.send_days,
+          send_window_start: nextCampaign.send_window_start,
+          send_window_end: nextCampaign.send_window_end,
+          follow_up_one_delay_days: nextCampaign.follow_up_one_delay_days,
+          follow_up_two_delay_days: nextCampaign.follow_up_two_delay_days,
           instantly_campaign_status: providerStatus,
           status: localCampaignStatus(providerStatus),
           last_error: null,

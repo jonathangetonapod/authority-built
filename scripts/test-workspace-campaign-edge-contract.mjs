@@ -117,6 +117,59 @@ assert.match(
   'a link may only be marked provisioned after its variables are registered',
 )
 
+// The schedule is built from the campaign row, not hardcoded. It used to write
+// days 0 through 4 under the name "Weekdays", but Instantly indexes from
+// Sunday, so every campaign sent on Sunday and never on Friday.
+assert.doesNotMatch(
+  edge,
+  /days: \{\s*\n\s*"0": true,/u,
+  'the schedule must not hardcode Sunday as a sending day',
+)
+assert.match(
+  edge,
+  /const sendDays = new Set\(input\.sendDays\?\.length \? input\.sendDays : \[1, 2, 3, 4, 5\]\)/u,
+  'the default sending week must be Monday to Friday',
+)
+assert.match(
+  edge,
+  /days,\s*\n\s*timezone: campaign\.timezone,/u,
+  'the schedule days must come from the campaign',
+)
+assert.match(
+  edge,
+  /delay: followUpOneDelay,[\s\S]*?delay: followUpTwoDelay,/u,
+  'both follow-up delays must be configurable',
+)
+// An empty day list is a campaign that never sends while looking healthy.
+assert.match(
+  edge,
+  /if \(days\.size === 0\) \{[\s\S]*?"CAMPAIGN_NO_SENDING_DAY"/u,
+  'a campaign with no sending day must be refused',
+)
+// The columns behind all of that have to exist.
+const scheduleMigrationSql = readFileSync(
+  'supabase/migrations/20260801000200_campaign_schedule_settings.sql',
+  'utf8',
+)
+for (const column of [
+  'send_days',
+  'send_window_start',
+  'send_window_end',
+  'follow_up_one_delay_days',
+  'follow_up_two_delay_days',
+]) {
+  assert.match(
+    scheduleMigrationSql,
+    new RegExp(`ADD COLUMN IF NOT EXISTS ${column}`, 'u'),
+    `the schedule migration must add ${column}`,
+  )
+}
+assert.match(
+  scheduleMigrationSql,
+  /DEFAULT ARRAY\[1,2,3,4,5\]/u,
+  'existing campaigns must default to Monday through Friday',
+)
+
 // Follow-ups reply into the opening thread. Instantly threads a step with no
 // subject as a reply; giving it one starts a separate conversation, so a host
 // who ignored the pitch received three unrelated emails instead of one thread.

@@ -121,6 +121,12 @@ const persistedCampaign = {
   id: '55555555-5555-4555-8555-555555555555',
   workspace_id: workspaceId,
   client_id: clientId,
+  // Monday to Friday, in Instantly's own indexing where 0 is Sunday.
+  send_days: [1, 2, 3, 4, 5],
+  send_window_start: '09:00',
+  send_window_end: '17:00',
+  follow_up_one_delay_days: 6,
+  follow_up_two_delay_days: 7,
   name: 'Dallas Fontaine Podcast Outreach',
   status: 'active' as const,
   instantly_campaign_id: '66666666-6666-4666-8666-666666666666',

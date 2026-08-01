@@ -122,6 +122,18 @@ export interface WorkspaceClientCampaign {
   sender_accounts: string[]
   timezone: string
   daily_limit: number
+  /**
+   * Days this campaign may send, indexed as Instantly does: 0 is Sunday through
+   * 6 is Saturday. This is what the app asked for; provider_schedule below is
+   * what Instantly reports back.
+   */
+  send_days: number[]
+  send_window_start: string
+  send_window_end: string
+  /** Days after the opening email before the first follow-up. */
+  follow_up_one_delay_days: number
+  /** Days after the first follow-up before the second. */
+  follow_up_two_delay_days: number
   /** The sending window Instantly actually holds, observed on the last sync. */
   provider_schedule: WorkspaceCampaignProviderSchedule | null
   /** Minutes between sends at the provider, null when it reported none. */
@@ -472,6 +484,12 @@ export async function updateWorkspaceCampaignSettings(input: {
   timezone: string
   dailyLimit: number
   senderAccounts: string[]
+  /** Omitted fields keep whatever the campaign already has. */
+  sendDays?: number[]
+  sendWindowStart?: string
+  sendWindowEnd?: string
+  followUpOneDelayDays?: number
+  followUpTwoDelayDays?: number
 }): Promise<WorkspaceClientCampaign> {
   const response = await invokeWorkspaceCampaigns<CampaignMutationResponse>({
     action: 'update-settings',
@@ -481,6 +499,11 @@ export async function updateWorkspaceCampaignSettings(input: {
     timezone: input.timezone,
     daily_limit: input.dailyLimit,
     sender_accounts: input.senderAccounts,
+    send_days: input.sendDays ?? null,
+    send_window_start: input.sendWindowStart ?? null,
+    send_window_end: input.sendWindowEnd ?? null,
+    follow_up_one_delay_days: input.followUpOneDelayDays ?? null,
+    follow_up_two_delay_days: input.followUpTwoDelayDays ?? null,
   }, 'Campaign settings could not be saved.')
   if (!response.campaign) throw new Error('Campaign settings returned no campaign.')
   return response.campaign
