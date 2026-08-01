@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -127,6 +127,7 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
   const requestedClientId = (searchParams.get('client') || '').toLowerCase()
   const targetClientId = UUID_PATTERN.test(requestedClientId) ? requestedClientId : ''
 
+  const queryClient = useQueryClient()
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
@@ -172,9 +173,55 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
     }),
     enabled: validWorkspaceId,
     retry: false,
-    staleTime: 30_000,
+    // Catalogue rows change when somebody adds a show, not continuously, so a
+    // few minutes of staleness costs nothing and makes going back to a page
+    // already seen instant rather than another round trip.
+    staleTime: 5 * 60_000,
     placeholderData: (previousData) => previousData,
   })
+
+  /**
+   * Fetch the next page while this one is being read.
+   *
+   * Paging is the one move an operator makes without thinking, and every Next
+   * used to wait on a round trip. The request is identical to the one the click
+   * would make, so it lands in the same cache slot and the click resolves from
+   * memory. Skipped on the last page and while the current one is still in
+   * flight, so it never competes with the request somebody is waiting on.
+   */
+  const totalPages = catalogQuery.data?.pagination.total_pages ?? 1
+  useEffect(() => {
+    if (!validWorkspaceId || catalogQuery.isFetching || page >= totalPages) return
+    const nextPage = page + 1
+    void queryClient.prefetchQuery({
+      queryKey: [
+        'workspace-podcast-catalog',
+        user?.id || 'unknown',
+        workspaceId,
+        search,
+        category,
+        contact,
+        activity,
+        audience,
+        sort,
+        nextPage,
+      ],
+      queryFn: () => getWorkspacePodcastCatalog(workspaceId, {
+        search,
+        category: category === 'all' ? undefined : category,
+        contact,
+        activity,
+        audience,
+        sort,
+        page: nextPage,
+        pageSize: PAGE_SIZE,
+      }),
+      staleTime: 5 * 60_000,
+    })
+  }, [
+    queryClient, validWorkspaceId, catalogQuery.isFetching, page, totalPages,
+    user?.id, workspaceId, search, category, contact, activity, audience, sort,
+  ])
 
   const clientsQuery = useQuery({
     queryKey: ['workspace-podcast-catalog', user?.id || 'unknown', workspaceId, 'clients'],
@@ -303,7 +350,7 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
               </Badge>
               <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">Podcast Database</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-                Search one growing catalog for every client. When a new Podscan result is added to a client or prospect shortlist, its public show data becomes reusable across the Database.
+                Search one growing catalog for every client. When a show is added to a client or prospect shortlist, its public data becomes reusable across the Database.
               </p>
             </div>
             <Button asChild size="lg" className="shrink-0">
@@ -355,7 +402,7 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
                 <SelectContent>
                   <SelectItem value="all">All podcasts</SelectItem>
                   <SelectItem value="any">Has an email</SelectItem>
-                  <SelectItem value="free">Free Podscan email</SelectItem>
+                  <SelectItem value="free">Public listing email</SelectItem>
                   <SelectItem value="direct">Verified direct email</SelectItem>
                   <SelectItem value="none">No email yet</SelectItem>
                 </SelectContent>
@@ -501,9 +548,22 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
                     <div className="mt-4 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
                         {podcast.direct_email ? (
-                          <div className="flex min-w-0 items-center gap-2"><Badge className="border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">Shared direct email</Badge><span className="truncate text-sm">{podcast.direct_email}</span></div>
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <Badge className="border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-100">Verified direct email</Badge>
+                            <span className="truncate text-sm">{podcast.direct_email}</span>
+                            {/* When somebody confirmed it. A direct address
+                                that was checked two years ago is a different
+                                proposition from one checked last week. */}
+                            <span className="text-xs text-muted-foreground">
+                              {podcast.direct_verified_at ? `Confirmed ${formattedDate(podcast.direct_verified_at)}` : 'Not yet confirmed'}
+                            </span>
+                          </div>
                         ) : podcast.free_podscan_email ? (
-                          <div className="flex min-w-0 items-center gap-2"><Badge className="border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Free · Podscan</Badge><span className="truncate text-sm">{podcast.free_podscan_email}</span></div>
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <Badge className="border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Public listing</Badge>
+                            <span className="truncate text-sm">{podcast.free_podscan_email}</span>
+                            <span className="text-xs text-muted-foreground">Published by the show, not confirmed by us</span>
+                          </div>
                         ) : (
                           <p className="text-sm text-muted-foreground">No usable public email yet</p>
                         )}
@@ -534,7 +594,7 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
           <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="font-semibold">How the database grows</p>
-              <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Use Podcast Finder when a show is missing. Adding a result to a client or prospect shortlist merges its public metadata into this shared catalog. Free Podscan inboxes become reusable immediately; client profiles, notes, and campaign activity remain private to their workspace.</p>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Every show anyone adds to a shortlist stays here, so the next person searching finds it already researched. Public show details and listed inboxes are shared across the workspace. What you write about a client — their profile, your notes, their campaign activity — is never shared.</p>
             </div>
             <Button asChild variant="outline" className="shrink-0"><Link to={`${baseHref}/podcast-finder`}>Open Finder<ExternalLink className="ml-2 h-4 w-4" /></Link></Button>
           </CardContent>
