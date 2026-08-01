@@ -244,6 +244,32 @@ assert.match(
   'the observed schedule must be written back on save',
 )
 
+// Where a host stands is asked of the provider, not answered from our own
+// last sync. It is the one fact on the page that changes with nobody here
+// acting, so a cached answer is worth little and a stale one misleads.
+assert.match(
+  edge,
+  /if \(action === "target-lead-status"\)/u,
+  'the live lead status action must exist',
+)
+assert.match(
+  edge,
+  /target-lead-status[\s\S]*?`\/leads\/\$\{encodeURIComponent\(target\.instantly_lead_id\)\}`/u,
+  'it must read the lead from the provider by id',
+)
+// A lead deleted upstream is an answer, not a fault.
+assert.match(
+  edge,
+  /target-lead-status[\s\S]*?error\.status !== 404\) throw error;[\s\S]*?deleted_upstream: true/u,
+  'a lead deleted in Instantly must report as deleted rather than fail',
+)
+// Reading it also repairs what the table shows, so the two stop disagreeing.
+assert.match(
+  edge,
+  /target-lead-status[\s\S]*?instantly_lead_status: lead\.status,[\s\S]*?email_open_count: lead\.email_open_count/u,
+  'the fresh counts must be folded back into the target',
+)
+
 // Follow-ups reply into the opening thread. Instantly threads a step with no
 // subject as a reply; giving it one starts a separate conversation, so a host
 // who ignored the pitch received three unrelated emails instead of one thread.

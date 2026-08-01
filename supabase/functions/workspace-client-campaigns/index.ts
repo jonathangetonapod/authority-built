@@ -353,6 +353,24 @@ interface ProviderLead {
   email_open_count: number;
   email_reply_count: number;
   timestamp_updated: string | null;
+  /**
+   * The rest of what the provider knows about a lead. Read on demand rather
+   * than stored, because the question these answer — where does this host
+   * stand right now — is worth nothing at the freshness of the last sync.
+   */
+  email_click_count: number;
+  /** Which step of the sequence has actually gone out, opened, been replied to. */
+  last_step_id: string | null;
+  email_opened_step: number | null;
+  email_replied_step: number | null;
+  /** Interest, as set in the inbox or by Instantly. */
+  lt_interest_status: number | null;
+  /** Whether the address itself was ever verified, and how it came out. */
+  verification_status: number | null;
+  timestamp_last_contact: string | null;
+  timestamp_last_open: string | null;
+  timestamp_last_reply: string | null;
+  timestamp_last_click: string | null;
 }
 
 interface OutreachSequence {
@@ -2120,7 +2138,32 @@ function providerLead(value: unknown): ProviderLead | null {
     timestamp_updated: typeof lead.timestamp_updated === "string"
       ? lead.timestamp_updated
       : null,
+    email_click_count: wholeCount(lead.email_click_count),
+    last_step_id: nullableString(lead.last_step_id),
+    email_opened_step: nullableWhole(lead.email_opened_step),
+    email_replied_step: nullableWhole(lead.email_replied_step),
+    lt_interest_status: nullableWhole(lead.lt_interest_status),
+    verification_status: nullableWhole(lead.verification_status),
+    timestamp_last_contact: nullableString(lead.timestamp_last_contact),
+    timestamp_last_open: nullableString(lead.timestamp_last_open),
+    timestamp_last_reply: nullableString(lead.timestamp_last_reply),
+    timestamp_last_click: nullableString(lead.timestamp_last_click),
   };
+}
+
+function wholeCount(value: unknown): number {
+  return typeof value === "number" && Number.isInteger(value)
+    ? Math.max(0, value)
+    : 0;
+}
+
+/** Kept null rather than defaulted: "not reported" is not the same as zero. */
+function nullableWhole(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) ? value : null;
+}
+
+function nullableString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
 }
 
 async function listProviderLeads(
@@ -4897,6 +4940,99 @@ serve(async (req) => {
       });
       return jsonResponse(req, METHODS, 200, { success: true });
     }
+    // Where this host stands right now, asked of Instantly rather than of our
+    // last sync. A lead's state is the one thing on this page that changes
+    // without anybody here doing anything — it opens, it bounces, it replies —
+    // so a cached answer is worth little and a stale one is misleading.
+    if (action === "target-lead-status") {
+      requireOnlyKeys(body, [
+        "action",
+        "workspace_id",
+        "client_id",
+        "shortlist_podcast_id",
+      ]);
+      const shortlistPodcastId = requireUuid(
+        body.shortlist_podcast_id,
+        "shortlist_podcast_id",
+      );
+      const campaign = await readCampaign(context.admin, workspaceId, clientId);
+      if (!campaign) {
+        throw new HttpError(404, "CAMPAIGN_NOT_FOUND", "This client has no campaign");
+      }
+      const target = await requireCampaignTarget(
+        context,
+        campaign,
+        shortlistPodcastId,
+      );
+      if (!target.instantly_lead_id) {
+        throw new HttpError(
+          409,
+          "CAMPAIGN_LEAD_NOT_STAGED",
+          "This podcast has no lead in Instantly yet, so there is no delivery status to read",
+        );
+      }
+      const connection = await readConnection(context.admin, workspaceId);
+      const apiKey = await integrationApiKey(connection);
+      let lead: ProviderLead | null = null;
+      try {
+        lead = providerLead(
+          await instantlyRequest<unknown>(
+            apiKey,
+            `/leads/${encodeURIComponent(target.instantly_lead_id)}`,
+          ),
+        );
+      } catch (error) {
+        // A lead deleted in Instantly is a real answer, not a failure: the
+        // sequence is not running because the lead is gone.
+        if (!(error instanceof InstantlyApiError) || error.status !== 404) throw error;
+        return jsonResponse(req, METHODS, 200, {
+          lead: null,
+          deleted_upstream: true,
+          checked_at: new Date().toISOString(),
+        });
+      }
+      if (!lead) {
+        throw new HttpError(
+          502,
+          "INSTANTLY_RESPONSE_INVALID",
+          "Instantly returned a lead this build could not read",
+        );
+      }
+      // Fold the fresh counts back in, so the table stops disagreeing with the
+      // panel the moment somebody checks.
+      await context.admin
+        .from("workspace_client_campaign_targets")
+        .update({
+          instantly_lead_status: lead.status,
+          email_open_count: lead.email_open_count,
+          email_reply_count: lead.email_reply_count,
+          last_activity_at: lead.timestamp_last_reply ?? lead.timestamp_last_open ??
+            lead.timestamp_last_contact ?? target.last_activity_at,
+        })
+        .eq("id", target.id)
+        .eq("workspace_id", workspaceId);
+      return jsonResponse(req, METHODS, 200, {
+        lead: {
+          id: lead.id,
+          email: lead.email,
+          status: lead.status,
+          email_open_count: lead.email_open_count,
+          email_reply_count: lead.email_reply_count,
+          email_click_count: lead.email_click_count,
+          email_opened_step: lead.email_opened_step,
+          email_replied_step: lead.email_replied_step,
+          lt_interest_status: lead.lt_interest_status,
+          verification_status: lead.verification_status,
+          timestamp_last_contact: lead.timestamp_last_contact,
+          timestamp_last_open: lead.timestamp_last_open,
+          timestamp_last_reply: lead.timestamp_last_reply,
+          timestamp_last_click: lead.timestamp_last_click,
+        },
+        deleted_upstream: false,
+        checked_at: new Date().toISOString(),
+      });
+    }
+
     if (action === "client-links-list") {
       requireOnlyKeys(body, ["action", "workspace_id", "client_id"]);
       const [linksResult, campaignsResult] = await Promise.all([

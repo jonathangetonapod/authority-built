@@ -800,6 +800,52 @@ export interface WorkspaceInboxThreadsResponse {
   truncated?: boolean
 }
 
+/**
+ * Where a host stands in the sequence right now, read from Instantly on
+ * demand. Everything else on the campaign page is as fresh as the last sync;
+ * this is the one thing that changes without anybody here acting.
+ */
+export interface WorkspaceTargetLeadStatus {
+  id: string
+  email: string
+  /** 1 Active, 2 Paused, 3 Completed, -1 Bounced, -2 Unsubscribed, -3 Skipped. */
+  status: number | null
+  email_open_count: number
+  email_reply_count: number
+  email_click_count: number
+  /** Which step was last opened or replied to, when the provider says. */
+  email_opened_step: number | null
+  email_replied_step: number | null
+  /** 1 Interested, 2 Meeting booked, 3 Meeting completed, 4 Won, 0 OOO, negatives lost. */
+  lt_interest_status: number | null
+  /** 1 Verified, -1 Invalid, -2 Risky, -3 Catch all, -4 Job change, 11/12 pending. */
+  verification_status: number | null
+  timestamp_last_contact: string | null
+  timestamp_last_open: string | null
+  timestamp_last_reply: string | null
+  timestamp_last_click: string | null
+}
+
+export interface WorkspaceTargetLeadStatusResponse {
+  lead: WorkspaceTargetLeadStatus | null
+  /** The lead was deleted in Instantly, which is an answer rather than a fault. */
+  deleted_upstream: boolean
+  checked_at: string
+}
+
+export async function getWorkspaceTargetLeadStatus(input: {
+  workspaceId: string
+  clientId: string
+  shortlistPodcastId: string
+}): Promise<WorkspaceTargetLeadStatusResponse> {
+  return await invokeWorkspaceCampaigns<WorkspaceTargetLeadStatusResponse>({
+    action: 'target-lead-status',
+    workspace_id: input.workspaceId,
+    client_id: input.clientId,
+    shortlist_podcast_id: input.shortlistPodcastId,
+  }, 'The delivery status could not be read from Instantly.')
+}
+
 export interface ClientInstantlyCampaignLink {
   instantly_campaign_id: string
   campaign_name: string | null

@@ -13,6 +13,7 @@ import {
   Mic2,
   Pause,
   Play,
+  RefreshCw,
   Send,
   Settings2,
   Sparkles,
@@ -54,6 +55,7 @@ import { getClientShortlist, type ClientShortlistPodcast } from '@/services/clie
 import { getWorkspaceClientDetail } from '@/services/clients'
 import {
   getWorkspaceCampaign,
+  getWorkspaceTargetLeadStatus,
   saveWorkspaceCampaign,
   setWorkspaceCampaignRunning,
   updateWorkspaceCampaignSettings,
@@ -114,8 +116,75 @@ function stageClass(stage: PitchStage): string {
   return 'border-slate-200 bg-slate-50 text-slate-700'
 }
 
+/**
+ * What the provider says became of this lead.
+ *
+ * Instantly's lead status carries the outcomes our own target status has no
+ * word for: a bounce, an unsubscribe, a lead it skipped. We have stored it
+ * since leads existed and never read it, so a host whose address hard-bounced
+ * sat in the table as "Emailed — sequence running", indefinitely, while nothing
+ * was running and nothing ever would.
+ *
+ * Enum from the provider's Lead schema. An unrecognised value is reported as
+ * itself rather than swallowed.
+ */
+function providerLeadOutcome(
+  status: number | null | undefined,
+): { label: string; detail: string; className: string } | null {
+  if (status === -1) return { label: 'Bounced', detail: 'The address rejected it', className: 'border-destructive/40 bg-destructive/5 text-destructive' }
+  if (status === -2) return { label: 'Unsubscribed', detail: 'The host opted out', className: 'border-amber-200 bg-amber-50 text-amber-800' }
+  if (status === -3) return { label: 'Skipped', detail: 'Instantly did not send to this lead', className: 'border-amber-200 bg-amber-50 text-amber-800' }
+  if (typeof status === 'number' && status < 0) {
+    return { label: 'Delivery issue', detail: `Instantly reports lead status ${status}`, className: 'border-amber-200 bg-amber-50 text-amber-800' }
+  }
+  return null
+}
+
+/**
+ * The provider's own lead enums, named. Kept beside each other so an
+ * unrecognised value is reported as itself: a code this build predates is
+ * still worth showing rather than rendering as nothing.
+ */
+function leadStatusBadge(status: number | null): { label: string; className: string } {
+  if (status === 1) return { label: 'Sequence running', className: 'border-sky-200 bg-sky-50 text-sky-800' }
+  if (status === 2) return { label: 'Paused', className: 'border-violet-200 bg-violet-50 text-violet-800' }
+  if (status === 3) return { label: 'Sequence finished', className: 'border-emerald-200 bg-emerald-50 text-emerald-800' }
+  if (status === -1) return { label: 'Bounced', className: 'border-destructive/40 bg-destructive/5 text-destructive' }
+  if (status === -2) return { label: 'Unsubscribed', className: 'border-amber-200 bg-amber-50 text-amber-800' }
+  if (status === -3) return { label: 'Skipped', className: 'border-amber-200 bg-amber-50 text-amber-800' }
+  if (typeof status === 'number') return { label: `Lead status ${status}`, className: 'border-slate-200 bg-slate-50 text-slate-700' }
+  return { label: 'No status reported', className: 'border-slate-200 bg-slate-50 text-slate-700' }
+}
+
+function leadInterestLabel(status: number | null): string | null {
+  if (status === 1) return 'Interested'
+  if (status === 2) return 'Meeting booked'
+  if (status === 3) return 'Meeting completed'
+  if (status === 4) return 'Won'
+  if (status === 0) return 'Out of office'
+  if (status === -1) return 'Not interested'
+  if (status === -2) return 'Wrong person'
+  if (status === -3) return 'Lost'
+  if (status === -4) return 'No show'
+  return null
+}
+
+/** Only worth saying when it is a warning or a confirmed pass. */
+function leadVerificationLabel(status: number | null): string | null {
+  if (status === 1) return 'Address verified'
+  if (status === -1) return 'Address invalid'
+  if (status === -2) return 'Address risky'
+  if (status === -3) return 'Catch-all domain'
+  if (status === -4) return 'Job change'
+  return null
+}
+
 function leadDelivery(target?: WorkspaceCampaignTarget): { label: string; detail: string; className: string } {
   const stage = pitchStage(target)
+  // A negative outcome outranks whatever our own record last called this. It
+  // is the provider reporting what happened to a real email.
+  const outcome = providerLeadOutcome(target?.instantly_lead_status)
+  if (outcome && stage !== 'ready' && stage !== 'previously-contacted') return outcome
   if (stage === 'ready') return { label: 'Not emailed', detail: 'Ready for campaign', className: 'border-slate-200 bg-slate-50 text-slate-700' }
   if (stage === 'previously-contacted') return { label: 'Previously contacted', detail: 'Earlier client outreach', className: 'border-sky-200 bg-sky-50 text-sky-800' }
   if (stage === 'launching') return { label: 'Queued', detail: 'Preparing first email', className: 'border-violet-200 bg-violet-50 text-violet-800' }
@@ -321,6 +390,20 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
   // three messages. So a sequence preview has to be a preview OF something,
   // and showing the variable names would tell an operator nothing about what
   // a host actually receives.
+  // Asked of Instantly when the drawer opens, not read from the last sync. A
+  // lead moves without anybody here touching it, so a cached answer to "where
+  // does this host stand" is the one number on this page worth least.
+  const leadStatusQuery = useQuery({
+    queryKey: ['workspace-target-lead-status', workspaceId, clientId, selectedPodcast?.id ?? 'none'],
+    queryFn: () => getWorkspaceTargetLeadStatus({
+      workspaceId,
+      clientId,
+      shortlistPodcastId: selectedPodcast!.id,
+    }),
+    enabled: Boolean(selectedPodcast && selectedTarget?.instantly_lead_id),
+    retry: false,
+    staleTime: 0,
+  })
   const previewableTargets = useMemo(
     () => campaignTargets.filter((target) => target.pitch_body?.trim()),
     [campaignTargets],
@@ -1021,6 +1104,68 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
                     </div>
                   </div>
                 </section>
+
+                {selectedTarget?.instantly_lead_id && (
+                  <section className="rounded-xl border p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Where this host stands</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {leadStatusQuery.data?.checked_at
+                            ? `Read from Instantly just now, not from the last sync.`
+                            : 'Read from Instantly, not from the last sync.'}
+                        </p>
+                      </div>
+                      <Button size="sm" variant="outline" disabled={leadStatusQuery.isFetching} onClick={() => void leadStatusQuery.refetch()}>
+                        {leadStatusQuery.isFetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Check again
+                      </Button>
+                    </div>
+                    {leadStatusQuery.isLoading ? (
+                      <p className="mt-4 text-sm text-muted-foreground">Reading the lead…</p>
+                    ) : leadStatusQuery.isError ? (
+                      <p className="mt-4 text-sm text-destructive">
+                        {leadStatusQuery.error instanceof Error ? leadStatusQuery.error.message : 'The delivery status could not be read.'}
+                      </p>
+                    ) : leadStatusQuery.data?.deleted_upstream ? (
+                      /* A deleted lead is an answer, not a fault: nothing is
+                         running because there is nothing left to run. */
+                      <p className="mt-4 text-sm text-amber-800">
+                        This lead no longer exists in Instantly, so no further emails will go out to this host.
+                      </p>
+                    ) : leadStatusQuery.data?.lead ? (
+                      <div className="mt-4 space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline" className={leadStatusBadge(leadStatusQuery.data.lead.status).className}>
+                            {leadStatusBadge(leadStatusQuery.data.lead.status).label}
+                          </Badge>
+                          {leadInterestLabel(leadStatusQuery.data.lead.lt_interest_status) && (
+                            <Badge variant="outline">{leadInterestLabel(leadStatusQuery.data.lead.lt_interest_status)}</Badge>
+                          )}
+                          {leadVerificationLabel(leadStatusQuery.data.lead.verification_status) && (
+                            <Badge variant="outline">{leadVerificationLabel(leadStatusQuery.data.lead.verification_status)}</Badge>
+                          )}
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <div className="rounded-lg bg-muted/25 p-3"><p className="text-xs text-muted-foreground">Opens</p><p className="mt-1 text-lg font-bold">{leadStatusQuery.data.lead.email_open_count}</p></div>
+                          <div className="rounded-lg bg-muted/25 p-3"><p className="text-xs text-muted-foreground">Replies</p><p className="mt-1 text-lg font-bold">{leadStatusQuery.data.lead.email_reply_count}</p></div>
+                          <div className="rounded-lg bg-muted/25 p-3"><p className="text-xs text-muted-foreground">Clicks</p><p className="mt-1 text-lg font-bold">{leadStatusQuery.data.lead.email_click_count}</p></div>
+                        </div>
+                        <dl className="space-y-1 text-sm">
+                          {[
+                            { label: 'Last emailed', value: leadStatusQuery.data.lead.timestamp_last_contact },
+                            { label: 'Last opened', value: leadStatusQuery.data.lead.timestamp_last_open },
+                            { label: 'Last replied', value: leadStatusQuery.data.lead.timestamp_last_reply },
+                          ].map((row) => (
+                            <div key={row.label} className="flex justify-between gap-3">
+                              <dt className="text-muted-foreground">{row.label}</dt>
+                              <dd className="font-medium">{row.value ? formatDate(row.value) : 'Not yet'}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </div>
+                    ) : null}
+                  </section>
+                )}
 
                 <section className="space-y-4">
                   <div><h3 className="font-semibold">Final three-email sequence</h3><p className="mt-1 text-sm text-muted-foreground">Read-only copy approved before this podcast entered the campaign.</p></div>

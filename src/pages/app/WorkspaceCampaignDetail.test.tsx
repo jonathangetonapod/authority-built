@@ -8,6 +8,7 @@ import { getClientShortlist, type ClientShortlistPodcast } from '@/services/clie
 import { getWorkspaceClientDetail, type WorkspaceClientDetail } from '@/services/clients'
 import {
   getWorkspaceCampaign,
+  getWorkspaceTargetLeadStatus,
   setWorkspaceCampaignRunning,
   type WorkspaceCampaignDetailResponse,
   type WorkspaceClientCampaign,
@@ -18,6 +19,7 @@ vi.mock('@/services/clientShortlist', () => ({ getClientShortlist: vi.fn() }))
 vi.mock('@/services/clients', () => ({ getWorkspaceClientDetail: vi.fn() }))
 vi.mock('@/services/workspaceCampaigns', () => ({
   getWorkspaceCampaign: vi.fn(),
+  getWorkspaceTargetLeadStatus: vi.fn(),
   saveWorkspaceCampaign: vi.fn(),
   setWorkspaceCampaignRunning: vi.fn(),
   updateWorkspaceCampaignSettings: vi.fn(),
@@ -399,6 +401,73 @@ describe('WorkspaceCampaignDetail', () => {
 
   // The steps used to describe their own timings in prose — "Wait 3 days" while
   // Instantly waited 6. Reading a real message, at a stated day, is the point.
+
+/** The shared fixture has no lead; these tests need one that is in outreach. */
+function withStagedLead() {
+  mockedCampaign.mockResolvedValue({
+    ...campaignState,
+    targets: [
+      { ...sentTargets[0], status: 'in_outreach', instantly_lead_id: 'lead-one', instantly_lead_status: 1 },
+      sentTargets[1],
+    ],
+  } as WorkspaceCampaignDetailResponse)
+}
+
+  // Everything else on this page is as fresh as the last sync. A lead moves on
+  // its own — it opens, it bounces, it replies — so this one is asked live.
+  it('reads where a host stands from Instantly rather than from the last sync', async () => {
+    vi.mocked(getWorkspaceTargetLeadStatus).mockResolvedValue({
+      lead: {
+        id: 'lead-one',
+        email: 'host@founder.example',
+        status: 1,
+        email_open_count: 3,
+        email_reply_count: 1,
+        email_click_count: 2,
+        email_opened_step: 1,
+        email_replied_step: 2,
+        lt_interest_status: 2,
+        verification_status: 1,
+        timestamp_last_contact: '2026-07-30T00:00:00Z',
+        timestamp_last_open: '2026-07-31T00:00:00Z',
+        timestamp_last_reply: '2026-08-01T00:00:00Z',
+        timestamp_last_click: null,
+      },
+      deleted_upstream: false,
+      checked_at: '2026-08-01T12:00:00Z',
+    })
+    withStagedLead()
+    renderPage()
+
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Podcasts' }), { button: 0 })
+    fireEvent.click(await screen.findByRole('button', { name: /Founder Show/ }))
+
+    expect(await screen.findByText('Sequence running')).toBeInTheDocument()
+    expect(screen.getByText('Meeting booked')).toBeInTheDocument()
+    expect(screen.getByText('Address verified')).toBeInTheDocument()
+    expect(screen.getByText('3')).toBeInTheDocument()
+    expect(getWorkspaceTargetLeadStatus).toHaveBeenCalledWith(expect.objectContaining({
+      shortlistPodcastId: 'shortlist-one',
+    }))
+  })
+
+  // A lead deleted upstream is an answer, not a fault: nothing is running
+  // because there is nothing left to run.
+  it('says plainly when the lead no longer exists in Instantly', async () => {
+    vi.mocked(getWorkspaceTargetLeadStatus).mockResolvedValue({
+      lead: null,
+      deleted_upstream: true,
+      checked_at: '2026-08-01T12:00:00Z',
+    })
+    withStagedLead()
+    renderPage()
+
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Podcasts' }), { button: 0 })
+    fireEvent.click(await screen.findByRole('button', { name: /Founder Show/ }))
+
+    expect(await screen.findByText(/no longer exists in Instantly/i)).toBeInTheDocument()
+  })
+
   it('shows each step of the sequence with the message a host actually receives', async () => {
     renderPage()
 
