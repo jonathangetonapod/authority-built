@@ -311,9 +311,53 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
   const [settingsFollowUpOne, setSettingsFollowUpOne] = useState(6)
   const [settingsFollowUpTwo, setSettingsFollowUpTwo] = useState(7)
   const [campaignRunningPreview, setCampaignRunningPreview] = useState<boolean | null>(null)
+  const [sequenceStep, setSequenceStep] = useState(0)
+  const [previewTargetId, setPreviewTargetId] = useState<string | null>(null)
 
   const selectedPodcast = campaignPodcasts.find((podcast) => podcast.id === selectedPodcastId) || null
   const selectedTarget = selectedPodcast ? targetByShortlistId.get(selectedPodcast.id) || null : null
+
+  // The campaign holds variables, not copy — every podcast carries its own
+  // three messages. So a sequence preview has to be a preview OF something,
+  // and showing the variable names would tell an operator nothing about what
+  // a host actually receives.
+  const previewableTargets = useMemo(
+    () => campaignTargets.filter((target) => target.pitch_body?.trim()),
+    [campaignTargets],
+  )
+  const previewTarget = previewableTargets.find((target) => target.id === previewTargetId)
+    ?? previewableTargets[0]
+    ?? null
+  const sequenceSteps = useMemo(() => [
+    {
+      label: 'Step 1',
+      title: 'Opening pitch',
+      timing: 'Sends when approved',
+      landsOn: 'Day 0',
+      subject: previewTarget?.pitch_subject ?? null,
+      body: previewTarget?.pitch_body ?? null,
+      repliesInThread: false,
+    },
+    {
+      label: 'Step 2',
+      title: 'First follow-up',
+      timing: `${settingsFollowUpOne} day${settingsFollowUpOne === 1 ? '' : 's'} after step 1`,
+      landsOn: `Day ${settingsFollowUpOne}`,
+      subject: null,
+      body: previewTarget?.follow_up_1_body ?? null,
+      repliesInThread: true,
+    },
+    {
+      label: 'Step 3',
+      title: 'Final follow-up',
+      timing: `${settingsFollowUpTwo} day${settingsFollowUpTwo === 1 ? '' : 's'} after step 2`,
+      landsOn: `Day ${settingsFollowUpOne + settingsFollowUpTwo}`,
+      subject: null,
+      body: previewTarget?.follow_up_2_body ?? null,
+      repliesInThread: true,
+    },
+  ], [previewTarget, settingsFollowUpOne, settingsFollowUpTwo])
+  const activeStep = sequenceSteps[sequenceStep] ?? sequenceSteps[0]
 
   useEffect(() => {
     setSettingsName(campaign?.name || (client ? `${client.name} Podcast Outreach` : ''))
@@ -648,47 +692,122 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
           </TabsContent>
 
           <TabsContent value="sequences" className="mt-0">
-            <Card>
-              <CardHeader><CardTitle>Outreach sequence</CardTitle><CardDescription>Research and all three messages are prepared for each show in Podcasts, then sent through this client’s associated Instantly campaign.</CardDescription></CardHeader>
-              <CardContent className="space-y-3">
-                {/* Timings read from the campaign, not written here as prose.
-                    These badges said "Wait 3 days" and "Wait 5 more days" while
-                    Instantly was waiting 6 and 7 — a description of the
-                    sequence that nothing kept true. */}
-                {[
-                  { step: 'Email 1', timing: 'Sends when approved', title: 'Reviewed opening pitch', detail: 'Uses the subject and message prepared for this individual podcast.' },
-                  { step: 'Email 2', timing: `Waits ${settingsFollowUpOne} day${settingsFollowUpOne === 1 ? '' : 's'}`, title: 'Reviewed follow-up', detail: 'Replies into the opening email rather than starting a new thread.' },
-                  { step: 'Email 3', timing: `Waits ${settingsFollowUpTwo} more day${settingsFollowUpTwo === 1 ? '' : 's'}`, title: 'Reviewed close', detail: `Replies into the same thread, landing on day ${settingsFollowUpOne + settingsFollowUpTwo}.` },
-                ].map((item, index) => (
-                  <div key={item.step} className="grid gap-3 rounded-xl border p-4 sm:grid-cols-[7rem_minmax(0,1fr)_9rem] sm:items-center">
-                    <div className="flex items-center gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{index + 1}</div><span className="text-sm font-semibold">{item.step}</span></div>
-                    <div><p className="font-medium">{item.title}</p><p className="mt-1 text-sm text-muted-foreground">{item.detail}</p></div>
-                    <Badge variant="outline" className="w-fit">{item.timing}</Badge>
-                  </div>
-                ))}
-                {/* The waits belong to the sequence, not to the sending
-                    window: the window says which hours a campaign may send in,
-                    these say how long each host is left alone between emails. */}
-                <div className="grid gap-4 rounded-xl border p-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="campaign-detail-follow-up-one">First follow-up after</Label>
-                    <Input id="campaign-detail-follow-up-one" type="number" min={1} max={60} value={settingsFollowUpOne} onChange={(event) => setSettingsFollowUpOne(Number(event.target.value) || 1)} disabled={!canManageCampaign} />
-                    <p className="text-xs text-muted-foreground">Days after the opening email.</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="campaign-detail-follow-up-two">Second follow-up after</Label>
-                    <Input id="campaign-detail-follow-up-two" type="number" min={1} max={60} value={settingsFollowUpTwo} onChange={(event) => setSettingsFollowUpTwo(Number(event.target.value) || 1)} disabled={!canManageCampaign} />
-                    <p className="text-xs text-muted-foreground">Days after the first follow-up.</p>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <Button disabled={!canManageCampaign || !settingsName.trim() || settingsMutation.isPending} onClick={() => settingsMutation.mutate()}>
+            {/* Steps down the left, the message on the right — the shape of
+                Instantly's own sequence editor, so what is described here and
+                what is configured there can be compared without translating. */}
+            <div className="grid gap-4 lg:grid-cols-[minmax(16rem,0.5fr)_minmax(0,1fr)]">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Steps</CardTitle>
+                  <CardDescription>Each host receives these in one thread. Select a step to read it.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {sequenceSteps.map((step, index) => {
+                    const selected = index === sequenceStep
+                    return (
+                      <div key={step.label}>
+                        {index > 0 && (
+                          <div className="flex items-center gap-2 py-1 pl-4 text-xs text-muted-foreground">
+                            <div className="h-4 w-px bg-border" />
+                            <span>waits {step.timing.split(' after ')[0]}</span>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setSequenceStep(index)}
+                          aria-pressed={selected}
+                          className={`w-full rounded-xl border p-3 text-left transition ${selected ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${selected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{index + 1}</div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-semibold">{step.title}</p>
+                              <p className="text-xs text-muted-foreground">{step.landsOn}</p>
+                            </div>
+                          </div>
+                        </button>
+                      </div>
+                    )
+                  })}
+                  {/* The waits belong to the sequence, not to the sending
+                      window: the window says which hours a campaign may send
+                      in, these say how long a host is left alone between
+                      emails. */}
+                  <div className="space-y-3 rounded-xl border border-dashed p-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="campaign-detail-follow-up-one" className="text-xs">Wait before step 2</Label>
+                      <Input id="campaign-detail-follow-up-one" type="number" min={1} max={60} value={settingsFollowUpOne} onChange={(event) => setSettingsFollowUpOne(Number(event.target.value) || 1)} disabled={!canManageCampaign} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="campaign-detail-follow-up-two" className="text-xs">Wait before step 3</Label>
+                      <Input id="campaign-detail-follow-up-two" type="number" min={1} max={60} value={settingsFollowUpTwo} onChange={(event) => setSettingsFollowUpTwo(Number(event.target.value) || 1)} disabled={!canManageCampaign} />
+                    </div>
+                    <Button size="sm" className="w-full" disabled={!canManageCampaign || !settingsName.trim() || settingsMutation.isPending} onClick={() => settingsMutation.mutate()}>
                       {settingsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save cadence
                     </Button>
+                    <p className="text-xs text-muted-foreground">Days between emails. Which days and hours the campaign may send in are on Schedule.</p>
                   </div>
-                </div>
-                <div className="flex items-start gap-3 rounded-xl border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground"><Settings2 className="mt-0.5 h-4 w-4 shrink-0" /><p>Message preparation belongs in Podcasts. This section controls delivery cadence: text-only email, open tracking on, link tracking off, and stop on reply. Which days and hours the campaign may send in are on Schedule.</p></div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <CardTitle>{activeStep.title}</CardTitle>
+                    <CardDescription>
+                      {previewTarget
+                        ? `As written for ${previewTarget.podcast_name}. Every podcast carries its own three messages, prepared in Podcasts.`
+                        : 'Every podcast carries its own three messages, prepared in Podcasts.'}
+                    </CardDescription>
+                  </div>
+                  {previewableTargets.length > 1 && (
+                    <select
+                      aria-label="Preview message for"
+                      value={previewTarget?.id ?? ''}
+                      onChange={(event) => setPreviewTargetId(event.target.value)}
+                      className="h-9 w-full shrink-0 rounded-md border border-input bg-background px-3 text-sm sm:w-56"
+                    >
+                      {previewableTargets.map((target) => (
+                        <option key={target.id} value={target.id}>{target.podcast_name}</option>
+                      ))}
+                    </select>
+                  )}
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">{activeStep.timing}</Badge>
+                    <Badge variant="outline">{activeStep.landsOn}</Badge>
+                    {activeStep.repliesInThread && <Badge variant="outline">Replies in thread</Badge>}
+                  </div>
+                  {/* A blank subject is the mechanism that keeps a follow-up in
+                      the same thread, so it is stated rather than left looking
+                      like missing copy. */}
+                  <div className="rounded-xl border">
+                    <div className="border-b px-4 py-2 text-sm">
+                      <span className="text-muted-foreground">Subject: </span>
+                      {activeStep.repliesInThread
+                        ? <span className="text-muted-foreground">none — replies into the opening email</span>
+                        : <span className="font-medium">{activeStep.subject || 'Not written yet'}</span>}
+                    </div>
+                    <div className="px-4 py-3">
+                      {activeStep.body
+                        ? <p className="whitespace-pre-wrap text-sm leading-6">{activeStep.body}</p>
+                        : (
+                          <p className="text-sm text-muted-foreground">
+                            {previewTarget
+                              ? 'This step has not been written for this podcast yet.'
+                              : 'No podcast in this campaign has a prepared pitch yet. Write one from Podcasts and it will preview here.'}
+                          </p>
+                        )}
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 rounded-xl border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground">
+                    <Settings2 className="mt-0.5 h-4 w-4 shrink-0" />
+                    <p>A preview, not an editor. Messages are written per podcast in Podcasts; this section sets the delivery cadence — text-only email, open tracking on, link tracking off, and stop on reply.</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="schedule" className="mt-0">

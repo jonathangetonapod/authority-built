@@ -397,11 +397,36 @@ describe('WorkspaceCampaignDetail', () => {
     expect(screen.queryByText('Monday–Friday')).not.toBeInTheDocument()
   })
 
-  it('explains that every podcast has a reviewed three-email sequence before Instantly sends it', async () => {
+  // The steps used to describe their own timings in prose — "Wait 3 days" while
+  // Instantly waited 6. Reading a real message, at a stated day, is the point.
+  it('shows each step of the sequence with the message a host actually receives', async () => {
     renderPage()
 
     fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Sequences' }), { button: 0 })
-    expect(screen.getByText(/Research and all three messages are prepared for each show/i)).toBeInTheDocument()
-    expect(screen.getByText(/Message preparation belongs in Podcasts/i)).toBeInTheDocument()
+    // Step one opens by default, previewing a podcast that has copy written.
+    expect(await screen.findByText('A reviewed opening pitch.')).toBeInTheDocument()
+    expect(screen.getByText('A tailored guest idea')).toBeInTheDocument()
+    expect(screen.getByText(/As written for Founder Show/i)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /First follow-up/ }))
+    expect(await screen.findByText('A reviewed first follow-up.')).toBeInTheDocument()
+    // A blank subject is the mechanism that keeps it in one thread, so the
+    // screen says so rather than leaving it looking like missing copy.
+    expect(screen.getByText(/replies into the opening email/i)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Final follow-up/ }))
+    expect(await screen.findByText('A reviewed final follow-up.')).toBeInTheDocument()
+  })
+
+  // Timings come from the campaign. Written as prose they drifted, and said
+  // "Wait 3 days" for a year while the campaign waited six.
+  it('states which day each step lands on, from the campaign settings', async () => {
+    renderPage()
+
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Sequences' }), { button: 0 })
+    // Scoped to the step list: the selected step repeats its day as a badge.
+    expect(within(await screen.findByRole('button', { name: /Opening pitch/ })).getByText('Day 0')).toBeInTheDocument()
+    expect(within(screen.getByRole('button', { name: /First follow-up/ })).getByText('Day 6')).toBeInTheDocument()
+    expect(within(screen.getByRole('button', { name: /Final follow-up/ })).getByText('Day 13')).toBeInTheDocument()
   })
 })
