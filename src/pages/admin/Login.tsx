@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Chrome, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Chrome, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -156,19 +156,19 @@ const Login = () => {
       title="Sign in | Get On A Pod"
       description="Sign in to your Get On A Pod workspace."
       path="/login"
-      heading="Sign in."
+      heading="Welcome back."
       standfirst="Use the email from your invitation, or the account an administrator created for you."
       footer={<>No account yet? <Link to="/register">Request access</Link></>}
     >
-      {(passwordChanged || signInAgain) && (
-        <p className="gp-auth-status" role="status">
-          {passwordChanged
-            ? 'Password changed. Sign in with your new password.'
-            : 'Your credentials changed. Sign in again with the newest password.'}
-        </p>
-      )}
+      <form className="gp-form" onSubmit={handlePasswordSignIn}>
+        {(passwordChanged || signInAgain) && (
+          <p className="gp-auth-status" role="status">
+            {passwordChanged
+              ? 'Password changed. Sign in with your new password.'
+              : 'Your credentials changed. Sign in again with the newest password.'}
+          </p>
+        )}
 
-      <form className="gp-form gp-form-tight" onSubmit={handlePasswordSignIn}>
         <div className="gp-field">
           <label htmlFor="email">Email</label>
           <input
@@ -182,7 +182,22 @@ const Login = () => {
         </div>
 
         <div className="gp-field">
-          <label htmlFor="password">Password</label>
+          {/* The reset control sits beside the label, not inside it: a button
+              within a <label> joins the field's accessible name and changes as
+              it is pressed. */}
+          <div className="gp-field-head">
+            <label htmlFor="password">Password</label>
+            {!resetRequested && (
+              <button
+                type="button"
+                className="gp-auth-link"
+                disabled={isSubmitting}
+                onClick={() => void handleForgotPassword()}
+              >
+                Forgot password?
+              </button>
+            )}
+          </div>
           <div className="gp-field-with-toggle">
             <input
               id="password"
@@ -198,36 +213,27 @@ const Login = () => {
               onClick={() => setShowPassword((value) => !value)}
               aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
-              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showPassword ? 'Hide' : 'Show'}
             </button>
           </div>
         </div>
 
+        {resetRequested && (
+          // Said the same way whether or not that email has an account.
+          <p className="gp-auth-status" role="status">
+            If that email has an account, a password reset link is on the way.
+          </p>
+        )}
+
         <button type="submit" className="gp-btn gp-btn-primary gp-btn-block" disabled={isSubmitting}>
           {isSubmitting ? 'Signing in…' : 'Sign in'}
         </button>
-
-        {resetRequested ? (
-          // Said the same way whether or not that email has an account.
-          <p className="gp-auth-note" role="status">
-            If that email has an account, a password reset link is on the way.
-          </p>
-        ) : (
-          <button
-            type="button"
-            className="gp-auth-link"
-            disabled={isSubmitting}
-            onClick={() => void handleForgotPassword()}
-          >
-            Forgot password?
-          </button>
-        )}
       </form>
 
       {adminEntry && (
         <div className="gp-auth-alt">
           <span className="gp-auth-rule">Admin sign-in</span>
-          <button type="button" className="gp-btn gp-btn-ghost gp-btn-block" onClick={handleGoogleSignIn}>
+          <button type="button" className="gp-btn gp-btn-quiet gp-btn-block" onClick={handleGoogleSignIn}>
             <Chrome className="h-4 w-4" aria-hidden="true" />
             Continue with Google
           </button>

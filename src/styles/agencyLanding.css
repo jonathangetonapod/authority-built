@@ -282,14 +282,6 @@
 .gp-field input::placeholder { color: var(--faint); }
 .gp-field input[aria-invalid="true"] { border-color: #AE4229; }
 .gp-field-hint { font-size: 0.8rem; color: var(--muted); line-height: 1.5; font-weight: 400; }
-.gp-field-with-toggle { position: relative; display: block; }
-.gp-field-with-toggle input { padding-right: 2.9rem; }
-.gp-reveal {
-  position: absolute; right: 0; top: 0; height: 100%; width: 2.9rem;
-  display: flex; align-items: center; justify-content: center;
-  background: none; border: 0; cursor: pointer; color: var(--muted); border-radius: 10px;
-}
-.gp-reveal:hover { color: var(--ink); }
 .gp-form-actions { display: grid; gap: 0.9rem; justify-items: start; }
 .gp-form-note { font-size: 0.84rem; color: var(--muted); }
 .gp-form-error {
@@ -313,23 +305,53 @@
 .gp-foot-links a:hover { color: var(--accent-ink); }
 
 /* ---------- auth pages ---------- */
-/* Sign-in, register and the invitation share the marketing surface: arriving at
-   sign-in used to look like a different product. */
-.gp-auth-page { min-height: 100vh; display: flex; flex-direction: column; }
-.gp-auth-body { flex: 1; display: flex; align-items: center; padding-block: clamp(2rem, 6vw, 4rem); }
-.gp-auth-card {
-  width: 100%; max-width: 34rem; margin: 0 auto;
-  border: 1px solid var(--line); background: var(--card); border-radius: 20px;
-  padding: clamp(1.5rem, 4vw, 2.4rem);
-  box-shadow: 0 24px 60px -44px rgba(14, 21, 25, 0.45);
+/*
+ * Split screen: the form on the paper ground, the workspace on the dark panel.
+ * The panel is decoration and context, so it is what gives way on a narrow
+ * screen — never the form.
+ */
+.gp-auth-split {
+  min-height: 100vh;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
-.gp-auth-narrow { max-width: 30rem; }
-.gp-auth-card h1 { font-size: clamp(1.7rem, 3vw, 2.1rem); }
-.gp-auth-standfirst { margin-top: 0.8rem; color: var(--muted); font-size: 0.98rem; }
-.gp-auth-card .gp-form { margin-top: 1.6rem; }
+.gp-auth-col {
+  display: flex; flex-direction: column;
+  padding: clamp(1.5rem, 3vw, 2.5rem) clamp(1.5rem, 5vw, 4.5rem);
+}
+.gp-auth-main { margin: auto 0; align-self: center; width: 100%; max-width: 24.5rem; padding-block: 3rem; }
+.gp-auth-narrow { max-width: 22rem; }
+.gp-auth-main h1 { font-size: clamp(1.9rem, 3vw, 2.4rem); line-height: 1.08; letter-spacing: -0.035em; }
+.gp-auth-standfirst { margin-top: 0.7rem; color: var(--muted); font-size: 0.98rem; }
+.gp-auth-main .gp-form { margin-top: 2rem; gap: 1rem; }
+.gp-auth-copyright { font-size: 0.78rem; color: var(--faint); }
+
+/* The row that carries the field's label and its escape hatch. The forgot-password
+   control sits beside the label, never inside it: a button inside a <label>
+   becomes part of the field's accessible name and changes as it is pressed. */
+.gp-field-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+.gp-field-head label { font-size: 0.82rem; color: var(--muted); font-weight: 500; }
+.gp-auth-link {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font-family: inherit; font-size: 0.78rem; font-weight: 500; color: var(--accent-ink);
+}
+.gp-auth-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.gp-auth-link[disabled] { opacity: 0.5; cursor: default; }
+
+/* Words, not an icon: at this size a glyph is a guess and "Show" is not. */
+.gp-reveal {
+  position: absolute; right: 0; top: 0; height: 100%; width: 2.9rem;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: 0; cursor: pointer;
+  font-family: inherit; font-size: 0.78rem; font-weight: 500; color: var(--muted);
+  border-radius: 10px;
+}
+.gp-reveal:hover { color: var(--ink); }
+.gp-field-with-toggle { position: relative; display: block; }
+.gp-field-with-toggle input { padding-right: 2.9rem; }
+
 .gp-auth-status {
-  margin-top: 1.4rem; padding: 0.75rem 0.9rem; font-size: 0.88rem; border-radius: 10px;
-  background: #FBF2DF; border: 1px solid #E0C68A; color: #4A3B21;
+  margin: 0; padding: 0.6rem 0.8rem; font-size: 0.84rem; border-radius: 10px;
+  background: #FDF6E9; border: 1px solid #E0C68A; color: #6B4415;
 }
 .gp-auth-reason { margin-top: 1.2rem; color: var(--ink); }
 .gp-auth-note { margin-top: 0.9rem; color: var(--muted); font-size: 0.86rem; }
@@ -341,19 +363,49 @@
   text-transform: uppercase; color: var(--faint);
 }
 .gp-auth-rule::before, .gp-auth-rule::after { content: ""; flex: 1; height: 1px; background: var(--line); }
-.gp-auth-link {
-  background: none; border: 0; padding: 0; cursor: pointer; justify-self: start;
-  font-family: inherit; font-size: 0.88rem; color: var(--muted);
-  text-decoration: underline; text-underline-offset: 3px;
-}
-.gp-auth-link:hover { color: var(--ink); }
-.gp-auth-link[disabled] { opacity: 0.5; cursor: default; }
 .gp-auth-foot {
-  margin-top: 1.8rem; padding-top: 1.3rem; border-top: 1px solid var(--line);
+  margin-top: 1.8rem; padding-top: 1.4rem; border-top: 1px solid var(--line);
   font-size: 0.88rem; color: var(--muted);
 }
-.gp-auth-foot a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
-.gp-auth-foot a:hover { color: var(--accent-ink); }
+.gp-auth-foot a { color: var(--accent-ink); font-weight: 500; text-decoration: none; }
+.gp-auth-foot a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+.gp-auth-aside {
+  position: relative; overflow: hidden;
+  background: var(--band); color: var(--band-fg);
+  display: flex; flex-direction: column; justify-content: center;
+  padding: clamp(2rem, 5vw, 4rem);
+}
+.gp-auth-glow {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(circle at 75% 20%, rgba(224, 163, 62, 0.14), transparent 45%),
+    radial-gradient(circle at 20% 85%, rgba(224, 163, 62, 0.07), transparent 40%);
+}
+.gp-auth-aside-in { position: relative; max-width: 34rem; }
+.gp-eyebrow-onband { color: var(--gold); }
+.gp-auth-aside h2 {
+  margin-top: 0.8rem; color: #FBFAF8; max-width: 18ch;
+  font-size: clamp(1.5rem, 2.6vw, 2rem); line-height: 1.15;
+}
+.gp-frame-dark {
+  margin-top: 2rem; border-radius: 16px; border-color: var(--band-line); background: #131E24;
+  box-shadow: 0 30px 70px -40px rgba(0, 0, 0, 0.8);
+}
+.gp-frame-dark .gp-chrome { border-bottom-color: var(--band-line); background: transparent; }
+.gp-frame-dark .gp-chrome b { background: var(--band-line); }
+.gp-frame-dark .gp-chrome span { color: #93A5AC; }
+.gp-frame-dark .gp-shot { background: var(--band); }
+.gp-frame-dark .gp-shot-empty { color: #93A5AC; background: none; }
+
+/* The panel is context, not content. Below this it goes and the form gets the
+   whole screen. */
+@media (max-width: 900px) {
+  .gp-auth-split { grid-template-columns: 1fr; }
+  .gp-auth-aside { display: none; }
+  .gp-auth-main { margin-inline: auto; }
+}
+
 .gp-auth-loading { min-height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--muted); }
 
 /* ---------- motion ---------- */

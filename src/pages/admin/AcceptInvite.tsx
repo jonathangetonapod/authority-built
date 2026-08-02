@@ -146,7 +146,7 @@ const AcceptInvite = () => {
       standfirst={`Join ${workspace?.name || 'your workspace'} as ${membership.role}, using ${user.email}.`}
       footer={<>Wrong account? <Link to="/login">Sign in as someone else</Link></>}
     >
-      <form className="gp-form gp-form-tight" onSubmit={acceptInvite}>
+      <form className="gp-form" onSubmit={acceptInvite}>
         <div className="gp-field">
           <label htmlFor="invite-name">Full name</label>
           <input

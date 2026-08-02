@@ -92,7 +92,7 @@ const ResetPassword = () => {
       standfirst={`Resetting the password for ${user.email}.`}
       footer={<>Remembered it? <Link to="/login">Back to sign in</Link></>}
     >
-      <form className="gp-form gp-form-tight" onSubmit={handleSubmit}>
+      <form className="gp-form" onSubmit={handleSubmit}>
         <div className="gp-field">
           <label htmlFor="new-password">New password</label>
           <div className="gp-field-with-toggle">

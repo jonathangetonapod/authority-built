@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
 import PageSEO from '@/components/seo/PageSEO'
+import { Chrome, Shot } from '@/components/landing/Shot'
 import '@/styles/agencyLanding.css'
 
 interface AuthShellProps {
@@ -18,12 +19,16 @@ interface AuthShellProps {
 }
 
 /**
- * The frame both auth pages sit in.
+ * The frame every auth page sits in.
  *
- * Signing in used to drop you onto a plain card with none of the identity of
- * the page you came from — a different product, as far as the eye is concerned.
- * This is the landing page's band, mark and type, so the whole way in reads as
- * one thing. It carries no auth logic of its own; the pages own that.
+ * Split screen: the form on the paper ground the marketing page uses, and a
+ * dark panel showing the workspace you are signing in to. Signing in used to
+ * drop you onto a plain card with none of the identity of the page you came
+ * from — a different product, as far as the eye is concerned. The panel is
+ * decorative and drops away below the breakpoint, so the form is never the
+ * thing that gets squeezed.
+ *
+ * It carries no auth logic of its own; the pages own that.
  */
 export const AuthShell = ({
   title,
@@ -35,7 +40,7 @@ export const AuthShell = ({
   footer,
   tone = 'form',
 }: AuthShellProps) => (
-  <div className="gp-page gp-auth-page">
+  <div className="gp-page gp-auth-split">
     <PageSEO
       title={title}
       description={description}
@@ -44,21 +49,38 @@ export const AuthShell = ({
       // phisher's search result. Keep it out of the index.
       noindex
     />
-    <header className="gp-band">
-      <div className="gp-wrap gp-masthead">
-        <Link className="gp-mark" to="/">GET ON A <b>POD</b></Link>
-      </div>
-    </header>
 
-    <div className="gp-band gp-auth-body">
-      <div className="gp-wrap">
-        <div className={tone === 'notice' ? 'gp-auth-card gp-auth-narrow' : 'gp-auth-card'}>
-          <h1>{heading}</h1>
-          {standfirst && <p className="gp-auth-standfirst">{standfirst}</p>}
-          {children}
-          <div className="gp-auth-foot">{footer}</div>
+    <div className="gp-auth-col">
+      <Link className="gp-mark" to="/">
+        <span className="gp-mark-dot" aria-hidden="true"><i /></span>
+        Get On A Pod
+      </Link>
+
+      <main className={tone === 'notice' ? 'gp-auth-main gp-auth-narrow' : 'gp-auth-main'}>
+        <h1>{heading}</h1>
+        {standfirst && <p className="gp-auth-standfirst">{standfirst}</p>}
+        {children}
+        <p className="gp-auth-foot">{footer}</p>
+      </main>
+
+      <p className="gp-auth-copyright">© 2026 Authority Built</p>
+    </div>
+
+    <aside className="gp-auth-aside">
+      <div className="gp-auth-glow" aria-hidden="true" />
+      <div className="gp-auth-aside-in">
+        <p className="gp-eyebrow gp-eyebrow-onband">Your workspace</p>
+        <h2>Everything you sent, everyone who replied, every show booked.</h2>
+        <div className="gp-frame gp-frame-dark">
+          <Chrome url="podcasts.yourbrand.com" />
+          <Shot
+            src="/shots/hero.png"
+            alt="The workspace: a client's shortlist of podcasts alongside their outreach status."
+            placeholder="shots/hero.png — main workspace"
+            ratio="16 / 10"
+          />
         </div>
       </div>
-    </div>
+    </aside>
   </div>
 )

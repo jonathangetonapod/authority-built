@@ -145,7 +145,7 @@ const ChangeInitialPassword = () => {
       standfirst="Choose a private password before entering your workspace. You will sign in again after this change."
       footer={<>Wrong account? <Link to="/login">Sign in as someone else</Link></>}
     >
-      <form className="gp-form gp-form-tight" onSubmit={submit}>
+      <form className="gp-form" onSubmit={submit}>
         <div className="gp-field">
           <label htmlFor="new-password">New password</label>
           <div className="gp-field-with-toggle">
