@@ -24,7 +24,7 @@ export interface ProviderDomain {
 }
 
 export interface ProviderProgress {
-  status: 'active' | 'provisioning' | 'awaiting_dns'
+  status: 'active' | 'provisioning' | 'awaiting_dns' | 'failed'
   error: string | null
 }
 
@@ -198,6 +198,19 @@ export async function cloudflareHostnameProgress(hostnameId: string): Promise<Pr
   const error = firstMessage(ssl.validation_errors)
     ?? firstMessage(result.verification_errors)
     ?? null
+
+  // Failed is reserved for what waiting cannot fix. A hostname that has moved
+  // away or been deleted is not slow — the record now points somewhere else,
+  // and reporting that as "waiting for DNS" leaves an operator watching a row
+  // that will never change. Every pending state stays waiting, because
+  // Cloudflare reports transient validation errors during normal issuance.
+  if (result.status === 'moved' || result.status === 'deleted' || ssl.status === 'deleted') {
+    return {
+      status: 'failed',
+      error: error ?? 'The DNS record no longer points here, so this hostname has been released',
+    }
+  }
+
   const ownershipVerified = result.status === 'active'
   return {
     status: ownershipVerified ? 'provisioning' : 'awaiting_dns',

@@ -173,10 +173,41 @@ assert.match(admin, /deleteProviderDomain\(providerOfRow\(domain\.provider\), do
 assert.match(admin, /const provider = providerForNewDomains\(\)/u)
 // The row records which provider took it, because that decides which API
 // refreshes and removes it for the rest of its life.
-assert.match(admin, /select\('id,workspace_id,hostname,status,provider,provider_domain_id'\)/u)
+assert.match(admin, /select\('id,workspace_id,hostname,status,provider,provider_domain_id,consecutive_failures,activated_at,first_activated_at'\)/u)
 assert.match(admin, /select\('id,workspace_id,hostname,provider,provider_domain_id'\)/u)
 // A rollback hands the domain back to whichever provider took it.
 assert.match(admin, /deleteProviderDomain\(provider, created\.id\)\.catch/u)
+
+// One bad answer is not a broken domain. The reading used to be written
+// straight onto the row, so a single non-active response stripped is_primary
+// and every client link generated before the next check carried the platform's
+// address instead of the agency's — with no human involved.
+const resilience = readFileSync(
+  'supabase/migrations/20260802010000_workspace_domain_check_resilience.sql',
+  'utf8',
+)
+assert.match(resilience, /ADD COLUMN IF NOT EXISTS consecutive_failures INTEGER NOT NULL DEFAULT 0/u)
+assert.match(resilience, /ADD COLUMN IF NOT EXISTS first_activated_at TIMESTAMPTZ/u)
+assert.match(resilience, /CHECK \(consecutive_failures >= 0\)/u)
+assert.match(admin, /const failures = reading === 'active' \? 0 : previousFailures \+ 1/u)
+assert.match(admin, /const heldOver = reading !== 'active' && domain\.status === 'active' && failures < 2/u)
+assert.match(admin, /const nextStatus = heldOver \? 'active' : reading/u)
+assert.match(admin, /consecutive_failures: failures,/u)
+// activated_at is kept rather than re-minted, or every check resets how long
+// the domain has been up; first_activated_at is never cleared, because
+// activated_at is pinned to the current status and cannot survive a dip.
+assert.match(admin, /activated_at: serving \? \(domain\.activated_at \?\? new Date\(\)\.toISOString\(\)\) : null/u)
+assert.match(admin, /first_activated_at: serving[\s\S]{0,180}: \(domain\.first_activated_at \?\? null\)/u)
+
+// 'failed' was in the vocabulary, the labels and the styling from the first
+// migration, and nothing ever set it — so a domain the provider had given up
+// on was indistinguishable from one still waiting. Reserved for what waiting
+// cannot fix: Railway says nothing at all while a certificate is merely slow,
+// and a Cloudflare hostname that has moved away is not coming back.
+assert.match(admin, /if \(providerMessage\) return \{ status: 'failed', error: providerMessage \}/u)
+assert.match(cloudflare, /result\.status === 'moved' \|\| result\.status === 'deleted'/u)
+assert.match(cloudflare, /status: 'failed'/u)
+assert.match(cloudflare, /'active' \| 'provisioning' \| 'awaiting_dns' \| 'failed'/u)
 
 // Losing the crown is auditable however it comes off — going dark, or losing
 // the promotion race while still serving.
@@ -270,7 +301,10 @@ assert.match(admin, /certificateErrorMessage/u)
 // already correct — and the provisioning state the UI already renders was
 // never once set.
 assert.match(admin, /const DNS_RECORD_PROPAGATED = 'DNS_RECORD_STATUS_PROPAGATED'/u)
-assert.match(admin, /status: 'active' \| 'provisioning' \| 'awaiting_dns'/u)
+// The shared shape both providers answer in, now including the state a
+// provider reaches when waiting will not help.
+assert.match(cloudflare, /status: 'active' \| 'provisioning' \| 'awaiting_dns' \| 'failed'/u)
+assert.match(admin, /\): Promise<ProviderProgress> \{/u)
 assert.match(admin, /const dnsPropagated = record\?\.status === DNS_RECORD_PROPAGATED/u)
 assert.match(admin, /status: dnsPropagated \? 'provisioning' : 'awaiting_dns'/u)
 assert.match(admin, /The DNS record is in place\. Waiting for the certificate to be issued/u)

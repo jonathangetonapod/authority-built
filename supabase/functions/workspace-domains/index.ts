@@ -212,7 +212,7 @@ async function deleteRailwayDomain(providerDomainId: string): Promise<void> {
  */
 async function railwayDomainProgress(
   providerDomainId: string,
-): Promise<{ status: 'active' | 'provisioning' | 'awaiting_dns'; error: string | null }> {
+): Promise<ProviderProgress> {
   const { projectId } = railwayTarget()
   const data = await railwayGraphql(
     `query CustomDomain($id: String!, $projectId: String!) {
@@ -238,13 +238,17 @@ async function railwayDomainProgress(
     : null
   const record = trafficRecord(status.dnsRecords)
   const dnsPropagated = record?.status === DNS_RECORD_PROPAGATED
+  // Railway says nothing at all while a certificate is merely slow — the
+  // hostname that stalled for three hours reported a null message throughout.
+  // So a message here is the provider naming something wrong, which waiting
+  // will not fix, rather than narrating progress.
+  if (providerMessage) return { status: 'failed', error: providerMessage }
   return {
     status: dnsPropagated ? 'provisioning' : 'awaiting_dns',
-    error: providerMessage
-      ?? (dnsPropagated
-        // Named as done so nobody is sent back to DNS to fix what is correct.
-        ? 'The DNS record is in place. Waiting for the certificate to be issued'
-        : 'The DNS record has not been created yet, or has not propagated'),
+    error: dnsPropagated
+      // Named as done so nobody is sent back to DNS to fix what is correct.
+      ? 'The DNS record is in place. Waiting for the certificate to be issued'
+      : 'The DNS record has not been created yet, or has not propagated',
   }
 }
 
@@ -407,7 +411,7 @@ serve(async (req) => {
       const domainId = requireUuid(body.domain_id, 'domain_id')
       const { data: domain, error: domainError } = await admin
         .from('workspace_domains')
-        .select('id,workspace_id,hostname,status,provider,provider_domain_id')
+        .select('id,workspace_id,hostname,status,provider,provider_domain_id,consecutive_failures,activated_at,first_activated_at')
         .eq('id', domainId)
         .maybeSingle()
       if (domainError) throw new HttpError(500, 'DOMAIN_REFRESH_FAILED', 'The domain could not be read')
@@ -418,10 +422,27 @@ serve(async (req) => {
         throw new HttpError(409, 'DOMAIN_DISABLED', 'That domain is disabled')
       }
 
-      const { status: nextStatus, error: servingError } = await providerDomainProgress(
+      const { status: reading, error: servingError } = await providerDomainProgress(
         providerOfRow(domain.provider),
         domain.provider_domain_id,
       )
+
+      /**
+       * One bad answer is not a broken domain.
+       *
+       * The reading used to be written straight onto the row, so a single
+       * non-active response — an API hiccup, a renewal window, a rate limit
+       * answered mid-check — stripped is_primary, and every client link
+       * generated before the next check carried the platform's address rather
+       * than the agency's. A live domain now needs the failure corroborated by
+       * a second consecutive reading before it is given up on, which at one
+       * check a minute costs a minute of staleness and buys not lying to an
+       * agency's clients about where their dashboards live.
+       */
+      const previousFailures = Number(domain.consecutive_failures ?? 0)
+      const failures = reading === 'active' ? 0 : previousFailures + 1
+      const heldOver = reading !== 'active' && domain.status === 'active' && failures < 2
+      const nextStatus = heldOver ? 'active' : reading
       const serving = nextStatus === 'active'
       // A workspace's first domain to come alive becomes the one links use.
       // Setting primary was a separate click that existed for exactly one
@@ -448,9 +469,19 @@ serve(async (req) => {
           status: nextStatus,
           // The constraint pairs these: active carries a date, everything else
           // carries none, so the row can never claim to serve without one.
-          activated_at: serving ? new Date().toISOString() : null,
+          // Kept rather than re-minted while it stays active, or every check
+          // would reset how long the domain has been up.
+          activated_at: serving ? (domain.activated_at ?? new Date().toISOString()) : null,
+          // Never cleared, because activated_at cannot survive a dip and
+          // "serving since" is a real question after one.
+          first_activated_at: serving
+            ? (domain.first_activated_at ?? domain.activated_at ?? new Date().toISOString())
+            : (domain.first_activated_at ?? null),
+          consecutive_failures: failures,
           last_checked_at: new Date().toISOString(),
-          last_error: serving ? null : servingError,
+          // A held-over domain is still serving, but the reason it might stop
+          // is worth keeping where support can see it.
+          last_error: reading === 'active' ? null : servingError,
           is_primary: primary,
         })
         .eq('id', domainId)
