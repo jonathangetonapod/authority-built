@@ -272,7 +272,7 @@ describe('ClientShortlistEditor', () => {
     renderEditor()
 
     expect((await screen.findAllByLabelText('Founder Stories was previously contacted')).length).toBeGreaterThan(0)
-    const writePitch = screen.getByRole('button', { name: 'Write Pitch for Founder Stories' })
+    const writePitch = screen.getByRole('button', { name: 'Write Re-pitch for Founder Stories' })
     expect(writePitch).toHaveTextContent('Write Re-pitch')
     fireEvent.click(writePitch)
 
@@ -292,7 +292,7 @@ describe('ClientShortlistEditor', () => {
     ))
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Write Pitch for Founder Stories' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Write Re-pitch for Founder Stories' }))
     expect(await screen.findByRole('checkbox', { name: 'I reviewed the prior relationship and still want to prepare this pitch' })).not.toBeChecked()
     expect(screen.getByRole('button', { name: 'Continue to research' })).toBeDisabled()
 
@@ -1409,7 +1409,7 @@ describe('ClientShortlistEditor', () => {
   })
 
   it('keeps the pitch design visible when campaign setup is not ready', async () => {
-    vi.mocked(getWorkspaceCampaign).mockResolvedValueOnce({
+    vi.mocked(getWorkspaceCampaign).mockResolvedValue({
       integration: {} as never,
       can_manage_campaigns: true,
       campaign: null,
@@ -1534,5 +1534,35 @@ describe('ClientShortlistEditor', () => {
       'podcast-one',
       { operator_notes: 'Strong fit for the launch.' },
     ))
+  })
+
+  // The row could not see the campaign, so a podcast already out with the host
+  // still offered "Write Pitch" — a button promising work the next screen
+  // opens locked and refuses.
+  it('offers to view, not write, a pitch already in active outreach', async () => {
+    vi.mocked(getWorkspaceCampaign).mockResolvedValue({
+      integration: {} as never,
+      can_manage_campaigns: true,
+      campaign: {
+        id: 'campaign-one',
+        name: 'Taylor Client Podcast Outreach',
+        instantly_campaign_id: '77777777-7777-4777-8777-777777777777',
+      } as never,
+      targets: [{
+        shortlist_podcast_id: '33333333-3333-4333-8333-333333333333',
+        status: 'in_outreach',
+        instantly_lead_id: 'lead-one',
+      }] as never,
+    })
+    renderEditor()
+
+    expect(await screen.findByRole('button', { name: 'View Pitch for Founder Stories' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Write Pitch for Founder Stories' })).not.toBeInTheDocument()
+  })
+
+  it('still offers to write when nothing has been sent', async () => {
+    renderEditor()
+
+    expect(await screen.findByRole('button', { name: 'Write Pitch for Founder Stories' })).toBeInTheDocument()
   })
 })

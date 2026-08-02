@@ -49,7 +49,9 @@ import {
 import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
+import { isTargetInActiveOutreach, pitchActionLabel } from '@/lib/campaignTargetState'
 import { safeExternalUrl } from '@/lib/externalUrl'
+import { getWorkspaceCampaign } from '@/services/workspaceCampaigns'
 import { cn } from '@/lib/utils'
 import {
   addClientShortlistPodcasts,
@@ -180,6 +182,30 @@ export function ClientShortlistEditor({
   const [isSavingNotes, setIsSavingNotes] = useState(false)
 
   const shortlistQueryKey = ['client-shortlist', workspaceId, clientId] as const
+  /**
+   * Which of these podcasts are already out with the host.
+   *
+   * The row could not see it, so a podcast in active outreach still offered
+   * "Write Pitch" — a button promising work the next screen opens locked and
+   * refuses. Same query key as the pitch dialog, so this shares its cache
+   * rather than fetching the campaign twice, and a failure leaves every label
+   * exactly as it was.
+   */
+  const campaignTargetsQuery = useQuery({
+    queryKey: ['client-campaign-preparation', workspaceId, clientId],
+    queryFn: () => getWorkspaceCampaign(workspaceId, clientId),
+    enabled: Boolean(workspaceId) && Boolean(clientId),
+    retry: false,
+    staleTime: 30_000,
+  })
+  const podcastsInActiveOutreach = useMemo(() => {
+    const ids = new Set<string>()
+    for (const target of campaignTargetsQuery.data?.targets ?? []) {
+      if (isTargetInActiveOutreach(target)) ids.add(target.shortlist_podcast_id)
+    }
+    return ids
+  }, [campaignTargetsQuery.data])
+
   const shortlistQuery = useQuery({
     queryKey: shortlistQueryKey,
     queryFn: () => getClientShortlist(workspaceId, clientId),
@@ -460,7 +486,12 @@ export function ClientShortlistEditor({
             <div className="rounded-xl border border-dashed p-8 text-center"><Search className="mx-auto h-8 w-8 text-muted-foreground/50" /><p className="mt-2 font-medium">No podcasts match this view</p><p className="text-sm text-muted-foreground">Try a different filter or add podcasts from the catalog.</p></div>
           ) : (
             <div className="divide-y rounded-xl border">
-              {visiblePage.map((podcast) => (
+              {visiblePage.map((podcast) => {
+                const pitchLabel = pitchActionLabel({
+                  inActiveOutreach: podcastsInActiveOutreach.has(podcast.id),
+                  previouslyContacted: Boolean(podcast.prior_outreach_at),
+                })
+                return (
                 <div key={podcast.podcast_id} className="flex flex-col gap-3 p-3 sm:p-4 lg:flex-row lg:items-center">
                   <button type="button" className="flex min-w-0 flex-1 items-start gap-3 text-left" onClick={() => openPodcastDetails(podcast)} aria-label={`View details for ${podcast.podcast_name}`}>
                     <PodcastArtwork podcast={podcast} />
@@ -478,12 +509,14 @@ export function ClientShortlistEditor({
                         type="button"
                         variant="outline"
                         size="sm"
-                        className={podcast.prior_outreach_at ? 'border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 hover:text-amber-950' : undefined}
-                        aria-label={`Write Pitch for ${podcast.podcast_name}`}
+                        className={pitchLabel === 'Write Re-pitch' ? 'border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 hover:text-amber-950' : undefined}
+                        aria-label={`${pitchLabel} for ${podcast.podcast_name}`}
                         onClick={() => setCampaignPrepPodcast(podcast)}
                       >
-                        <PenLine className={`mr-2 h-4 w-4 ${podcast.prior_outreach_at ? 'text-amber-700' : 'text-primary'}`} />
-                        {podcast.prior_outreach_at ? 'Write Re-pitch' : 'Write Pitch'}
+                        {pitchLabel === 'View Pitch'
+                          ? <Eye className="mr-2 h-4 w-4 text-sky-600" />
+                          : <PenLine className={`mr-2 h-4 w-4 ${pitchLabel === 'Write Re-pitch' ? 'text-amber-700' : 'text-primary'}`} />}
+                        {pitchLabel}
                       </Button>
                     )}
                     <PodcastExternalLink url={podcast.podcast_url} name={podcast.podcast_name} />
@@ -505,7 +538,8 @@ export function ClientShortlistEditor({
                     </DropdownMenu>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
           <div className="mt-4 flex flex-col gap-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">

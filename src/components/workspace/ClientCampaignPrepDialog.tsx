@@ -96,6 +96,7 @@ import {
   RESEARCH_PROMPT_DEFAULTS_BY_ID,
   type ResearchPromptId,
 } from '@/lib/researchPromptDefaults'
+import { isTargetInActiveOutreach } from '@/lib/campaignTargetState'
 import { researchPromptPhases, researchPromptStepNumbers } from '@/lib/researchPromptStages'
 
 interface ClientCampaignPrepDialogProps {
@@ -621,10 +622,9 @@ export function ClientCampaignPrepDialog({
   const canCustomizePrompts = viewerRole === 'owner' || viewerRole === 'platform_admin'
   const target = campaignQuery.data?.targets.find((item) => item.shortlist_podcast_id === podcast?.id) || null
   const previouslyContacted = Boolean(podcast?.prior_outreach_at || target?.prior_outreach_at)
-  const locked = Boolean(target && (
-    target.instantly_lead_id
-    || ['launching', 'in_outreach', 'replied', 'completed'].includes(target.status)
-  ))
+  // Shared with the shortlist row's button label, so what the row promises and
+  // what this screen allows are one judgement rather than two.
+  const locked = isTargetInActiveOutreach(target)
   const mappedCampaign = Boolean(campaign?.instantly_campaign_id)
   // The client's own campaign is always a target; the extra ones are whichever
   // links were created here rather than linked from Instantly.
