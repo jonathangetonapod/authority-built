@@ -1,4 +1,4 @@
-# Authority Built Database Architecture
+# Get On A Pod Database Architecture
 
 > **Invite-only MVP warning:** this is a historical schema survey. The six
 > `20260720*` migrations, SQL verifier, root README, and
@@ -7,7 +7,7 @@
 
 ## Overview
 
-Authority Built uses Supabase (PostgreSQL) as its primary database with a comprehensive system for managing podcast placements, client relationships, content creation, and sales operations. The database is designed around several core domains:
+Get On A Pod uses Supabase (PostgreSQL) as its primary database with a comprehensive system for managing podcast placements, client relationships, content creation, and sales operations. The database is designed around several core domains:
 
 - **Client Management & Portal**: Client accounts, authentication, and portal access
 - **Podcast Management**: Centralized podcast database with caching and AI analysis
@@ -761,7 +761,7 @@ The `podcasts` table serves as a **universal cache**:
 
 ## Conclusion
 
-The Authority Built database represents a sophisticated, feature-rich system designed to handle complex podcast placement operations at scale. The central podcast caching architecture is particularly well-designed, providing significant API cost savings while maintaining data consistency across clients.
+The Get On A Pod database represents a sophisticated, feature-rich system designed to handle complex podcast placement operations at scale. The central podcast caching architecture is particularly well-designed, providing significant API cost savings while maintaining data consistency across clients.
 
 The system successfully balances performance, functionality, and flexibility, though some areas need attention for production readiness, particularly around security and data normalization.
 

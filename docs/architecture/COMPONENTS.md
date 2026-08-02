@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document provides a comprehensive overview of all custom components in the Authority-Built application. The component structure is organized by function and follows established patterns for reusability, props handling, and integration with the broader application architecture.
+This document provides a comprehensive overview of all custom components in the Get On A Pod application. The component structure is organized by function and follows established patterns for reusability, props handling, and integration with the broader application architecture.
 
 ## Component Structure
 

@@ -1,4 +1,4 @@
-# CLAUDE.md — Get On A Pod (Authority Built)
+# CLAUDE.md — Get On A Pod
 
 ## 1. Project Overview
 
@@ -101,7 +101,9 @@ The legacy inline-CORS/`[Function Name]` logging style exists in ~50 older funct
 ## 6. Content and Copy Guidance
 
 - Tone: Professional, confident, results-oriented. Not salesy or hype-driven.
-- Brand name: "Get On A Pod" (product) / "Authority Built" (company)
+- Brand name: "Get On A Pod" — one name for the product and the company. It was
+  formerly "Authority Built" as the company; that name is retired and should not
+  reappear in copy, docs or comments.
 - Target audience: Entrepreneurs, founders, thought leaders seeking podcast guest appearances
 - Avoid: Overpromising, vague claims, exclamation marks in body copy
 - Billing/pricing is out of scope for the invite-only MVP — do not add pricing or checkout copy

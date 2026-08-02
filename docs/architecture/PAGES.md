@@ -1,15 +1,15 @@
-# Authority Built - Pages Architecture
+# Get On A Pod - Pages Architecture
 
 > **Invite-only MVP warning:** the root README is authoritative for current
 > routes. Billing/checkout and the AI Sales Director, admin videos, admin blog,
 > customers/orders/analytics, premium placements, and settings surfaces are
 > retired or redirected in this release.
 
-This document provides a comprehensive overview of all pages in the Authority Built application, their routes, functionality, data flows, and user access controls.
+This document provides a comprehensive overview of all pages in the Get On A Pod application, their routes, functionality, data flows, and user access controls.
 
 ## Application Overview
 
-Authority Built is a sophisticated podcast booking and client management platform that helps experts get booked on podcasts to build authority. The application has multiple user types and complex workflows spanning marketing, sales, client management, and service delivery.
+Get On A Pod is a sophisticated podcast booking and client management platform that helps experts get booked on podcasts to build authority. The application has multiple user types and complex workflows spanning marketing, sales, client management, and service delivery.
 
 ## Route Structure
 

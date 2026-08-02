@@ -632,4 +632,4 @@ src/
 
 **Last Updated**: March 2026  
 **Version**: 1.0.0  
-**License**: Proprietary - Authority Built
+**License**: Proprietary - Get On A Pod

@@ -1825,7 +1825,7 @@ function ProspectViewContent() {
       <footer className="border-t border-[#0d1b2a]/8 bg-white/40 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 text-center">
           <p className="text-xs sm:text-sm text-[#5d7188]">
-            Prepared by <span className="font-semibold text-[#0d1b2a]">{workspaceBrand?.brand_name || 'Authority Built'}</span>
+            Prepared by <span className="font-semibold text-[#0d1b2a]">{workspaceBrand?.brand_name || 'Get On A Pod'}</span>
           </p>
         </div>
       </footer>

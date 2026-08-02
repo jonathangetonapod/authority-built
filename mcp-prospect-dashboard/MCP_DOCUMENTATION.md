@@ -600,7 +600,7 @@ This MCP is part of the larger vridgekit project. To contribute:
 
 ## License
 
-Proprietary - Authority Built
+Proprietary - Get On A Pod
 
 ## Support
 

@@ -1,4 +1,4 @@
-# Authority Built API Quick Reference
+# Get On A Pod API Quick Reference
 
 > **Invite-only MVP warning:** this quick reference includes historical
 > endpoints. Billing/video/magic-link operations are retired and return HTTP

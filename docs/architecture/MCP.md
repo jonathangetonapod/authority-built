@@ -2,7 +2,7 @@
 
 ## Overview
 
-The MCP Prospect Dashboard module is a **Model Context Protocol (MCP) server** that provides AI-powered podcast-prospect matching capabilities. It serves as a bridge between Claude/AI assistants and the Authority Built prospect management system, enabling automated dashboard creation, podcast matching, and prospect onboarding workflows.
+The MCP Prospect Dashboard module is a **Model Context Protocol (MCP) server** that provides AI-powered podcast-prospect matching capabilities. It serves as a bridge between Claude/AI assistants and the Get On A Pod prospect management system, enabling automated dashboard creation, podcast matching, and prospect onboarding workflows.
 
 ## What the MCP Server Does
 

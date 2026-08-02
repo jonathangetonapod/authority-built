@@ -63,7 +63,7 @@ export const AuthShell = ({
         <p className="gp-auth-foot">{footer}</p>
       </main>
 
-      <p className="gp-auth-copyright">© 2026 Authority Built</p>
+      <p className="gp-auth-copyright">© 2026 Get On A Pod</p>
     </div>
 
     <aside className="gp-auth-aside">

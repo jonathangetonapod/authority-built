@@ -1,4 +1,4 @@
-# Authority Built API Documentation Index
+# Get On A Pod API Documentation Index
 
 > **Invite-only MVP note:** this index contains historical endpoint detail and
 > is not the deployment manifest. Billing, Stripe, HeyGen/video generation,
@@ -9,13 +9,13 @@
 > `docs/invite-only-edge-manifest.json`; any conflicting example below is
 > historical. No provider credential may be placed in a `VITE_` variable.
 
-Welcome to the comprehensive API documentation for **Authority Built** - a podcast placement platform that manages client bookings, outreach campaigns, and premium podcast opportunities.
+Welcome to the comprehensive API documentation for **Get On A Pod** - a podcast placement platform that manages client bookings, outreach campaigns, and premium podcast opportunities.
 
 ## 🚀 Quick Start Guide
 
 ### Authentication Methods
 
-Authority Built supports multiple authentication systems:
+Get On A Pod supports multiple authentication systems:
 
 1. **Admin Authentication** (Supabase Auth + Admin Table)
    - Google OAuth or email/password

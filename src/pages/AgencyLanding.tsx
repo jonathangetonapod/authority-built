@@ -297,7 +297,7 @@ const AgencyLanding = () => {
             <a href="mailto:jonathan@getonapod.com">jonathan@getonapod.com</a>
             <Link to="/privacy">Privacy</Link>
             <Link to="/terms">Terms</Link>
-            <span>© 2026 Authority Built</span>
+            <span>© 2026 Get On A Pod</span>
           </div>
         </div>
       </footer>

@@ -7,7 +7,7 @@
 
 ## Overview
 
-The Client Dashboard system in Authority Built provides a comprehensive portal for clients to manage their podcast booking journey. It consists of two main interfaces: a **Public Client Approval View** for reviewing podcast opportunities and a **Secure Client Portal** for managing bookings, viewing analytics, and accessing resources.
+The Client Dashboard system in Get On A Pod provides a comprehensive portal for clients to manage their podcast booking journey. It consists of two main interfaces: a **Public Client Approval View** for reviewing podcast opportunities and a **Secure Client Portal** for managing bookings, viewing analytics, and accessing resources.
 
 ## Table of Contents
 

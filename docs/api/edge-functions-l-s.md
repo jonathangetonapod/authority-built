@@ -5,7 +5,7 @@
 > retired (HTTP 410), and tenant-excluded functions; conflicting examples here
 > are not supported release behavior.
 
-This document provides comprehensive API documentation for all Supabase Edge Functions starting with L-S in the Authority Built platform.
+This document provides comprehensive API documentation for all Supabase Edge Functions starting with L-S in the Get On A Pod platform.
 
 ## Table of Contents
 
@@ -1213,4 +1213,4 @@ for (const podcast of approvedPodcasts) {
 }
 ```
 
-This documentation covers all Edge Functions starting with L-S, providing comprehensive information for developers integrating with the Authority Built platform.
+This documentation covers all Edge Functions starting with L-S, providing comprehensive information for developers integrating with the Get On A Pod platform.

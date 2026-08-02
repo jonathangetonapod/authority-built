@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Prospect Dashboard system is a comprehensive solution for engaging potential clients in Authority Built's podcast booking service. It creates personalized, no-login-required dashboards where prospects can view AI-curated podcast opportunities, see detailed fit analysis, and provide feedback that feeds directly into the sales process.
+The Prospect Dashboard system is a comprehensive solution for engaging potential clients in Get On A Pod's podcast booking service. It creates personalized, no-login-required dashboards where prospects can view AI-curated podcast opportunities, see detailed fit analysis, and provide feedback that feeds directly into the sales process.
 
 ## Core Components
 

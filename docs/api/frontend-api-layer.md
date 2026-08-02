@@ -7,7 +7,7 @@
 
 ## Overview
 
-The Authority Built frontend uses a structured API layer built on top of **Supabase** as the primary backend service. The architecture includes direct database operations, Supabase Edge Functions, external API integrations, and a React Query-based data fetching strategy.
+The Get On A Pod frontend uses a structured API layer built on top of **Supabase** as the primary backend service. The architecture includes direct database operations, Supabase Edge Functions, external API integrations, and a React Query-based data fetching strategy.
 
 ## Architecture Components
 
@@ -1606,7 +1606,7 @@ if (!data.success) {
 
 ## Summary
 
-The Authority Built frontend API layer provides a robust, type-safe interface to the Supabase backend with:
+The Get On A Pod frontend API layer provides a robust, type-safe interface to the Supabase backend with:
 
 - **Dual authentication systems** for admin and client access
 - **Comprehensive caching strategy** to optimize external API usage

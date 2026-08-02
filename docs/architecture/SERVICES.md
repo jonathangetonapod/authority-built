@@ -1,4 +1,4 @@
-# Authority Built - Architecture Documentation
+# Get On A Pod - Architecture Documentation
 
 > **Invite-only MVP status:** this document includes historical architecture.
 > Billing/Stripe, HeyGen/video generation, and client magic links are retired;
@@ -8,7 +8,7 @@
 
 ## Overview
 
-Authority Built is a comprehensive podcast booking and management platform built with React, TypeScript, Supabase, and various external integrations. This document provides a complete overview of all services, hooks, stores, contexts, utilities, and external API integrations.
+Get On A Pod is a comprehensive podcast booking and management platform built with React, TypeScript, Supabase, and various external integrations. This document provides a complete overview of all services, hooks, stores, contexts, utilities, and external API integrations.
 
 ## Architecture Summary
 
@@ -596,4 +596,4 @@ VITE_APP_URL=your_app_url
 
 ---
 
-This documentation provides a complete overview of the Authority Built architecture. Each service, hook, store, and context serves a specific purpose in creating a comprehensive podcast booking and management platform.
+This documentation provides a complete overview of the Get On A Pod architecture. Each service, hook, store, and context serves a specific purpose in creating a comprehensive podcast booking and management platform.

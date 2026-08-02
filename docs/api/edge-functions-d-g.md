@@ -5,7 +5,7 @@
 > retired (HTTP 410), and tenant-excluded functions; conflicting examples here
 > are not supported release behavior.
 
-This document provides comprehensive documentation for all Supabase Edge Functions with names starting with D-G in the Authority Built platform.
+This document provides comprehensive documentation for all Supabase Edge Functions with names starting with D-G in the Get On A Pod platform.
 
 ## Table of Contents
 
@@ -1220,7 +1220,7 @@ Retrieves blog posts with support for paginated listing, single post lookup by s
       "tags": ["podcast", "preparation"],
       "featured_image_url": "https://example.com/image.jpg",
       "featured_image_alt": "Podcast preparation guide",
-      "author_name": "Authority Built Team",
+      "author_name": "Get On A Pod Team",
       "published_at": "2024-01-15T10:30:00Z",
       "view_count": 150,
       "read_time_minutes": 8,
@@ -1252,7 +1252,7 @@ Retrieves blog posts with support for paginated listing, single post lookup by s
     "tags": ["podcast", "preparation"],
     "featured_image_url": "https://example.com/image.jpg",
     "featured_image_alt": "Podcast preparation guide",
-    "author_name": "Authority Built Team",
+    "author_name": "Get On A Pod Team",
     "status": "published",
     "published_at": "2024-01-15T10:30:00Z",
     "view_count": 151,

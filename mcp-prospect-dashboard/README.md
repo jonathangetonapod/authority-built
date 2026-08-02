@@ -343,4 +343,4 @@ The prospect dashboard at `/prospect/{slug}` shows:
 
 ## License
 
-Proprietary - Authority Built
+Proprietary - Get On A Pod

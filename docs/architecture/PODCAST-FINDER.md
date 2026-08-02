@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Podcast Finder is Authority-Built's comprehensive podcast discovery, compatibility scoring, and outreach system. It consists of two primary modes - AI Search Mode and Charts Mode - with sophisticated AI-powered matching and scoring capabilities.
+The Podcast Finder is Get On A Pod's comprehensive podcast discovery, compatibility scoring, and outreach system. It consists of two primary modes - AI Search Mode and Charts Mode - with sophisticated AI-powered matching and scoring capabilities.
 
 ## System Architecture
 
