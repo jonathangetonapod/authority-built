@@ -121,8 +121,9 @@ const ChangeInitialPassword = () => {
         path="/change-password"
         tone="notice"
         heading="Password setup unavailable."
-        standfirst=""
-        footer={<>Need a new invitation? <Link to="/register">Request access</Link></>}
+        footer={accountState === 'pending'
+          ? <>Your invitation is still open. <Link to="/accept-invite">Accept it</Link></>
+          : <>Need a new invitation? <Link to="/register">Request access</Link></>}
       >
         <p className="gp-auth-reason">{message}</p>
         <div className="gp-auth-actions">

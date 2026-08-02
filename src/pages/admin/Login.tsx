@@ -74,10 +74,18 @@ const Login = () => {
     try {
       await signInWithPassword(email.trim(), password)
     } catch (error) {
+      // Supabase tells these apart: "Invalid login credentials" for a wrong
+      // password OR an unknown address, but "Email not confirmed" — and others —
+      // only for an address that does exist. Routing those to a different
+      // sentence let anyone test whether someone has an account here. Every
+      // verdict the server reaches now gets one answer; only a request that
+      // never reached a server says something else, because that is about the
+      // connection and not about the account.
       const message = error instanceof Error ? error.message : ''
-      toast.error(message.includes('Invalid login credentials')
-        ? 'Invalid email or password.'
-        : 'Unable to sign in. Please try again.')
+      const neverReachedServer = /failed to fetch|networkerror|load failed/iu.test(message)
+      toast.error(neverReachedServer
+        ? 'Could not reach the server. Check your connection and try again.'
+        : 'Invalid email or password.')
     } finally {
       setIsSubmitting(false)
     }
@@ -119,7 +127,6 @@ const Login = () => {
         path="/login"
         tone="notice"
         heading="Access unavailable."
-        standfirst=""
         footer={<>Need a workspace? <Link to="/register">Request access</Link></>}
       >
         <p className="gp-auth-reason">
@@ -162,8 +169,8 @@ const Login = () => {
       )}
 
       <form className="gp-form gp-form-tight" onSubmit={handlePasswordSignIn}>
-        <label className="gp-field">
-          <span>Email</span>
+        <div className="gp-field">
+          <label htmlFor="email">Email</label>
           <input
             id="email"
             type="email"
@@ -172,10 +179,10 @@ const Login = () => {
             disabled={isSubmitting}
             onChange={(event) => setEmail(event.target.value)}
           />
-        </label>
+        </div>
 
-        <label className="gp-field">
-          <span>Password</span>
+        <div className="gp-field">
+          <label htmlFor="password">Password</label>
           <div className="gp-field-with-toggle">
             <input
               id="password"
@@ -194,7 +201,7 @@ const Login = () => {
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
           </div>
-        </label>
+        </div>
 
         <button type="submit" className="gp-btn gp-btn-primary gp-btn-block" disabled={isSubmitting}>
           {isSubmitting ? 'Signing in…' : 'Sign in'}

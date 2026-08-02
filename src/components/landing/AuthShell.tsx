@@ -9,11 +9,11 @@ interface AuthShellProps {
   description: string
   path: string
   heading: string
-  standfirst: string
+  standfirst?: string
   children: ReactNode
   /** The other door. Every auth page has exactly one. */
   footer: ReactNode
-  /** Signed-in-but-stuck states render narrower and without the standfirst. */
+  /** Signed-in-but-stuck states render in a narrower column. */
   tone?: 'form' | 'notice'
 }
 

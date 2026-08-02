@@ -40,7 +40,7 @@ describe('RequestAccess', () => {
     renderPage()
     fireEvent.change(screen.getByLabelText(/your name/iu), { target: { value: 'Dana Reyes' } })
     fireEvent.change(screen.getByLabelText(/work email/iu), { target: { value: 'dana@example.com' } })
-    fireEvent.click(screen.getByRole('button', { name: /request access/iu }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send request' }))
 
     await waitFor(() => expect(request).toHaveBeenCalledTimes(1))
     expect(await screen.findByText(/request received/iu)).toBeInTheDocument()

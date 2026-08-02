@@ -33,22 +33,41 @@ for (const forbidden of [
 
 // Shape validation before anything is written, and no field the form does not
 // send — otherwise an anonymous caller chooses its own columns.
-assert.match(fn, /requireOnlyKeys\(body, \[[^\]]*'email'[^\]]*'audience'[^\]]*\]\)/u)
-assert.match(fn, /requireEmail\(body\.email\)/u)
-assert.match(fn, /parseJsonObject\(req, 8_192\)/u)
-assert.match(fn, /AUDIENCES\.has\(audience\)/u)
+assert.match(code, /requireOnlyKeys\(body, \[[^\]]*'email'[^\]]*'audience'[^\]]*\]\)/u)
+assert.match(code, /requireEmail\(body\.email\)/u)
+assert.match(code, /parseJsonObject\(req, 8_192\)/u)
+assert.match(code, /AUDIENCES\.has\(audience\)/u)
 
-// Anyone can post, so the endpoint has to hold a limit itself.
-assert.match(fn, /MAX_PER_IP_PER_DAY = \d+/u)
-assert.match(fn, /source_ip_hash/u)
+// Anyone can post, so the endpoint has to hold a limit itself — and these
+// assertions have to fail if the enforcement is removed, not merely if the
+// constant is. Declaring a limit and never comparing it is the failure mode.
+assert.match(code, /MAX_PER_IP_PER_DAY = \d+/u)
+assert.match(code, /source_ip_hash/u)
+assert.match(code, /\.eq\('source_ip_hash', ipHash\)/u)
+assert.match(code, /\.gte\('created_at', since\)/u)
+assert.match(code, /count \?\? 0\) >= ceiling/u)
+assert.match(code, /new HttpError\(\s*429,\s*'TOO_MANY_REQUESTS'/u)
+
+// A caller who strips their headers must not thereby buy a bigger allowance.
+// This was briefly inverted: 5 per address, 20 for anyone unidentifiable.
+const perIp = Number(/MAX_PER_IP_PER_DAY = (\d+)/u.exec(code)?.[1])
+const unidentified = Number(/MAX_UNIDENTIFIED_PER_DAY = (\d+)/u.exec(code)?.[1])
+assert.ok(
+  Number.isFinite(perIp) && Number.isFinite(unidentified) && unidentified <= perIp,
+  `the unidentified bucket (${unidentified}) must be no larger than the per-address limit (${perIp})`,
+)
+
+// The only thing between a stranger's name and HTML in the admin's inbox.
+assert.match(code, /function escapeHtml/u)
+assert.doesNotMatch(code, /<td>\$\{(?!escapeHtml)/u)
 // The address is hashed with a secret that never leaves the function, so the
 // stored value cannot be turned back into an address by anyone reading the row.
-assert.match(fn, /SHA-256/u)
+assert.match(code, /SHA-256/u)
 assert.doesNotMatch(code, /source_ip:\s/u)
 
 // The reply says nothing about who else has asked. A form that answers
 // differently for a known email is an account-enumeration oracle.
-assert.match(fn, /jsonResponse\(req, METHODS, 200, \{ received: true \}\)/u)
+assert.match(code, /jsonResponse\(req, METHODS, 200, \{ received: true \}\)/u)
 assert.doesNotMatch(code, /already (requested|applied|exists)/iu)
 
 // Notification is best effort: the request is saved first, and a mail provider
@@ -113,13 +132,29 @@ for (const block of withoutComments.split('}')) {
 }
 assert.deepEqual(escaped, [], `agencyLanding.css selectors must start with .gp-; these escape the page: ${escaped.join(' | ')}`)
 
-// display:grid on the panel outranks preflight's [hidden] rule, which loads
-// first — without an explicit reset all four audience panels render at once.
-assert.match(css, /\.gp-panel-out\[hidden\] \{ display: none; \}/u)
-// The class the strip effect writes and the class the stylesheet paints have to
-// be the same one, or the interval runs forever against nothing.
+// The page's screenshots are files dropped into public/shots. The markup must
+// name each one and carry an alt, so a missing file degrades to a placeholder
+// and a present one is described.
 const landing = readFileSync('src/pages/AgencyLanding.tsx', 'utf8')
-const stripClass = /'(gp-on)'/u.exec(landing)?.[1]
-assert.ok(stripClass && css.includes(`.gp-stage.${stripClass}`), 'the signal strip class must exist in the stylesheet')
+const shotSources = [...landing.matchAll(/src: '(\/shots\/[a-z]+\.png)'/gu)].map((match) => match[1])
+assert.ok(shotSources.length >= 5, 'the tour should name every screenshot it shows')
+assert.match(landing, /onError=\{\(\) => setMissing\(true\)\}/u)
+assert.match(css, /\.gp-shot-empty \{/u)
+
+// One vocabulary for "what you run", across the form, the function and the
+// column constraint. They are three hand-written lists; if the form ever sends
+// a value the other two do not know, the insert violates the check constraint,
+// the caller gets a 500, and the request is lost.
+const form = readFileSync('src/components/landing/AccessRequestForm.tsx', 'utf8')
+const formValues = [...form.matchAll(/value: '([a-z_]+)'/gu)].map((match) => match[1])
+const edgeValues = (/const AUDIENCES = new Set\(\[([^\]]+)\]\)/u.exec(code)?.[1] ?? '')
+  .split(',').map((part) => part.trim().replace(/'/gu, '')).filter(Boolean)
+const dbValues = (/check \(audience in \(([^)]+)\)\)/u.exec(sql)?.[1] ?? '')
+  .split(',').map((part) => part.trim().replace(/'/gu, '')).filter(Boolean)
+assert.ok(formValues.length >= 4, 'the form must offer the audiences it claims to')
+for (const value of formValues) {
+  assert.ok(edgeValues.includes(value), `the function rejects an audience the form offers: ${value}`)
+  assert.ok(dbValues.includes(value), `the column rejects an audience the form offers: ${value}`)
+}
 
 console.log('access request edge contract OK')

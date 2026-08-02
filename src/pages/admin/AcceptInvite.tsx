@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Loader2 } from 'lucide-react'
+import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -20,6 +20,7 @@ const AcceptInvite = () => {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   useEffect(() => {
     const suggestedName = user?.user_metadata?.full_name || membership?.full_name || ''
@@ -102,7 +103,6 @@ const AcceptInvite = () => {
         path="/accept-invite"
         tone="notice"
         heading="Open your invitation."
-        standfirst=""
         footer={<>No invitation yet? <Link to="/register">Request access</Link></>}
       >
         <p className="gp-auth-reason">
@@ -123,7 +123,6 @@ const AcceptInvite = () => {
         path="/accept-invite"
         tone="notice"
         heading="Invitation unavailable."
-        standfirst=""
         footer={<>Need a new one? <Link to="/register">Request access</Link></>}
       >
         <p className="gp-auth-reason">
@@ -154,20 +153,34 @@ const AcceptInvite = () => {
             id="invite-name"
             autoComplete="name"
             value={fullName}
+            disabled={submitting}
             onChange={(event) => setFullName(event.target.value)}
           />
         </div>
 
         <div className="gp-field">
           <label htmlFor="invite-password">Create password</label>
-          <input
-            id="invite-password"
-            type="password"
-            autoComplete="new-password"
-            aria-describedby="invite-password-requirements"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
+          {/* This is the first password the account ever has, and a typo is
+              only caught after the round trip. Let people see what they typed. */}
+          <div className="gp-field-with-toggle">
+            <input
+              id="invite-password"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="new-password"
+              aria-describedby="invite-password-requirements"
+              value={password}
+              disabled={submitting}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+            <button
+              type="button"
+              className="gp-reveal"
+              onClick={() => setShowPassword((value) => !value)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
           {/* The rules are stated before the attempt, not returned as an error
               after one. */}
           <span id="invite-password-requirements" className="gp-field-hint">
@@ -179,9 +192,10 @@ const AcceptInvite = () => {
           <label htmlFor="invite-password-confirm">Confirm password</label>
           <input
             id="invite-password-confirm"
-            type="password"
+            type={showPassword ? 'text' : 'password'}
             autoComplete="new-password"
             value={confirmPassword}
+            disabled={submitting}
             onChange={(event) => setConfirmPassword(event.target.value)}
           />
         </div>

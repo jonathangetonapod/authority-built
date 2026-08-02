@@ -23,11 +23,13 @@ const AUDIENCES = new Set(['agency', 'pr', 'freelancer', 'starting_out', 'other'
 // still send a handful of colleagues.
 const MAX_PER_IP_PER_DAY = 5
 
-// Requests that arrive with no address header at all share one bucket. In
-// practice the edge always sets one, so this is the deliberately small
-// allowance for anything that reaches the function another way.
+// Requests arriving with no address header at all share one bucket. In practice
+// the edge always sets one, so this is anything that reached the function
+// another way — and it has to be stricter than the identified limit, or
+// stripping your headers is a way to buy a bigger allowance. It was briefly 20,
+// which is exactly the mistake this comment is describing.
 const UNIDENTIFIED_BUCKET = 'unidentified'
-const MAX_UNIDENTIFIED_PER_DAY = 20
+const MAX_UNIDENTIFIED_PER_DAY = 3
 
 /**
  * Take an access request from the public landing page.

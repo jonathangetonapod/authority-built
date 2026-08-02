@@ -1,504 +1,363 @@
 /*
- * Landing page for the agency product. Kept as a stylesheet rather than
- * translated into utilities: the design is a token system with two themes and
- * a signature canvas, and it survives review better in one place than spread
- * across a thousand class attributes.
+ * The public marketing and auth surface.
  *
  * Every selector is scoped under .gp-page — including the element ones. This
  * file is bundled into the app's single stylesheet and loaded on every route,
  * so a bare `section` or `h1` rule here is not a landing-page rule, it is an
  * app-wide one, and it wins against Tailwind's preflight because it loads
  * later. Nothing below may start with an element, a pseudo-element, or an
- * attribute selector.
+ * attribute selector. A contract script enforces this.
  */
 
 .gp-page {
+  --paper: #FBFAF8;
+  --card: #FFFFFF;
+  --tint: #FCFBF9;
   --ink: #0E1519;
-  --slate: #18232A;
-  --paper: #F1F3F2;
-  --rule: #C9D1CE;
-  --signal: #E0A33E;
 
-  --bg: var(--paper);
-  --bg-raise: #FFFFFF;
-  --fg: var(--ink);
-  --fg-soft: #55676F;
   /*
-   * The three tokens below are the accent and the two semantic colours as
-   * *text*. They are per-theme, not constant: #E0A33E reads at 2.2:1 on white
-   * and 8.3:1 on the near-black band, so one value cannot serve both grounds.
-   * --signal stays constant because it is only ever a fill or a border.
+   * Three of the source design's greys were below AA as body text — #8E9AA1 at
+   * 2.76:1, #7A8790 at 3.53:1 and #A8760F at 3.82:1 on this ground. Nudged to
+   * the nearest passing value; the difference is invisible next to each other,
+   * and the difference in law is not.
    */
-  --signal-ink: #8F6310;
-  --verified: #2F7A70;
-  --alert: #AE4229;
-  --fg-faint: #5E717A;
+  --muted: #5C6B72;
+  --faint: #66757D;
+  --accent-ink: #8A6210;
 
-  --line: var(--rule);
-  --band: var(--ink);
+  --gold: #E0A33E;
+  --gold-lift: #EEB55C;
+  --gold-on: #191202;
+
+  --line: #EBE8E2;
+  --line-strong: #E4E2DC;
+  --line-hover: #C9C6BE;
+
+  --band: #0E1519;
   --band-fg: #E7EDEA;
   --band-soft: #93A5AC;
-  --band-line: #2A3941;
-  --band-alert: #FFD9D0;
+  --band-line: #22323A;
 
-  --display: "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --data: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --measure: 62ch;
-  --gutter: clamp(1.25rem, 4vw, 3.5rem);
+  --wrap: 1180px;
+  --gutter: clamp(1.25rem, 4vw, 2.5rem);
 
-  color-scheme: light;
-}
-
-/*
- * One list of dark-theme tokens, applied from three places: the OS preference,
- * the page's own override, and the app's theme attribute. Keeping them
- * identical is what stops the toggle and the OS disagreeing.
- */
-@media (prefers-color-scheme: dark) {
-  .gp-page {
-    --bg: var(--ink); --bg-raise: var(--slate);
-    --fg: #E7EDEA; --fg-soft: #9FB0B7; --fg-faint: #8FA0A7;
-    --signal-ink: var(--signal); --verified: #5BB5A8; --alert: #E58A72;
-    --line: #2A3941; --band: #060B0E; --band-line: #223037;
-    color-scheme: dark;
-  }
-}
-.gp-page[data-gp-theme="dark"], :root[data-theme="dark"] .gp-page {
-  --bg: var(--ink); --bg-raise: var(--slate);
-  --fg: #E7EDEA; --fg-soft: #9FB0B7; --fg-faint: #8FA0A7;
-  --signal-ink: var(--signal); --verified: #5BB5A8; --alert: #E58A72;
-  --line: #2A3941; --band: #060B0E; --band-line: #223037;
-  color-scheme: dark;
-}
-.gp-page[data-gp-theme="light"], :root[data-theme="light"] .gp-page {
-  --bg: var(--paper); --bg-raise: #FFFFFF;
-  --fg: var(--ink); --fg-soft: #55676F; --fg-faint: #5E717A;
-  --signal-ink: #8F6310; --verified: #2F7A70; --alert: #AE4229;
-  --line: var(--rule); --band: var(--ink); --band-line: #2A3941;
-  color-scheme: light;
-}
-
-.gp-page {
-  background: var(--bg); color: var(--fg);
-  font-family: var(--body); font-size: 17px; line-height: 1.6;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 17px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  color-scheme: light;
 }
+
+.gp-page ::selection { background: #F3D9A6; color: var(--gold-on); }
+
+.gp-page h1, .gp-page h2, .gp-page h3 {
+  margin: 0; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1; text-wrap: balance;
+}
+.gp-page h1 { font-size: clamp(2.4rem, 5.2vw, 4.2rem); line-height: 1.03; letter-spacing: -0.038em; }
+.gp-page h2 { font-size: clamp(1.9rem, 3.4vw, 2.5rem); }
+.gp-page h3 { font-size: 1.05rem; letter-spacing: -0.015em; }
+.gp-page p { margin: 0; }
+
+.gp-wrap { max-width: var(--wrap); margin: 0 auto; padding-inline: var(--gutter); }
+.gp-page section { padding-block: clamp(3rem, 6vw, 5rem); }
 
 /* A keyboard user lands on a nine-section page; the first stop is past it. */
 .gp-skip {
-  position: absolute; left: -9999px; top: 0; z-index: 20;
-  font-family: var(--data); font-size: 0.78rem; letter-spacing: 0.08em;
-  text-transform: uppercase; text-decoration: none;
-  background: var(--signal); color: #191202; padding: 0.85rem 1.3rem;
+  position: fixed; left: -9999px; top: 0; z-index: 60;
+  font-family: var(--mono); font-size: 0.78rem; text-decoration: none;
+  background: var(--ink); color: var(--paper); padding: 0.85rem 1.3rem; border-radius: 0 0 12px 0;
 }
 .gp-skip:focus { left: 0; }
 
-.gp-wrap { max-width: 1120px; margin: 0 auto; padding-inline: var(--gutter); }
-
-.gp-page h1, .gp-page h2, .gp-page h3 {
-  font-family: var(--display); font-weight: 800;
-  letter-spacing: -0.032em; text-wrap: balance; margin: 0; line-height: 1.05;
-}
-.gp-page h1 { font-size: clamp(2.5rem, 6vw, 4.4rem); }
-.gp-page h2 { font-size: clamp(1.85rem, 3.6vw, 2.8rem); }
-.gp-page h3 { font-size: 1.05rem; letter-spacing: -0.012em; line-height: 1.3; }
-.gp-page p { margin: 0; max-width: var(--measure); }
-.gp-page ::selection { background: var(--signal); color: #191202; }
-
-.gp-label {
-  font-family: var(--data); font-size: 0.7rem; letter-spacing: 0.14em;
-  text-transform: uppercase; color: var(--fg-faint);
-}
-
-.gp-band { background: var(--band); color: var(--band-fg); }
+/* ---------- masthead ---------- */
 .gp-masthead {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 1rem; padding-block: 1.1rem; border-bottom: 1px solid var(--band-line);
+  position: sticky; top: 0; z-index: 30;
+  backdrop-filter: blur(14px); background: rgba(251, 250, 248, 0.82);
+  border-bottom: 1px solid var(--line);
 }
-.gp-mark { font-family: var(--data); font-size: 0.82rem; letter-spacing: 0.08em; text-transform: uppercase; }
-.gp-mark b { color: var(--signal); font-weight: 700; }
-/* Sign-in sits in the masthead: the only auth route that exists today. */
-.gp-masthead-actions { display: flex; align-items: center; gap: 1rem; }
+.gp-masthead-in { height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.gp-mark {
+  display: inline-flex; align-items: center; gap: 0.6rem;
+  font-weight: 600; letter-spacing: -0.02em; font-size: 0.98rem;
+  color: var(--ink); text-decoration: none;
+}
+.gp-mark-dot {
+  width: 26px; height: 26px; border-radius: 8px; background: var(--ink);
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.gp-mark-dot i { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); display: block; }
+.gp-nav { display: flex; align-items: center; gap: 1.9rem; font-size: 0.92rem; }
+.gp-nav a { color: var(--muted); text-decoration: none; }
+.gp-nav a:hover { color: var(--ink); }
+.gp-masthead-actions { display: flex; align-items: center; gap: 0.75rem; }
+@media (max-width: 860px) { .gp-nav { display: none; } }
 
-/* ---------- hero: one claim, one button ---------- */
-.gp-hero-shell { position: relative; overflow: hidden; }
-/* The signature: thousands of shows, a handful chosen. Behind the type at low
-   contrast — it is the subject of the page, not an ornament on it. */
-.gp-page .gp-field-canvas {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  display: block; pointer-events: none;
-}
-.gp-hero { position: relative; z-index: 1; padding-block: clamp(4.5rem, 11vw, 8.5rem) clamp(2.8rem, 6vw, 4rem); }
-.gp-hero h1 { color: var(--band-fg); max-width: 17ch; }
-.gp-hero h1 em { font-style: normal; color: var(--signal); }
-.gp-hero .gp-deck {
-  margin-top: 1.5rem; color: var(--band-soft);
-  font-size: clamp(1.02rem, 1.6vw, 1.16rem); max-width: 54ch;
-}
-.gp-cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 1.1rem; margin-top: 2.1rem; }
+/* ---------- buttons ---------- */
 .gp-btn {
-  font-family: var(--data); font-size: 0.78rem; letter-spacing: 0.1em;
-  text-transform: uppercase; text-decoration: none; display: inline-block;
-  padding: 0.9rem 1.5rem; border: 1px solid transparent;
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  font-family: inherit; font-size: 0.95rem; font-weight: 600; text-decoration: none;
+  border: 1px solid transparent; border-radius: 999px; padding: 0.85rem 1.5rem;
+  cursor: pointer; transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
 }
-.gp-btn-primary { background: var(--signal); color: #191202; font-weight: 700; }
-.gp-btn-primary:hover { background: #F0B75A; }
-/* Deliberately quieter than the primary: two equal buttons split the decision. */
-.gp-quiet {
-  font-family: var(--data); font-size: 0.74rem; letter-spacing: 0.08em;
-  color: var(--band-soft); text-decoration: none; border-bottom: 1px solid var(--band-line);
-  padding-bottom: 2px;
+.gp-btn-primary { background: var(--gold); color: var(--gold-on); box-shadow: 0 6px 18px -8px rgba(224, 163, 62, 0.9); }
+.gp-btn-primary:hover { background: var(--gold-lift); transform: translateY(-1px); }
+.gp-btn-ink { background: var(--ink); color: var(--paper); font-size: 0.9rem; padding: 0.6rem 1.05rem; }
+.gp-btn-ink:hover { background: #1B2A32; transform: translateY(-1px); }
+.gp-btn-quiet {
+  background: var(--card); color: var(--ink); font-weight: 500;
+  border-color: var(--line-hover); padding: 0.85rem 1.4rem;
 }
-.gp-quiet:hover { color: var(--band-fg); }
-.gp-page a:focus-visible, .gp-page button:focus-visible {
-  outline: 2px solid var(--signal); outline-offset: 3px;
+.gp-btn-quiet:hover { border-color: #A9A69E; }
+.gp-btn-block { width: 100%; }
+.gp-btn[disabled] { opacity: 0.6; cursor: progress; transform: none; }
+.gp-signin { color: var(--muted); text-decoration: none; font-size: 0.92rem; padding: 0.5rem 0.4rem; }
+.gp-signin:hover { color: var(--ink); }
+
+/*
+ * One focus ring, visible on paper, on white cards, on gold buttons and on the
+ * dark band. Gold alone reads 2.0:1 on paper, so the ring is ink with an offset
+ * gap; on the band it flips to gold, which is 8.3:1 there.
+ */
+.gp-page a:focus-visible,
+.gp-page button:focus-visible,
+.gp-page summary:focus-visible,
+.gp-page input:focus-visible,
+.gp-page select:focus-visible,
+.gp-page textarea:focus-visible,
+.gp-page [tabindex]:focus-visible {
+  outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 6px;
+}
+.gp-band a:focus-visible, .gp-band button:focus-visible { outline-color: var(--gold); }
+
+/* ---------- hero ---------- */
+.gp-hero { padding-block: clamp(3.5rem, 8vw, 7rem) clamp(2.5rem, 5vw, 3.5rem); }
+.gp-hero-in {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(2rem, 5vw, 4rem); align-items: center;
+}
+.gp-hero h1 { max-width: 15ch; overflow-wrap: break-word; }
+.gp-deck { margin-top: 1.25rem; color: var(--muted); font-size: 1.12rem; max-width: 44ch; }
+.gp-cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.8rem; margin-top: 2rem; }
+.gp-who { margin-top: 1.6rem; font-size: 0.9rem; color: var(--faint); max-width: 44ch; }
+@media (max-width: 900px) { .gp-hero-in { grid-template-columns: 1fr; } }
+
+/* ---------- the browser frames the screenshots sit in ---------- */
+.gp-frame {
+  border: 1px solid var(--line-strong); background: var(--card); border-radius: 18px;
+  overflow: hidden; box-shadow: 0 24px 60px -34px rgba(14, 21, 25, 0.4), 0 2px 6px rgba(14, 21, 25, 0.04);
+}
+.gp-frame-lg { border-radius: 20px; box-shadow: 0 26px 64px -40px rgba(14, 21, 25, 0.45); }
+.gp-chrome {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem;
+  border-bottom: 1px solid #EFEDE8; background: var(--tint); min-width: 0;
+}
+.gp-chrome b { width: 9px; height: 9px; border-radius: 50%; background: var(--line-strong); display: block; flex-shrink: 0; }
+.gp-chrome span {
+  margin-left: 0.6rem; font-family: var(--mono); font-size: 0.72rem; color: var(--faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.gp-shot { position: relative; width: 100%; background: var(--tint); }
+.gp-shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Until a screenshot is dropped in, the frame names what belongs there rather
+   than showing a broken-image icon. */
+.gp-shot-empty {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: 1.5rem; text-align: center; font-family: var(--mono); font-size: 0.74rem;
+  color: var(--faint); line-height: 1.5;
+  background: repeating-linear-gradient(45deg, rgba(14,21,25,0.02) 0 10px, transparent 10px 20px);
 }
 
-.gp-trust {
-  margin-top: 1.7rem; font-family: var(--data); font-size: 0.72rem;
-  color: var(--band-soft); letter-spacing: 0.05em; max-width: 62ch; line-height: 1.7;
-}
-.gp-trust b { color: var(--signal); font-weight: 600; }
+/* ---------- benefit row ---------- */
+.gp-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.gp-card { border: 1px solid var(--line); background: var(--card); border-radius: 16px; padding: 1.3rem 1.4rem; }
+.gp-card p { color: var(--muted); font-size: 0.93rem; margin-top: 0.3rem; }
+@media (max-width: 820px) { .gp-cards { grid-template-columns: 1fr; } }
 
-/* ---------- signal strip ---------- */
-.gp-strip { border-top: 1px solid var(--band-line); border-bottom: 1px solid var(--band-line); }
-.gp-strip-inner { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); font-family: var(--data); }
-.gp-stage {
-  padding: 1.1rem 1rem; border-left: 1px solid var(--band-line);
-  display: flex; flex-direction: column; gap: 0.4rem; transition: background 420ms ease;
+/* ---------- section heads ---------- */
+.gp-sec-head { max-width: 56ch; margin-bottom: 2.2rem; }
+.gp-eyebrow {
+  font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--accent-ink);
 }
-.gp-stage:first-child { border-left: 0; }
-.gp-stage.gp-on { background: rgba(224,163,62,0.09); }
-.gp-stage .k { font-size: 0.65rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--band-soft); }
-.gp-stage .v { font-size: 0.88rem; color: var(--band-fg); }
-.gp-dot {
-  width: 7px; height: 7px; border-radius: 50%; display: inline-block; background: var(--band-line);
-  margin-right: 0.5rem; vertical-align: middle; transition: background 420ms ease, box-shadow 420ms ease;
-}
-.gp-stage.gp-on .gp-dot { background: var(--signal); box-shadow: 0 0 0 3px rgba(224,163,62,0.18); }
-@media (max-width: 720px) {
-  .gp-strip-inner { grid-template-columns: repeat(2, minmax(0,1fr)); }
-  .gp-stage:nth-child(3) { border-left: 0; }
-  .gp-stage:nth-child(n+3) { border-top: 1px solid var(--band-line); }
-}
-@media (prefers-reduced-motion: reduce) { .gp-stage, .gp-dot { transition: none; } }
+.gp-sec-head h2 { margin-top: 0.7rem; }
+.gp-sec-head p { margin-top: 0.9rem; color: var(--muted); }
 
-.gp-page section { padding-block: clamp(4.5rem, 9vw, 8rem); }
-.gp-sec-head { display: flex; flex-direction: column; gap: 1.05rem; margin-bottom: clamp(2.6rem, 5vw, 3.8rem); }
-.gp-sec-head p { color: var(--fg-soft); }
-.gp-raised { background: var(--bg-raise); border-block: 1px solid var(--line); }
-
-/* ---------- audience switcher ---------- */
-.gp-tabs { display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--line); }
-.gp-tab {
-  flex: 1 1 12rem; appearance: none; background: transparent; cursor: pointer;
-  border: 0; border-right: 1px solid var(--line); padding: 1rem 1.1rem; text-align: left;
-  font-family: var(--data); font-size: 0.74rem; letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--fg-faint); transition: background 180ms ease, color 180ms ease;
+/* ---------- the tour bento ---------- */
+.gp-bento { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 1rem; }
+.gp-tile {
+  border: 1px solid var(--line); background: var(--card); border-radius: 16px; overflow: hidden;
+  box-shadow: 0 1px 2px rgba(14, 21, 25, 0.03);
+  transition: box-shadow 220ms ease, transform 220ms ease;
 }
-.gp-tab:last-child { border-right: 0; }
-.gp-tab:hover { color: var(--fg); }
-.gp-tab[aria-selected="true"] { background: var(--signal); color: #191202; font-weight: 700; }
-/* Between these widths the four tabs wrap to two rows. Without a rule under the
-   first row the two rows fuse into one block. */
-@media (max-width: 830px) {
-  .gp-tab { border-bottom: 1px solid var(--line); }
-  .gp-tab:nth-last-child(-n+2) { border-bottom: 0; }
-}
-@media (max-width: 700px) {
-  .gp-tab { flex: 1 1 100%; border-right: 0; border-bottom: 1px solid var(--line); }
-  .gp-tab:nth-last-child(-n+2) { border-bottom: 1px solid var(--line); }
-  .gp-tab:last-child { border-bottom: 0; }
-}
+.gp-tile:hover { box-shadow: 0 18px 40px -28px rgba(14, 21, 25, 0.45); transform: translateY(-2px); }
+.gp-tile .gp-shot { border-bottom: 1px solid #EFEDE8; }
+.gp-tile-body { padding: 1rem 1.15rem 1.2rem; }
+.gp-tile-body p { color: var(--muted); font-size: 0.92rem; margin-top: 0.25rem; }
+.gp-span-3 { grid-column: span 3; }
+.gp-span-2 { grid-column: span 2; }
+@media (max-width: 900px) { .gp-span-3, .gp-span-2 { grid-column: span 6; } }
 
-.gp-panel-out {
-  border: 1px solid var(--line); border-top: 0; padding: clamp(1.4rem, 3.5vw, 2.2rem);
-  background: var(--bg-raise); display: grid; gap: 1.4rem;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+/* ---------- client portal ---------- */
+.gp-portal {
+  display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.6fr);
+  gap: clamp(1.5rem, 4vw, 2.5rem); align-items: start;
 }
-/* `display: grid` above outranks preflight's [hidden] rule, which loads first.
-   Without this the three closed panels render stacked under the open one. */
-.gp-panel-out[hidden] { display: none; }
-@media (max-width: 820px) { .gp-panel-out { grid-template-columns: 1fr; } }
-.gp-panel-out h3 { font-size: clamp(1.3rem, 2.4vw, 1.75rem); }
-.gp-panel-out .gp-said { color: var(--fg-soft); margin-top: 0.7rem; }
-.gp-outcome {
-  border-left: 2px solid var(--signal); padding-left: 1rem;
-  display: flex; flex-direction: column; gap: 0.55rem;
+.gp-activities { display: grid; gap: 0.7rem; margin: 0; }
+.gp-activity { border: 1px solid var(--line); background: var(--card); border-radius: 14px; padding: 0.95rem 1.05rem; }
+.gp-activity dt { font-weight: 600; font-size: 0.93rem; letter-spacing: -0.01em; }
+.gp-activity dd { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.87rem; }
+@media (max-width: 900px) { .gp-portal { grid-template-columns: 1fr; } }
+
+/* ---------- white label band ---------- */
+.gp-band {
+  border-radius: 24px; background: var(--band); color: var(--band-fg);
+  padding: clamp(2rem, 5vw, 3.2rem);
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(2rem, 5vw, 3.5rem); align-items: center;
 }
-.gp-outcome .gp-label { color: var(--signal-ink); }
-/* Preflight strips list markers from every ul in the app. These are a list of
-   distinct outcomes and read as one paragraph without them. */
-.gp-outcome ul {
-  margin: 0; padding-left: 1.05rem; color: var(--fg-soft); font-size: 0.95rem;
-  list-style: disc outside;
+.gp-band h2 { color: #FBFAF8; max-width: 16ch; font-size: clamp(1.8rem, 3.2vw, 2.3rem); }
+.gp-band-said { margin-top: 0.9rem; color: var(--band-soft); max-width: 44ch; }
+.gp-urls { display: grid; gap: 0.9rem; min-width: 0; }
+.gp-url {
+  border: 1px solid var(--band-line); border-radius: 14px; background: #131E24;
+  padding: 0.85rem 1rem; font-family: var(--mono); font-size: 0.78rem;
+  color: #93A5AC; white-space: nowrap; overflow-x: auto;
 }
-.gp-outcome li { margin-bottom: 0.35rem; }
+.gp-url-yours { border-color: #4A3B21; background: #17201F; color: #B9C6CB; }
+.gp-url-yours b { color: var(--gold); }
+@media (max-width: 900px) { .gp-band { grid-template-columns: 1fr; } }
 
-/* ---------- bento ---------- */
-.gp-bento { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); grid-template-columns: repeat(6, 1fr); }
-.gp-box { background: var(--bg-raise); padding: 1.4rem 1.35rem 1.55rem; display: flex; flex-direction: column; gap: 0.5rem; grid-column: span 2; }
-.gp-box.gp-wide { grid-column: span 3; }
-.gp-box.gp-full { grid-column: span 6; }
-.gp-box .gp-label { color: var(--signal-ink); }
-.gp-box p { color: var(--fg-soft); font-size: 0.93rem; }
-.gp-box .gp-gain { font-family: var(--data); font-size: 0.72rem; color: var(--verified); letter-spacing: 0.06em; margin-top: 0.15rem; }
-@media (max-width: 900px) { .gp-bento { grid-template-columns: repeat(2, 1fr); } .gp-box, .gp-box.gp-wide, .gp-box.gp-full { grid-column: span 1; } }
-@media (max-width: 560px) { .gp-bento { grid-template-columns: 1fr; } }
-
-/* ---------- record ---------- */
-.gp-record { border: 1px solid var(--line); background: var(--bg-raise); }
-.gp-record-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; padding: 1.05rem 1.2rem; border-bottom: 1px solid var(--line); }
-.gp-record-title { font-family: var(--display); font-weight: 800; letter-spacing: -0.02em; font-size: 1.02rem; }
-.gp-chip {
-  font-family: var(--data); font-size: 0.67rem; letter-spacing: 0.09em;
-  text-transform: uppercase; padding: 0.22rem 0.52rem; border: 1px solid;
+/* ---------- FAQ ---------- */
+.gp-faq-grid {
+  display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: clamp(2rem, 5vw, 3.5rem); align-items: start;
 }
-.gp-chip-alert { color: var(--alert); border-color: color-mix(in srgb, var(--alert) 45%, transparent); }
-.gp-chip-soft { color: var(--fg-faint); border-color: var(--line); }
-.gp-record-body { padding: 1.2rem; display: grid; gap: 0.85rem; }
-.gp-rl { display: grid; grid-template-columns: 8.5rem minmax(0,1fr); gap: 1rem; align-items: baseline; }
-.gp-rl dt { font-family: var(--data); font-size: 0.71rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-faint); }
-.gp-rl dd { margin: 0; font-size: 0.95rem; }
-@media (max-width: 560px) { .gp-rl { grid-template-columns: 1fr; gap: 0.15rem; } }
-
-/* ---------- white label ---------- */
-.gp-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1.4rem; }
-.gp-panel { border: 1px solid var(--line); padding: 1.3rem; background: var(--bg-raise); }
-.gp-browser { font-family: var(--data); font-size: 0.79rem; border: 1px solid var(--line); background: var(--bg); margin-top: 0.85rem; }
-.gp-browser .gp-bar { padding: 0.52rem 0.75rem; border-bottom: 1px solid var(--line); color: var(--fg-soft); overflow-x: auto; white-space: nowrap; }
-/* The fake browser's content area. Named gp-screen, not gp-page: reusing the
-   page-root class here re-applied the whole token block and the 17px body font
-   inside the mock, so half the mock lost its monospace. */
-.gp-browser .gp-screen { padding: 0.95rem 0.75rem; display: flex; flex-direction: column; gap: 0.3rem; }
-.gp-browser .gp-screen strong { font-family: var(--display); font-size: 1.02rem; letter-spacing: -0.02em; }
-.gp-browser .gp-screen span { color: var(--fg-faint); font-size: 0.74rem; }
-.gp-strike { color: var(--fg-faint); text-decoration: line-through; }
-
-/* ---------- pipeline ---------- */
-.gp-pipe { display: grid; border-top: 1px solid var(--line); }
-.gp-pipe-step { display: grid; grid-template-columns: 3rem minmax(0,1fr); gap: 1rem; padding-block: 1.35rem; border-bottom: 1px solid var(--line); }
-.gp-pipe-step .n { font-family: var(--data); font-size: 0.76rem; color: var(--signal-ink); padding-top: 0.2rem; }
-.gp-pipe-step h3 { margin-bottom: 0.25rem; }
-.gp-pipe-step p { color: var(--fg-soft); font-size: 0.94rem; }
-
-/* FAQ: a considered purchase generates the same five questions every time. */
-.gp-faq { border-top: 1px solid var(--line); }
-.gp-faq details { border-bottom: 1px solid var(--line); }
+.gp-faq { display: grid; gap: 0.7rem; }
+.gp-faq details { border: 1px solid var(--line); background: var(--card); border-radius: 14px; padding: 0 1.2rem; }
 .gp-faq summary {
-  cursor: pointer; list-style: none; padding-block: 1.15rem;
-  font-family: var(--display); font-weight: 800; letter-spacing: -0.018em;
-  font-size: 1.02rem; display: flex; justify-content: space-between; gap: 1rem; align-items: center;
+  cursor: pointer; list-style: none; padding-block: 1.05rem;
+  font-weight: 600; letter-spacing: -0.015em; font-size: 1rem;
+  display: flex; justify-content: space-between; gap: 1rem; align-items: center;
 }
 .gp-faq summary::-webkit-details-marker { display: none; }
 .gp-faq summary::after {
-  content: "+"; font-family: var(--data); font-weight: 400;
-  color: var(--signal-ink); font-size: 1.1rem; flex-shrink: 0;
+  content: "+"; font-family: var(--mono); font-weight: 400;
+  color: var(--accent-ink); font-size: 1.15rem; flex-shrink: 0;
 }
-.gp-faq details[open] summary::after { content: "−"; }
-.gp-faq details p { padding-bottom: 1.15rem; color: var(--fg-soft); font-size: 0.95rem; }
+.gp-faq details[open] summary::after { content: "–"; }
+.gp-faq details p { padding-bottom: 1.1rem; color: var(--muted); font-size: 0.94rem; }
+@media (max-width: 820px) { .gp-faq-grid { grid-template-columns: 1fr; } }
 
-.gp-foot-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-  gap: 1.5rem; padding-block: 2.2rem; border-top: 1px solid var(--band-line);
+/* ---------- the request ---------- */
+.gp-start {
+  border: 1px solid var(--line); background: var(--card); border-radius: 24px;
+  padding: clamp(1.6rem, 5vw, 3.2rem);
+  display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(2rem, 5vw, 3.5rem);
+  box-shadow: 0 24px 60px -40px rgba(14, 21, 25, 0.45);
 }
-.gp-foot-grid h4 {
-  margin: 0 0 0.6rem; font-family: var(--data); font-size: 0.68rem;
-  letter-spacing: 0.14em; text-transform: uppercase; color: var(--band-soft); font-weight: 400;
-}
-.gp-foot-grid a, .gp-foot-grid p {
-  display: block; color: var(--band-fg); text-decoration: none;
-  font-size: 0.86rem; margin-bottom: 0.35rem; max-width: none;
-}
-.gp-foot-grid a:hover { color: var(--signal); }
+.gp-start h2 { max-width: 14ch; font-size: clamp(1.8rem, 3.2vw, 2.3rem); }
+.gp-start-said { margin-top: 1rem; color: var(--muted); max-width: 40ch; }
+@media (max-width: 900px) { .gp-start { grid-template-columns: 1fr; } }
 
-/* ---------------------------------------------------------------
-   Craft pass. The premium references are visually sparse but
-   interaction-dense: everything answers hover, focus and keyboard.
-   Density of response, not density of content.
-   --------------------------------------------------------------- */
-
-/* One transition vocabulary, so nothing moves at its own tempo. */
-.gp-box, .gp-pipe-step, .gp-panel, .gp-record, .gp-tab, .gp-faq summary, .gp-foot-grid a, .gp-quiet, .gp-btn {
-  transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease, transform 200ms ease;
-}
-
-/* A bento cell answers the cursor. The accent label warms; the cell lifts a
-   hair. Enough to feel alive, not enough to notice as an effect. */
-.gp-box:hover { background: color-mix(in srgb, var(--signal) 4%, var(--bg-raise)); }
-.gp-box:hover .gp-gain { color: var(--signal-ink); }
-
-.gp-pipe-step { padding-inline: 0.85rem; margin-inline: -0.85rem; }
-.gp-pipe-step:hover { background: color-mix(in srgb, var(--signal) 3.5%, transparent); }
-
-.gp-panel:hover, .gp-record:hover { border-color: color-mix(in srgb, var(--signal) 42%, var(--line)); }
-
-.gp-faq summary:hover { color: var(--signal-ink); }
-.gp-faq details[open] summary { color: var(--signal-ink); }
-
-.gp-btn-primary:hover { transform: translateY(-1px); }
-.gp-btn-primary:active { transform: translateY(0); }
-
-/* Numbers line up wherever they sit in a column. */
-.gp-rl dd, .gp-stage .v, .gp-pipe-step .n { font-variant-numeric: tabular-nums; }
-
-/* Scroll as sequence, not as a pile of sections. One move, 10px, once. */
-.gp-page [data-reveal] {
-  opacity: 0; transform: translateY(10px);
-  transition: opacity 620ms cubic-bezier(0.22, 0.61, 0.36, 1), transform 620ms cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-.gp-page [data-reveal].gp-shown { opacity: 1; transform: none; }
-
-/* Every transform, transition and lift the page owns, off in one place. */
-@media (prefers-reduced-motion: reduce) {
-  .gp-box, .gp-pipe-step, .gp-panel, .gp-record, .gp-tab, .gp-faq summary, .gp-foot-grid a, .gp-quiet, .gp-btn { transition: none; }
-  .gp-btn-primary:hover, .gp-btn-primary:active { transform: none; }
-  .gp-page [data-reveal] { opacity: 1; transform: none; transition: none; }
-}
-
-.gp-close-in { padding-block: clamp(3.2rem, 7vw, 5rem); }
-.gp-close-in h2 { color: var(--band-fg); max-width: 19ch; }
-.gp-close-in p { color: var(--band-soft); margin-top: 1rem; }
-.gp-foot {
-  border-top: 1px solid var(--band-line); padding-block: 1.4rem;
-  display: flex; flex-wrap: wrap; gap: 0.8rem; justify-content: space-between;
-  font-family: var(--data); font-size: 0.7rem; color: var(--band-soft); letter-spacing: 0.06em;
-}
-
-/*
- * The access request. It sits in the closing band, so it takes band colours
- * rather than page ones — a white card here would read as a different site.
- */
-.gp-form { margin-top: 2.2rem; display: grid; gap: 1.1rem; max-width: 46rem; }
-.gp-field-row { display: grid; gap: 1.1rem; grid-template-columns: 1fr 1fr; }
-@media (max-width: 46rem) { .gp-field-row { grid-template-columns: 1fr; } }
-.gp-field { display: grid; gap: 0.4rem; min-width: 0; }
-.gp-field > span, .gp-field > label {
-  font-family: var(--data); font-size: 0.7rem; letter-spacing: 0.09em;
-  text-transform: uppercase; color: var(--band-soft);
-}
-/* Optional is marked on the label, so nobody has to submit to find out. */
-.gp-field > span i, .gp-field > label i { font-style: normal; opacity: 0.62; text-transform: none; letter-spacing: 0.04em; }
+.gp-form { display: grid; gap: 0.9rem; }
+.gp-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; }
+@media (max-width: 560px) { .gp-field-row { grid-template-columns: 1fr; } }
+.gp-field { display: grid; gap: 0.35rem; min-width: 0; }
+.gp-field > label, .gp-field > span { font-size: 0.8rem; color: var(--muted); font-weight: 500; }
+.gp-field > label i, .gp-field > span i { font-style: normal; font-weight: 400; color: var(--faint); }
 .gp-field input, .gp-field select, .gp-field textarea {
-  font: inherit; font-size: 0.95rem; color: var(--band-fg);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--band-line); border-radius: 0;
-  padding: 0.72rem 0.8rem; width: 100%; min-width: 0;
-  /* The band is dark whatever the page theme is, so the native chrome inside
-     these controls has to be told, or a light-mode caret sits on near-black. */
-  color-scheme: dark;
+  font: inherit; font-size: 0.94rem; padding: 0.7rem 0.85rem;
+  /* The design's #E4E2DC reads 1.3:1 against the field — too faint to be the
+     only boundary of a control, so the resting border is darkened to 3.1:1. */
+  border: 1px solid #B4B0A7; border-radius: 10px;
+  background: var(--tint); color: var(--ink); width: 100%; min-width: 0;
 }
 .gp-field textarea { resize: vertical; }
-.gp-field input::placeholder { color: var(--band-soft); opacity: 0.7; }
-.gp-field input:focus-visible, .gp-field select:focus-visible, .gp-field textarea:focus-visible {
-  outline: 2px solid var(--signal); outline-offset: 1px; border-color: transparent;
-}
-/* A field the person has been told is wrong, marked as wrong. */
-.gp-field input[aria-invalid="true"] { border-color: var(--band-alert); }
-.gp-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1.1rem; }
-.gp-form-actions .gp-btn { cursor: pointer; font-family: var(--data); }
-.gp-form-actions .gp-btn[disabled] { opacity: 0.6; cursor: progress; }
-.gp-form-actions p {
-  margin: 0; color: var(--band-soft); font-size: 0.8rem; max-width: 34ch; line-height: 1.5;
-}
-.gp-form-error {
-  margin: 0; padding: 0.7rem 0.85rem; font-size: 0.88rem;
-  color: var(--band-alert); background: rgba(196, 85, 63, 0.16); border-left: 3px solid #C4553F;
-}
-.gp-form-done { max-width: 42rem; }
-.gp-form-done h3 { color: var(--band-fg); font-family: var(--display); font-size: 1.4rem; margin: 0; }
-.gp-form-done p { color: var(--band-soft); margin-top: 0.7rem; }
-
-/*
- * Sign-in and request-access.
- *
- * These are the landing page's band and type, not a separate visual world —
- * arriving at sign-in used to look like a different product. Utilitarian on
- * purpose: one column, one action, and the other door named at the bottom.
- */
-.gp-auth-page { min-height: 100vh; display: flex; flex-direction: column; background: var(--band); }
-.gp-auth-page .gp-mark { text-decoration: none; color: var(--band-fg); }
-.gp-auth-body { flex: 1; display: flex; align-items: center; padding-block: clamp(2rem, 6vw, 4rem); }
-.gp-auth-card { max-width: 46rem; }
-.gp-auth-narrow { max-width: 34rem; }
-.gp-auth-card h1 { color: var(--band-fg); font-size: clamp(2rem, 4.5vw, 3rem); }
-.gp-auth-standfirst { color: var(--band-soft); margin-top: 0.9rem; font-size: 1.02rem; }
-
-/* The form already carries the band's field styles; it just needs less air
-   above it here than it does at the end of a long page. */
-.gp-form-tight { margin-top: 1.8rem; max-width: 26rem; }
-.gp-auth-card .gp-form { margin-top: 1.8rem; }
-
+.gp-field input::placeholder { color: var(--faint); }
+.gp-field input[aria-invalid="true"] { border-color: #AE4229; }
+.gp-field-hint { font-size: 0.8rem; color: var(--muted); line-height: 1.5; font-weight: 400; }
 .gp-field-with-toggle { position: relative; display: block; }
+.gp-field-with-toggle input { padding-right: 2.9rem; }
 .gp-reveal {
   position: absolute; right: 0; top: 0; height: 100%; width: 2.9rem;
   display: flex; align-items: center; justify-content: center;
-  background: none; border: 0; cursor: pointer; color: var(--band-soft);
+  background: none; border: 0; cursor: pointer; color: var(--muted); border-radius: 10px;
 }
-.gp-reveal:hover { color: var(--band-fg); }
-.gp-field-with-toggle input { padding-right: 2.9rem; }
+.gp-reveal:hover { color: var(--ink); }
+.gp-form-actions { display: grid; gap: 0.9rem; justify-items: start; }
+.gp-form-note { font-size: 0.84rem; color: var(--muted); }
+.gp-form-error {
+  margin: 0; padding: 0.7rem 0.85rem; font-size: 0.88rem; border-radius: 10px;
+  color: #7A2C18; background: #FCEDE8; border: 1px solid #E9BFB2;
+}
+.gp-form-done h3 { font-size: 1.3rem; }
+.gp-form-done p { margin-top: 0.7rem; color: var(--muted); }
 
-.gp-btn-block {
-  display: flex; align-items: center; justify-content: center; gap: 0.55rem;
-  width: 100%; cursor: pointer; font-family: var(--data);
+/* ---------- footer ---------- */
+.gp-foot { padding: 0 var(--gutter) 3rem; }
+.gp-foot-in {
+  max-width: var(--wrap); margin: 0 auto; border-top: 1px solid var(--line); padding-top: 1.6rem;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem;
 }
-.gp-btn-block[disabled] { opacity: 0.6; cursor: progress; }
-/* The second action on the page is never a second primary button. */
-.gp-btn-ghost {
-  background: transparent; color: var(--band-fg); border-color: var(--band-line);
+.gp-foot-links {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 1.4rem;
+  font-size: 0.87rem; color: var(--muted);
 }
-.gp-btn-ghost:hover { border-color: var(--band-soft); }
+.gp-foot-links a { color: inherit; text-decoration: none; }
+.gp-foot-links a:hover { color: var(--accent-ink); }
 
-.gp-auth-link {
-  background: none; border: 0; padding: 0; cursor: pointer; justify-self: start;
-  font-family: var(--data); font-size: 0.72rem; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--band-soft);
-  border-bottom: 1px solid var(--band-line);
+/* ---------- auth pages ---------- */
+/* Sign-in, register and the invitation share the marketing surface: arriving at
+   sign-in used to look like a different product. */
+.gp-auth-page { min-height: 100vh; display: flex; flex-direction: column; }
+.gp-auth-body { flex: 1; display: flex; align-items: center; padding-block: clamp(2rem, 6vw, 4rem); }
+.gp-auth-card {
+  width: 100%; max-width: 34rem; margin: 0 auto;
+  border: 1px solid var(--line); background: var(--card); border-radius: 20px;
+  padding: clamp(1.5rem, 4vw, 2.4rem);
+  box-shadow: 0 24px 60px -44px rgba(14, 21, 25, 0.45);
 }
-.gp-auth-link:hover { color: var(--band-fg); }
-.gp-auth-link[disabled] { opacity: 0.5; cursor: default; }
-
+.gp-auth-narrow { max-width: 30rem; }
+.gp-auth-card h1 { font-size: clamp(1.7rem, 3vw, 2.1rem); }
+.gp-auth-standfirst { margin-top: 0.8rem; color: var(--muted); font-size: 0.98rem; }
+.gp-auth-card .gp-form { margin-top: 1.6rem; }
 .gp-auth-status {
-  margin-top: 1.6rem; padding: 0.75rem 0.9rem; font-size: 0.88rem;
-  color: var(--band-fg); background: rgba(224, 163, 62, 0.12);
-  border-left: 3px solid var(--signal); max-width: 26rem;
+  margin-top: 1.4rem; padding: 0.75rem 0.9rem; font-size: 0.88rem; border-radius: 10px;
+  background: #FBF2DF; border: 1px solid #E0C68A; color: #4A3B21;
 }
-.gp-auth-reason { color: var(--band-fg); margin-top: 1.4rem; }
-.gp-auth-note { color: var(--band-soft); font-size: 0.84rem; margin-top: 0.9rem; }
-.gp-auth-actions { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 1.6rem; }
-.gp-auth-actions .gp-btn { cursor: pointer; }
-
-.gp-auth-alt { margin-top: 2rem; max-width: 26rem; }
+.gp-auth-reason { margin-top: 1.2rem; color: var(--ink); }
+.gp-auth-note { margin-top: 0.9rem; color: var(--muted); font-size: 0.86rem; }
+.gp-auth-actions { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 1.4rem; }
+.gp-auth-alt { margin-top: 1.8rem; }
 .gp-auth-rule {
   display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem;
-  font-family: var(--data); font-size: 0.66rem; letter-spacing: 0.14em;
-  text-transform: uppercase; color: var(--band-soft);
+  font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--faint);
 }
-.gp-auth-rule::before, .gp-auth-rule::after {
-  content: ""; flex: 1; height: 1px; background: var(--band-line);
+.gp-auth-rule::before, .gp-auth-rule::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.gp-auth-link {
+  background: none; border: 0; padding: 0; cursor: pointer; justify-self: start;
+  font-family: inherit; font-size: 0.88rem; color: var(--muted);
+  text-decoration: underline; text-underline-offset: 3px;
 }
-
+.gp-auth-link:hover { color: var(--ink); }
+.gp-auth-link[disabled] { opacity: 0.5; cursor: default; }
 .gp-auth-foot {
-  margin-top: 2.4rem; padding-top: 1.4rem; border-top: 1px solid var(--band-line);
-  font-family: var(--data); font-size: 0.72rem; letter-spacing: 0.06em;
-  color: var(--band-soft); max-width: 26rem;
+  margin-top: 1.8rem; padding-top: 1.3rem; border-top: 1px solid var(--line);
+  font-size: 0.88rem; color: var(--muted);
 }
-.gp-auth-foot a { color: var(--band-fg); text-decoration: none; border-bottom: 1px solid var(--band-line); }
-.gp-auth-foot a:hover { border-bottom-color: var(--signal); }
+.gp-auth-foot a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.gp-auth-foot a:hover { color: var(--accent-ink); }
+.gp-auth-loading { min-height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--muted); }
 
-.gp-auth-loading {
-  min-height: 100vh; display: flex; align-items: center; justify-content: center;
-  color: var(--band-soft);
-}
-
-/* The masthead's call to action. Smaller than the hero's, so the hero still
-   carries the decision. */
-.gp-btn-small { padding: 0.6rem 1rem; font-size: 0.7rem; }
-
-/* Requirements stated under the field they govern, in the label's own voice. */
-.gp-field-hint {
-  font-family: var(--body); font-size: 0.78rem; letter-spacing: 0;
-  text-transform: none; color: var(--band-soft); line-height: 1.5;
+/* ---------- motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .gp-btn, .gp-tile { transition: none; }
+  .gp-btn:hover, .gp-tile:hover { transform: none; }
 }

@@ -22,6 +22,9 @@ vi.mock('@/lib/supabase', () => ({
 }))
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
+import { supabase } from '@/lib/supabase'
+import { toast } from 'sonner'
+
 function renderLogin(path = '/login') {
   return render(
     <HelmetProvider>
@@ -40,6 +43,8 @@ describe('Login', () => {
     auth.signInWithGoogle.mockReset().mockResolvedValue(undefined)
     auth.signOut.mockReset()
     auth.refreshAccount.mockReset()
+    vi.mocked(toast.error).mockReset()
+    vi.mocked(supabase.auth.resetPasswordForEmail).mockReset().mockResolvedValue({} as never)
   })
 
   it('signs in with the email and password given', async () => {
@@ -76,12 +81,67 @@ describe('Login', () => {
     expect(screen.getByRole('button', { name: /continue with google/iu })).toBeInTheDocument()
   })
 
-  it('answers a password reset the same way whether or not the account exists', async () => {
+  it('sends the reset to the address typed, pointed at this app', async () => {
     renderLogin()
-    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'dana@example.com' } })
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: ' dana@example.com ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Forgot password?' }))
+
+    await waitFor(() => expect(supabase.auth.resetPasswordForEmail).toHaveBeenCalledWith(
+      'dana@example.com',
+      { redirectTo: `${window.location.origin}/reset-password` },
+    ))
+    expect(await screen.findByText(/if that email has an account/iu)).toBeInTheDocument()
+  })
+
+  // The neutral answer is the point: a different reply for an unknown address
+  // turns this button into a way to test whether someone has an account.
+  it('answers the same way when the reset fails as when it succeeds', async () => {
+    vi.mocked(supabase.auth.resetPasswordForEmail).mockRejectedValueOnce(new Error('User not found'))
+    renderLogin()
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'nobody@example.com' } })
     fireEvent.click(screen.getByRole('button', { name: 'Forgot password?' }))
 
     expect(await screen.findByText(/if that email has an account/iu)).toBeInTheDocument()
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it('does not claim a link is on the way when no address was given', () => {
+    renderLogin()
+    fireEvent.click(screen.getByRole('button', { name: 'Forgot password?' }))
+
+    expect(supabase.auth.resetPasswordForEmail).not.toHaveBeenCalled()
+    expect(screen.queryByText(/if that email has an account/iu)).toBeNull()
+    expect(toast.error).toHaveBeenCalled()
+  })
+
+  // Supabase distinguishes "wrong password" from "no such user"; surfacing that
+  // difference would turn the sign-in form into an enumeration oracle.
+  it('says the same thing for a wrong password and an unknown account', async () => {
+    renderLogin()
+    for (const reason of ['Invalid login credentials', 'User not found', 'Email not confirmed']) {
+      auth.signInWithPassword.mockRejectedValueOnce(new Error(reason))
+      fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'dana@example.com' } })
+      fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'whatever' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+      await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    }
+    const said = vi.mocked(toast.error).mock.calls.map((call) => call[0])
+    expect(said).toHaveLength(3)
+    expect(new Set(said).size).toBe(1)
+  })
+
+  // A request that never reached a server is about the connection, not about
+  // whether the account exists, so it may say so.
+  it('distinguishes a connection failure, which reveals nothing about the account', async () => {
+    auth.signInWithPassword.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    renderLogin()
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'dana@example.com' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'whatever' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(
+      'Could not reach the server. Check your connection and try again.',
+    ))
   })
 
   it('explains a suspended account rather than looping the sign-in form', () => {

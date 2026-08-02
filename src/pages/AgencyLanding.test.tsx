@@ -28,46 +28,46 @@ describe('AgencyLanding', () => {
     request.mockResolvedValue(undefined)
   })
 
-  // jsdom has no canvas context and no IntersectionObserver. The page must
-  // render its content anyway: an effect is how the reveal animates, never how
-  // the words become readable.
-  it('renders its content without a canvas or an observer', () => {
+  it('renders its content and points at the two doors', () => {
     renderPage()
-    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/more podcasts, in less time/iu)
     expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login')
-    const panel = document.querySelector('.gp-tabs')
-    expect(panel?.classList.contains('gp-shown')).toBe(true)
+    expect(screen.getByRole('main')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /skip to content/iu })).toHaveAttribute('href', '#tour')
   })
 
-  // The panel is chosen by React, not by an effect writing to the DOM, so a
-  // re-render — a hash change, say — cannot put the tabs back to the first one.
-  it('opens the panel for the tab that was picked, and survives a re-render', () => {
+  /*
+   * Every screenshot is a file dropped into public/shots. Until one is there the
+   * frame must degrade to a placeholder rather than a broken-image icon, and the
+   * page must still be readable.
+   */
+  it('falls back to a named placeholder when a screenshot is missing', () => {
     renderPage()
-    expect(document.getElementById('p-pr')).toHaveAttribute('hidden')
-
-    fireEvent.click(screen.getByRole('tab', { name: 'PR / comms agency' }))
-    expect(document.getElementById('p-pr')).not.toHaveAttribute('hidden')
-    expect(document.getElementById('p-agency')).toHaveAttribute('hidden')
-
-    // Typing into the form re-renders its own subtree; the tab must not move.
-    fireEvent.change(screen.getByLabelText(/your name/iu), { target: { value: 'Dana' } })
-    expect(document.getElementById('p-pr')).not.toHaveAttribute('hidden')
+    const hero = screen.getByAltText(/the workspace/iu)
+    fireEvent.error(hero)
+    expect(screen.queryByAltText(/the workspace/iu)).toBeNull()
+    expect(screen.getByText(/shots\/hero\.png/u)).toBeInTheDocument()
   })
 
-  // noValidate turns off the browser's own check, so something has to replace
-  // it — otherwise a blank form is sent, refused by the edge function, and
-  // burns one of the caller's five requests for the day.
+  // Three controls used to compute to "Request access"; the submit button now
+  // says what it does, so a rotor can tell them apart.
+  it('gives the submit button a name of its own', () => {
+    renderPage()
+    expect(screen.getAllByRole('link', { name: 'Request access' }).length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Send request' })).toBeInTheDocument()
+  })
+
   it('refuses to send an incomplete request instead of spending one on the server', () => {
     renderPage()
 
-    fireEvent.click(screen.getByRole('button', { name: /request access/iu }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send request' }))
     expect(request).not.toHaveBeenCalled()
     expect(screen.getByRole('alert')).toHaveTextContent(/add your name/iu)
     expect(screen.getByLabelText(/your name/iu)).toHaveAttribute('aria-invalid', 'true')
 
     fireEvent.change(screen.getByLabelText(/your name/iu), { target: { value: 'Dana Reyes' } })
     fireEvent.change(screen.getByLabelText(/work email/iu), { target: { value: 'not-an-email' } })
-    fireEvent.click(screen.getByRole('button', { name: /request access/iu }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send request' }))
     expect(request).not.toHaveBeenCalled()
     expect(screen.getByRole('alert')).toHaveTextContent(/work email we can reply to/iu)
   })
@@ -78,7 +78,7 @@ describe('AgencyLanding', () => {
     fireEvent.change(screen.getByLabelText(/your name/iu), { target: { value: 'Dana Reyes' } })
     fireEvent.change(screen.getByLabelText(/work email/iu), { target: { value: 'dana@example.com' } })
     fireEvent.change(screen.getByLabelText(/what you run/iu), { target: { value: 'freelancer' } })
-    fireEvent.click(screen.getByRole('button', { name: /request access/iu }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send request' }))
 
     await waitFor(() => expect(request).toHaveBeenCalledTimes(1))
     expect(request.mock.calls[0][0]).toMatchObject({
@@ -95,7 +95,7 @@ describe('AgencyLanding', () => {
 
     fireEvent.change(screen.getByLabelText(/your name/iu), { target: { value: 'Dana Reyes' } })
     fireEvent.change(screen.getByLabelText(/work email/iu), { target: { value: 'dana@example.com' } })
-    fireEvent.click(screen.getByRole('button', { name: /request access/iu }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send request' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/already come from here today/iu)
     expect(screen.getByLabelText(/your name/iu)).toHaveValue('Dana Reyes')

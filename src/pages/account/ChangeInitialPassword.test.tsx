@@ -92,11 +92,16 @@ describe('ChangeInitialPassword', () => {
     expect(mockedLocalSignOut).toHaveBeenCalledWith({ scope: 'local' })
   })
 
-  it('renders an actionable expired state instead of a blank page', () => {
+  it('renders an actionable expired state instead of a blank page', async () => {
     authState('expired')
     renderPage()
 
     expect(screen.getByText(/temporary password has expired/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /sign out and use the newest credential/i })).toBeEnabled()
+    // The old assertion was toBeEnabled(), which could never fail: the button's
+    // disabled prop is `submitting`, and that is false at first render. Assert
+    // the outcome a person would notice — leaving the dead end for sign-in —
+    // rather than which of the two sign-out paths ran.
+    fireEvent.click(screen.getByRole('button', { name: /sign out and use the newest credential/i }))
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/login'))
   })
 })

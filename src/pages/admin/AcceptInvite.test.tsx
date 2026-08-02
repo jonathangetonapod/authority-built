@@ -87,6 +87,46 @@ describe('AcceptInvite', () => {
     })
   })
 
+  /*
+   * The membership must not be marked accepted when the password was never set.
+   * Both mocks resolving in the happy path proves the calls happen, not that
+   * the second is gated on the first.
+   */
+  it('does not accept the invitation when the password could not be set', async () => {
+    updateUser.mockResolvedValue({ error: new Error('weak password') } as never)
+    renderPage()
+    fill('Correct-Horse-9!')
+    fireEvent.click(screen.getByRole('button', { name: /accept invitation/iu }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  // The temporary password people are mailed starts Tmp-. Re-entering it here
+  // would leave the account on a credential that was sent over email.
+  it('refuses the temporary password format', async () => {
+    renderPage()
+    fill('Tmp-Something-9!')
+    fireEvent.click(screen.getByRole('button', { name: /accept invitation/iu }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(
+      'Choose a new password instead of using a temporary-password format.',
+    ))
+    expect(updateUser).not.toHaveBeenCalled()
+  })
+
+  // length counts characters, the cap counts UTF-8 bytes; they only diverge here.
+  it('measures the length cap in bytes, not characters', async () => {
+    renderPage()
+    fill(`${'Pässwörd-Ünïcödé-9!'.repeat(4)}A`)
+    fireEvent.click(screen.getByRole('button', { name: /accept invitation/iu }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(
+      'Use at least 12 characters and no more than 72 UTF-8 bytes.',
+    ))
+    expect(updateUser).not.toHaveBeenCalled()
+  })
+
   it('refuses a password that does not meet the stated rules', async () => {
     renderPage()
     fill('short')

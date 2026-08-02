@@ -79,8 +79,8 @@ export const AccessRequestForm = () => {
       }}
     >
       <div className="gp-field-row">
-        <label className="gp-field">
-          <span>Your name</span>
+        <div className="gp-field">
+          <label htmlFor="gp-name">Your name</label>
           <input
             id="gp-name"
             required
@@ -90,9 +90,9 @@ export const AccessRequestForm = () => {
             value={fullName}
             onChange={(event) => { setFullName(event.target.value); setMissing(null) }}
           />
-        </label>
-        <label className="gp-field">
-          <span>Work email</span>
+        </div>
+        <div className="gp-field">
+          <label htmlFor="gp-email">Work email</label>
           <input
             id="gp-email"
             required
@@ -103,60 +103,63 @@ export const AccessRequestForm = () => {
             value={email}
             onChange={(event) => { setEmail(event.target.value); setMissing(null) }}
           />
-        </label>
+        </div>
       </div>
 
       <div className="gp-field-row">
-        <label className="gp-field">
-          <span>Company <i>optional</i></span>
+        <div className="gp-field">
+          <label htmlFor="gp-company">Company <i>optional</i></label>
           <input
+            id="gp-company"
             autoComplete="organization"
             maxLength={160}
             value={company}
             onChange={(event) => setCompany(event.target.value)}
           />
-        </label>
-        <label className="gp-field">
-          <span>Website <i>optional</i></span>
+        </div>
+        <div className="gp-field">
+          <label htmlFor="gp-website">Website <i>optional</i></label>
           <input
+            id="gp-website"
             autoComplete="url"
             maxLength={200}
             placeholder="agency.com"
             value={website}
             onChange={(event) => setWebsite(event.target.value)}
           />
-        </label>
+        </div>
       </div>
 
       <div className="gp-field-row">
-        <label className="gp-field">
-          <span>What you run</span>
-          <select value={audience} onChange={(event) => setAudience(event.target.value as AccessRequestAudience)}>
+        <div className="gp-field">
+          <label htmlFor="gp-audience">What you run</label>
+          <select id="gp-audience" value={audience} onChange={(event) => setAudience(event.target.value as AccessRequestAudience)}>
             {AUDIENCES.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
-        </label>
-        <label className="gp-field">
-          <span>Clients today</span>
-          <select value={clientsNow} onChange={(event) => setClientsNow(event.target.value)}>
+        </div>
+        <div className="gp-field">
+          <label htmlFor="gp-clients">Clients today</label>
+          <select id="gp-clients" value={clientsNow} onChange={(event) => setClientsNow(event.target.value)}>
             <option value="">Prefer not to say</option>
             {CLIENT_COUNTS.map((option) => (
               <option key={option} value={option}>{option}</option>
             ))}
           </select>
-        </label>
+        </div>
       </div>
 
-      <label className="gp-field">
-        <span>What you are using now, and what is breaking <i>optional</i></span>
+      <div className="gp-field">
+        <label htmlFor="gp-notes">What you are using now, and what is breaking <i>optional</i></label>
         <textarea
+          id="gp-notes"
           rows={3}
           maxLength={1000}
           value={notes}
           onChange={(event) => setNotes(event.target.value)}
         />
-      </label>
+      </div>
 
       {(problem || submit.isError) && (
         <p className="gp-form-error" role="alert">
@@ -168,11 +171,11 @@ export const AccessRequestForm = () => {
 
       <div className="gp-form-actions">
         <button type="submit" className="gp-btn gp-btn-primary" disabled={submit.isPending}>
-          {submit.isPending ? 'Sending…' : 'Request access'}
+          {submit.isPending ? 'Sending…' : 'Send request'}
         </button>
         {/* Said before they fill it in, not after they wait for a login that
             never arrives. */}
-        <p>
+        <p className="gp-form-note">
           Access is by invite. This does not create an account — we read it and reply with a time to talk.
         </p>
       </div>
