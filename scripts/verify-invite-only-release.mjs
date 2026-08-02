@@ -20,8 +20,8 @@ const CONFIG_PATH = path.join(REPOSITORY_ROOT, 'supabase', 'config.toml')
 const FUNCTIONS_ROOT = path.join(REPOSITORY_ROOT, 'supabase', 'functions')
 
 const EXPECTED_COUNTS = Object.freeze({
-  changedFunctions: 113,
-  deployedFunctions: 111,
+  changedFunctions: 114,
+  deployedFunctions: 112,
   excludedFunctions: 2,
   retiredFunctions: 17,
   unauthenticatedTombstones: 5,
@@ -38,7 +38,10 @@ const EXPECTED_COUNTS = Object.freeze({
   // on, read live from Anthropic rather than listed in this repo.
   // 158 with _shared/cloudflareSaas.ts: the second custom-domain provider, kept
   // because the first could not say why a domain was stuck.
-  edgeTypeScriptFiles: 158,
+  // 161 with the scheduled domain check: _shared/domainProviders.ts and
+  // _shared/domainCheck.ts, extracted so the tick and the operator's button run
+  // the same check, plus the workspace-domain-tick entrypoint.
+  edgeTypeScriptFiles: 161,
 })
 
 const EXPECTED_PHASE_KEYS = Object.freeze([
@@ -91,6 +94,9 @@ const EXPECTED_EXCLUDED_FUNCTIONS = Object.freeze([
 const EXPECTED_PUBLIC_NON_JWT_FUNCTIONS = Object.freeze([
   'client-autopilot-tick',
   'inbox-enroll-tick',
+  // A serving domain was checked by nothing once its setup page was closed.
+  // Driven by pg_cron with a shared secret, so there is no user JWT.
+  'workspace-domain-tick',
   'inbox-nudge-tick',
   'stripe-credit-webhook',
   // Stripe signs the request body; there is no user session on a webhook. Both

@@ -2,6 +2,11 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const admin = readFileSync('supabase/functions/workspace-domains/index.ts', 'utf8')
+// Extracted so the scheduled check and the operator's button run the same
+// code. Assertions that used to read the management function follow it.
+const providers = readFileSync('supabase/functions/_shared/domainProviders.ts', 'utf8')
+const check = readFileSync('supabase/functions/_shared/domainCheck.ts', 'utf8')
+const tick = readFileSync('supabase/functions/workspace-domain-tick/index.ts', 'utf8')
 const resolver = readFileSync('supabase/functions/resolve-workspace-domain/index.ts', 'utf8')
 const cors = readFileSync('supabase/functions/_shared/cors.ts', 'utf8')
 const migration = readFileSync(
@@ -84,8 +89,8 @@ assert.ok(
 )
 // Provider failures carry the provider's own status and body: a dead token is
 // invisible when every caller replaces it with a generic message.
-assert.match(admin, /Railway returned \$\{response\.status\}/u)
-assert.match(admin, /RAILWAY_NOT_CONFIGURED/u)
+assert.match(providers, /Railway returned \$\{response\.status\}/u)
+assert.match(providers, /RAILWAY_NOT_CONFIGURED/u)
 
 // A domain that stops serving cannot stay primary, or client links would keep
 // pointing at a hostname that no longer answers.
@@ -95,21 +100,21 @@ assert.match(admin, /RAILWAY_NOT_CONFIGURED/u)
 // that finds the domain not serving still strips primary, keeping the pairing
 // constraint honest.
 assert.match(
-  admin,
-  /promoted = !existingPrimary \|\| existingPrimary\.id === domainId/u,
+  check,
+  /promoted = !existingPrimary \|\| existingPrimary\.id === domain\.id/u,
   'activation must promote only when no other primary exists',
 )
-assert.match(admin, /is_primary: primary,/u)
+assert.match(check, /is_primary: primary,/u)
 // Two concurrent checks can both win the read-then-promote race; the unique
 // index referees, and the loser must land the same update without the crown
 // rather than 500 and leave its row stuck on the old status.
 assert.match(
-  admin,
+  check,
   /updateError\.code === '23505'[\s\S]*?applyUpdate\(false\)/u,
   'a lost promotion race must retry without promoting',
 )
 // Silent flips of which domain links use must be reconstructable.
-assert.match(admin, /via: 'refresh_auto_promote'/u)
+assert.match(check, /via: 'refresh_auto_promote'/u)
 // A second provider, chosen per row rather than globally. Railway could not
 // say why a domain was stuck — an hour in VALIDATING_OWNERSHIP with a null
 // error message — and an operator cannot act on that, nor can the card explain
@@ -166,14 +171,16 @@ assert.match(cloudflare, /Array\.isArray\(result\) \? result as Array<Record<str
 // Read per row, so flipping the env var cannot strand a domain that is already
 // serving behind an API that has never heard of it. Only new domains follow
 // the setting.
-assert.match(admin, /Deno\.env\.get\('CUSTOM_DOMAIN_PROVIDER'\)/u)
-assert.match(admin, /function providerOfRow\(value: unknown\): DomainProvider/u)
-assert.match(admin, /providerDomainProgress\(\s*providerOfRow\(domain\.provider\)/u)
+assert.match(providers, /Deno\.env\.get\('CUSTOM_DOMAIN_PROVIDER'\)/u)
+assert.match(providers, /function providerOfRow\(value: unknown\): DomainProvider/u)
+assert.match(check, /providerDomainProgress\(\s*providerOfRow\(domain\.provider\)/u)
 assert.match(admin, /deleteProviderDomain\(providerOfRow\(domain\.provider\), domain\.provider_domain_id\)/u)
 assert.match(admin, /const provider = providerForNewDomains\(\)/u)
 // The row records which provider took it, because that decides which API
 // refreshes and removes it for the rest of its life.
-assert.match(admin, /select\('id,workspace_id,hostname,status,provider,provider_domain_id,consecutive_failures,activated_at,first_activated_at'\)/u)
+// The columns the check needs are named once, by the module that needs them.
+assert.match(check, /export const DOMAIN_CHECK_COLUMNS =/u)
+assert.match(admin, /\.select\(DOMAIN_CHECK_COLUMNS\)/u)
 assert.match(admin, /select\('id,workspace_id,hostname,provider,provider_domain_id'\)/u)
 // A rollback hands the domain back to whichever provider took it.
 assert.match(admin, /deleteProviderDomain\(provider, created\.id\)\.catch/u)
@@ -189,31 +196,31 @@ const resilience = readFileSync(
 assert.match(resilience, /ADD COLUMN IF NOT EXISTS consecutive_failures INTEGER NOT NULL DEFAULT 0/u)
 assert.match(resilience, /ADD COLUMN IF NOT EXISTS first_activated_at TIMESTAMPTZ/u)
 assert.match(resilience, /CHECK \(consecutive_failures >= 0\)/u)
-assert.match(admin, /const failures = reading === 'active' \? 0 : previousFailures \+ 1/u)
-assert.match(admin, /const heldOver = reading !== 'active' && domain\.status === 'active' && failures < 2/u)
-assert.match(admin, /const nextStatus = heldOver \? 'active' : reading/u)
-assert.match(admin, /consecutive_failures: failures,/u)
+assert.match(check, /const failures = reading === 'active' \? 0 : previousFailures \+ 1/u)
+assert.match(check, /const heldOver = reading !== 'active' && domain\.status === 'active' && failures < 2/u)
+assert.match(check, /const nextStatus = heldOver \? 'active' : reading/u)
+assert.match(check, /consecutive_failures: failures,/u)
 // activated_at is kept rather than re-minted, or every check resets how long
 // the domain has been up; first_activated_at is never cleared, because
 // activated_at is pinned to the current status and cannot survive a dip.
-assert.match(admin, /activated_at: serving \? \(domain\.activated_at \?\? new Date\(\)\.toISOString\(\)\) : null/u)
-assert.match(admin, /first_activated_at: serving[\s\S]{0,180}: \(domain\.first_activated_at \?\? null\)/u)
+assert.match(check, /activated_at: serving \? \(domain\.activated_at \?\? new Date\(\)\.toISOString\(\)\) : null/u)
+assert.match(check, /first_activated_at: serving[\s\S]{0,180}: \(domain\.first_activated_at \?\? null\)/u)
 
 // 'failed' was in the vocabulary, the labels and the styling from the first
 // migration, and nothing ever set it — so a domain the provider had given up
 // on was indistinguishable from one still waiting. Reserved for what waiting
 // cannot fix: Railway says nothing at all while a certificate is merely slow,
 // and a Cloudflare hostname that has moved away is not coming back.
-assert.match(admin, /if \(providerMessage\) return \{ status: 'failed', error: providerMessage \}/u)
+assert.match(providers, /if \(providerMessage\) return \{ status: 'failed', error: providerMessage \}/u)
 assert.match(cloudflare, /result\.status === 'moved' \|\| result\.status === 'deleted'/u)
 assert.match(cloudflare, /status: 'failed'/u)
 assert.match(cloudflare, /'active' \| 'provisioning' \| 'awaiting_dns' \| 'failed'/u)
 
 // Losing the crown is auditable however it comes off — going dark, or losing
 // the promotion race while still serving.
-assert.match(admin, /wasPrimaryBefore && !promoted/u)
-assert.match(admin, /action: 'workspace\.domain\.primary_lost'/u)
-assert.match(admin, /serving \? 'another domain is primary' : \(servingError \?\? 'not serving'\)/u)
+assert.match(check, /wasPrimaryBefore && !promoted/u)
+assert.match(check, /action: 'workspace\.domain\.primary_lost'/u)
+assert.match(check, /serving \? 'another domain is primary' : \(servingError \?\? 'not serving'\)/u)
 
 // CORS stays an allowlist. Tenant origins are added from the database, never
 // by widening to a wildcard, and the response says it varies by origin so a
@@ -276,45 +283,45 @@ for (const [label, source] of [['ProspectView', prospectView], ['ClientApprovalV
 // these was wrong when written from memory, and each wrong one silently kept a
 // domain from ever reaching 'active'.
 // The certificate enum is prefixed; there is no bare 'ISSUED'.
-assert.match(admin, /const CERTIFICATE_VALID = 'CERTIFICATE_STATUS_TYPE_VALID'/u)
-assert.doesNotMatch(admin, /=== 'ISSUED'/u)
+assert.match(providers, /const CERTIFICATE_VALID = 'CERTIFICATE_STATUS_TYPE_VALID'/u)
+assert.doesNotMatch(providers, /=== 'ISSUED'/u)
 // customDomain requires projectId. Without it the query fails validation and
 // refresh can never succeed.
-assert.match(admin, /query CustomDomain\(\$id: String!, \$projectId: String!\)/u)
-assert.match(admin, /customDomain\(id: \$id, projectId: \$projectId\)/u)
+assert.match(providers, /query CustomDomain\(\$id: String!, \$projectId: String!\)/u)
+assert.match(providers, /customDomain\(id: \$id, projectId: \$projectId\)/u)
 // Several DNS records come back; only one routes traffic. The other is the
 // ACME challenge, and handing an agency that one gives them a TXT record that
 // never serves the site.
-assert.match(admin, /const TRAFFIC_ROUTE = 'DNS_RECORD_PURPOSE_TRAFFIC_ROUTE'/u)
-assert.match(admin, /rows\.find\(\(row\) => row\.purpose === TRAFFIC_ROUTE\)/u)
+assert.match(providers, /const TRAFFIC_ROUTE = 'DNS_RECORD_PURPOSE_TRAFFIC_ROUTE'/u)
+assert.match(providers, /rows\.find\(\(row\) => row\.purpose === TRAFFIC_ROUTE\)/u)
 // fqdn, not hostlabel: hostlabel is the sub-label alone.
-assert.match(admin, /typeof record\?\.fqdn === 'string' \? record\.fqdn : hostname/u)
-assert.doesNotMatch(admin, /record\?\.hostlabel/u)
+assert.match(providers, /typeof record\?\.fqdn === 'string' \? record\.fqdn : hostname/u)
+assert.doesNotMatch(providers, /record\?\.hostlabel/u)
 // An apex domain gets an A record, so the type cannot be hardcoded.
-assert.match(admin, /dnsRecordType\(record\?\.recordType\)/u)
+assert.match(providers, /dnsRecordType\(record\?\.recordType\)/u)
 // Railway's own reason distinguishes "add your DNS record" from "wait".
-assert.match(admin, /certificateErrorMessage/u)
+assert.match(providers, /certificateErrorMessage/u)
 
 // Three states, not two. Everything that was not serving used to be written
 // down as awaiting_dns, so a domain whose record had propagated and was only
 // waiting on its certificate told the operator to go and fix DNS that was
 // already correct — and the provisioning state the UI already renders was
 // never once set.
-assert.match(admin, /const DNS_RECORD_PROPAGATED = 'DNS_RECORD_STATUS_PROPAGATED'/u)
+assert.match(providers, /const DNS_RECORD_PROPAGATED = 'DNS_RECORD_STATUS_PROPAGATED'/u)
 // The shared shape both providers answer in, now including the state a
 // provider reaches when waiting will not help.
 assert.match(cloudflare, /status: 'active' \| 'provisioning' \| 'awaiting_dns' \| 'failed'/u)
-assert.match(admin, /\): Promise<ProviderProgress> \{/u)
-assert.match(admin, /const dnsPropagated = record\?\.status === DNS_RECORD_PROPAGATED/u)
-assert.match(admin, /status: dnsPropagated \? 'provisioning' : 'awaiting_dns'/u)
-assert.match(admin, /The DNS record is in place\. Waiting for the certificate to be issued/u)
+assert.match(providers, /\): Promise<ProviderProgress> \{/u)
+assert.match(providers, /const dnsPropagated = record\?\.status === DNS_RECORD_PROPAGATED/u)
+assert.match(providers, /status: dnsPropagated \? 'provisioning' : 'awaiting_dns'/u)
+assert.match(providers, /The DNS record is in place\. Waiting for the certificate to be issued/u)
 // Only the provider's own PROPAGATED promotes out of waiting. An unrecognized
 // status must not be read as progress we cannot back up.
-assert.doesNotMatch(admin, /dnsPending/u)
-assert.doesNotMatch(admin, /const nextStatus = serving \? 'active' : 'awaiting_dns'/u)
+assert.doesNotMatch(providers, /dnsPending/u)
+assert.doesNotMatch(providers, /const nextStatus = serving \? 'active' : 'awaiting_dns'/u)
 // serving stays derived, so activation, promotion, and the audit trail all
 // continue to mean "certificate valid" rather than "not waiting on DNS".
-assert.match(admin, /const serving = nextStatus === 'active'/u)
+assert.match(check, /const serving = nextStatus === 'active'/u)
 // A domain still has to be genuinely serving before links can be built from
 // it — provisioning is progress, not a green light.
 assert.match(admin, /domain\.status !== 'active'[\s\S]{0,200}DOMAIN_NOT_SERVING/u)
@@ -373,5 +380,29 @@ for (const [label, source] of [
 // The application guard and the database constraint must refuse the same set,
 // or a platform subdomain registers a real domain at Railway before failing.
 assert.match(admin, /hostname === 'getonapod\.com' \|\| hostname\.endsWith\('\.getonapod\.com'\)/u)
+
+
+// Nothing looked at a domain once it was serving. The poll on the card only
+// ran while a platform admin had that page open, and only for domains still
+// setting up — so a certificate that stopped renewing would first be noticed
+// by an agency's client meeting a browser warning on the agency's own address.
+assert.match(config, /\[functions\.workspace-domain-tick\]\s+verify_jwt = false/u)
+assert.match(tick, /Deno\.env\.get\('DOMAIN_TICK_SECRET'\)/u)
+assert.match(tick, /req\.headers\.get\('x-domain-tick-secret'\) !== secret/u)
+// The same check the button runs, not a second copy that drifts — and the
+// drift would be invisible precisely because nobody watches this path.
+assert.match(tick, /import \{ checkDomain, DOMAIN_CHECK_COLUMNS \} from '\.\.\/_shared\/domainCheck\.ts'/u)
+assert.doesNotMatch(tick, /providerDomainProgress/u, 'the tick must not re-implement the check')
+// A serving domain is worth watching, but not as often as one still being set
+// up, and neither is worth a provider call every tick.
+assert.match(tick, /const SETUP_RECHECK_MS/u)
+assert.match(tick, /const SERVING_RECHECK_MS/u)
+assert.match(tick, /row\.status === 'active' \? SERVING_RECHECK_MS : SETUP_RECHECK_MS/u)
+// Disabled rows are kept for history and deliberately never resolved.
+assert.match(tick, /\.in\('status', \['awaiting_dns', 'provisioning', 'active', 'failed'\]\)/u)
+// One unreachable provider must not stop the sweep, and a bounded tick cannot
+// become the thing that rate-limits the provider it is checking.
+assert.match(tick, /const MAX_DOMAINS_PER_TICK/u)
+assert.match(tick, /catch \(_error\) \{[\s\S]{0,240}failed \+= 1/u)
 
 process.stdout.write('Workspace domains Edge contract checks passed\n')
