@@ -28,6 +28,25 @@ export interface ProviderProgress {
   error: string | null
 }
 
+/**
+ * The worker that rewrites Host before the request leaves Cloudflare's edge.
+ *
+ * Railway routes by Host and answers a hostname it has not been told about
+ * with its fallback 404 — and because it also serves its own certificate for
+ * the SNI it does not recognise, strict origin validation turns that into a
+ * 526 before the 404 is ever reached. Cloudflare can override the origin, but
+ * overriding the SNI is Enterprise-only, so the rewrite has to happen in a
+ * worker. Verified by hand: without the route the hostname 526s, with it the
+ * app is served.
+ *
+ * Left unset, no route is managed and a custom hostname will reach whatever
+ * the fallback origin serves — correct for an origin that does not route by
+ * Host, which is why this is configuration rather than an assumption.
+ */
+function workerScript(): string | null {
+  return Deno.env.get('CLOUDFLARE_SAAS_WORKER')?.trim() || null
+}
+
 function cloudflareConfig(): { token: string; zoneId: string; fallbackOrigin: string } {
   const token = Deno.env.get('CLOUDFLARE_API_TOKEN')?.trim()
   const zoneId = Deno.env.get('CLOUDFLARE_ZONE_ID')?.trim()
@@ -45,10 +64,10 @@ function cloudflareConfig(): { token: string; zoneId: string; fallbackOrigin: st
   return { token, zoneId, fallbackOrigin }
 }
 
-async function cloudflareFetch(
+async function cloudflareRequest(
   path: string,
   init: { method: string; body?: unknown },
-): Promise<Record<string, unknown>> {
+): Promise<unknown> {
   const { token, zoneId } = cloudflareConfig()
   let response: Response
   try {
@@ -81,7 +100,29 @@ async function cloudflareFetch(
     const message = typeof first.message === 'string' ? first.message : text.slice(0, 300)
     throw new HttpError(502, 'CLOUDFLARE_REJECTED', `Cloudflare refused the request: ${message}`)
   }
-  return (payload.result ?? {}) as Record<string, unknown>
+  return payload.result
+}
+
+/** For the endpoints whose result is one object. */
+async function cloudflareFetch(
+  path: string,
+  init: { method: string; body?: unknown },
+): Promise<Record<string, unknown>> {
+  const result = await cloudflareRequest(path, init)
+  return (result ?? {}) as Record<string, unknown>
+}
+
+/** For the endpoints whose result is a list, such as worker routes. */
+async function cloudflareFetchList(
+  path: string,
+  init: { method: string; body?: unknown },
+): Promise<Array<Record<string, unknown>>> {
+  const result = await cloudflareRequest(path, init)
+  return Array.isArray(result) ? result as Array<Record<string, unknown>> : []
+}
+
+function routePattern(hostname: string): string {
+  return `${hostname}/*`
 }
 
 /** Registers the hostname and returns the record the agency has to create. */
@@ -96,6 +137,23 @@ export async function createCloudflareHostname(hostname: string): Promise<Provid
   })
   const id = typeof result.id === 'string' ? result.id : ''
   if (!id) throw new HttpError(502, 'CLOUDFLARE_REJECTED', 'Cloudflare did not return the created hostname')
+
+  const script = workerScript()
+  if (script) {
+    try {
+      await cloudflareFetch('/workers/routes', {
+        method: 'POST',
+        body: { pattern: routePattern(hostname), script },
+      })
+    } catch (error) {
+      // A hostname without its route resolves, issues a certificate, and then
+      // 526s — the worst shape of failure, because everything reports healthy.
+      // Hand the hostname back instead of leaving one that can never serve.
+      await cloudflareFetch(`/custom_hostnames/${id}`, { method: 'DELETE' }).catch(() => undefined)
+      throw error
+    }
+  }
+
   return {
     id,
     dnsRecordType: 'CNAME',
@@ -139,5 +197,24 @@ export async function cloudflareHostnameProgress(hostnameId: string): Promise<Pr
 }
 
 export async function deleteCloudflareHostname(hostnameId: string): Promise<void> {
+  // The route is keyed by pattern, not by the hostname id, so it is found by
+  // reading the hostname back first. Routes are removed before the hostname:
+  // a route left pointing at a hostname that no longer exists is invisible
+  // until it collides with the next agency to claim that name.
+  const script = workerScript()
+  if (script) {
+    const hostname = await cloudflareFetch(`/custom_hostnames/${hostnameId}`, { method: 'GET' })
+      .then((result) => (typeof result.hostname === 'string' ? result.hostname : null))
+      .catch(() => null)
+    if (hostname) {
+      const rows = await cloudflareFetchList('/workers/routes', { method: 'GET' }).catch(() => [])
+      const wanted = routePattern(hostname)
+      for (const row of rows) {
+        if (row.pattern === wanted && typeof row.id === 'string') {
+          await cloudflareFetch(`/workers/routes/${row.id}`, { method: 'DELETE' }).catch(() => undefined)
+        }
+      }
+    }
+  }
   await cloudflareFetch(`/custom_hostnames/${hostnameId}`, { method: 'DELETE' })
 }

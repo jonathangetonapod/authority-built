@@ -134,6 +134,28 @@ assert.match(cloudflare, /if \(ssl\.status === 'active'\) return \{ status: 'act
 assert.match(cloudflare, /const ownershipVerified = result\.status === 'active'/u)
 assert.match(cloudflare, /status: ownershipVerified \? 'provisioning' : 'awaiting_dns'/u)
 
+// Railway routes by Host and serves its own certificate for an SNI it does not
+// know, so an unrouted custom hostname 526s before it can even 404. Cloudflare
+// can override the origin but overriding the SNI is Enterprise-only, so the
+// rewrite lives in a worker and every hostname needs its route.
+assert.match(cloudflare, /CLOUDFLARE_SAAS_WORKER/u)
+assert.match(cloudflare, /return `\$\{hostname\}\/\*`/u)
+assert.match(cloudflare, /body: \{ pattern: routePattern\(hostname\), script \}/u)
+// A hostname without its route resolves, issues a certificate, and then 526s —
+// the worst shape of failure, because every status reads healthy. Hand it back.
+assert.match(
+  cloudflare,
+  /catch \(error\) \{[\s\S]*?custom_hostnames\/\$\{id\}`, \{ method: 'DELETE' \}[\s\S]*?throw error/u,
+  'a hostname whose route could not be created must be handed back',
+)
+// Routes go before the hostname: one left pointing at a hostname that no
+// longer exists is invisible until the next agency claims that name.
+assert.match(cloudflare, /workers\/routes\/\$\{row\.id\}`, \{ method: 'DELETE' \}/u)
+// The list endpoints return an array, the rest return an object, and reading
+// one as the other silently yields nothing.
+assert.match(cloudflare, /function cloudflareFetchList/u)
+assert.match(cloudflare, /Array\.isArray\(result\) \? result as Array<Record<string, unknown>> : \[\]/u)
+
 // Read per row, so flipping the env var cannot strand a domain that is already
 // serving behind an API that has never heard of it. Only new domains follow
 // the setting.
