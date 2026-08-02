@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, within, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -195,5 +195,46 @@ describe('WorkspacePodcastDatabase', () => {
     renderPage()
 
     expect(await screen.findByText('The Founder Show')).toBeInTheDocument()
+  })
+
+  // The row keeps a clipped description and four numbers; everything else the
+  // catalogue already carried was fetched, sent to the browser, and shown
+  // nowhere — so judging a show meant opening it somewhere else.
+  it('opens the details it already had for a podcast', async () => {
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'See details' }))
+
+    const dialog = within(await screen.findByRole('dialog'))
+    expect(dialog.getByText('The Founder Show')).toBeInTheDocument()
+    expect(dialog.getByText(/Practical conversations with company founders/i)).toBeInTheDocument()
+    // Fields the row never showed.
+    expect(dialog.getByText('Reach score')).toBeInTheDocument()
+    expect(dialog.getByText('Last published')).toBeInTheDocument()
+    expect(dialog.getByText(/Used on 4 client shortlists/i)).toBeInTheDocument()
+  })
+
+  it('carries the relationship warning into the details', async () => {
+    mockedRelationships.mockResolvedValue([{
+      podcast_id: 'podcast-one',
+      podcast_name: 'The Founder Show',
+      podcast_image_url: null,
+      host_name: null,
+      contact_email: null,
+      derived_state: 'declined',
+      manual_stage: null,
+      summary: null,
+      last_contacted_at: null,
+      touch_count: 1,
+      booked_client_name: null,
+      client_count: 0,
+      note_count: 0,
+      last_note_at: null,
+      curated: false,
+    }] as never)
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'See details' }))
+
+    const dialog = within(await screen.findByRole('dialog'))
+    expect(dialog.getByText('Passed')).toBeInTheDocument()
   })
 })

@@ -45,6 +45,7 @@ import {
   type WorkspacePodcastCatalogSort,
 } from '@/services/workspacePodcastCatalog'
 import { safeExternalUrl } from '@/lib/externalUrl'
+import { PodcastCatalogDetailsDialog } from '@/components/workspace/PodcastCatalogDetailsDialog'
 import { relationshipBadge } from '@/lib/relationshipLabels'
 import { listHostRelationships } from '@/services/hostRelationships'
 import { MY_WORKSPACE_BASE_HREF, selectedWorkspaceBaseHref } from '@/lib/workspaceRoutes'
@@ -140,6 +141,7 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
   const [page, setPage] = useState(1)
   const [selectedPodcasts, setSelectedPodcasts] = useState<Map<string, WorkspacePodcastCatalogItem>>(new Map())
   const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [detailsPodcast, setDetailsPodcast] = useState<WorkspacePodcastCatalogItem | null>(null)
   const [selectedClientId, setSelectedClientId] = useState(targetClientId)
 
   useEffect(() => {
@@ -372,23 +374,26 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
   return (
     <WorkspaceLayout platformWorkspace={platformWorkspace}>
       <div className="space-y-6">
-        <div className="overflow-hidden rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 via-background to-violet-50 p-6 sm:p-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <Badge className="border-sky-200 bg-sky-100 text-sky-900 hover:bg-sky-100">
-                <Sparkles className="mr-1.5 h-3.5 w-3.5" />Shared across every workspace
-              </Badge>
-              <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">Podcast Database</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-                Search one growing catalog for every client. When a show is added to a client or prospect shortlist, its public data becomes reusable across the Database.
-              </p>
-            </div>
-            <Button asChild size="lg" className="shrink-0">
-              <Link to={`${baseHref}/podcast-finder`}>
-                <Plus className="mr-2 h-4 w-4" />Find and contribute podcasts
-              </Link>
-            </Button>
+        {/* A banner explaining the page every time it is opened is a cost paid
+            by the people who already know — which, after the first visit, is
+            everyone. The title and the badge carry it; the sentence that used
+            to sit under them is on the badge instead. */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight">Podcast Database</h1>
+            <Badge
+              variant="outline"
+              className="border-sky-200 bg-sky-50 text-sky-900"
+              title="One catalog for every client. A show added to any client or prospect shortlist becomes reusable across the Database."
+            >
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />Shared across every workspace
+            </Badge>
           </div>
+          <Button asChild size="sm" className="shrink-0">
+            <Link to={`${baseHref}/podcast-finder`}>
+              <Plus className="mr-2 h-4 w-4" />Find and contribute podcasts
+            </Link>
+          </Button>
         </div>
 
         {targetClient && (
@@ -563,7 +568,17 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
                               </Badge>
                             )}
                           </div>
-                          {publicUrl && <Button asChild variant="ghost" size="icon" className="shrink-0"><a href={publicUrl} target="_blank" rel="noreferrer" aria-label={`Open ${podcast.podcast_name}`}><ExternalLink className="h-4 w-4" /></a></Button>}
+                          <div className="flex shrink-0 items-center gap-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setDetailsPodcast(podcast)}
+                            >
+                              See details
+                            </Button>
+                            {publicUrl && <Button asChild variant="ghost" size="icon" className="shrink-0"><a href={publicUrl} target="_blank" rel="noreferrer" aria-label={`Open ${podcast.podcast_name}`}><ExternalLink className="h-4 w-4" /></a></Button>}
+                          </div>
                         </div>
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {categories.slice(0, 3).map((name) => <Badge key={name} variant="secondary" className="font-normal">{name}</Badge>)}
@@ -670,6 +685,12 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PodcastCatalogDetailsDialog
+        podcast={detailsPodcast}
+        relationship={detailsPodcast ? relationshipsByPodcastId.get(detailsPodcast.podcast_id) ?? null : null}
+        onClose={() => setDetailsPodcast(null)}
+      />
     </WorkspaceLayout>
   )
 }
