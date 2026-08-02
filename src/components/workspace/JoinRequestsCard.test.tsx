@@ -4,15 +4,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { JoinRequestsCard } from './JoinRequestsCard'
 import { listJoinRequests, setJoinRequestStatus, type JoinRequest } from '@/services/accessRequests'
+import { inviteWorkspaceUser } from '@/services/workspaceUsers'
 
 vi.mock('@/services/accessRequests', () => ({
   listJoinRequests: vi.fn(),
   setJoinRequestStatus: vi.fn(),
 }))
+vi.mock('@/services/workspaceUsers', () => ({ inviteWorkspaceUser: vi.fn() }))
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
 const list = vi.mocked(listJoinRequests)
 const move = vi.mocked(setJoinRequestStatus)
+const sendInvite = vi.mocked(inviteWorkspaceUser)
 
 const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString()
 
@@ -43,6 +46,7 @@ describe('JoinRequestsCard', () => {
   beforeEach(() => {
     list.mockReset().mockResolvedValue([])
     move.mockReset().mockResolvedValue(undefined)
+    sendInvite.mockReset().mockResolvedValue(undefined as never)
   })
 
   it('says the queue is empty rather than showing a fault', async () => {
@@ -80,12 +84,72 @@ describe('JoinRequestsCard', () => {
     // The refetch after the mutation returns the moved row, so the undo has to
     // be queued before the click rather than after it.
     list.mockResolvedValueOnce([request({})])
-    list.mockResolvedValue([request({ status: 'invited', handled_at: daysAgo(0) })])
+    list.mockResolvedValue([request({ status: 'declined', handled_at: daysAgo(0) })])
     renderCard()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Mark invited' }))
-    await waitFor(() => expect(move).toHaveBeenCalledWith('r1', 'invited'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Decline' }))
+    await waitFor(() => expect(move).toHaveBeenCalledWith('r1', 'declined'))
     expect(await screen.findByRole('button', { name: /move back to waiting/iu })).toBeInTheDocument()
+  })
+
+  /*
+   * Sending mails a stranger and creates a workspace in their name, so it asks
+   * first and says who and what. A table row should not be able to do that on
+   * one stray click.
+   */
+  it('asks before sending, naming the person and the workspace', async () => {
+    list.mockResolvedValue([request({ company: 'Northwind Media' })])
+    renderCard()
+
+    fireEvent.click(await screen.findByRole('button', { name: /send invitation/iu }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('dana@example.com')).toBeInTheDocument()
+    expect(within(dialog).getAllByText(/Northwind Media/u).length).toBeGreaterThan(0)
+    expect(sendInvite).not.toHaveBeenCalled()
+  })
+
+  it('sends the invitation, then records it — in that order', async () => {
+    list.mockResolvedValue([request({ company: 'Northwind Media' })])
+    renderCard()
+
+    fireEvent.click(await screen.findByRole('button', { name: /send invitation/iu }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: /send invitation/iu }))
+
+    await waitFor(() => expect(sendInvite).toHaveBeenCalledWith({
+      email: 'dana@example.com',
+      full_name: 'Dana Reyes',
+      workspace_name: 'Northwind Media',
+    }))
+    expect(move).toHaveBeenCalledWith('r1', 'invited')
+  })
+
+  // Marking it invited when no email left the building is the lie the old
+  // "Mark invited" button could tell.
+  it('does not record an invitation that failed to send', async () => {
+    sendInvite.mockRejectedValue(new Error('invite email delivery is not configured'))
+    list.mockResolvedValue([request({})])
+    renderCard()
+
+    fireEvent.click(await screen.findByRole('button', { name: /send invitation/iu }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: /send invitation/iu }))
+
+    await waitFor(() => expect(sendInvite).toHaveBeenCalled())
+    expect(move).not.toHaveBeenCalled()
+  })
+
+  it('falls back to their own name when they gave no company', async () => {
+    list.mockResolvedValue([request({ company: null })])
+    renderCard()
+
+    fireEvent.click(await screen.findByRole('button', { name: /send invitation/iu }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: /send invitation/iu }))
+
+    await waitFor(() => expect(sendInvite).toHaveBeenCalledWith(
+      expect.objectContaining({ workspace_name: 'Dana Reyes' }),
+    ))
   })
 
   // The queue is for deciding, so what they wrote has to be reachable.

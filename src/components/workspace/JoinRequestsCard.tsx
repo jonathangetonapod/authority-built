@@ -1,13 +1,17 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ExternalLink, Inbox, Loader2, Mail } from 'lucide-react'
+import { ExternalLink, Inbox, Loader2, Mail, Send } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { safeExternalUrl } from '@/lib/externalUrl'
+import { inviteWorkspaceUser } from '@/services/workspaceUsers'
 import {
   listJoinRequests,
   setJoinRequestStatus,
@@ -33,8 +37,8 @@ const STATUS_STYLE: Record<AccessRequestStatus, { label: string; className: stri
 
 /** What each status can become. 'new' is always available, to undo a misclick. */
 const NEXT: Record<AccessRequestStatus, AccessRequestStatus[]> = {
-  new: ['contacted', 'invited', 'declined'],
-  contacted: ['invited', 'declined', 'new'],
+  new: ['contacted', 'declined'],
+  contacted: ['declined', 'new'],
   invited: ['declined', 'new'],
   declined: ['new'],
 }
@@ -44,6 +48,11 @@ const ACTION_LABEL: Record<AccessRequestStatus, string> = {
   contacted: 'Mark contacted',
   invited: 'Mark invited',
   declined: 'Decline',
+}
+
+/** Their company if they gave one, otherwise their own name. */
+function workspaceNameFor(request: JoinRequest): string {
+  return request.company?.trim() || request.full_name.trim()
 }
 
 function waitedFor(iso: string): string {
@@ -71,6 +80,35 @@ export function JoinRequestsCard() {
   const requestsQuery = useQuery({
     queryKey: ['join-requests'],
     queryFn: listJoinRequests,
+  })
+
+  const [confirming, setConfirming] = useState<JoinRequest | null>(null)
+
+  /*
+   * Sending the invitation is the act, and marking the request invited is the
+   * bookkeeping. Doing them separately let the queue claim someone had been
+   * invited when no email had gone anywhere. This does the real thing, then
+   * records it — and only records it if the send succeeded.
+   */
+  const invite = useMutation({
+    mutationFn: async (request: JoinRequest) => {
+      await inviteWorkspaceUser({
+        email: request.email,
+        full_name: request.full_name,
+        workspace_name: workspaceNameFor(request),
+      })
+      await setJoinRequestStatus(request.id, 'invited')
+    },
+    onSuccess: async (_result, request) => {
+      await queryClient.invalidateQueries({ queryKey: ['join-requests'] })
+      await queryClient.invalidateQueries({ queryKey: ['join-requests-waiting'] })
+      await queryClient.invalidateQueries({ queryKey: ['platform', 'workspace-users'] })
+      setConfirming(null)
+      toast.success(`Invitation sent to ${request.email}.`)
+    },
+    onError: (error) => toast.error(
+      error instanceof Error ? error.message : 'The invitation could not be sent.',
+    ),
   })
 
   const move = useMutation({
@@ -147,6 +185,7 @@ export function JoinRequestsCard() {
                     busy={move.isPending && move.variables?.id === request.id}
                     onToggle={() => setExpanded((current) => (current === request.id ? null : request.id))}
                     onMove={(status) => move.mutate({ id: request.id, status })}
+                    onInvite={() => setConfirming(request)}
                   />
                 ))}
               </TableBody>
@@ -154,6 +193,45 @@ export function JoinRequestsCard() {
           </div>
         )}
       </CardContent>
+
+      {/* Sending mails a stranger and creates a workspace in their name. That is
+          not a thing to do on a stray click from a table row, so the dialog says
+          exactly what is about to happen and to whom. */}
+      <Dialog open={Boolean(confirming)} onOpenChange={(open) => { if (!open) setConfirming(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send an invitation?</DialogTitle>
+            <DialogDescription>
+              {confirming && (
+                <>
+                  {confirming.full_name} gets an email inviting them to set their own password.
+                  A private workspace called <strong>{workspaceNameFor(confirming)}</strong> is
+                  created with them as owner. No password is generated and nothing is shown here to
+                  pass on — they choose their own.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {confirming && (
+            <dl className="grid gap-1 text-sm">
+              <div className="flex gap-2"><dt className="text-muted-foreground">Email</dt><dd>{confirming.email}</dd></div>
+              <div className="flex gap-2"><dt className="text-muted-foreground">Workspace</dt><dd>{workspaceNameFor(confirming)}</dd></div>
+            </dl>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirming(null)} disabled={invite.isPending}>
+              Cancel
+            </Button>
+            <Button
+              disabled={invite.isPending}
+              onClick={() => confirming && invite.mutate(confirming)}
+            >
+              {invite.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Send invitation
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }
@@ -164,9 +242,10 @@ interface RequestRowProps {
   busy: boolean
   onToggle: () => void
   onMove: (status: AccessRequestStatus) => void
+  onInvite: () => void
 }
 
-const RequestRow = ({ request, expanded, busy, onToggle, onMove }: RequestRowProps) => {
+const RequestRow = ({ request, expanded, busy, onToggle, onMove, onInvite }: RequestRowProps) => {
   const website = safeExternalUrl(request.website || '')
   const status = STATUS_STYLE[request.status]
 
@@ -193,6 +272,11 @@ const RequestRow = ({ request, expanded, busy, onToggle, onMove }: RequestRowPro
         <TableCell className="align-top text-right">
           <div className="flex flex-wrap justify-end gap-1.5">
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            {request.status !== 'invited' && (
+              <Button type="button" size="sm" disabled={busy} onClick={onInvite}>
+                <Send className="mr-2 h-4 w-4" />Send invitation
+              </Button>
+            )}
             {NEXT[request.status].map((next) => (
               <Button
                 key={next}
