@@ -324,30 +324,6 @@ export async function setPortalNotifications(clientId: string, enabled: boolean)
 }
 
 /**
- * Ask the workspace team for an add-on (e.g. the clipping service). The
- * request is recorded server-side and the workspace owner is notified.
- */
-export async function requestPortalAddon(
-  clientId: string,
-  packageName: string,
-  episodeName: string | null,
-): Promise<void> {
-  const { session } = sessionStorage.get()
-  if (session && session.client_id !== clientId) {
-    throw new Error('Portal session does not match the requested client.')
-  }
-  const requestBody: Record<string, unknown> = {
-    clientId,
-    addon_request: { package_name: packageName, episode_name: episodeName },
-  }
-  if (session?.session_token) requestBody.sessionToken = session.session_token
-
-  const { data, error } = await supabase.functions.invoke('portal-experience', { body: requestBody })
-  if (error) throw await toFunctionError(error, 'Your request could not be sent — try again.')
-  if (!data?.success) throw new Error('Your request could not be sent — try again.')
-}
-
-/**
  * Get a single booking by ID (with authorization check)
  */
 export async function getClientBooking(clientId: string, bookingId: string): Promise<Booking> {

@@ -4,6 +4,9 @@ import { readFileSync } from 'node:fs'
 const edge = readFileSync('supabase/functions/portal-experience/index.ts', 'utf8')
 const config = readFileSync('supabase/config.toml', 'utf8')
 const manifest = readFileSync('docs/invite-only-edge-manifest.json', 'utf8')
+const app = readFileSync('src/App.tsx', 'utf8')
+const portalLayout = readFileSync('src/components/portal/PortalLayout.tsx', 'utf8')
+const portalService = readFileSync('src/services/clientPortal.ts', 'utf8')
 
 // Auth: a valid client-scoped portal session, or the explicit
 // platform-admin impersonation path — never workspace auth.
@@ -57,10 +60,21 @@ assert.match(
   /\.from\('clients'\)\s*\n\s*\.update\(\{ notifications_enabled: body\.notifications_enabled \}\)\s*\n\s*\.eq\('id', clientId\)/u,
 )
 
-console.log('Portal Experience Edge contract checks passed')
 
 // Client-added calendar events: creation is flagged, removal is restricted to
 // the client's own entries, and the write surface is bounded.
 assert.match(edge, /created_by_client: true/u)
 assert.match(edge, /delete_event_id[\s\S]*?\.eq\('client_id', clientId\)[\s\S]*?\.eq\('created_by_client', true\)/u)
 assert.match(edge, /EVENT_LIMIT_REACHED/u)
+
+// The portal is what a client sees of the agency they already pay. Selling
+// them clip packages inside it put the agency's own client in a shop, under
+// the agency's brand, on the agency's domain — so the surface is gone rather
+// than merely unlinked, and the route redirects because links to it are
+// already out in emails.
+assert.doesNotMatch(portalLayout, /\/portal\/addons/u, 'the portal nav must not offer add-ons')
+assert.doesNotMatch(portalLayout, /Add-ons/u)
+assert.doesNotMatch(portalService, /requestPortalAddon/u, 'the portal must not be able to request an upsell')
+assert.match(app, /path="\/portal\/addons"[\s\S]{0,400}Navigate to="\/portal\/dashboard"/u)
+
+console.log('Portal Experience Edge contract checks passed')

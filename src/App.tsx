@@ -34,7 +34,6 @@ const PortalLogin = lazyRoute(() => import("./pages/portal/Login"));
 const PortalDashboard = lazyRoute(() => import("./pages/portal/DashboardMvp"));
 const PortalCalendar = lazyRoute(() => import("./pages/portal/Calendar"));
 const PortalOutreach = lazyRoute(() => import("./pages/portal/Outreach"));
-const PortalAddOns = lazyRoute(() => import("./pages/portal/AddOns"));
 const PortalResources = lazyRoute(() => import("./pages/portal/Resources"));
 const ProspectView = lazyRoute(() => import("./pages/prospect/ProspectView"));
 const ClientApprovalView = lazyRoute(() => import("./pages/client/ClientApprovalView"));
@@ -467,11 +466,12 @@ const App = () => (
             />
             <Route
               path="/portal/addons"
-              element={
-                <ClientProtectedRoute>
-                  <PortalAddOns />
-                </ClientProtectedRoute>
-              }
+              // The portal is what a client sees of the agency they already
+              // pay. Selling them clip packages there put the agency's own
+              // client in a shop, under the agency's brand, on the agency's
+              // domain. Redirected rather than removed, because links to it
+              // are already out in emails.
+              element={<Navigate to="/portal/dashboard" replace />}
             />
             <Route
               path="/portal/resources"

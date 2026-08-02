@@ -2,7 +2,7 @@ import { useClientPortal } from '@/contexts/ClientPortalContext'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { LogOut, User, LayoutDashboard, BookOpen, CalendarDays, Eye, Send, Sparkles, X } from 'lucide-react'
+import { LogOut, User, LayoutDashboard, BookOpen, CalendarDays, Eye, Send, X } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,11 +59,6 @@ export function PortalLayout({ children }: PortalLayoutProps) {
       path: '/portal/outreach',
       label: 'Outreach',
       icon: Send,
-    },
-    {
-      path: '/portal/addons',
-      label: 'Add-ons',
-      icon: Sparkles,
     },
     {
       path: '/portal/resources',
