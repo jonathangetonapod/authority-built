@@ -72,7 +72,11 @@ serve(async (req) => {
 
   let checked = 0
   let changed = 0
-  let failed = 0
+  // Carried back rather than swallowed. A sweep that reports "failed: 1" and
+  // nothing else is the same unactionable answer this whole integration was
+  // built to stop accepting from a provider — and nobody is watching a cron
+  // job closely enough to go and reconstruct it.
+  const errors: Array<{ hostname: string; message: string }> = []
   for (const row of due) {
     const before = row.status
     try {
@@ -82,13 +86,16 @@ serve(async (req) => {
       const result = await checkDomain(admin, row as never, null, writeAudit)
       checked += 1
       if (result.status !== before) changed += 1
-    } catch (_error) {
+    } catch (error) {
       // One unreachable provider must not stop the rest of the sweep, and the
       // row keeps its previous status rather than being marked on a failure
       // that belongs to the network.
-      failed += 1
+      errors.push({
+        hostname: String(row.hostname ?? 'unknown'),
+        message: error instanceof Error ? error.message.slice(0, 300) : 'unknown error',
+      })
     }
   }
 
-  return json(200, { checked, changed, failed, due: due.length })
+  return json(200, { checked, changed, failed: errors.length, due: due.length, errors: errors.slice(0, 10) })
 })

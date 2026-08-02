@@ -403,6 +403,11 @@ assert.match(tick, /\.in\('status', \['awaiting_dns', 'provisioning', 'active', 
 // One unreachable provider must not stop the sweep, and a bounded tick cannot
 // become the thing that rate-limits the provider it is checking.
 assert.match(tick, /const MAX_DOMAINS_PER_TICK/u)
-assert.match(tick, /catch \(_error\) \{[\s\S]{0,240}failed \+= 1/u)
+assert.match(tick, /catch \(error\) \{[\s\S]{0,400}errors\.push\(/u)
+// A sweep reporting "failed: 1" and nothing else is the same unactionable
+// answer this integration was built to stop accepting from a provider, and
+// nobody watches a cron job closely enough to reconstruct it afterwards.
+assert.match(tick, /message: error instanceof Error \? error\.message\.slice\(0, 300\)/u)
+assert.match(tick, /errors: errors\.slice\(0, 10\)/u)
 
 process.stdout.write('Workspace domains Edge contract checks passed\n')
