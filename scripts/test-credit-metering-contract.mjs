@@ -8,6 +8,8 @@ const prospectBuild = readFileSync('supabase/functions/workspace-prospect-dashbo
 const scoring = readFileSync('supabase/functions/score-podcast-compatibility/index.ts', 'utf8')
 const autopilot = readFileSync('supabase/functions/client-autopilot-tick/index.ts', 'utf8')
 const creditFixes = readFileSync('supabase/migrations/20260802030000_credit_refunds_and_expiry.sql', 'utf8')
+const renewal = readFileSync('supabase/migrations/20260802050000_allowance_renewal_reports_truthfully.sql', 'utf8')
+const renewalSchedule = readFileSync('supabase/migrations/20260802040000_monthly_allowance_renewal.sql', 'utf8')
 const queries = readFileSync('supabase/functions/generate-podcast-queries/index.ts', 'utf8')
 const podscanProxy = readFileSync('supabase/functions/podscan-proxy/index.ts', 'utf8')
 const staffEdge = readFileSync('supabase/functions/manage-workspace-staff/index.ts', 'utf8')
@@ -103,5 +105,26 @@ assert.match(prospectBuild, /idempotencyKey: retryWindowKey\(\['dashboard_build'
 // A search is not an artifact: repeating one inside the window is ordinary,
 // so these deliberately carry no key.
 assert.doesNotMatch(scoring, /idempotencyKey/u)
+
+// The allowance was granted lazily, inside the first charge of the month, so a
+// workspace that ran nothing got nothing — and the month a team comes back
+// from a quiet period is the month they need the balance already there.
+assert.match(renewal, /CREATE OR REPLACE FUNCTION public\.grant_monthly_allowances_v1/u)
+assert.match(renewalSchedule, /cron\.schedule\(\s*'workspace-monthly-allowance'/u)
+// Daily, because the grant is idempotent per period and a daily run is
+// self-healing: a job that fires only on the 1st has one chance to be right.
+assert.match(renewalSchedule, /'23 2 \* \* \*'/u)
+// The same key the lazy path uses, so the two can never both land.
+assert.match(renewal, /'allowance:' \|\| workspace\.id::text \|\| ':' \|\| period/u)
+// A cancelled workspace keeps its plan's allowance on the row, so granting
+// from it regardless would top it up for ever.
+assert.match(renewal, /billing_status NOT IN \('trialing', 'active', 'comped'\)/u)
+// The literal must match the column default or a workspace silently lands on
+// the wrong plan.
+assert.match(renewal, /COALESCE\(workspace\.monthly_credit_allowance, 100\)/u)
+// It counts what it granted, not what it considered: a second run in the same
+// month granted nothing and used to report a full month's credits anyway.
+assert.match(renewal, /COALESCE\(\(grant_result->>'idempotent'\)::boolean, false\)/u)
+assert.match(renewal, /'already_held', already_held/u)
 
 console.log('Credit metering edge contract passed')
