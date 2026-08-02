@@ -30,7 +30,7 @@ describe('RequestAccess', () => {
 
   it('names itself a request, and points at the door for people who have an account', () => {
     renderPage()
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/request access/iu)
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/request to join/iu)
     expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login')
     // The invite-only promise, said before the button rather than after.
     expect(screen.getByText(/does not create an account/iu)).toBeInTheDocument()

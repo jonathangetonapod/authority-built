@@ -1,18 +1,25 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
+/**
+ * Strip comments before asserting what a file does NOT do. A comment naming a
+ * forbidden call is documentation, not a call — this has caught me out four
+ * times, so it lives in one place now.
+ */
+const stripComments = (source) =>
+  source.replace(/\/\*[\s\S]*?\*\//gu, '').replace(/(^|\s)\/\/[^\n]*/gu, '$1')
+
 const fn = readFileSync('supabase/functions/request-workspace-access/index.ts', 'utf8')
-// Assertions about what the function does read the code, not the comments that
-// explain it — a comment naming a forbidden phrase is documentation, not a call.
-const code = fn.replace(/\/\*[\s\S]*?\*\//gu, '').replace(/(^|\s)\/\/[^\n]*/gu, '$1')
+const code = stripComments(fn)
 const migration = readFileSync(
   'supabase/migrations/20260802080000_workspace_access_requests.sql',
   'utf8',
 )
-// Same rule as `code` above: assertions read SQL, not the comments explaining it.
+// Same rule for SQL: read the statements, not the comments explaining them.
 const sql = migration.replace(/(^|\s)--[^\n]*/gu, '$1')
 const config = readFileSync('supabase/config.toml', 'utf8')
 const service = readFileSync('src/services/accessRequests.ts', 'utf8')
+const serviceCode = stripComments(service)
 
 // The form is posted by strangers who have no account yet, so there is no JWT
 // to verify. That is the whole reason the rest of these assertions exist.
@@ -106,7 +113,10 @@ assert.match(migration, /create policy workspace_access_requests_admin_delete/u)
 // The browser calls the function, never the table: with no anon policy a direct
 // table insert would fail silently from the caller's point of view.
 assert.match(service, /functions\.invoke\('request-workspace-access'/u)
-assert.doesNotMatch(service, /from\('workspace_access_requests'\)/u)
+// The public submit must stay on the function: there is no anon insert policy,
+// and every length and shape check lives server-side. The admin queue below may
+// read the table, but nothing in the browser may ever write a row to it.
+assert.doesNotMatch(serviceCode, /\.insert\(/u)
 
 // The landing page stylesheet is bundled into the app's single CSS file and
 // loads on every route, after Tailwind's preflight. A rule that starts with an
@@ -156,5 +166,16 @@ for (const value of formValues) {
   assert.ok(edgeValues.includes(value), `the function rejects an audience the form offers: ${value}`)
   assert.ok(dbValues.includes(value), `the column rejects an audience the form offers: ${value}`)
 }
+
+// Nothing showed a request to a human until the admin queue existed. It reads
+// the table directly — a deliberate departure from the edge-function pattern,
+// because the project is at its deployed-function cap — so the row-level policy
+// is the whole of the authorization and the query must not widen it.
+assert.match(service, /from\('workspace_access_requests'\)/u)
+assert.doesNotMatch(serviceCode, /source_ip_hash/u)
+assert.match(service, /handled_by: session\?\.user\?\.id/u)
+// The admin-only policies this leans on have to still be there.
+assert.match(sql, /for select\s+to authenticated\s+using \(public\.is_platform_admin\(\)\)/u)
+assert.match(sql, /for update\s+to authenticated\s+using \(public\.is_platform_admin\(\)\)/u)
 
 console.log('access request edge contract OK')

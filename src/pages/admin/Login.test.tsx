@@ -58,7 +58,7 @@ describe('Login', () => {
 
   it('offers the way in for someone who has no account', () => {
     renderLogin()
-    expect(screen.getByRole('link', { name: 'Request access' })).toHaveAttribute('href', '/register')
+    expect(screen.getByRole('link', { name: 'Request to join' })).toHaveAttribute('href', '/register')
   })
 
   // The toggle used to claim "Show password" while the password was showing.

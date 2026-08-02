@@ -103,7 +103,7 @@ const AcceptInvite = () => {
         path="/accept-invite"
         tone="notice"
         heading="Open your invitation."
-        footer={<>No invitation yet? <Link to="/register">Request access</Link></>}
+        footer={<>No invitation yet? <Link to="/register">Request to join</Link></>}
       >
         <p className="gp-auth-reason">
           The invitation link is invalid or has expired. Sign in with the invited email, or ask for a new invitation.
@@ -123,7 +123,7 @@ const AcceptInvite = () => {
         path="/accept-invite"
         tone="notice"
         heading="Invitation unavailable."
-        footer={<>Need a new one? <Link to="/register">Request access</Link></>}
+        footer={<>Need a new one? <Link to="/register">Request to join</Link></>}
       >
         <p className="gp-auth-reason">
           {accountState === 'expired'

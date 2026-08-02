@@ -151,6 +151,6 @@ describe('AcceptInvite', () => {
 
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/invitation unavailable/iu)
     expect(screen.getByRole('link', { name: /back to sign in/iu })).toHaveAttribute('href', '/login')
-    expect(screen.getByRole('link', { name: /request access/iu })).toHaveAttribute('href', '/register')
+    expect(screen.getByRole('link', { name: /request to join/iu })).toHaveAttribute('href', '/register')
   })
 })

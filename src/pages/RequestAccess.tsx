@@ -6,7 +6,7 @@ import { AuthShell } from '@/components/landing/AuthShell'
 /**
  * The register page.
  *
- * It is called "Request access" everywhere it appears, because that is what it
+ * It is called "Request to join" everywhere it appears, because that is what it
  * does — the platform is invite-only and this creates no account. Calling the
  * link "Sign up" and then not signing anyone up is the one thing this page must
  * not do.
@@ -16,12 +16,12 @@ import { AuthShell } from '@/components/landing/AuthShell'
  */
 const RequestAccess = () => (
   <AuthShell
-    title="Request access | Get On A Pod"
-    description="Ask for a workspace on Get On A Pod. Access is by invite; tell us what you run and we will reply with a time to talk."
+    title="Request to join | Get On A Pod"
+    description="Ask to join Get On A Pod. Membership is by invite; tell us what you run and we will reply with a time to talk."
     path="/register"
-    heading="Request access."
+    heading="Request to join."
     standfirst="Tell us what you run today — how many clients, what you are using now, and whether you are adding podcasts to an existing service or starting from scratch."
-    footer={<>Already have an account? <Link to="/login">Sign in</Link></>}
+    footer={<>Already a member? <Link to="/login">Sign in</Link></>}
   >
     <AccessRequestForm />
   </AuthShell>

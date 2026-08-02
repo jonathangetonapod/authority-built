@@ -127,7 +127,7 @@ const Login = () => {
         path="/login"
         tone="notice"
         heading="Access unavailable."
-        footer={<>Need a workspace? <Link to="/register">Request access</Link></>}
+        footer={<>Need a workspace? <Link to="/register">Request to join</Link></>}
       >
         <p className="gp-auth-reason">
           {accountState === 'suspended'
@@ -158,7 +158,7 @@ const Login = () => {
       path="/login"
       heading="Welcome back."
       standfirst="Use the email from your invitation, or the account an administrator created for you."
-      footer={<>No account yet? <Link to="/register">Request access</Link></>}
+      footer={<>No account yet? <Link to="/register">Request to join</Link></>}
     >
       <form className="gp-form" onSubmit={handlePasswordSignIn}>
         {(passwordChanged || signInAgain) && (

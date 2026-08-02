@@ -53,7 +53,7 @@ describe('AgencyLanding', () => {
   // says what it does, so a rotor can tell them apart.
   it('gives the submit button a name of its own', () => {
     renderPage()
-    expect(screen.getAllByRole('link', { name: 'Request access' }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('link', { name: 'Request to join' }).length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: 'Send request' })).toBeInTheDocument()
   })
 

@@ -176,7 +176,7 @@ export const AccessRequestForm = () => {
         {/* Said before they fill it in, not after they wait for a login that
             never arrives. */}
         <p className="gp-form-note">
-          Access is by invite. This does not create an account — we read it and reply with a time to talk.
+          Joining is by invite. This does not create an account — we read every request and reply with a time to talk.
         </p>
       </div>
     </form>

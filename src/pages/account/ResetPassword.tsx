@@ -71,7 +71,7 @@ const ResetPassword = () => {
         path="/reset-password"
         tone="notice"
         heading="Reset link expired."
-        footer={<>No account yet? <Link to="/register">Request access</Link></>}
+        footer={<>No account yet? <Link to="/register">Request to join</Link></>}
       >
         <p className="gp-auth-reason">
           This password reset link is invalid or has expired. Request a new one from the sign-in page.

@@ -160,7 +160,7 @@ const AgencyLanding = () => {
           </nav>
           <div className="gp-masthead-actions">
             <Link className="gp-signin" to="/login">Sign in</Link>
-            <a className="gp-btn gp-btn-ink" href="#start">Request access</a>
+            <a className="gp-btn gp-btn-ink" href="#start">Request to join</a>
           </div>
         </div>
       </header>
@@ -175,7 +175,7 @@ const AgencyLanding = () => {
                 log into, under your name.
               </p>
               <div className="gp-cta-row">
-                <a className="gp-btn gp-btn-primary" href="#start">Request access</a>
+                <a className="gp-btn gp-btn-primary" href="#start">Request to join</a>
                 <a className="gp-btn gp-btn-quiet" href="#tour">See the screens</a>
               </div>
               <p className="gp-who">
@@ -300,7 +300,7 @@ const AgencyLanding = () => {
               <div>
                 <h2>See it on your own client list.</h2>
                 <p className="gp-start-said">
-                  Tell us what you run today and we will walk you through it. Access is by invite, so we
+                  Tell us what you run today and we will walk you through it. Joining is by invite, so we
                   take a few agencies at a time.
                 </p>
               </div>

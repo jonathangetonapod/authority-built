@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { selectedWorkspaceBaseHref, workspaceModuleHref } from '@/lib/workspaceRoutes'
 import { resetWorkspaceStaffTemporaryPassword } from '@/services/workspaceStaff'
 import { WorkspaceDomainsCard } from '@/components/workspace/WorkspaceDomainsCard'
+import { JoinRequestsCard } from '@/components/workspace/JoinRequestsCard'
 import { listAdminWorkspaces } from '@/services/adminWorkspaces'
 import {
   inviteWorkspaceUser,
@@ -246,6 +247,8 @@ const WorkspaceUsers = () => {
             <Button onClick={() => setInviteOpen(true)}><UserPlus className="mr-2 h-4 w-4" />Invite agency owner</Button>
           </div>
         </div>
+
+        <JoinRequestsCard />
 
         <Card>
           <CardHeader><CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" />Owner accounts</CardTitle><CardDescription>Reset an owner's password here or open their workspace settings to manage the full team. New passwords are shown once and must be replaced at the owner's next sign-in.</CardDescription></CardHeader>
