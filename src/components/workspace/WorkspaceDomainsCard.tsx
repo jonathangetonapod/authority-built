@@ -58,7 +58,7 @@ const steps = [
   },
   {
     title: 'Wait for it to resolve',
-    body: 'A waiting domain re-checks itself every minute, so there is nothing to sit and press. Once the record is visible the https certificate issues on its own, usually within the hour. Waiting for DNS, then Issuing certificate, then Serving.',
+    body: 'A waiting domain re-checks itself every minute, so there is nothing to sit and press. Once the record is visible the https certificate issues on its own, usually within a few minutes. Waiting for DNS, then Issuing certificate, then Serving.',
   },
   {
     title: 'Their links switch over',
@@ -184,7 +184,7 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
       '',
       'This is the step that catches almost everyone. A proxied record makes Cloudflare answer for the address itself, so our certificate can never be issued — and it looks exactly like the record is still propagating, so waiting longer never fixes it. Nothing else about your Cloudflare setup changes.',
       '',
-      'Nothing else changes on your side. Once the record exists, the certificate issues automatically — usually within the hour — and your client links switch to your domain. Reply when it is in and we will confirm it is live.',
+      'Nothing else changes on your side. Once the record exists, the certificate issues automatically — usually within a few minutes — and your client links switch to your domain. Reply when it is in and we will confirm it is live.',
     ].join('\n')
     await copy(message)
   }

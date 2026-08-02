@@ -182,7 +182,7 @@ export function describeDomainStatus(status: DomainStatus): string {
       // Never "just wait": the most common way this stalls is a record that
       // exists and is proxied, which looks exactly like one that does not
       // exist yet and never resolves itself no matter how long it sits.
-      return 'Waiting on the agency. Either they have not added the record yet, or they just did and it is still spreading across the internet, which can take a few hours. If it has been sitting here longer than that, the usual cause is a Cloudflare record left on Proxied — it has to be set to DNS only, or the certificate can never issue.'
+      return 'Waiting on the agency. Either they have not added the record yet, or they just did and it is still spreading, which is usually minutes rather than hours. If it has been sitting here much longer, the usual cause is a Cloudflare record left on Proxied — it has to be set to DNS only, or the certificate can never issue.'
     case 'provisioning':
       return 'The record arrived. The https certificate is being issued now, which is automatic and usually takes a few minutes.'
     case 'active':
