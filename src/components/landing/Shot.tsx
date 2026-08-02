@@ -6,6 +6,8 @@ interface ShotProps {
   /** Names the file that belongs here, shown until it is dropped in. */
   placeholder: string
   ratio: string
+  /** Above the fold. Lazy-loading the LCP image only delays it. */
+  priority?: boolean
 }
 
 /**
@@ -16,13 +18,22 @@ interface ShotProps {
  * ships either way, and a missing screenshot stays obvious to us and quiet to
  * a visitor.
  */
-export const Shot = ({ src, alt, placeholder, ratio }: ShotProps) => {
+export const Shot = ({ src, alt, placeholder, ratio, priority = false }: ShotProps) => {
   const [missing, setMissing] = useState(false)
   return (
     <div className="gp-shot" style={{ aspectRatio: ratio }}>
       {missing
         ? <div className="gp-shot-empty" aria-hidden="true">{placeholder}</div>
-        : <img src={src} alt={alt} loading="lazy" decoding="async" onError={() => setMissing(true)} />}
+        : (
+          <img
+            src={src}
+            alt={alt}
+            loading={priority ? 'eager' : 'lazy'}
+            fetchPriority={priority ? 'high' : 'auto'}
+            decoding="async"
+            onError={() => setMissing(true)}
+          />
+        )}
     </div>
   )
 }

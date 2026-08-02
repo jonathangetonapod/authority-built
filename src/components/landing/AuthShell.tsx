@@ -75,7 +75,7 @@ export const AuthShell = ({
           <Chrome url="podcasts.yourbrand.com" />
           <Shot
             src="/shots/hero.png"
-            alt="The workspace: a client's shortlist of podcasts alongside their outreach status."
+            alt="The workspace client list: five agency clients with their contact, AI SDR profile progress and status."
             placeholder="shots/hero.png — main workspace"
             ratio="16 / 10"
           />

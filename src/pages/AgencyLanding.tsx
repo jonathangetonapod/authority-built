@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 
 import { AccessRequestForm } from '@/components/landing/AccessRequestForm'
+import { Chrome, Shot } from '@/components/landing/Shot'
 import PageSEO from '@/components/seo/PageSEO'
 import '@/styles/agencyLanding.css'
 
@@ -95,31 +96,6 @@ const FAQ = [
 ]
 
 /**
- * A screenshot in its frame.
- *
- * The images live in `public/shots/`. Until one is there the frame names the
- * file that belongs in it rather than showing a broken-image icon — the page
- * ships either way, and a missing screenshot stays obvious to us and quiet to
- * a visitor.
- */
-const Shot = ({ src, alt, placeholder, ratio }: Pick<Shot, 'src' | 'alt' | 'placeholder' | 'ratio'>) => {
-  const [missing, setMissing] = useState(false)
-  return (
-    <div className="gp-shot" style={{ aspectRatio: ratio }}>
-      {missing
-        ? <div className="gp-shot-empty" aria-hidden="true">{placeholder}</div>
-        : <img src={src} alt={alt} loading="lazy" decoding="async" onError={() => setMissing(true)} />}
-    </div>
-  )
-}
-
-const Chrome = ({ url }: { url: string }) => (
-  <div className="gp-chrome" aria-hidden="true">
-    <b /><b /><b /><span>{url}</span>
-  </div>
-)
-
-/**
  * The public landing page for the agency product.
  *
  * This sells the platform to the people who run placement — agencies, PR firms,
@@ -187,9 +163,10 @@ const AgencyLanding = () => {
               <Chrome url="podcasts.yourbrand.com" />
               <Shot
                 src="/shots/hero.png"
-                alt="The workspace: a client's shortlist of podcasts alongside their outreach status."
+                alt="The workspace client list: five agency clients with their contact, AI SDR profile progress and status."
                 placeholder="shots/hero.png — main workspace"
                 ratio="16 / 10"
+                priority
               />
             </div>
           </div>
