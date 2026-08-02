@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { HelmetProvider } from 'react-helmet-async'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChangeInitialPassword from '@/pages/account/ChangeInitialPassword'
@@ -23,17 +24,21 @@ const Location = () => {
 }
 
 function renderPage() {
+  // The page sets its own document title now, which needs the provider the app
+  // wraps everything in.
   render(
-    <MemoryRouter
-      initialEntries={['/change-password']}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-    >
-      <Routes>
-        <Route path="/change-password" element={<ChangeInitialPassword />} />
-        <Route path="/login" element={<Location />} />
-        <Route path="/app/clients" element={<Location />} />
-      </Routes>
-    </MemoryRouter>,
+    <HelmetProvider>
+      <MemoryRouter
+        initialEntries={['/change-password']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <Routes>
+          <Route path="/change-password" element={<ChangeInitialPassword />} />
+          <Route path="/login" element={<Location />} />
+          <Route path="/app/clients" element={<Location />} />
+        </Routes>
+      </MemoryRouter>
+    </HelmetProvider>,
   )
 }
 

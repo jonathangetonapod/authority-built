@@ -375,12 +375,12 @@
 .gp-field-row { display: grid; gap: 1.1rem; grid-template-columns: 1fr 1fr; }
 @media (max-width: 46rem) { .gp-field-row { grid-template-columns: 1fr; } }
 .gp-field { display: grid; gap: 0.4rem; min-width: 0; }
-.gp-field > span {
+.gp-field > span, .gp-field > label {
   font-family: var(--data); font-size: 0.7rem; letter-spacing: 0.09em;
   text-transform: uppercase; color: var(--band-soft);
 }
 /* Optional is marked on the label, so nobody has to submit to find out. */
-.gp-field > span i { font-style: normal; opacity: 0.62; text-transform: none; letter-spacing: 0.04em; }
+.gp-field > span i, .gp-field > label i { font-style: normal; opacity: 0.62; text-transform: none; letter-spacing: 0.04em; }
 .gp-field input, .gp-field select, .gp-field textarea {
   font: inherit; font-size: 0.95rem; color: var(--band-fg);
   background: rgba(255, 255, 255, 0.04);
@@ -496,3 +496,9 @@
 /* The masthead's call to action. Smaller than the hero's, so the hero still
    carries the decision. */
 .gp-btn-small { padding: 0.6rem 1rem; font-size: 0.7rem; }
+
+/* Requirements stated under the field they govern, in the label's own voice. */
+.gp-field-hint {
+  font-family: var(--body); font-size: 0.78rem; letter-spacing: 0;
+  text-transform: none; color: var(--band-soft); line-height: 1.5;
+}

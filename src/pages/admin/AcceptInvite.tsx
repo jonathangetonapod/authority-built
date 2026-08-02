@@ -1,14 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { CheckCircle2, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { toFunctionError } from '@/lib/functionErrors'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { AuthShell } from '@/components/landing/AuthShell'
 
 const AcceptInvite = () => {
   const {
@@ -89,76 +86,111 @@ const AcceptInvite = () => {
   }
 
   if (accountState === 'loading') {
-    return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>
+    return (
+      <div className="gp-page gp-auth-page gp-auth-loading">
+        <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
+        <span className="sr-only">Opening your invitation</span>
+      </div>
+    )
   }
 
   if (!user || accountState === 'signed_out') {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>Open your invitation</CardTitle>
-            <CardDescription>The invitation link is invalid or has expired. Sign in with the invited email or ask for a new invitation.</CardDescription>
-          </CardHeader>
-          <CardContent><Button asChild className="w-full"><Link to="/login">Go to sign in</Link></Button></CardContent>
-        </Card>
-      </div>
+      <AuthShell
+        title="Open your invitation | Get On A Pod"
+        description="Open a Get On A Pod workspace invitation."
+        path="/accept-invite"
+        tone="notice"
+        heading="Open your invitation."
+        standfirst=""
+        footer={<>No invitation yet? <Link to="/register">Request access</Link></>}
+      >
+        <p className="gp-auth-reason">
+          The invitation link is invalid or has expired. Sign in with the invited email, or ask for a new invitation.
+        </p>
+        <div className="gp-auth-actions">
+          <Link className="gp-btn gp-btn-primary" to="/login">Go to sign in</Link>
+        </div>
+      </AuthShell>
     )
   }
 
   if (accountState !== 'pending' || !membership) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>Invitation unavailable</CardTitle>
-            <CardDescription>
-              {accountState === 'expired'
-                ? `The invitation for ${user.email} has expired.`
-                : `No active invitation matches ${user.email}.`} Ask a workspace administrator to send a new invitation.
-            </CardDescription>
-          </CardHeader>
-          <CardContent><Button asChild variant="outline" className="w-full"><Link to="/login">Back to sign in</Link></Button></CardContent>
-        </Card>
-      </div>
+      <AuthShell
+        title="Invitation unavailable | Get On A Pod"
+        description="This invitation can no longer be accepted."
+        path="/accept-invite"
+        tone="notice"
+        heading="Invitation unavailable."
+        standfirst=""
+        footer={<>Need a new one? <Link to="/register">Request access</Link></>}
+      >
+        <p className="gp-auth-reason">
+          {accountState === 'expired'
+            ? `The invitation for ${user.email} has expired.`
+            : `No active invitation matches ${user.email}.`} Ask a workspace administrator to send a new invitation.
+        </p>
+        <div className="gp-auth-actions">
+          <Link className="gp-btn gp-btn-ghost" to="/login">Back to sign in</Link>
+        </div>
+      </AuthShell>
     )
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-            <CheckCircle2 className="h-5 w-5 text-primary" />
-          </div>
-          <CardTitle>Accept your invitation</CardTitle>
-          <CardDescription>
-            Join {workspace?.name || 'your workspace'} as {membership.role} using {user.email}.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={acceptInvite} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="invite-name">Full name</Label>
-              <Input id="invite-name" value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="invite-password">Create password</Label>
-              <Input id="invite-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" aria-describedby="invite-password-requirements" />
-              <p id="invite-password-requirements" className="text-xs text-muted-foreground">12+ characters with uppercase, lowercase, a number, and a symbol; 72 UTF-8 bytes maximum.</p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="invite-password-confirm">Confirm password</Label>
-              <Input id="invite-password-confirm" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" />
-            </div>
-            <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {submitting ? 'Accepting...' : 'Accept invitation'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+    <AuthShell
+      title="Accept your invitation | Get On A Pod"
+      description="Set your name and password to finish joining a Get On A Pod workspace."
+      path="/accept-invite"
+      heading="Accept your invitation."
+      standfirst={`Join ${workspace?.name || 'your workspace'} as ${membership.role}, using ${user.email}.`}
+      footer={<>Wrong account? <Link to="/login">Sign in as someone else</Link></>}
+    >
+      <form className="gp-form gp-form-tight" onSubmit={acceptInvite}>
+        <div className="gp-field">
+          <label htmlFor="invite-name">Full name</label>
+          <input
+            id="invite-name"
+            autoComplete="name"
+            value={fullName}
+            onChange={(event) => setFullName(event.target.value)}
+          />
+        </div>
+
+        <div className="gp-field">
+          <label htmlFor="invite-password">Create password</label>
+          <input
+            id="invite-password"
+            type="password"
+            autoComplete="new-password"
+            aria-describedby="invite-password-requirements"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+          {/* The rules are stated before the attempt, not returned as an error
+              after one. */}
+          <span id="invite-password-requirements" className="gp-field-hint">
+            12+ characters with uppercase, lowercase, a number, and a symbol; 72 UTF-8 bytes maximum.
+          </span>
+        </div>
+
+        <div className="gp-field">
+          <label htmlFor="invite-password-confirm">Confirm password</label>
+          <input
+            id="invite-password-confirm"
+            type="password"
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+          />
+        </div>
+
+        <button type="submit" className="gp-btn gp-btn-primary gp-btn-block" disabled={submitting}>
+          {submitting ? 'Accepting…' : 'Accept invitation'}
+        </button>
+      </form>
+    </AuthShell>
   )
 }
 

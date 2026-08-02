@@ -1,10 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Eye, EyeOff, KeyRound, Loader2, LogOut } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Eye, EyeOff, Loader2, LogOut } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { AuthShell } from '@/components/landing/AuthShell'
 import { useAuth } from '@/contexts/AuthContext'
 import { queryClient } from '@/lib/queryClient'
 import { supabase } from '@/lib/supabase'
@@ -103,7 +100,12 @@ const ChangeInitialPassword = () => {
   }
 
   if (accountState === 'loading' || accountState === 'reauthentication_required') {
-    return <div className="flex min-h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+    return (
+      <div className="gp-page gp-auth-page gp-auth-loading">
+        <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
+        <span className="sr-only">Checking your account</span>
+      </div>
+    )
   }
 
   if (accountState !== 'password_change_required' || !membership) {
@@ -113,87 +115,85 @@ const ChangeInitialPassword = () => {
         ? 'This workspace account is suspended. Contact a platform administrator.'
         : accountError || 'This account cannot complete temporary password setup.'
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>Password setup unavailable</CardTitle>
-            <CardDescription>{message}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button type="button" variant="outline" className="w-full" disabled={submitting} onClick={() => void leaveAccount()}>
-              {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
-              Sign out and use the newest credential
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <AuthShell
+        title="Password setup unavailable | Get On A Pod"
+        description="This account cannot finish setting a password."
+        path="/change-password"
+        tone="notice"
+        heading="Password setup unavailable."
+        standfirst=""
+        footer={<>Need a new invitation? <Link to="/register">Request access</Link></>}
+      >
+        <p className="gp-auth-reason">{message}</p>
+        <div className="gp-auth-actions">
+          <button type="button" className="gp-btn gp-btn-ghost" disabled={submitting} onClick={() => void leaveAccount()}>
+            <LogOut className="h-4 w-4" aria-hidden="true" />
+            Sign out and use the newest credential
+          </button>
+        </div>
+      </AuthShell>
     )
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-            <KeyRound className="h-5 w-5 text-primary" />
+    <AuthShell
+      title="Replace your temporary password | Get On A Pod"
+      description="Choose a private password before entering your workspace."
+      path="/change-password"
+      heading="Replace your temporary password."
+      standfirst="Choose a private password before entering your workspace. You will sign in again after this change."
+      footer={<>Wrong account? <Link to="/login">Sign in as someone else</Link></>}
+    >
+      <form className="gp-form gp-form-tight" onSubmit={submit}>
+        <div className="gp-field">
+          <label htmlFor="new-password">New password</label>
+          <div className="gp-field-with-toggle">
+            <input
+              id="new-password"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="new-password"
+              aria-describedby="password-requirements"
+              value={password}
+              disabled={submitting}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+            <button
+              type="button"
+              className="gp-reveal"
+              onClick={() => setShowPassword((value) => !value)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
           </div>
-          <CardTitle>Replace your temporary password</CardTitle>
-          <CardDescription>
-            Create a private password before entering your workspace. You will sign in again after this change.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form className="space-y-4" onSubmit={submit}>
-            <div className="space-y-2">
-              <Label htmlFor="new-password">New password</Label>
-              <div className="relative">
-                <Input
-                  id="new-password"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  disabled={submitting}
-                  aria-describedby="password-requirements"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-0 top-0 h-full px-3"
-                  onClick={() => setShowPassword((value) => !value)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              </div>
-              <p id="password-requirements" className="text-xs text-muted-foreground">
-                12+ characters with uppercase, lowercase, a number, and a symbol; 72 UTF-8 bytes maximum.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirm-new-password">Confirm new password</Label>
-              <Input
-                id="confirm-new-password"
-                type={showPassword ? 'text' : 'password'}
-                autoComplete="new-password"
-                value={confirmation}
-                onChange={(event) => setConfirmation(event.target.value)}
-                disabled={submitting}
-              />
-            </div>
-            {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
-            <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {submitting ? 'Securing account…' : 'Change password'}
-            </Button>
-            <Button type="button" variant="outline" className="w-full" disabled={submitting} onClick={() => void leaveAccount()}>
-              <LogOut className="mr-2 h-4 w-4" />Sign out and use another credential
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+          <span id="password-requirements" className="gp-field-hint">
+            12+ characters with uppercase, lowercase, a number, and a symbol; 72 UTF-8 bytes maximum.
+          </span>
+        </div>
+
+        <div className="gp-field">
+          <label htmlFor="confirm-new-password">Confirm new password</label>
+          <input
+            id="confirm-new-password"
+            type={showPassword ? 'text' : 'password'}
+            autoComplete="new-password"
+            value={confirmation}
+            disabled={submitting}
+            onChange={(event) => setConfirmation(event.target.value)}
+          />
+        </div>
+
+        {error && <p className="gp-form-error" role="alert">{error}</p>}
+
+        <button type="submit" className="gp-btn gp-btn-primary gp-btn-block" disabled={submitting}>
+          {submitting ? 'Securing account…' : 'Change password'}
+        </button>
+        <button type="button" className="gp-btn gp-btn-ghost gp-btn-block" disabled={submitting} onClick={() => void leaveAccount()}>
+          <LogOut className="h-4 w-4" aria-hidden="true" />
+          Sign out and use another credential
+        </button>
+      </form>
+    </AuthShell>
   )
 }
 
