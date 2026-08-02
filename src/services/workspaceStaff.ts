@@ -884,6 +884,8 @@ export interface WorkspaceBillingOverview {
   credits_spent_this_month?: number
   cancel_at_period_end?: boolean
   current_period_end?: string | null
+  /** Platform admins only, and only to open the Stripe dashboard on them. */
+  stripe_customer_id?: string | null
   balance: number
   expiring_credits: number
   next_expiry_at: string | null
@@ -974,6 +976,36 @@ export async function setWorkspaceMonthlyAllowance(
     throw new Error('The monthly allowance could not be saved.')
   }
   return data.monthly_credit_allowance
+}
+
+/**
+ * Platform-admin only: take credits back off a workspace.
+ *
+ * Every other path into the ledger adds — a grant, a purchase, an allowance —
+ * so a grant of the wrong size could only be undone in SQL. Refuses to take a
+ * balance below zero rather than clamping, because an adjustment larger than
+ * the balance is a mistake about the number.
+ */
+export async function adjustWorkspaceCredits(
+  workspaceId: string,
+  input: { amount: number; reason: string },
+): Promise<{ removed: number; balance: number | null }> {
+  const canonicalWorkspaceId = canonicalUuid(workspaceId, 'Workspace ID')
+  const data = await invoke({
+    action: 'credits-adjust',
+    workspace_id: canonicalWorkspaceId,
+    amount: input.amount,
+    reason: input.reason,
+    adjustment_key: crypto.randomUUID(),
+  }, 'The adjustment could not be recorded.') as {
+    success?: boolean
+    removed?: number
+    balance?: number | null
+  }
+  if (data?.success !== true || typeof data.removed !== 'number') {
+    throw new Error('The adjustment could not be recorded.')
+  }
+  return { removed: data.removed, balance: typeof data.balance === 'number' ? data.balance : null }
 }
 
 export type WorkspacePlanKey = 'founding_member' | 'standard'

@@ -2824,7 +2824,7 @@ serve(async (req) => {
 
       const [profileResult, lotsResult, ledgerResult, spentResult, usageResult, pricesResult] = await Promise.all([
         admin.from("workspace_billing_profiles")
-          .select("plan_key, billing_status, base_price_cents, per_client_price_cents, included_active_clients, monthly_credit_allowance, stripe_subscription_id, cancel_at_period_end, current_period_end")
+          .select("plan_key, billing_status, base_price_cents, per_client_price_cents, included_active_clients, monthly_credit_allowance, stripe_subscription_id, stripe_customer_id, cancel_at_period_end, current_period_end")
           .eq("workspace_id", workspaceId)
           .maybeSingle(),
         admin.from("workspace_credit_lots")
@@ -2897,6 +2897,12 @@ serve(async (req) => {
           // itself is a Stripe identifier and the browser has no use for it.
           has_subscription: typeof profileResult.data?.stripe_subscription_id === "string"
             && profileResult.data.stripe_subscription_id.length > 0,
+          // Only to a platform admin, and only so the dashboard can be opened
+          // on the right customer. Useless without a Stripe login, and never
+          // sent to the workspace's own people.
+          stripe_customer_id: platformAdmin
+            ? (profileResult.data?.stripe_customer_id ?? null)
+            : null,
           // A subscription cancelled from the portal stays active until the
           // period ends, so the status alone cannot show that it is ending.
           cancel_at_period_end: profileResult.data?.cancel_at_period_end === true,
@@ -2964,6 +2970,57 @@ serve(async (req) => {
       return jsonResponse(req, METHODS, 200, {
         success: true,
         granted: amount,
+        balance: typeof result?.balance === "number" ? result.balance : null,
+        idempotent: result?.idempotent === true,
+      });
+    }
+
+    if (action === "credits-adjust") {
+      requireOnlyKeys(body, ["action", "workspace_id", "amount", "reason", "adjustment_key"]);
+      await requireWorkspaceFeatureAccess(authContext, workspaceId);
+      if (!platformAdmin) {
+        throw new HttpError(403, "PLATFORM_ADMIN_REQUIRED", "Platform administrator access is required");
+      }
+      const amount = typeof body.amount === "number" && Number.isSafeInteger(body.amount)
+        ? body.amount
+        : NaN;
+      if (!Number.isSafeInteger(amount) || amount < 1 || amount > 10_000) {
+        throw new HttpError(400, "INVALID_AMOUNT", "Remove between 1 and 10,000 credits");
+      }
+      // Required, unlike a grant's note: taking credit away is the movement
+      // somebody will later ask to have explained.
+      const reason = requireString(body.reason, "reason", { min: 1, max: 200 });
+      const adjustmentKey = requireUuid(body.adjustment_key, "adjustment_key");
+
+      const { data, error } = await admin.rpc("adjust_workspace_credits_v1", {
+        p_workspace_id: workspaceId,
+        p_amount: amount,
+        p_reason: reason,
+        p_actor_user_id: user.id,
+        p_idempotency_key: `admin-adjust:${adjustmentKey}`,
+      });
+      if (error) {
+        if ((error.message ?? "").includes("INSUFFICIENT_CREDITS")) {
+          throw new HttpError(
+            409,
+            "INSUFFICIENT_CREDITS",
+            "That is more than the workspace has. A balance cannot go below zero.",
+          );
+        }
+        throw new HttpError(503, "CREDIT_ADJUST_FAILED", "The adjustment could not be recorded");
+      }
+      const result = data as { balance?: number; idempotent?: boolean } | null;
+      await writeAudit(admin, {
+        workspaceId,
+        actorUserId: user.id,
+        action: "workspace.credits.adjusted",
+        entityType: "workspace",
+        entityId: workspaceId,
+        metadata: { amount: -amount, reason, adjustment_key: adjustmentKey },
+      });
+      return jsonResponse(req, METHODS, 200, {
+        success: true,
+        removed: amount,
         balance: typeof result?.balance === "number" ? result.balance : null,
         idempotent: result?.idempotent === true,
       });

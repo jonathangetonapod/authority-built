@@ -7,7 +7,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { WorkspaceCreditGrantPreview } from '@/components/workspace/WorkspaceCreditGrantPreview'
+import { WorkspaceCreditAdjustment } from '@/components/workspace/WorkspaceCreditAdjustment'
 import { WorkspaceMonthlyAllowance } from '@/components/workspace/WorkspaceMonthlyAllowance'
+import { WorkspaceSubscriptionStatus } from '@/components/workspace/WorkspaceSubscriptionStatus'
 
 interface PlatformCreditTopUpProps {
   actorEmail: string
@@ -113,6 +115,18 @@ export function PlatformCreditTopUp({ actorEmail }: PlatformCreditTopUpProps) {
               selected above. */}
           <WorkspaceMonthlyAllowance
             key={`allowance-${selectedWorkspaceId}`}
+            workspaceId={selectedWorkspaceId}
+            workspaceName={selectedName}
+          />
+          {/* The correction to the grant above, and the subscription that
+              decides what this workspace is paying in the first place. */}
+          <WorkspaceCreditAdjustment
+            key={`adjust-${selectedWorkspaceId}`}
+            workspaceId={selectedWorkspaceId}
+            workspaceName={selectedName}
+          />
+          <WorkspaceSubscriptionStatus
+            key={`subscription-${selectedWorkspaceId}`}
             workspaceId={selectedWorkspaceId}
             workspaceName={selectedName}
           />
