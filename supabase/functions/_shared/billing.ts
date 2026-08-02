@@ -101,6 +101,28 @@ async function ensureMonthlyAllowance(
   }
 }
 
+/**
+ * An idempotency key that survives a retry without making a repeat free.
+ *
+ * The obvious key — operation plus the thing it acts on — is wrong for
+ * anything a person may legitimately run twice. Keyed on the podcast, a second
+ * deliberate lookup would be free for ever; keyed on the client, so would
+ * every future regeneration. The unique index does not know the difference
+ * between a double-click and a decision.
+ *
+ * A coarse time bucket does: a retry lands in the same window as the attempt
+ * it repeats, and a deliberate re-run minutes later does not. Two attempts
+ * straddling a boundary are both charged, which is the safe direction to be
+ * wrong in — the alternative is silently free work.
+ *
+ * Only for operations that build a specific thing. An operation whose repeat
+ * is ordinary within the window, like a search, should carry no key at all.
+ */
+export function retryWindowKey(parts: Array<string | null | undefined>, windowMs = 120_000): string {
+  const bucket = Math.floor(Date.now() / windowMs)
+  return `${parts.filter(Boolean).join(':')}:w${bucket}`
+}
+
 // Charge BEFORE the provider call so an empty balance never gets a free ride.
 // Throws HttpError(402, 'INSUFFICIENT_CREDITS') when the balance cannot cover
 // the operation. Returns the charged amount (0 when enforcement is off or the
@@ -117,8 +139,8 @@ export async function chargeCredits(
     idempotencyKey?: string
     byoKeyUsed?: boolean
   },
-): Promise<number> {
-  if (!enforcementEnabled() || input.byoKeyUsed) return 0
+): Promise<{ charged: number; entryId: string | null }> {
+  if (!enforcementEnabled() || input.byoKeyUsed) return { charged: 0, entryId: null }
 
   await ensureMonthlyAllowance(admin, input.workspaceId)
 
@@ -137,8 +159,39 @@ export async function chargeCredits(
     }
     throw new HttpError(503, 'BILLING_UNAVAILABLE', 'Billing is temporarily unavailable')
   }
-  const charged = (data as { charged?: number } | null)?.charged
-  return typeof charged === 'number' ? charged : 0
+  const result = data as { charged?: number; entry_id?: string } | null
+  return {
+    charged: typeof result?.charged === 'number' ? result.charged : 0,
+    entryId: typeof result?.entry_id === 'string' ? result.entry_id : null,
+  }
+}
+
+/**
+ * Give back a charge whose work did not happen.
+ *
+ * Credits are taken before the provider call, so an empty balance never gets a
+ * free ride — but that means a timeout or a refusal leaves the workspace
+ * paying for nothing. The ledger has always had a word for undoing that and
+ * nothing ever said it.
+ *
+ * Never throws. A refund that fails must not replace the caller's real error
+ * with a billing one: the operation already failed, and that is the failure
+ * worth reporting.
+ */
+export async function refundCredits(
+  admin: ReturnType<typeof createAdminClient>,
+  input: { workspaceId: string; entryId: string | null; reason?: string },
+): Promise<void> {
+  if (!enforcementEnabled() || !input.entryId) return
+  try {
+    await admin.rpc('refund_workspace_credits_v1', {
+      p_workspace_id: input.workspaceId,
+      p_debit_entry_id: input.entryId,
+      p_reason: input.reason ?? null,
+    })
+  } catch (_error) {
+    // Deliberately swallowed. See above.
+  }
 }
 
 // Cost logging never fails the underlying operation.

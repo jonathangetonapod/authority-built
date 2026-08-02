@@ -7,7 +7,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 import { createAdminClient, writeAudit } from '../_shared/workspaceAuth.ts'
-import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
+import { chargeCredits, logOperationCost, refundCredits } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 import { ensureEpisodesCaptured } from '../_shared/podcastEpisodes.ts'
 
@@ -159,6 +159,8 @@ serve(async (req) => {
   const usage = { input: 0, output: 0 }
   let podscanCalls = 0
   let usedByoKey = false
+  // Hoisted so the failure handler can give back a charge the try block took.
+  let queryChargeEntryId: string | null = null
   try {
     const [{ data: client }, { data: ownerMembership }] = await Promise.all([
       admin.from('clients')
@@ -181,14 +183,22 @@ serve(async (req) => {
     if (!anthropicKey) return json(200, { processed: 1, skipped: 'no anthropic key' })
     usedByoKey = anthropicKey.source === 'workspace'
 
-    await chargeCredits(admin, {
+    // Charged before the model call so an empty balance never gets a free
+    // ride, and given back below if that call never delivers. The tick runs
+    // unattended, so a swallowed charge here is one nobody would notice.
+    const queryCharge = await chargeCredits(admin, {
       workspaceId: due.workspace_id,
       operationType: 'query_generation',
       referenceKind: 'autopilot',
       referenceId: due.client_id,
       clientId: due.client_id,
       byoKeyUsed: usedByoKey,
+      // The due time this tick claimed identifies the run: a retry of the same
+      // run carries the same one and is not charged twice, while next week's
+      // run for the same client carries a different one and is.
+      idempotencyKey: `autopilot:query_generation:${due.client_id}:${due.next_run_at}`,
     })
+    queryChargeEntryId = queryCharge.entryId
 
     const queriesRaw = await anthropicJson(
       anthropicKey.apiKey,
@@ -352,6 +362,14 @@ serve(async (req) => {
     return json(200, { processed: 1, added, candidates: candidates.length })
   } catch (error) {
     console.error('[Autopilot] Tick failed', error instanceof Error ? error.message : '')
+    // The charge was taken before the model call. If the run did not finish,
+    // the workspace paid for nothing — and this tick is unattended, so nobody
+    // would ever notice the difference.
+    await refundCredits(admin, {
+      workspaceId: due.workspace_id,
+      entryId: queryChargeEntryId,
+      reason: 'autopilot run failed',
+    })
     await logOperationCost(admin, {
       workspaceId: due.workspace_id,
       operationType: 'compatibility_scoring',

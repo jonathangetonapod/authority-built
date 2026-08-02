@@ -6,6 +6,8 @@ const billing = readFileSync('supabase/functions/_shared/billing.ts', 'utf8')
 const aiKeys = readFileSync('supabase/functions/_shared/workspaceAiKeys.ts', 'utf8')
 const prospectBuild = readFileSync('supabase/functions/workspace-prospect-dashboards/index.ts', 'utf8')
 const scoring = readFileSync('supabase/functions/score-podcast-compatibility/index.ts', 'utf8')
+const autopilot = readFileSync('supabase/functions/client-autopilot-tick/index.ts', 'utf8')
+const creditFixes = readFileSync('supabase/migrations/20260802030000_credit_refunds_and_expiry.sql', 'utf8')
 const queries = readFileSync('supabase/functions/generate-podcast-queries/index.ts', 'utf8')
 const podscanProxy = readFileSync('supabase/functions/podscan-proxy/index.ts', 'utf8')
 const staffEdge = readFileSync('supabase/functions/manage-workspace-staff/index.ts', 'utf8')
@@ -13,7 +15,7 @@ const migration = readFileSync('supabase/migrations/20260726000300_metering_and_
 
 // Enforcement is opt-in and BYO-key operations are never charged.
 assert.match(billing, /CREDIT_ENFORCEMENT_ENABLED/u)
-assert.match(billing, /if \(!enforcementEnabled\(\) \|\| input\.byoKeyUsed\) return 0/u)
+assert.match(billing, /if \(!enforcementEnabled\(\) \|\| input\.byoKeyUsed\) return \{ charged: 0, entryId: null \}/u)
 assert.match(billing, /INSUFFICIENT_CREDITS/u)
 assert.match(billing, /HttpError\(402/u)
 
@@ -53,5 +55,53 @@ assert.doesNotMatch(statusFnBody, /ciphertext/u)
 assert.match(migration, /'compatibility_scoring',\s*\n\s*'podscan_lookup',\s*\n\s*'semantic_search',\s*\n\s*'pitch_profile',/u)
 assert.match(migration, /ADD COLUMN IF NOT EXISTS used_byo_key BOOLEAN NOT NULL DEFAULT false/u)
 assert.match(migration, /REVOKE ALL PRIVILEGES ON TABLE public\.workspace_ai_credentials FROM PUBLIC, anon, authenticated/u)
+
+// Two movements the ledger has always been able to describe and nothing ever
+// wrote, so the journal it calls "the audit explanation for every movement"
+// could not explain a failed charge or an expired lot.
+assert.match(creditFixes, /CREATE OR REPLACE FUNCTION public\.refund_workspace_credits_v1/u)
+assert.match(creditFixes, /CREATE OR REPLACE FUNCTION public\.expire_workspace_credit_lots_v1/u)
+// Service-role only, like every other credit primitive.
+for (const signature of [
+  'public.refund_workspace_credits_v1(UUID, UUID, TEXT)',
+  'public.expire_workspace_credit_lots_v1()',
+]) {
+  assert.ok(
+    creditFixes.includes(`REVOKE ALL ON FUNCTION ${signature}\n  FROM PUBLIC, anon, authenticated`),
+    `${signature} must be revoked from PUBLIC, anon and authenticated`,
+  )
+  assert.ok(
+    creditFixes.includes(`GRANT EXECUTE ON FUNCTION ${signature}\n  TO service_role`),
+    `${signature} must be granted to service_role only`,
+  )
+}
+// A refund returns the exact lots the debit consumed rather than minting new
+// credit, or it would quietly extend an expiry date into free lifetime credit.
+assert.match(creditFixes, /jsonb_array_elements\(COALESCE\(debit_entry\.lot_breakdown/u)
+assert.match(creditFixes, /SET remaining = LEAST\(granted, remaining \+ \(lot_line->>'spent'\)::integer\)/u)
+// One refund per debit, and one expiry line per lot, for ever.
+assert.match(creditFixes, /refund_key := 'refund:' \|\| p_debit_entry_id::text/u)
+assert.match(creditFixes, /'expiry:' \|\| lot\.id::text/u)
+// The sweep runs without an edge function in the path, because the work is a
+// database function and an HTTP handler would only forward the same call.
+assert.match(creditFixes, /cron\.schedule\(\s*'workspace-credit-expiry'/u)
+
+// Charging happens before the provider call, so a caller has to be able to
+// name the debit it needs to give back.
+assert.match(billing, /Promise<\{ charged: number; entryId: string \| null \}>/u)
+assert.match(billing, /export async function refundCredits/u)
+// A failed refund must not replace the caller's real error with a billing one.
+assert.match(billing, /export async function refundCredits[\s\S]*?catch \(_error\)/u)
+// The unattended tick is where a swallowed charge would never be noticed.
+assert.match(autopilot, /await refundCredits\(admin, \{[\s\S]{0,200}reason: 'autopilot run failed'/u)
+
+// An idempotency key keyed on the thing acted upon would make every later
+// repeat free. The window distinguishes a retry from a decision.
+assert.match(billing, /export function retryWindowKey/u)
+assert.match(billing, /`\$\{parts\.filter\(Boolean\)\.join\(':'\)\}:w\$\{bucket\}`/u)
+assert.match(prospectBuild, /idempotencyKey: retryWindowKey\(\['dashboard_build', dashboardId\]\)/u)
+// A search is not an artifact: repeating one inside the window is ordinary,
+// so these deliberately carry no key.
+assert.doesNotMatch(scoring, /idempotencyKey/u)
 
 console.log('Credit metering edge contract passed')

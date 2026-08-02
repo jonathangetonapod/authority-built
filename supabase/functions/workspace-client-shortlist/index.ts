@@ -1494,7 +1494,7 @@ serve(async (req) => {
       let charged = 0
       if (fetched) {
         try {
-          charged = await chargeCredits(authContext.admin, {
+          charged = (await chargeCredits(authContext.admin, {
             workspaceId,
             operationType: 'podscan_lookup',
             referenceKind: 'podcast_episode_refresh',
@@ -1502,7 +1502,7 @@ serve(async (req) => {
             clientId,
             actorUserId: authContext.user.id,
             idempotencyKey: `episodes-refresh:${podcastId}:${refreshed?.episodes_fetched_at ?? ''}`,
-          })
+          })).charged
         } catch (chargeError) {
           if (!(chargeError instanceof HttpError && chargeError.code === 'INSUFFICIENT_CREDITS')) throw chargeError
           console.warn('[Client Shortlist] Episode refresh landed globally without an available credit')
@@ -2638,7 +2638,7 @@ serve(async (req) => {
         let charged = 0
         if (record.credit_charge_allowed) {
           try {
-            charged = await chargeCredits(authContext.admin, {
+            charged = (await chargeCredits(authContext.admin, {
               workspaceId,
               operationType: 'email_unlock_verify',
               referenceKind: 'podcast_direct_contact',
@@ -2646,7 +2646,7 @@ serve(async (req) => {
               clientId,
               actorUserId: authContext.user.id,
               idempotencyKey: `email-unlock:${shortlistRow.podcast_id}`,
-            })
+            })).charged
           } catch (chargeError) {
             // The contact is already recorded globally; never claw the unlock
             // back from the workspace that produced it.

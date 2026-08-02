@@ -14,7 +14,7 @@ import {
   requireUuid,
   workspaceCredentialIsFresh,
 } from '../_shared/workspaceAuth.ts'
-import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
+import { chargeCredits, logOperationCost, retryWindowKey } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 import { workspaceLinkOrigin } from '../_shared/workspaceOrigin.ts'
 import {
@@ -531,6 +531,7 @@ serve(async (req) => {
         operationType: 'pitch_profile',
         referenceKind: 'onboarding_instance',
         referenceId: instanceId,
+        idempotencyKey: retryWindowKey(['pitch_profile', instanceId]),
         actorUserId: user.id,
         byoKeyUsed: anthropicKey?.source === 'workspace',
       })

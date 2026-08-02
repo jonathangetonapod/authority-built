@@ -18,7 +18,7 @@ import {
   type AuthContext,
   type WorkspaceFeatureAccess,
 } from '../_shared/workspaceAuth.ts'
-import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
+import { chargeCredits, logOperationCost, retryWindowKey } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 
 const METHODS = ['POST'] as const
@@ -793,6 +793,7 @@ async function buildProspect(
     operationType: 'dashboard_build',
     referenceKind: 'prospect_dashboard',
     referenceId: dashboardId,
+    idempotencyKey: retryWindowKey(['dashboard_build', dashboardId]),
     actorUserId: context.user.id,
     byoKeyUsed,
   })

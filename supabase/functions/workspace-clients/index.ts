@@ -16,7 +16,7 @@ import {
   workspaceCredentialIsFresh,
   writeAudit,
 } from '../_shared/workspaceAuth.ts'
-import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
+import { chargeCredits, logOperationCost, retryWindowKey } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 import { notifyBookingConfirmed, notifyEpisodePublished } from '../_shared/clientNotify.ts'
 
@@ -349,6 +349,7 @@ serve(async (req) => {
         operationType: 'pitch_profile',
         referenceKind: 'sdr_profile_draft',
         referenceId: clientId!,
+        idempotencyKey: retryWindowKey(['pitch_profile', clientId]),
         clientId,
         actorUserId: authContext.user.id,
         byoKeyUsed: usedByoKey,

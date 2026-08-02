@@ -344,7 +344,7 @@ serve(async (req) => {
       // domain and mailbox is idempotency-keyed so retries never double-charge.
       let creditsCharged = 0
       for (const order of orders) {
-        creditsCharged += await chargeCredits(authContext.admin, {
+        creditsCharged += (await chargeCredits(authContext.admin, {
           workspaceId,
           operationType: 'mailbox_domain_purchase',
           referenceKind: 'mailbox_domain',
@@ -352,9 +352,9 @@ serve(async (req) => {
           actorUserId: authContext.user.id,
           idempotencyKey: `mailbox-domain:${workspaceId}:${order.domain}`,
           byoKeyUsed: usingWorkspaceKey,
-        })
+        })).charged
         for (const mailbox of order.mailboxes) {
-          creditsCharged += await chargeCredits(authContext.admin, {
+          creditsCharged += (await chargeCredits(authContext.admin, {
             workspaceId,
             operationType: 'mailbox_monthly',
             referenceKind: 'mailbox',
@@ -362,7 +362,7 @@ serve(async (req) => {
             actorUserId: authContext.user.id,
             idempotencyKey: `mailbox-monthly:${workspaceId}:${mailbox.username}@${order.domain}:first`,
             byoKeyUsed: usingWorkspaceKey,
-          })
+          })).charged
         }
       }
 
