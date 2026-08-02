@@ -1,5 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
+import { CREDIT_PACKS } from "../_shared/creditPacks.ts";
+
 import {
   errorResponse,
   HttpError,
@@ -2824,7 +2826,7 @@ serve(async (req) => {
 
       const [profileResult, lotsResult, ledgerResult, spentResult, usageResult, pricesResult] = await Promise.all([
         admin.from("workspace_billing_profiles")
-          .select("plan_key, billing_status, base_price_cents, per_client_price_cents, included_active_clients, monthly_credit_allowance, stripe_subscription_id, stripe_customer_id, cancel_at_period_end, current_period_end")
+          .select("plan_key, billing_status, base_price_cents, per_client_price_cents, included_active_clients, monthly_credit_allowance, stripe_subscription_id, stripe_customer_id, cancel_at_period_end, current_period_end, refill_threshold_credits, refill_pack_credits")
           .eq("workspace_id", workspaceId)
           .maybeSingle(),
         admin.from("workspace_credit_lots")
@@ -2905,6 +2907,13 @@ serve(async (req) => {
             : null,
           // A subscription cancelled from the portal stays active until the
           // period ends, so the status alone cannot show that it is ending.
+          refill_threshold_credits: profileResult.data?.refill_threshold_credits ?? null,
+          refill_pack_credits: profileResult.data?.refill_pack_credits ?? null,
+          // Whether there is anything to charge. Offering automatic top-ups to
+          // a workspace that has never saved a card is offering a promise the
+          // provider will refuse.
+          has_saved_card: typeof profileResult.data?.stripe_customer_id === "string"
+            && profileResult.data.stripe_customer_id.length > 0,
           cancel_at_period_end: profileResult.data?.cancel_at_period_end === true,
           current_period_end: profileResult.data?.current_period_end ?? null,
           balance,
@@ -2972,6 +2981,64 @@ serve(async (req) => {
         granted: amount,
         balance: typeof result?.balance === "number" ? result.balance : null,
         idempotent: result?.idempotent === true,
+      });
+    }
+
+    if (action === "billing-autorefill-set") {
+      requireOnlyKeys(body, ["action", "workspace_id", "threshold_credits", "pack_credits"]);
+      const refillAccess = await requireWorkspaceFeatureAccess(authContext, workspaceId);
+      // The workspace's own managers, not only a platform admin: this is their
+      // card and their decision.
+      if (!["owner", "admin", "platform_admin"].includes(refillAccess.role)) {
+        throw new HttpError(403, "WORKSPACE_ACCESS_REQUIRED", "Workspace manager access is required");
+      }
+
+      const off = body.threshold_credits === null && body.pack_credits === null;
+      if (!off) {
+        const threshold = typeof body.threshold_credits === "number"
+            && Number.isSafeInteger(body.threshold_credits)
+          ? body.threshold_credits
+          : NaN;
+        const packCredits = typeof body.pack_credits === "number"
+            && Number.isSafeInteger(body.pack_credits)
+          ? body.pack_credits
+          : NaN;
+        if (!Number.isSafeInteger(threshold) || threshold < 0 || threshold > 100_000) {
+          throw new HttpError(400, "INVALID_THRESHOLD", "Choose a threshold between 0 and 100,000 credits");
+        }
+        // Only a pack that is actually sold: an arbitrary number has no price,
+        // and inventing one would charge a figure nobody agreed.
+        if (!Object.values(CREDIT_PACKS).some((pack) => pack.credits === packCredits)) {
+          throw new HttpError(400, "INVALID_PACK", "Choose one of the credit packs on sale");
+        }
+      }
+
+      // Both together or neither, matching the constraint on the table: half a
+      // rule is a rule that cannot fire.
+      const { error: refillError } = await admin
+        .from("workspace_billing_profiles")
+        .upsert({
+          workspace_id: workspaceId,
+          refill_threshold_credits: off ? null : body.threshold_credits,
+          refill_pack_credits: off ? null : body.pack_credits,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "workspace_id" });
+      if (refillError) {
+        throw new HttpError(503, "AUTOREFILL_UPDATE_FAILED", "Automatic top-ups could not be saved");
+      }
+
+      await writeAudit(admin, {
+        workspaceId,
+        actorUserId: user.id,
+        action: off ? "workspace.credits.autorefill_disabled" : "workspace.credits.autorefill_enabled",
+        entityType: "workspace",
+        entityId: workspaceId,
+        metadata: { threshold_credits: body.threshold_credits, pack_credits: body.pack_credits },
+      });
+      return jsonResponse(req, METHODS, 200, {
+        success: true,
+        refill_threshold_credits: off ? null : body.threshold_credits,
+        refill_pack_credits: off ? null : body.pack_credits,
       });
     }
 

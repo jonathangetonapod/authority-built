@@ -6,6 +6,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 import {
+  createAdminClient,
   errorResponse,
   HttpError,
   jsonResponse,
@@ -67,6 +68,45 @@ serve(async (req) => {
       throw new HttpError(403, 'FORBIDDEN', 'Workspace manager access is required')
     }
 
+    // The customer this workspace already has, or a new one recorded against
+    // it. Without a customer the purchase is a guest payment: the card is not
+    // kept, nothing links the payment to the workspace in Stripe, and an
+    // automatic top-up later has nothing to charge.
+    const admin = createAdminClient()
+    const { data: profile } = await admin
+      .from('workspace_billing_profiles')
+      .select('stripe_customer_id')
+      .eq('workspace_id', workspaceId)
+      .maybeSingle()
+    let customerId = typeof profile?.stripe_customer_id === 'string' && profile.stripe_customer_id
+      ? profile.stripe_customer_id
+      : ''
+    if (!customerId) {
+      const customerParams = new URLSearchParams({ 'metadata[workspace_id]': workspaceId })
+      if (typeof authContext.user.email === 'string' && authContext.user.email.includes('@')) {
+        customerParams.set('email', authContext.user.email)
+      }
+      const customerResponse = await fetch('https://api.stripe.com/v1/customers', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${stripeKey}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: customerParams,
+        signal: AbortSignal.timeout(20_000),
+      })
+      const customer = await customerResponse.json().catch(() => ({})) as { id?: unknown }
+      if (customerResponse.ok && typeof customer.id === 'string') {
+        customerId = customer.id
+        await admin
+          .from('workspace_billing_profiles')
+          .upsert(
+            { workspace_id: workspaceId, stripe_customer_id: customerId, updated_at: new Date().toISOString() },
+            { onConflict: 'workspace_id' },
+          )
+      }
+    }
+
     const billingBase = `${appUrl()}/app/settings/billing`
     const params = new URLSearchParams({
       mode: 'payment',
@@ -87,7 +127,16 @@ serve(async (req) => {
       'metadata[credits]': String(pack.credits),
       'payment_intent_data[metadata][workspace_id]': workspaceId,
     })
-    if (typeof authContext.user.email === 'string' && authContext.user.email.includes('@')) {
+    if (customerId) {
+      params.set('customer', customerId)
+      // Consent to charging this card again without them present. Stripe shows
+      // the customer that the card will be saved, and refuses an off-session
+      // charge later against a card never saved this way — which is the whole
+      // reason automatic top-ups could not work before.
+      params.set('payment_intent_data[setup_future_usage]', 'off_session')
+    } else if (typeof authContext.user.email === 'string' && authContext.user.email.includes('@')) {
+      // No customer could be created, so this is a guest payment: it still buys
+      // credits, it just cannot be charged again automatically.
       params.set('customer_email', authContext.user.email)
     }
 

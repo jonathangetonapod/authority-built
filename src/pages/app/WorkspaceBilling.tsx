@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, CreditCard, ExternalLink, Loader2, ShieldCheck } from 'lucide-react'
 import { Link, Navigate } from 'react-router-dom'
 import { toast } from 'sonner'
+
+import { AutoRefillCard } from '@/components/workspace/AutoRefillCard'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
@@ -349,6 +351,12 @@ const WorkspaceBilling = () => {
                   )}
                 </CardContent>
               </Card>
+
+              {/* Beside buying a pack by hand, because it is the same decision
+                  made once instead of every time. */}
+              {canBuyCredits && (
+                <AutoRefillCard workspaceId={workspaceId} overview={overview} />
+              )}
 
               {canBuyCredits && (
                 <Card>

@@ -128,3 +128,24 @@ assert.match(renewal, /COALESCE\(\(grant_result->>'idempotent'\)::boolean, false
 assert.match(renewal, /'already_held', already_held/u)
 
 console.log('Credit metering edge contract passed')
+
+// Automatic top-ups only work if Stripe was told to keep the card. Checkout
+// used to pay as a guest — no customer, nothing saved — so an off-session
+// charge later had nothing to charge and the whole feature was unreachable.
+const checkoutFn = readFileSync('supabase/functions/workspace-credit-checkout/index.ts', 'utf8')
+assert.match(checkoutFn, /params\.set\('payment_intent_data\[setup_future_usage\]', 'off_session'\)/u)
+assert.match(checkoutFn, /params\.set\('customer', customerId\)/u)
+
+const refill = readFileSync('supabase/functions/workspace-credit-refill-tick/index.ts', 'utf8')
+// A PaymentIntent with only a customer relies on a default payment method that
+// a Checkout purchase never sets, so the card is named explicitly.
+assert.match(refill, /async function savedCardFor/u)
+assert.match(refill, /payment_method: paymentMethodId/u)
+assert.match(refill, /no saved card to charge/u)
+// It charges and stops: the webhook grants when Stripe confirms the money.
+assert.match(refill, /off_session: 'true'/u)
+assert.doesNotMatch(refill, /grant_workspace_credits_v1/u)
+// Opt-in, one a day, and never a workspace already failing payment.
+assert.match(refill, /auto-refill:\$\{workspaceId\}:\$\{today\}/u)
+assert.match(refill, /'past_due', 'unpaid', 'canceled', 'cancelled', 'incomplete'/u)
+

@@ -886,6 +886,11 @@ export interface WorkspaceBillingOverview {
   current_period_end?: string | null
   /** Platform admins only, and only to open the Stripe dashboard on them. */
   stripe_customer_id?: string | null
+  /** Automatic top-ups: both set together, or both null when switched off. */
+  refill_threshold_credits?: number | null
+  refill_pack_credits?: number | null
+  /** Whether Stripe has a card for this workspace to charge. */
+  has_saved_card?: boolean
   balance: number
   expiring_credits: number
   next_expiry_at: string | null
@@ -1047,6 +1052,36 @@ export async function getBillingPortfolio(
   return {
     enforcementEnabled: data.enforcement_enabled === true,
     workspaces: data.workspaces,
+  }
+}
+
+/**
+ * Turn automatic top-ups on or off for a workspace.
+ *
+ * Both values together or both null: the table requires the pair, because half
+ * a rule is a rule that cannot fire. Only packs actually on sale are accepted —
+ * an arbitrary number has no price, and inventing one would charge a figure
+ * nobody agreed to.
+ */
+export async function setWorkspaceAutoRefill(
+  workspaceId: string,
+  input: { thresholdCredits: number; packCredits: number } | null,
+): Promise<{ threshold: number | null; pack: number | null }> {
+  const canonicalWorkspaceId = canonicalUuid(workspaceId, 'Workspace ID')
+  const data = await invoke({
+    action: 'billing-autorefill-set',
+    workspace_id: canonicalWorkspaceId,
+    threshold_credits: input ? input.thresholdCredits : null,
+    pack_credits: input ? input.packCredits : null,
+  }, 'Automatic top-ups could not be saved.') as {
+    success?: boolean
+    refill_threshold_credits?: number | null
+    refill_pack_credits?: number | null
+  }
+  if (data?.success !== true) throw new Error('Automatic top-ups could not be saved.')
+  return {
+    threshold: data.refill_threshold_credits ?? null,
+    pack: data.refill_pack_credits ?? null,
   }
 }
 

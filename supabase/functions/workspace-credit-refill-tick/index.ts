@@ -57,6 +57,28 @@ async function stripePost(
   return { ok: response.ok, body }
 }
 
+
+/**
+ * A card Stripe will accept without the customer present.
+ *
+ * A PaymentIntent with only a customer relies on invoice_settings holding a
+ * default payment method, which a Checkout purchase never sets. Asking for the
+ * cards attached to the customer and naming one explicitly is what actually
+ * works — and returning null when there are none is how a workspace that never
+ * saved a card is skipped rather than charged at.
+ */
+async function savedCardFor(customerId: string, key: string): Promise<string | null> {
+  const query = new URLSearchParams({ customer: customerId, type: 'card', limit: '1' })
+  const response = await fetch(`${STRIPE_API}/payment_methods?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${key}` },
+    signal: AbortSignal.timeout(20_000),
+  })
+  if (!response.ok) return null
+  const body = await response.json().catch(() => ({})) as { data?: Array<{ id?: unknown }> }
+  const first = Array.isArray(body.data) ? body.data[0] : null
+  return first && typeof first.id === 'string' ? first.id : null
+}
+
 serve(async (req) => {
   if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' })
 
@@ -136,10 +158,20 @@ serve(async (req) => {
       continue
     }
 
+    // Named explicitly rather than left to a default the purchase flow never
+    // sets. No saved card means this workspace never consented to being
+    // charged again, so it is skipped, not attempted.
+    const paymentMethodId = await savedCardFor(customerId, stripeKey)
+    if (!paymentMethodId) {
+      failures.push({ workspace_id: workspaceId, reason: 'no saved card to charge' })
+      continue
+    }
+
     const form = new URLSearchParams({
       amount: String(pack.amount_cents),
       currency: 'usd',
       customer: customerId,
+      payment_method: paymentMethodId,
       confirm: 'true',
       // Nobody is present to answer a card challenge, so a card that demands
       // one fails here rather than hanging.
