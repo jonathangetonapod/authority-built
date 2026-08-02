@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuth } from '@/contexts/AuthContext'
@@ -32,10 +33,15 @@ const expectedNavigation = [
 ]
 
 function renderLayout(platformWorkspace?: PlatformWorkspaceConfig) {
+  // The shell reads the credit balance now, so it needs the app's query client
+  // the same way every other data-reading component does.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <MemoryRouter initialEntries={[platformWorkspace ? `${platformWorkspace.baseHref}/clients` : '/app/clients']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <WorkspaceLayout platformWorkspace={platformWorkspace}><div>Module content</div></WorkspaceLayout>
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[platformWorkspace ? `${platformWorkspace.baseHref}/clients` : '/app/clients']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <WorkspaceLayout platformWorkspace={platformWorkspace}><div>Module content</div></WorkspaceLayout>
+      </MemoryRouter>
+    </QueryClientProvider>,
   )
 }
 
@@ -170,9 +176,11 @@ describe('WorkspaceLayout', () => {
       signOut,
     } as never)
     const { unmount } = render(
-      <MemoryRouter initialEntries={['/app/clients']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <WorkspaceLayout><div>Module content</div></WorkspaceLayout>
-      </MemoryRouter>,
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={['/app/clients']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <WorkspaceLayout><div>Module content</div></WorkspaceLayout>
+        </MemoryRouter>
+      </QueryClientProvider>,
     )
     expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/app/settings')
     expect(screen.queryByRole('button', { name: 'Reorder sidebar pages' })).not.toBeInTheDocument()

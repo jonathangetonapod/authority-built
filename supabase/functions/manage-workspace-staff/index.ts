@@ -2975,6 +2975,86 @@ serve(async (req) => {
       });
     }
 
+    if (action === "billing-portfolio") {
+      requireOnlyKeys(body, ["action", "workspace_id"]);
+      await requireWorkspaceFeatureAccess(authContext, workspaceId);
+      if (!platformAdmin) {
+        throw new HttpError(403, "PLATFORM_ADMIN_REQUIRED", "Platform administrator access is required");
+      }
+
+      const monthStart = new Date();
+      monthStart.setUTCDate(1);
+      monthStart.setUTCHours(0, 0, 0, 0);
+
+      // Every workspace at once. The per-workspace overview answers "how is
+      // this agency doing"; the only way to ask "which agency needs me" was to
+      // open each one in turn, so nobody ever asked it.
+      const [workspacesResult, profilesResult, lotsResult, spendResult] = await Promise.all([
+        admin.from("workspaces").select("id, name, status").eq("status", "active"),
+        admin.from("workspace_billing_profiles")
+          .select("workspace_id, plan_key, billing_status, monthly_credit_allowance, cancel_at_period_end, current_period_end, stripe_subscription_id"),
+        admin.from("workspace_credit_lots")
+          .select("workspace_id, remaining, expires_at")
+          .gt("remaining", 0),
+        admin.from("workspace_credit_ledger")
+          .select("workspace_id, amount, entry_type")
+          .eq("entry_type", "debit")
+          .gte("created_at", monthStart.toISOString()),
+      ]);
+      if (workspacesResult.error) {
+        throw new HttpError(503, "PORTFOLIO_UNAVAILABLE", "The billing portfolio could not be read");
+      }
+
+      const now = Date.now();
+      const balances = new Map<string, number>();
+      for (const lot of (lotsResult.data ?? []) as Array<Record<string, unknown>>) {
+        const expires = typeof lot.expires_at === "string" ? Date.parse(lot.expires_at) : Number.NaN;
+        // An expired lot is already out of the balance everywhere else; a
+        // portfolio that counted it would disagree with every other screen.
+        if (!Number.isNaN(expires) && expires <= now) continue;
+        const id = String(lot.workspace_id);
+        balances.set(id, (balances.get(id) ?? 0) + (Number(lot.remaining) || 0));
+      }
+      const spend = new Map<string, number>();
+      for (const row of (spendResult.data ?? []) as Array<Record<string, unknown>>) {
+        const id = String(row.workspace_id);
+        spend.set(id, (spend.get(id) ?? 0) + Math.abs(Number(row.amount) || 0));
+      }
+      const profiles = new Map<string, Record<string, unknown>>();
+      for (const row of (profilesResult.data ?? []) as Array<Record<string, unknown>>) {
+        profiles.set(String(row.workspace_id), row);
+      }
+
+      const rows = ((workspacesResult.data ?? []) as Array<Record<string, unknown>>).map((workspace) => {
+        const id = String(workspace.id);
+        const profile = profiles.get(id);
+        const allowance = typeof profile?.monthly_credit_allowance === "number"
+          ? profile.monthly_credit_allowance
+          : 100;
+        const balance = balances.get(id) ?? 0;
+        return {
+          workspace_id: id,
+          name: typeof workspace.name === "string" ? workspace.name : "Workspace",
+          // No profile is a workspace that has never been billed: a trial.
+          billing_status: typeof profile?.billing_status === "string" ? profile.billing_status : "trialing",
+          plan_key: typeof profile?.plan_key === "string" ? profile.plan_key : null,
+          monthly_credit_allowance: allowance,
+          balance,
+          credits_spent_this_month: spend.get(id) ?? 0,
+          has_subscription: typeof profile?.stripe_subscription_id === "string"
+            && profile.stripe_subscription_id.length > 0,
+          cancel_at_period_end: profile?.cancel_at_period_end === true,
+          current_period_end: profile?.current_period_end ?? null,
+        };
+      });
+
+      return jsonResponse(req, METHODS, 200, {
+        success: true,
+        enforcement_enabled: Deno.env.get("CREDIT_ENFORCEMENT_ENABLED")?.trim() === "true",
+        workspaces: rows,
+      });
+    }
+
     if (action === "credits-adjust") {
       requireOnlyKeys(body, ["action", "workspace_id", "amount", "reason", "adjustment_key"]);
       await requireWorkspaceFeatureAccess(authContext, workspaceId);

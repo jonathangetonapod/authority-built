@@ -15,6 +15,14 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    // The Supabase client throws at import time without these, so any test
+    // whose component tree reaches a service — even one it mocks a layer
+    // above — died on the import rather than on anything it asserted. Values
+    // are deliberately obvious fakes: nothing in a test may reach a network.
+    env: {
+      VITE_SUPABASE_URL: 'https://test.supabase.co',
+      VITE_SUPABASE_ANON_KEY: 'test-anon-key',
+    },
     clearMocks: true,
     restoreMocks: true,
   },

@@ -6,6 +6,8 @@ import { listWorkspaceStaff } from '@/services/workspaceStaff'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useAuth } from '@/contexts/AuthContext'
+import { BillingPortfolio } from '@/components/workspace/BillingPortfolio'
 import { WorkspaceCreditGrantPreview } from '@/components/workspace/WorkspaceCreditGrantPreview'
 import { WorkspaceCreditAdjustment } from '@/components/workspace/WorkspaceCreditAdjustment'
 import { WorkspaceMonthlyAllowance } from '@/components/workspace/WorkspaceMonthlyAllowance'
@@ -27,6 +29,9 @@ interface PlatformCreditTopUpProps {
  * among them — it buys its own credits through checkout on this same page.
  */
 export function PlatformCreditTopUp({ actorEmail }: PlatformCreditTopUpProps) {
+  // The signed-in admin's own workspace authorizes the portfolio read; the
+  // rows it returns are every workspace, not just this one.
+  const { workspace } = useAuth()
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('')
 
   const workspacesQuery = useQuery({
@@ -58,6 +63,15 @@ export function PlatformCreditTopUp({ actorEmail }: PlatformCreditTopUpProps) {
 
   return (
     <section className="space-y-4" aria-labelledby="platform-credit-topup-title">
+      {/* Which agency needs attention, before the controls for acting on one. */}
+      {workspace?.id && (
+        <BillingPortfolio
+          workspaceId={workspace.id}
+          selectedWorkspaceId={selectedWorkspaceId}
+          onSelect={setSelectedWorkspaceId}
+        />
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-lg" id="platform-credit-topup-title">Top up a workspace</CardTitle>

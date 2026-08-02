@@ -1008,6 +1008,48 @@ export async function adjustWorkspaceCredits(
   return { removed: data.removed, balance: typeof data.balance === 'number' ? data.balance : null }
 }
 
+export interface BillingPortfolioRow {
+  workspace_id: string
+  name: string
+  billing_status: string
+  plan_key: string | null
+  monthly_credit_allowance: number
+  balance: number
+  credits_spent_this_month: number
+  has_subscription: boolean
+  cancel_at_period_end: boolean
+  current_period_end: string | null
+}
+
+/**
+ * Platform-admin only: every workspace's money on one screen.
+ *
+ * The per-workspace overview answers "how is this agency doing". Nothing
+ * answered "which agency needs me", so the questions an owner actually has —
+ * who is nearly out, who is past due, who is burning credits — meant opening
+ * each workspace in turn, and nobody does that.
+ */
+export async function getBillingPortfolio(
+  workspaceId: string,
+): Promise<{ enforcementEnabled: boolean; workspaces: BillingPortfolioRow[] }> {
+  const canonicalWorkspaceId = canonicalUuid(workspaceId, 'Workspace ID')
+  const data = await invoke({
+    action: 'billing-portfolio',
+    workspace_id: canonicalWorkspaceId,
+  }, 'The billing portfolio could not be loaded.') as {
+    success?: boolean
+    enforcement_enabled?: boolean
+    workspaces?: BillingPortfolioRow[]
+  }
+  if (data?.success !== true || !Array.isArray(data.workspaces)) {
+    throw new Error('The billing portfolio could not be loaded.')
+  }
+  return {
+    enforcementEnabled: data.enforcement_enabled === true,
+    workspaces: data.workspaces,
+  }
+}
+
 export type WorkspacePlanKey = 'founding_member' | 'standard'
 
 export interface BillingPlan {

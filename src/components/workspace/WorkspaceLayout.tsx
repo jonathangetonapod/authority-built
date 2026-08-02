@@ -42,6 +42,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
+import { CreditBalanceWarning } from '@/components/workspace/CreditBalanceWarning'
 import { WorkspaceSwitcher } from '@/components/admin/WorkspaceSwitcher'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -624,6 +625,16 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
             )}
           </div>
         </header>
+
+        {/* Above the page rather than inside billing: the person who needs to
+            know is mid-task somewhere else entirely. Platform admins viewing a
+            tenant are excluded — it is not their balance to act on. */}
+        {!platformWorkspace && workspace?.id && (
+          <CreditBalanceWarning
+            workspaceId={workspace.id}
+            canManageBilling={membership?.role === 'owner' || membership?.role === 'admin'}
+          />
+        )}
 
         <main className="min-w-0 p-4 sm:p-6">{children}</main>
       </div>
