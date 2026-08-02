@@ -742,7 +742,11 @@ const WorkspaceCampaigns = ({
       <Card className="overflow-hidden">
         <div className="border-b border-border bg-muted/15 p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex w-full flex-col gap-2 sm:flex-row lg:max-w-2xl">
+            {/* The search box used to take every pixel the row would give it,
+                so a field holding a campaign name ran the width of the page
+                and pushed the status filters onto their own line. Bounded, so
+                it sits beside the client filter rather than swallowing it. */}
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
               <Select value={clientGroupFilter} onValueChange={setClientGroupFilter}>
                 <SelectTrigger aria-label="Filter campaigns by client" className="w-full sm:w-56"><Users className="mr-2 h-4 w-4 text-muted-foreground" /><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -750,7 +754,7 @@ const WorkspaceCampaigns = ({
                   {activeClients.map((client) => <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <div className="relative w-full">
+              <div className="relative w-full sm:w-72">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search campaigns…" className="pl-9" />
               </div>
