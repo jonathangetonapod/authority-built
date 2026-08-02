@@ -410,3 +410,89 @@
 .gp-form-done { max-width: 42rem; }
 .gp-form-done h3 { color: var(--band-fg); font-family: var(--display); font-size: 1.4rem; margin: 0; }
 .gp-form-done p { color: var(--band-soft); margin-top: 0.7rem; }
+
+/*
+ * Sign-in and request-access.
+ *
+ * These are the landing page's band and type, not a separate visual world —
+ * arriving at sign-in used to look like a different product. Utilitarian on
+ * purpose: one column, one action, and the other door named at the bottom.
+ */
+.gp-auth-page { min-height: 100vh; display: flex; flex-direction: column; background: var(--band); }
+.gp-auth-page .gp-mark { text-decoration: none; color: var(--band-fg); }
+.gp-auth-body { flex: 1; display: flex; align-items: center; padding-block: clamp(2rem, 6vw, 4rem); }
+.gp-auth-card { max-width: 46rem; }
+.gp-auth-narrow { max-width: 34rem; }
+.gp-auth-card h1 { color: var(--band-fg); font-size: clamp(2rem, 4.5vw, 3rem); }
+.gp-auth-standfirst { color: var(--band-soft); margin-top: 0.9rem; font-size: 1.02rem; }
+
+/* The form already carries the band's field styles; it just needs less air
+   above it here than it does at the end of a long page. */
+.gp-form-tight { margin-top: 1.8rem; max-width: 26rem; }
+.gp-auth-card .gp-form { margin-top: 1.8rem; }
+
+.gp-field-with-toggle { position: relative; display: block; }
+.gp-reveal {
+  position: absolute; right: 0; top: 0; height: 100%; width: 2.9rem;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: 0; cursor: pointer; color: var(--band-soft);
+}
+.gp-reveal:hover { color: var(--band-fg); }
+.gp-field-with-toggle input { padding-right: 2.9rem; }
+
+.gp-btn-block {
+  display: flex; align-items: center; justify-content: center; gap: 0.55rem;
+  width: 100%; cursor: pointer; font-family: var(--data);
+}
+.gp-btn-block[disabled] { opacity: 0.6; cursor: progress; }
+/* The second action on the page is never a second primary button. */
+.gp-btn-ghost {
+  background: transparent; color: var(--band-fg); border-color: var(--band-line);
+}
+.gp-btn-ghost:hover { border-color: var(--band-soft); }
+
+.gp-auth-link {
+  background: none; border: 0; padding: 0; cursor: pointer; justify-self: start;
+  font-family: var(--data); font-size: 0.72rem; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--band-soft);
+  border-bottom: 1px solid var(--band-line);
+}
+.gp-auth-link:hover { color: var(--band-fg); }
+.gp-auth-link[disabled] { opacity: 0.5; cursor: default; }
+
+.gp-auth-status {
+  margin-top: 1.6rem; padding: 0.75rem 0.9rem; font-size: 0.88rem;
+  color: var(--band-fg); background: rgba(224, 163, 62, 0.12);
+  border-left: 3px solid var(--signal); max-width: 26rem;
+}
+.gp-auth-reason { color: var(--band-fg); margin-top: 1.4rem; }
+.gp-auth-note { color: var(--band-soft); font-size: 0.84rem; margin-top: 0.9rem; }
+.gp-auth-actions { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 1.6rem; }
+.gp-auth-actions .gp-btn { cursor: pointer; }
+
+.gp-auth-alt { margin-top: 2rem; max-width: 26rem; }
+.gp-auth-rule {
+  display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem;
+  font-family: var(--data); font-size: 0.66rem; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--band-soft);
+}
+.gp-auth-rule::before, .gp-auth-rule::after {
+  content: ""; flex: 1; height: 1px; background: var(--band-line);
+}
+
+.gp-auth-foot {
+  margin-top: 2.4rem; padding-top: 1.4rem; border-top: 1px solid var(--band-line);
+  font-family: var(--data); font-size: 0.72rem; letter-spacing: 0.06em;
+  color: var(--band-soft); max-width: 26rem;
+}
+.gp-auth-foot a { color: var(--band-fg); text-decoration: none; border-bottom: 1px solid var(--band-line); }
+.gp-auth-foot a:hover { border-bottom-color: var(--signal); }
+
+.gp-auth-loading {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  color: var(--band-soft);
+}
+
+/* The masthead's call to action. Smaller than the hero's, so the hero still
+   carries the decision. */
+.gp-btn-small { padding: 0.6rem 1rem; font-size: 0.7rem; }

@@ -218,6 +218,7 @@ const AgencyLanding = () => {
           <div className="gp-mark">GET ON A <b>POD</b></div>
           <div className="gp-masthead-actions">
             <Link className="gp-quiet" to="/login">Sign in</Link>
+            <a className="gp-btn gp-btn-primary gp-btn-small" href="#start">Request access</a>
           </div>
         </div>
       </header>

@@ -18,6 +18,7 @@ import { selectedWorkspaceBaseHref, workspaceModuleHref, type WorkspaceModule } 
 // The booking service page is no longer the entry, so its thirteen marketing
 // sections should not ride along on every visit to the app.
 const Index = lazyRoute(() => import("./pages/Index"));
+const RequestAccess = lazyRoute(() => import("./pages/RequestAccess"));
 const Resources = lazyRoute(() => import("./pages/Resources"));
 const Blog = lazyRoute(() => import("./pages/Blog"));
 const BlogPost = lazyRoute(() => import("./pages/BlogPost"));
@@ -132,6 +133,11 @@ const App = () => (
 
             {/* Invite-only workspace account routes */}
             <Route path="/login" element={<AdminLogin />} />
+            {/* Registration is a request, not a sign-up — the platform is
+                invite-only. /register is where people look for it. */}
+            <Route path="/register" element={<RequestAccess />} />
+            <Route path="/request-access" element={<Navigate to="/register" replace />} />
+            <Route path="/signup" element={<Navigate to="/register" replace />} />
             <Route path="/accept-invite" element={<AcceptInvite />} />
             <Route path="/change-password" element={<ChangeInitialPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />

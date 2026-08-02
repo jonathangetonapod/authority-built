@@ -4,11 +4,7 @@ import { Chrome, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
+import { AuthShell } from '@/components/landing/AuthShell'
 
 const Login = () => {
   const {
@@ -108,139 +104,129 @@ const Login = () => {
 
   if (user && accountState === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="gp-page gp-auth-page gp-auth-loading">
+        <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
+        <span className="sr-only">Checking your account</span>
       </div>
     )
   }
 
   if (user && ['suspended', 'expired', 'no_membership', 'error'].includes(accountState)) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>Access unavailable</CardTitle>
-            <CardDescription>
-              {accountState === 'suspended'
-                ? 'Your workspace access is suspended.'
-                : accountState === 'expired'
-                  ? 'Your invitation has expired. Ask a platform administrator for a new invitation.'
-                : accountError || 'This account has not been invited to an active workspace.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">Signed in as {user.email}</p>
-            {accountState === 'error' && (
-              <Button className="w-full" onClick={() => void refreshAccount()}>
-                Try again
-              </Button>
-            )}
-            <Button variant="outline" className="w-full" onClick={() => void signOut()}>
-              Sign in with another account
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <AuthShell
+        title="Access unavailable | Get On A Pod"
+        description="This account cannot open a workspace right now."
+        path="/login"
+        tone="notice"
+        heading="Access unavailable."
+        standfirst=""
+        footer={<>Need a workspace? <Link to="/register">Request access</Link></>}
+      >
+        <p className="gp-auth-reason">
+          {accountState === 'suspended'
+            ? 'Your workspace access is suspended.'
+            : accountState === 'expired'
+              ? 'Your invitation has expired. Ask a platform administrator for a new invitation.'
+              : accountError || 'This account has not been invited to an active workspace.'}
+        </p>
+        <p className="gp-auth-note">Signed in as {user.email}</p>
+        <div className="gp-auth-actions">
+          {accountState === 'error' && (
+            <button type="button" className="gp-btn gp-btn-primary" onClick={() => void refreshAccount()}>
+              Try again
+            </button>
+          )}
+          <button type="button" className="gp-btn gp-btn-ghost" onClick={() => void signOut()}>
+            Sign in with another account
+          </button>
+        </div>
+      </AuthShell>
     )
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">Sign in</CardTitle>
-          <CardDescription className="text-center">
-            Use the email from your invitation or the account created for you by an administrator.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {(passwordChanged || signInAgain) && (
-            <p className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm" role="status">
-              {passwordChanged
-                ? 'Password changed. Sign in with your new password.'
-                : 'Your credentials changed. Sign in again with the newest password.'}
-            </p>
-          )}
-          <form onSubmit={handlePasswordSignIn} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                disabled={isSubmitting}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  disabled={isSubmitting}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-0 top-0 h-full px-3"
-                  onClick={() => setShowPassword((value) => !value)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              </div>
-            </div>
-            <Button type="submit" className="w-full" size="lg" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isSubmitting ? 'Signing in...' : 'Sign in'}
-            </Button>
-            {resetRequested ? (
-              <p className="text-center text-sm text-muted-foreground" role="status">
-                If that email has an account, a password reset link is on the way.
-              </p>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void handleForgotPassword()}
-                disabled={isSubmitting}
-                className="mx-auto block text-sm text-primary hover:underline"
-              >
-                Forgot password?
-              </button>
-            )}
-          </form>
+    <AuthShell
+      title="Sign in | Get On A Pod"
+      description="Sign in to your Get On A Pod workspace."
+      path="/login"
+      heading="Sign in."
+      standfirst="Use the email from your invitation, or the account an administrator created for you."
+      footer={<>No account yet? <Link to="/register">Request access</Link></>}
+    >
+      {(passwordChanged || signInAgain) && (
+        <p className="gp-auth-status" role="status">
+          {passwordChanged
+            ? 'Password changed. Sign in with your new password.'
+            : 'Your credentials changed. Sign in again with the newest password.'}
+        </p>
+      )}
 
-          {adminEntry && (
-            <>
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center"><Separator className="w-full" /></div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-background px-2 text-muted-foreground">Admin sign-in</span>
-                </div>
-              </div>
+      <form className="gp-form gp-form-tight" onSubmit={handlePasswordSignIn}>
+        <label className="gp-field">
+          <span>Email</span>
+          <input
+            id="email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            disabled={isSubmitting}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </label>
 
-              <Button onClick={handleGoogleSignIn} variant="outline" className="w-full" size="lg">
-                <Chrome className="mr-2 h-5 w-5" />
-                Continue with Google
-              </Button>
-            </>
-          )}
+        <label className="gp-field">
+          <span>Password</span>
+          <div className="gp-field-with-toggle">
+            <input
+              id="password"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              value={password}
+              disabled={isSubmitting}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+            <button
+              type="button"
+              className="gp-reveal"
+              onClick={() => setShowPassword((value) => !value)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+        </label>
 
-          {/* The way in for someone who has no account yet. Without it the only
-              route from the landing page to sign-in is one-way, and a person
-              who arrives here uninvited is told nothing. */}
-          <p className="text-center text-sm text-muted-foreground">
-            No account yet? <Link to="/#start" className="font-medium underline underline-offset-4">Request access</Link>
+        <button type="submit" className="gp-btn gp-btn-primary gp-btn-block" disabled={isSubmitting}>
+          {isSubmitting ? 'Signing in…' : 'Sign in'}
+        </button>
+
+        {resetRequested ? (
+          // Said the same way whether or not that email has an account.
+          <p className="gp-auth-note" role="status">
+            If that email has an account, a password reset link is on the way.
           </p>
-        </CardContent>
-      </Card>
-    </div>
+        ) : (
+          <button
+            type="button"
+            className="gp-auth-link"
+            disabled={isSubmitting}
+            onClick={() => void handleForgotPassword()}
+          >
+            Forgot password?
+          </button>
+        )}
+      </form>
+
+      {adminEntry && (
+        <div className="gp-auth-alt">
+          <span className="gp-auth-rule">Admin sign-in</span>
+          <button type="button" className="gp-btn gp-btn-ghost gp-btn-block" onClick={handleGoogleSignIn}>
+            <Chrome className="h-4 w-4" aria-hidden="true" />
+            Continue with Google
+          </button>
+        </div>
+      )}
+    </AuthShell>
   )
 }
 
