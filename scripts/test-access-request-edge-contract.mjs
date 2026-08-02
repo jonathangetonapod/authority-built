@@ -144,11 +144,13 @@ assert.deepEqual(escaped, [], `agencyLanding.css selectors must start with .gp-;
 
 // The page's screenshots are files dropped into public/shots. The markup must
 // name each one and carry an alt, so a missing file degrades to a placeholder
-// and a present one is described.
+// and a present one is described. The page names the files; the fallback lives
+// in the Shot component it renders them through.
 const landing = readFileSync('src/pages/AgencyLanding.tsx', 'utf8')
+const shot = readFileSync('src/components/landing/Shot.tsx', 'utf8')
 const shotSources = [...landing.matchAll(/src: '(\/shots\/[a-z]+\.png)'/gu)].map((match) => match[1])
 assert.ok(shotSources.length >= 5, 'the tour should name every screenshot it shows')
-assert.match(landing, /onError=\{\(\) => setMissing\(true\)\}/u)
+assert.match(shot, /onError=\{\(\) => setMissing\(true\)\}/u)
 assert.match(css, /\.gp-shot-empty \{/u)
 
 // One vocabulary for "what you run", across the form, the function and the
