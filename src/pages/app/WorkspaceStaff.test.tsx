@@ -397,8 +397,9 @@ describe('WorkspaceStaff', () => {
   })
 
   // The sidebar draws the workspace name from the account context, so this one
-  // has to pay the reload or it would sit stale until the next hard refresh.
-  it('does refresh the shell for the name the sidebar draws', async () => {
+  // has to re-read it or the sidebar sits stale until a hard refresh — but
+  // quietly, or ProtectedRoute throws up a spinner and rebuilds the page.
+  it('refreshes the shell for the name the sidebar draws, without tearing the page down', async () => {
     renderPage()
     await screen.findByText('Agency Admin')
 
@@ -406,6 +407,7 @@ describe('WorkspaceStaff', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save workspace name' }))
 
     await waitFor(() => expect(refreshAccount).toHaveBeenCalledTimes(1))
+    expect(refreshAccount).toHaveBeenCalledWith({ quiet: true })
   })
 
   // Two fields on this page are called a name, and which one a client sees was

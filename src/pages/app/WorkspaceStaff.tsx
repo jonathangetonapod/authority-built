@@ -318,17 +318,16 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
   /**
    * Reload the account too, for the two things the app shell reads.
    *
-   * refreshAccount sets the account state to loading, and ProtectedRoute
-   * answers loading with a full-screen spinner — so this unmounts the settings
-   * page and remounts it, losing every draft and the scroll position. That is
-   * the right trade for the workspace name and logo, which are drawn in the
-   * sidebar from the account context and would otherwise sit stale until a
-   * reload. It is the wrong trade for anything the shell never draws, which is
-   * why saving a booking link or a client-facing brand no longer pays it.
+   * The workspace name and logo are drawn in the sidebar from the account
+   * context, so saving either has to re-read it or the sidebar sits stale
+   * until a hard refresh. Quietly: a loud refresh flips the account state to
+   * loading, which ProtectedRoute answers with a full-screen spinner, and
+   * that unmounted this page mid-save and rebuilt it — drafts and scroll
+   * position gone, to change a word in the sidebar.
    */
   const refreshShellIdentity = async () => {
     await refreshSettings()
-    if (!isPlatformWorkspace) await refreshAccount()
+    if (!isPlatformWorkspace) await refreshAccount({ quiet: true })
   }
 
   const logoMutation = useMutation({

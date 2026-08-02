@@ -58,7 +58,16 @@ interface AuthContextType {
   workspace: Workspace | null
   canWriteClients: boolean
   canManageWorkspaceStaff: boolean
-  refreshAccount: () => Promise<boolean>
+  /**
+   * Reload the account. Loud by default: the state goes to loading, which
+   * ProtectedRoute answers with a full-screen spinner.
+   *
+   * Pass quiet when an already-signed-in page is refreshing its own view of
+   * the account after a save. Loud there unmounts the page mid-use and
+   * rebuilds it, losing drafts and scroll position, to change a name in the
+   * sidebar. A failure still surfaces either way.
+   */
+  refreshAccount: (options?: { quiet?: boolean }) => Promise<boolean>
   refreshSession: () => Promise<boolean>
   signInWithGoogle: () => Promise<void>
   signInWithPassword: (email: string, password: string) => Promise<void>
@@ -102,7 +111,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setWorkspace(null)
   }, [])
 
-  const refreshAccount = useCallback(async () => {
+  const refreshAccount = useCallback(async (options?: { quiet?: boolean }) => {
     const requestId = ++accountRequestRef.current
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
     if (requestId !== accountRequestRef.current) return false
@@ -119,7 +128,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
     if (sessionData.session.user.id !== lastUserIdRef.current) return false
 
-    setAccountState('loading')
+    // Quiet refreshes leave the state alone, so a page that is already
+    // rendering keeps rendering while the account is re-read underneath it.
+    if (!options?.quiet) setAccountState('loading')
     setAccountError(null)
 
     const { data, error } = await supabase.functions.invoke<AccountContextResponse>('account-context')
