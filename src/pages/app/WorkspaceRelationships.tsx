@@ -46,6 +46,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { useAuth } from '@/contexts/AuthContext'
 import { decodeFeedText } from '@/lib/feedText'
+import {
+  RELATIONSHIP_MANUAL_STAGE_VIEW as MANUAL_STAGE_VIEW,
+  RELATIONSHIP_STATE_VIEW as STATE_VIEW,
+} from '@/lib/relationshipLabels'
 import { describeQuiet, quietConversations } from '@/lib/relationshipAttention'
 import { sortRelationships, type RelationshipSort } from '@/lib/relationshipSort'
 import { MY_WORKSPACE_BASE_HREF, selectedWorkspaceBaseHref } from '@/lib/workspaceRoutes'
@@ -73,22 +77,6 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const RELATIONSHIPS_PER_PAGE = 25
 
 /** How each derived state reads to an operator scanning the book. */
-const STATE_VIEW: Record<HostRelationshipDerivedState, { label: string; className: string }> = {
-  in_conversation: { label: 'In conversation', className: 'border-sky-200 bg-sky-50 text-sky-900' },
-  booked: { label: 'Placed a guest', className: 'border-emerald-200 bg-emerald-50 text-emerald-900' },
-  replied: { label: 'Replied', className: 'border-violet-200 bg-violet-50 text-violet-900' },
-  declined: { label: 'Passed', className: 'border-amber-200 bg-amber-50 text-amber-900' },
-  suppressed: { label: 'Do not contact', className: 'border-destructive/30 bg-destructive/5 text-destructive' },
-  pitched: { label: 'Pitched, no reply', className: 'border-muted bg-muted/50 text-muted-foreground' },
-  none: { label: 'Not contacted', className: 'border-muted bg-muted/30 text-muted-foreground' },
-}
-
-const MANUAL_STAGE_VIEW: Record<HostRelationshipManualStage, { label: string; className: string }> = {
-  nurturing: { label: 'Nurturing', className: 'border-indigo-200 bg-indigo-50 text-indigo-900' },
-  warm: { label: 'Warm relationship', className: 'border-orange-200 bg-orange-50 text-orange-900' },
-  do_not_contact: { label: 'Marked do not contact', className: 'border-destructive/30 bg-destructive/5 text-destructive' },
-}
-
 type StageDraft = HostRelationshipManualStage | 'derived'
 type NoteKind = 'note' | 'call' | 'meeting'
 type RelationshipFilter = 'all' | 'active' | 'warm' | 'placed' | 'do_not_contact'

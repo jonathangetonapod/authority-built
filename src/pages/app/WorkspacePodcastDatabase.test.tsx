@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuth } from '@/contexts/AuthContext'
 import WorkspacePodcastDatabase from '@/pages/app/WorkspacePodcastDatabase'
 import { addClientShortlistPodcasts } from '@/services/clientShortlist'
+import { listHostRelationships } from '@/services/hostRelationships'
 import { getWorkspaceClients } from '@/services/clients'
 import { getWorkspacePodcastCatalog } from '@/services/workspacePodcastCatalog'
 
@@ -15,11 +16,13 @@ vi.mock('@/components/workspace/WorkspaceLayout', () => ({
 vi.mock('@/services/workspacePodcastCatalog', () => ({ getWorkspacePodcastCatalog: vi.fn() }))
 vi.mock('@/services/clients', () => ({ getWorkspaceClients: vi.fn() }))
 vi.mock('@/services/clientShortlist', () => ({ addClientShortlistPodcasts: vi.fn() }))
+vi.mock('@/services/hostRelationships', () => ({ listHostRelationships: vi.fn() }))
 
 const mockedUseAuth = vi.mocked(useAuth)
 const mockedCatalog = vi.mocked(getWorkspacePodcastCatalog)
 const mockedClients = vi.mocked(getWorkspaceClients)
 const mockedAdd = vi.mocked(addClientShortlistPodcasts)
+const mockedRelationships = vi.mocked(listHostRelationships)
 const workspaceId = '11111111-1111-4111-8111-111111111111'
 const clientId = '22222222-2222-4222-8222-222222222222'
 
@@ -79,6 +82,8 @@ function renderPage(initialEntry = '/app/podcast-database') {
 describe('WorkspacePodcastDatabase', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // No history with any of these hosts unless a test says otherwise.
+    mockedRelationships.mockResolvedValue([])
     mockedUseAuth.mockReturnValue({
       user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
       workspace: { id: workspaceId, name: 'Acme Workspace' },
@@ -145,5 +150,50 @@ describe('WorkspacePodcastDatabase', () => {
         podcast_email: 'show@example.com',
       })],
     ))
+  })
+
+  // The same podcast is a row here and a relationship in the book, keyed by the
+  // same podcast_id — but only the book knew this host had already passed, or
+  // been marked do not contact. Someone building a shortlist saw none of it.
+  it('marks a podcast the workspace already has history with', async () => {
+    mockedRelationships.mockResolvedValue([{
+      podcast_id: 'podcast-one',
+      podcast_name: 'The Founder Show',
+      podcast_image_url: null,
+      host_name: null,
+      contact_email: null,
+      derived_state: 'declined',
+      manual_stage: null,
+      summary: null,
+      last_contacted_at: null,
+      touch_count: 1,
+      booked_client_name: null,
+      client_count: 0,
+      note_count: 0,
+      last_note_at: null,
+      curated: false,
+    }] as never)
+    renderPage()
+
+    expect(await screen.findByText('Passed')).toBeInTheDocument()
+  })
+
+  it('says nothing about a host nobody has contacted', async () => {
+    // Every podcast in the catalogue is this one, so a badge on all of them
+    // would say nothing and hide the ones that matter.
+    mockedRelationships.mockResolvedValue([])
+    renderPage()
+
+    expect(await screen.findByText('The Founder Show')).toBeInTheDocument()
+    expect(screen.queryByText('Passed')).not.toBeInTheDocument()
+    expect(screen.queryByText('Not contacted')).not.toBeInTheDocument()
+  })
+
+  // A relationship book that will not load must not take the catalogue with it.
+  it('still lists podcasts when the relationship book cannot be read', async () => {
+    mockedRelationships.mockRejectedValue(new Error('relationships unavailable'))
+    renderPage()
+
+    expect(await screen.findByText('The Founder Show')).toBeInTheDocument()
   })
 })

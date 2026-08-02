@@ -45,6 +45,8 @@ import {
   type WorkspacePodcastCatalogSort,
 } from '@/services/workspacePodcastCatalog'
 import { safeExternalUrl } from '@/lib/externalUrl'
+import { relationshipBadge } from '@/lib/relationshipLabels'
+import { listHostRelationships } from '@/services/hostRelationships'
 import { MY_WORKSPACE_BASE_HREF, selectedWorkspaceBaseHref } from '@/lib/workspaceRoutes'
 
 const PAGE_SIZE = 24
@@ -222,6 +224,34 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
     queryClient, validWorkspaceId, catalogQuery.isFetching, page, totalPages,
     user?.id, workspaceId, search, category, contact, activity, audience, sort,
   ])
+
+  /**
+   * History with these hosts, so the catalogue is not read cold.
+   *
+   * The same podcast is a row in the database and a relationship in the book,
+   * keyed by the same podcast_id — but only the book knew that this host had
+   * already passed, or was mid conversation, or had been marked do not
+   * contact. Someone building a shortlist saw none of it and could pitch a
+   * host the workspace had already burned.
+   *
+   * One list for the workspace rather than a lookup per card, and a failure
+   * leaves the catalogue exactly as it was rather than blocking it.
+   */
+  const relationshipsQuery = useQuery({
+    queryKey: ['workspace-host-relationships', workspaceId, 'catalog-labels'],
+    queryFn: () => listHostRelationships(workspaceId),
+    enabled: Boolean(workspaceId),
+    staleTime: 60_000,
+    retry: false,
+  })
+  const relationshipsByPodcastId = useMemo(() => {
+    const index = new Map<string, ReturnType<typeof relationshipBadge>>()
+    for (const row of relationshipsQuery.data ?? []) {
+      const badge = relationshipBadge(row)
+      if (badge) index.set(row.podcast_id, badge)
+    }
+    return index
+  }, [relationshipsQuery.data])
 
   const clientsQuery = useQuery({
     queryKey: ['workspace-podcast-catalog', user?.id || 'unknown', workspaceId, 'clients'],
@@ -505,6 +535,7 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
               const publicUrl = safeExternalUrl(podcast.podcast_url || podcast.website || '')
               const primaryEmail = podcast.direct_email || podcast.free_podscan_email
               const selected = selectedPodcasts.has(podcast.podcast_id)
+              const relationshipBadgeFor = relationshipsByPodcastId.get(podcast.podcast_id)
               return (
                 <Card key={podcast.podcast_id} className={`overflow-hidden transition-colors ${selected ? 'border-primary/50 bg-primary/[0.025]' : ''}`}>
                   <CardContent className="p-5">
@@ -526,6 +557,11 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
                           <div className="min-w-0">
                             <h2 className="truncate text-lg font-semibold">{podcast.podcast_name}</h2>
                             <p className="truncate text-sm text-muted-foreground">{podcast.host_name || podcast.publisher_name || 'Publisher not listed'}</p>
+                            {relationshipBadgeFor && (
+                              <Badge variant="outline" className={`mt-1.5 font-normal ${relationshipBadgeFor.className}`}>
+                                {relationshipBadgeFor.label}
+                              </Badge>
+                            )}
                           </div>
                           {publicUrl && <Button asChild variant="ghost" size="icon" className="shrink-0"><a href={publicUrl} target="_blank" rel="noreferrer" aria-label={`Open ${podcast.podcast_name}`}><ExternalLink className="h-4 w-4" /></a></Button>}
                         </div>
