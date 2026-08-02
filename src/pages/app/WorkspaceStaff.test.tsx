@@ -365,6 +365,49 @@ describe('WorkspaceStaff', () => {
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Client-facing brand updated.'))
   })
 
+  /**
+   * refreshAccount flips the account state to loading, and ProtectedRoute
+   * answers loading with a full-screen spinner — so calling it tears this page
+   * down and rebuilds it, losing drafts and scroll position. Saving something
+   * the sidebar never draws must not pay that.
+   */
+  it('does not tear the page down to save a booking link', async () => {
+    renderPage()
+    await screen.findByText('Agency Admin')
+
+    fireEvent.change(
+      screen.getByLabelText('Booking link or embed code'),
+      { target: { value: 'https://calendly.com/northstar/intro' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Save link' }))
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Booking link saved.'))
+    expect(refreshAccount).not.toHaveBeenCalled()
+  })
+
+  it('does not tear the page down to save the client-facing brand', async () => {
+    renderPage()
+    await screen.findByText('Agency Admin')
+
+    fireEvent.change(screen.getByLabelText('Agency name shown to clients'), { target: { value: 'Northstar Advisory' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save client brand' }))
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Client-facing brand updated.'))
+    expect(refreshAccount).not.toHaveBeenCalled()
+  })
+
+  // The sidebar draws the workspace name from the account context, so this one
+  // has to pay the reload or it would sit stale until the next hard refresh.
+  it('does refresh the shell for the name the sidebar draws', async () => {
+    renderPage()
+    await screen.findByText('Agency Admin')
+
+    fireEvent.change(screen.getByLabelText('Workspace name'), { target: { value: 'Northstar Workspace' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save workspace name' }))
+
+    await waitFor(() => expect(refreshAccount).toHaveBeenCalledTimes(1))
+  })
+
   it('invites through the authenticated workspace and its allowed default role', async () => {
     renderPage()
     await screen.findByText('Agency Admin')

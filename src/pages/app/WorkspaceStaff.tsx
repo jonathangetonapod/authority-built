@@ -308,8 +308,26 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
     !== (data?.workspace.booking_embed_url ?? '')
   const bookingLinkPreviewName = schedulerName(bookingLinkResolved)
 
-  const refreshBranding = async () => {
+  /**
+   * Reload this page's own data. Cheap, and nothing outside the page moves.
+   */
+  const refreshSettings = async () => {
     await queryClient.invalidateQueries({ queryKey })
+  }
+
+  /**
+   * Reload the account too, for the two things the app shell reads.
+   *
+   * refreshAccount sets the account state to loading, and ProtectedRoute
+   * answers loading with a full-screen spinner — so this unmounts the settings
+   * page and remounts it, losing every draft and the scroll position. That is
+   * the right trade for the workspace name and logo, which are drawn in the
+   * sidebar from the account context and would otherwise sit stale until a
+   * reload. It is the wrong trade for anything the shell never draws, which is
+   * why saving a booking link or a client-facing brand no longer pays it.
+   */
+  const refreshShellIdentity = async () => {
+    await refreshSettings()
     if (!isPlatformWorkspace) await refreshAccount()
   }
 
@@ -321,7 +339,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
       return updateWorkspaceLogo(workspaceId, file, data.workspace.logo_path)
     },
     onSuccess: async () => {
-      await refreshBranding()
+      await refreshShellIdentity()
       toast.success('Workspace logo updated.')
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'The workspace logo could not be uploaded.'),
@@ -336,7 +354,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
     },
     onSuccess: async () => {
       setLogoRemoveOpen(false)
-      await refreshBranding()
+      await refreshShellIdentity()
       toast.success('Workspace logo removed.')
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'The workspace logo could not be removed.'),
@@ -345,7 +363,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
   const bookingLinkMutation = useMutation({
     mutationFn: (nextUrl: string | null) => updateWorkspaceBookingLink(workspaceId, nextUrl),
     onSuccess: async (_result, nextUrl) => {
-      await refreshBranding()
+      await refreshSettings()
       toast.success(nextUrl ? 'Booking link saved.' : 'Booking link removed.')
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'The booking link could not be saved.'),
@@ -362,7 +380,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
       })
     },
     onSuccess: async () => {
-      await refreshBranding()
+      await refreshSettings()
       toast.success('Client-facing brand updated.')
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Client-facing branding could not be updated.'),
@@ -379,7 +397,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
       })
     },
     onSuccess: async () => {
-      await refreshBranding()
+      await refreshShellIdentity()
       toast.success('Workspace name updated.')
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Workspace name could not be updated.'),
