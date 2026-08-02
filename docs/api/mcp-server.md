@@ -30,7 +30,7 @@ SUPABASE_URL=https://xxx.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
 
 # Application Configuration  
-APP_URL=https://authoritybuilt.com
+APP_URL=https://getonapod.com
 
 # AI Service Keys (Required for match_podcasts)
 OPENAI_API_KEY=your-openai-api-key
@@ -159,7 +159,7 @@ Use when user says things like "create a new prospect called NAME" or "add prosp
     "id": "uuid-string",
     "name": "Sarah Johnson", 
     "slug": "abc12345",
-    "dashboard_url": "https://authoritybuilt.com/prospect/abc12345",
+    "dashboard_url": "https://getonapod.com/prospect/abc12345",
     "spreadsheet_url": "https://docs.google.com/spreadsheets/d/xyz123" 
   }
 }
@@ -219,7 +219,7 @@ Enable/publish a prospect dashboard so the prospect can view it. Sets content_re
 ```json
 {
   "success": true,
-  "dashboard_url": "https://authoritybuilt.com/prospect/abc12345",
+  "dashboard_url": "https://getonapod.com/prospect/abc12345",
   "enabled_at": "2026-01-21T10:30:00.000Z"
 }
 ```
@@ -533,7 +533,7 @@ Add to Claude Code settings:
       "env": {
         "SUPABASE_URL": "https://xxx.supabase.co",
         "SUPABASE_SERVICE_ROLE_KEY": "your-key",
-        "APP_URL": "https://authoritybuilt.com",
+        "APP_URL": "https://getonapod.com",
         "OPENAI_API_KEY": "your-openai-key",
         "ANTHROPIC_API_KEY": "your-anthropic-key"
       }

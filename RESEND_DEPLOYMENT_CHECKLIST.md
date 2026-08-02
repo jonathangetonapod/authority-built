@@ -26,7 +26,7 @@
 ### Step 1: Apply Database Migration
 
 ```bash
-cd /Users/jonathangarces/Desktop/GOAP\ -\>\ Authority\ Lab/authority-built
+cd /Users/jonathangarces/Desktop/GOAP\ -\>\ Authority\ Lab/getonapod-app
 
 # Apply migration via Supabase
 npx supabase db push

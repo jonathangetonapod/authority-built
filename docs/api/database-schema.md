@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the principal database structures for the authority-built podcast placement platform. The database is built on Supabase (PostgreSQL) with the **pgvector** extension enabled for vector similarity search. It spans client management, podcast discovery, booking systems, e-commerce, blog content, outreach automation, AI-powered podcast analysis, and analytics.
+This document describes the principal database structures for the getonapod-app podcast placement platform. The database is built on Supabase (PostgreSQL) with the **pgvector** extension enabled for vector similarity search. It spans client management, podcast discovery, booking systems, e-commerce, blog content, outreach automation, AI-powered podcast analysis, and analytics.
 
 ### Shared-database workspace model
 

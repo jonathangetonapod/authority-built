@@ -8,7 +8,7 @@ export const config = {
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY!
   },
   app: {
-    url: process.env.APP_URL || 'https://authoritybuilt.com'
+    url: process.env.APP_URL || 'https://getonapod.com'
   },
   openai: {
     apiKey: process.env.OPENAI_API_KEY!

@@ -34,8 +34,8 @@ Get On A Pod supports multiple authentication systems:
 
 ### Base URLs
 
-- **Main Application**: `https://authoritybuilt.com`
-- **Client Portal**: `https://authoritybuilt.com/portal`
+- **Main Application**: `https://getonapod.com`
+- **Client Portal**: `https://getonapod.com/portal`
 - **Supabase Edge Functions**: `https://your-project.supabase.co/functions/v1/`
 - **Supabase Database**: Direct connection via Supabase client
 

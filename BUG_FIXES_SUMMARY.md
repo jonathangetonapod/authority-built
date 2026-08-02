@@ -345,4 +345,4 @@ All 5 critical bugs have been identified, fixed, tested, and deployed to GitHub.
 2. `6a81144` - Fix Podscan API field mappings and endpoint in edge functions
 3. `7e76980` - Add database trigger to auto-increment podscan_fetch_count
 
-**GitHub:** https://github.com/jonathangetonapod/authority-built (all pushed to main branch)
+**GitHub:** https://github.com/jonathangetonapod/getonapod-app (all pushed to main branch)

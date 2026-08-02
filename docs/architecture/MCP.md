@@ -339,7 +339,7 @@ Only podcasts scoring 5+ are included in final results.
 ### URL Structure
 
 **Dashboard URL Format**: `{APP_URL}/prospect/{slug}`
-- Example: `https://authoritybuilt.com/prospect/abc123xy`
+- Example: `https://getonapod.com/prospect/abc123xy`
 - Public-facing prospect dashboard page
 - Shows when `content_ready: true`
 
@@ -368,7 +368,7 @@ Only podcasts scoring 5+ are included in final results.
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
-# Optional (defaults to https://authoritybuilt.com)
+# Optional (defaults to https://getonapod.com)
 APP_URL=https://your-domain.com
 
 # Missing from config but referenced in code

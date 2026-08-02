@@ -55,22 +55,22 @@ Deno.test('CORS development mode enables local origins explicitly', () => {
   assert(new Set(origins).size === origins.length, 'development origins were not deduplicated')
 })
 
-Deno.test('CORS admits legacy HTTPS domains only when configured', () => {
+Deno.test('CORS admits a non-default HTTPS domain only when configured', () => {
   const unconfigured = resolveAllowedOrigins('production', [])
   assert(
-    !unconfigured.includes('https://authoritybuilt.com'),
+    !unconfigured.includes('https://legacy-domain.example'),
     'legacy origin is enabled by default',
   )
 
   const configured = resolveAllowedOrigins('production', [
-    'https://authoritybuilt.com,https://www.authoritybuilt.com,http://example.com',
+    'https://legacy-domain.example,https://www.legacy-domain.example,http://example.com',
   ])
   assert(
-    configured.includes('https://authoritybuilt.com'),
+    configured.includes('https://legacy-domain.example'),
     'configured legacy origin is missing',
   )
   assert(
-    configured.includes('https://www.authoritybuilt.com'),
+    configured.includes('https://www.legacy-domain.example'),
     'configured legacy www origin is missing',
   )
   assert(!configured.includes('http://example.com'), 'insecure remote origin was accepted')

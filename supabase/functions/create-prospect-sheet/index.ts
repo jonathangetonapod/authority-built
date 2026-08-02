@@ -378,7 +378,7 @@ serve(async (req) => {
     }
 
     // Build the dashboard URL
-    const appUrl = Deno.env.get('APP_URL') || 'https://authoritybuilt.com'
+    const appUrl = Deno.env.get('APP_URL') || 'https://getonapod.com'
     const dashboardUrl = `${appUrl}/prospect/${slug}`
 
     // ============================================

@@ -375,5 +375,5 @@ Currently no rate limiting is enforced. For production use, consider:
 ## Support
 
 For issues or questions:
-- GitHub Issues: https://github.com/jonathangetonapod/authority-built/issues
+- GitHub Issues: https://github.com/jonathangetonapod/getonapod-app/issues
 - Email: jonathan@getonapod.com

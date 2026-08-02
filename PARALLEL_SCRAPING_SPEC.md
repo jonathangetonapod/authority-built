@@ -410,7 +410,7 @@ WHERE embedding IS NULL;
 
 ### Run Parallel Scraper
 ```bash
-cd "/Users/jonathangarces/Desktop/GOAP -> Authority Lab/authority-built"
+cd "/Users/jonathangarces/Desktop/GOAP -> Authority Lab/getonapod-app"
 npx tsx scripts/scrape-parallel.ts
 ```
 
