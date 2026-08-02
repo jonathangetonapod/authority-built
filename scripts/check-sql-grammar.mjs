@@ -89,6 +89,7 @@ const SQL_INPUTS = [
   'supabase/migrations/20260802050000_allowance_renewal_reports_truthfully.sql',
   'supabase/migrations/20260802060000_credit_adjustments.sql',
   'supabase/migrations/20260802070000_credit_refill_schedule.sql',
+  'supabase/migrations/20260802080000_workspace_access_requests.sql',
   'supabase/tests/20260720_invite_only_workspace_verification.sql',
   'supabase/tests/20260721_workspace_guest_resources_behavior.sql',
   'supabase/tests/20260722_subagency_workspace_foundation_behavior.sql',

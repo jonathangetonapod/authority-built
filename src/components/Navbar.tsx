@@ -3,11 +3,14 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Menu, X } from 'lucide-react';
 
+// These sections live on the booking service page, which moved off "/" when the
+// agency landing page took the root. Pointing them at "/" sent the reader to a
+// page that has none of them.
 const navLinks = [
-  { href: '/#how-it-works', label: 'How It Works' },
-  { href: '/#who-its-for', label: "Who It's For" },
-  { href: '/#results', label: 'Results' },
-  { href: '/#pricing', label: 'Pricing' },
+  { href: '/podcast-booking#how-it-works', label: 'How It Works' },
+  { href: '/podcast-booking#who-its-for', label: "Who It's For" },
+  { href: '/podcast-booking#results', label: 'Results' },
+  { href: '/podcast-booking#pricing', label: 'Pricing' },
   { href: '/resources', label: 'Resources' },
   { href: '/login', label: 'Workspace Login' },
 ];
@@ -55,7 +58,7 @@ const Navbar = () => {
 
               <div className="hidden items-center gap-7 lg:flex">
                 {navLinks.map((link) =>
-                  link.href.startsWith('/#') ? (
+                  link.href.includes('#') ? (
                     <a
                       key={link.href}
                       href={link.href}
@@ -97,7 +100,7 @@ const Navbar = () => {
               <div className="border-t border-[#0d1b2a]/10 bg-[#fffdf9]/94 px-5 py-4 lg:hidden">
                 <div className="flex flex-col gap-1">
                   {navLinks.map((link) =>
-                    link.href.startsWith('/#') ? (
+                    link.href.includes('#') ? (
                       <a
                         key={link.href}
                         href={link.href}

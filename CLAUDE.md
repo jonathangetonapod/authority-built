@@ -168,6 +168,7 @@ Google, Instantly, and webhook secrets remain server-only.
 - `PODSCAN_API_KEY` — podcast data
 - `INSTANTLY_CREDENTIAL_ENCRYPTION_KEY` — encrypts per-workspace Instantly keys
 - `RESEND_API_KEY` — transactional email
+- `ACCESS_REQUEST_NOTIFY_EMAIL` — recipient for landing-page access requests (optional; the request is stored regardless)
 - Custom domains: `CUSTOM_DOMAIN_PROVIDER` (`railway` default, or `cloudflare`) selects where
   *new* tenant domains are created. Existing rows keep the provider recorded on them, so
   switching never strands a domain that is already serving. Railway needs `RAILWAY_API_TOKEN`,

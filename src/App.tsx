@@ -11,10 +11,13 @@ import { PlatformAdminRoute, ProtectedRoute } from "@/components/ProtectedRoute"
 import { queryClient } from "@/lib/queryClient";
 import { lazyRoute } from "@/lib/lazyRoute";
 import { ClientProtectedRoute } from "@/components/ClientProtectedRoute";
-import Index from "./pages/Index";
+import AgencyLanding from "./pages/AgencyLanding";
 import NotFound from "./pages/NotFound";
 import { selectedWorkspaceBaseHref, workspaceModuleHref, type WorkspaceModule } from "@/lib/workspaceRoutes";
 
+// The booking service page is no longer the entry, so its thirteen marketing
+// sections should not ride along on every visit to the app.
+const Index = lazyRoute(() => import("./pages/Index"));
 const Resources = lazyRoute(() => import("./pages/Resources"));
 const Blog = lazyRoute(() => import("./pages/Blog"));
 const BlogPost = lazyRoute(() => import("./pages/BlogPost"));
@@ -113,7 +116,10 @@ const App = () => (
           <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <Suspense fallback={<RouteFallback />}>
             <Routes>
-            <Route path="/" element={<Index />} />
+            <Route path="/" element={<AgencyLanding />} />
+            {/* The done-for-you booking service keeps its own page; it sells to
+                founders, not to the agencies who run placement themselves. */}
+            <Route path="/podcast-booking" element={<Index />} />
             <Route path="/docs" element={<Navigate to="/" replace />} />
             <Route path="/resources" element={<Resources />} />
             <Route path="/premium-placements" element={<Navigate to="/" replace />} />

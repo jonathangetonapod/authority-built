@@ -20,7 +20,7 @@ const Index = () => {
       <PageSEO
         title="Get booked on podcasts your buyers already trust | Get On A Pod"
         description="Done-for-you podcast booking for founders, advisors, and operators. Approve the shortlist, see the outreach, and track every booking in one client portal."
-        path="/"
+        path="/podcast-booking"
       />
       <a
         href="#main-content"

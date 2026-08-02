@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Chrome, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
@@ -231,6 +231,13 @@ const Login = () => {
               </Button>
             </>
           )}
+
+          {/* The way in for someone who has no account yet. Without it the only
+              route from the landing page to sign-in is one-way, and a person
+              who arrives here uninvited is told nothing. */}
+          <p className="text-center text-sm text-muted-foreground">
+            No account yet? <Link to="/#start" className="font-medium underline underline-offset-4">Request access</Link>
+          </p>
         </CardContent>
       </Card>
     </div>

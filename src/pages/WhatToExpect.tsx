@@ -266,7 +266,7 @@ const WhatToExpect = () => {
                   </a>
                 </Button>
                 <Button variant="heroOutline" size="xl" className="min-h-[56px] rounded-full px-8 text-base" asChild>
-                  <a href="/#pricing">View Pricing</a>
+                  <a href="/podcast-booking#pricing">View Pricing</a>
                 </Button>
               </div>
 
@@ -515,7 +515,7 @@ const WhatToExpect = () => {
                   className="w-full rounded-full border-white/15 bg-white/5 px-8 text-[#f7fafc] shadow-none hover:border-[#d4b08f]/35 hover:bg-white/10 sm:w-auto"
                   asChild
                 >
-                  <a href="/#pricing">View Pricing</a>
+                  <a href="/podcast-booking#pricing">View Pricing</a>
                 </Button>
               </div>
             </div>

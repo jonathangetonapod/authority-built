@@ -447,6 +447,7 @@ Provider credentials belong in Supabase secret storage or the authorized operato
 - `ANTHROPIC_API_KEY` — every AI feature depends on it (research, pitch writing, inbox drafting, autopilot scoring). A workspace may supply its own key instead; this is the platform fallback. Validate a replacement against `GET /v1/models` before relying on it — a rejected key surfaces as features that quietly do nothing.
 - `OPENAI_API_KEY` — embeddings for semantic podcast search
 - `RESEND_API_KEY`
+- `ACCESS_REQUEST_NOTIFY_EMAIL` — where an access request from the public landing page is emailed. Optional: the request is recorded in `workspace_access_requests` either way, so an unset value means the queue is only visible in the table, never that a request was lost
 - `ONBOARDING_CAPABILITY_SECRET`
 - Google service-account credentials
 - `INSTANTLY_CREDENTIAL_ENCRYPTION_KEY` (at least 32 random characters; server-side encryption key)

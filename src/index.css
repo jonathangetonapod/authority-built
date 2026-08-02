@@ -117,6 +117,15 @@
     scroll-behavior: smooth;
   }
 
+  /* Smooth scrolling is motion, and it was applied unconditionally. Anchor
+     jumps and scrollIntoView both animate through it, so a person who has
+     asked the OS to stop animations was still getting scrolled. */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+
   /* Keep the desktop UI comfortably dense at normal browser zoom. Mobile
      retains the browser's 16px base size for legibility and tap comfort. */
   @media (min-width: 768px) {

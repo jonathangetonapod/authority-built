@@ -36,6 +36,11 @@ verify_jwt = true
 [functions.workspace-subscription-webhook]
 verify_jwt = false
 
+# The public landing page posts here before anyone has an account, so there is
+# no session to verify. Nothing it writes grants access.
+[functions.request-workspace-access]
+verify_jwt = false
+
 [functions.login-with-password]
 verify_jwt = false
 

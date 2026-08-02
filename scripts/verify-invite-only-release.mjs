@@ -20,8 +20,8 @@ const CONFIG_PATH = path.join(REPOSITORY_ROOT, 'supabase', 'config.toml')
 const FUNCTIONS_ROOT = path.join(REPOSITORY_ROOT, 'supabase', 'functions')
 
 const EXPECTED_COUNTS = Object.freeze({
-  changedFunctions: 115,
-  deployedFunctions: 113,
+  changedFunctions: 116,
+  deployedFunctions: 114,
   excludedFunctions: 2,
   retiredFunctions: 17,
   unauthenticatedTombstones: 5,
@@ -44,7 +44,7 @@ const EXPECTED_COUNTS = Object.freeze({
   // 164 with automatic credit refills: the tick, _shared/creditPacks.ts (moved
   // out of the checkout function so reading a price no longer executes its
   // serve), and the tick's own test surface.
-  edgeTypeScriptFiles: 163,
+  edgeTypeScriptFiles: 164,
 })
 
 const EXPECTED_PHASE_KEYS = Object.freeze([
@@ -125,6 +125,10 @@ const EXPECTED_PUBLIC_NON_JWT_FUNCTIONS = Object.freeze([
   // that page is about to show and nothing else.
   'resolve-workspace-domain',
   'validate-portal-session',
+  // The access-request form on the public landing page. The caller has no
+  // account yet, so there is no session to verify; nothing it writes grants
+  // access, and a platform admin still issues every invite by hand.
+  'request-workspace-access',
 ])
 
 const EXPECTED_EXPLICIT_JWT_FUNCTIONS = Object.freeze([
