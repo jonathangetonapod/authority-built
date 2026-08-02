@@ -73,7 +73,7 @@ describe('PlatformBilling', () => {
     } as never)
     renderPage()
 
-    expect(await screen.findByRole('link', { name: /Back to your billing/ }))
+    expect(await screen.findByRole('link', { name: /Your own billing/ }))
       .toHaveAttribute('href', '/app/settings/billing')
   })
 

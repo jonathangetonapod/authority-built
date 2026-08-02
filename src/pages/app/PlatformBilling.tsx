@@ -1,5 +1,5 @@
 import { Link, Navigate } from 'react-router-dom'
-import { ArrowLeft, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, Building2, ShieldCheck } from 'lucide-react'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
 import { useAuth } from '@/contexts/AuthContext'
 import { Badge } from '@/components/ui/badge'
@@ -26,16 +26,25 @@ const PlatformBilling = () => {
     <WorkspaceLayout>
       <div className="mx-auto w-full max-w-5xl space-y-8 pb-12">
         <header className="space-y-5 border-b border-border/70 pb-6">
-          <Button asChild variant="ghost" size="sm" className="-ml-3 w-fit">
-            <Link to="/app/settings/billing"><ArrowLeft className="mr-2 h-4 w-4" />Back to your billing</Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="ghost" size="sm" className="-ml-3 w-fit">
+              <Link to="/app/settings/billing"><ArrowLeft className="mr-2 h-4 w-4" />Your own billing</Link>
+            </Button>
+            {/* The other half of platform administration. Users, access and
+                custom domains live there; money lives here. */}
+            <Button asChild variant="ghost" size="sm" className="w-fit">
+              <Link to="/app/manage-workspaces"><Building2 className="mr-2 h-4 w-4" />Workspaces &amp; users</Link>
+            </Button>
+          </div>
           <div>
             <Badge variant="secondary">
               <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Platform administration
             </Badge>
             <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Billing administration</h1>
             <p className="mt-2 max-w-2xl text-muted-foreground">
-              Credit an agency&rsquo;s balance, and set what each plan costs across every workspace.
+              Everything that decides what a workspace pays and what it can spend: what each plan costs across the
+              platform, a one-off credit grant to a single agency, and the allowance that agency is granted every
+              month. A workspace&rsquo;s own plan, invoices and card live on its billing page, not here.
             </p>
           </div>
         </header>

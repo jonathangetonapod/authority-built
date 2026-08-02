@@ -38,7 +38,7 @@ import {
   User,
   Users,
   X,
-  type LucideIcon,
+  type LucideIcon, ShieldCheck,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
@@ -603,6 +603,17 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
               <Button variant="outline" size="sm" asChild>
                 <Link to="/app/manage-workspaces" aria-label="Manage workspaces">
                   <Building2 className="h-4 w-4 xl:mr-2" /><span className="hidden xl:inline">Manage workspaces</span>
+                </Link>
+              </Button>
+            )}
+            {/* Plan pricing, credit grants and monthly allowances were only
+                reachable through a link inside the platform owner's own
+                billing page — so the tools for every other workspace lived
+                behind one workspace's balance. */}
+            {isPlatformAdmin && (
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/app/platform/billing" aria-label="Billing administration">
+                  <ShieldCheck className="h-4 w-4 xl:mr-2" /><span className="hidden xl:inline">Billing admin</span>
                 </Link>
               </Button>
             )}

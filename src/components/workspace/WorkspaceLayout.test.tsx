@@ -286,4 +286,27 @@ describe('WorkspaceLayout', () => {
     fireEvent.click(screen.getByRole('button', { name: /sign out/i }))
     await waitFor(() => expect(signOut).toHaveBeenCalledTimes(1))
   })
+
+  // Plan pricing, credit grants and monthly allowances were reachable only
+  // through a link inside the platform owner's own billing page, so the tools
+  // for every other workspace sat behind one workspace's balance.
+  it('puts billing administration one click from anywhere for a platform admin', async () => {
+    mockedUseAuth.mockReturnValue({
+      user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', email: 'owner@example.com', user_metadata: {} },
+      workspace: { id: workspaceId, name: 'Acme Workspace' },
+      membership: { full_name: 'Owner Name', role: 'owner' },
+      isPlatformAdmin: true,
+      signOut,
+    } as never)
+    renderLayout()
+
+    const link = await screen.findByRole('link', { name: 'Billing administration' })
+    expect(link).toHaveAttribute('href', '/app/platform/billing')
+  })
+
+  it('offers no billing administration to a workspace member', async () => {
+    renderLayout()
+
+    expect(screen.queryByRole('link', { name: 'Billing administration' })).not.toBeInTheDocument()
+  })
 })
