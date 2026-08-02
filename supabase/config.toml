@@ -185,6 +185,9 @@ verify_jwt = false
 [functions.workspace-domain-tick]
 verify_jwt = false
 
+[functions.workspace-credit-refill-tick]
+verify_jwt = false
+
 [functions.get-prospect-dashboard]
 verify_jwt = false
 

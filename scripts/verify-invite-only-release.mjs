@@ -20,8 +20,8 @@ const CONFIG_PATH = path.join(REPOSITORY_ROOT, 'supabase', 'config.toml')
 const FUNCTIONS_ROOT = path.join(REPOSITORY_ROOT, 'supabase', 'functions')
 
 const EXPECTED_COUNTS = Object.freeze({
-  changedFunctions: 114,
-  deployedFunctions: 112,
+  changedFunctions: 115,
+  deployedFunctions: 113,
   excludedFunctions: 2,
   retiredFunctions: 17,
   unauthenticatedTombstones: 5,
@@ -41,7 +41,10 @@ const EXPECTED_COUNTS = Object.freeze({
   // 161 with the scheduled domain check: _shared/domainProviders.ts and
   // _shared/domainCheck.ts, extracted so the tick and the operator's button run
   // the same check, plus the workspace-domain-tick entrypoint.
-  edgeTypeScriptFiles: 161,
+  // 164 with automatic credit refills: the tick, _shared/creditPacks.ts (moved
+  // out of the checkout function so reading a price no longer executes its
+  // serve), and the tick's own test surface.
+  edgeTypeScriptFiles: 163,
 })
 
 const EXPECTED_PHASE_KEYS = Object.freeze([
@@ -97,6 +100,9 @@ const EXPECTED_PUBLIC_NON_JWT_FUNCTIONS = Object.freeze([
   // A serving domain was checked by nothing once its setup page was closed.
   // Driven by pg_cron with a shared secret, so there is no user JWT.
   'workspace-domain-tick',
+  // Charges a saved card off-session when a balance falls under the threshold
+  // an agency set. Driven by pg_cron with a shared secret, so no user JWT.
+  'workspace-credit-refill-tick',
   'inbox-nudge-tick',
   'stripe-credit-webhook',
   // Stripe signs the request body; there is no user session on a webhook. Both

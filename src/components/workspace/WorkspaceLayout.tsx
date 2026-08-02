@@ -42,6 +42,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
+import { CreditBalanceChip } from '@/components/workspace/CreditBalanceChip'
 import { CreditBalanceWarning } from '@/components/workspace/CreditBalanceWarning'
 import { WorkspaceSwitcher } from '@/components/admin/WorkspaceSwitcher'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -600,6 +601,14 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
             <p className="truncate text-xs text-muted-foreground">Workspace dashboard</p>
           </div>
           <div className="ml-auto flex min-w-0 items-center justify-end gap-2">
+            {/* Next to the workspace it belongs to, and not shown to a platform
+                admin viewing a tenant: it is not their balance. */}
+            {!platformWorkspace && workspace?.id && (
+              <CreditBalanceChip
+                workspaceId={workspace.id}
+                canManageBilling={membership?.role === 'owner' || membership?.role === 'admin'}
+              />
+            )}
             {isPlatformAdmin && (
               <Button variant="outline" size="sm" asChild>
                 <Link to="/app/manage-workspaces" aria-label="Manage workspaces">

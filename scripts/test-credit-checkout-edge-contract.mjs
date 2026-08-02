@@ -6,7 +6,11 @@ const checkout = readFileSync('supabase/functions/workspace-credit-checkout/inde
 assert.match(checkout, /requireAuthenticatedUser\(req\)/u)
 assert.match(checkout, /requireWorkspaceFeatureAccess\(authContext, workspaceId\)/u)
 assert.match(checkout, /MANAGER_ROLES\.has\(access\.role\)/u)
-assert.match(checkout, /export const CREDIT_PACKS = \{/u)
+// The prices moved to _shared so an automatic refill could read them without
+// importing — and so executing — the checkout function.
+const packs = readFileSync('supabase/functions/_shared/creditPacks.ts', 'utf8')
+assert.match(packs, /export const CREDIT_PACKS = \{/u)
+assert.match(checkout, /export \{ CREDIT_PACKS \} from '\.\.\/_shared\/creditPacks\.ts'/u)
 assert.doesNotMatch(checkout, /grant_workspace_credits/u)
 assert.doesNotMatch(checkout, /body\.(?:amount|credits|price)/u)
 assert.match(checkout, /'metadata\[workspace_id\]': workspaceId/u)
@@ -38,7 +42,17 @@ assert.match(webhook, /SIGNATURE_TOLERANCE_SECONDS = 5 \* 60/u)
 assert.match(webhook, /timingSafeEqual\(expected, signature\)/u)
 assert.match(webhook, /if \(!verified\) return json\(400/u)
 assert.match(webhook, /checkout\.session\.completed/u)
-assert.match(webhook, /paymentStatus !== 'paid'/u)
+// Two events buy credits — a person completing a checkout session, and an
+// automatic top-up charged off-session with nobody present. Each reports its
+// success under a different field, so the paid value is read per event rather
+// than assumed.
+assert.match(webhook, /paymentStatus !== paidValue/u)
+assert.match(webhook, /const AUTOMATIC = 'payment_intent\.succeeded'/u)
+assert.match(webhook, /event\.type === AUTOMATIC[\s\S]{0,160}session\.status/u)
+assert.match(webhook, /const paidValue = event\.type === AUTOMATIC \? 'succeeded' : 'paid'/u)
+// Both grant through the same idempotent call: a second grant path could
+// drift from this one, and credits would exist for money that never arrived.
+assert.match(webhook, /p_reference_kind: event\.type === AUTOMATIC \? 'stripe_auto_refill' : 'stripe_checkout'/u)
 assert.match(webhook, /p_source: 'purchase'/u)
 assert.match(webhook, /p_idempotency_key: `stripe:\$\{event\.id/u)
 
@@ -53,7 +67,7 @@ process.stdout.write('Credit checkout edge contract checks passed\n')
 // carried two pack lists — one wired to checkout at $0.98/credit, and a second,
 // unwired card offering $0.39 with a button that only said billing "will be
 // connected". A customer comparing them saw the cheaper one that did nothing.
-const packSource = checkout.match(/export const CREDIT_PACKS = \{[\s\S]*?\n\} as const/u)
+const packSource = packs.match(/export const CREDIT_PACKS = \{[\s\S]*?\n\} as const/u)
 assert.ok(packSource, 'CREDIT_PACKS must be declared')
 const serverPacks = [...packSource[0].matchAll(/(\w+): \{ credits: ([\d_]+), amount_cents: ([\d_]+)/gu)]
   .map(([, key, credits, cents]) => ({

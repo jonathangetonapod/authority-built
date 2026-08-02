@@ -82,7 +82,14 @@ serve(async (req) => {
   } catch (_error) {
     return json(400, { error: 'INVALID_PAYLOAD' })
   }
-  if (event.type !== 'checkout.session.completed') {
+  // Two ways credits are bought, and they are different Stripe events. A
+  // person at a checkout page completes a session; an automatic top-up has
+  // nobody present, so it is a payment intent charged off-session against a
+  // saved card. Both carry the same metadata and grant through the same
+  // idempotent call — the alternative was a second grant path that could
+  // drift from this one.
+  const AUTOMATIC = 'payment_intent.succeeded'
+  if (event.type !== 'checkout.session.completed' && event.type !== AUTOMATIC) {
     return json(200, { received: true, ignored: event.type ?? 'unknown' })
   }
 
@@ -90,12 +97,17 @@ serve(async (req) => {
   const metadata = (session.metadata ?? {}) as Record<string, unknown>
   const workspaceId = typeof metadata.workspace_id === 'string' ? metadata.workspace_id : null
   const credits = Number.parseInt(String(metadata.credits ?? ''), 10)
-  const paymentStatus = typeof session.payment_status === 'string' ? session.payment_status : null
+  // A session reports payment_status; a payment intent reports status. Read
+  // whichever this event carries rather than trusting one shape.
+  const paymentStatus = event.type === AUTOMATIC
+    ? (typeof session.status === 'string' ? session.status : null)
+    : (typeof session.payment_status === 'string' ? session.payment_status : null)
+  const paidValue = event.type === AUTOMATIC ? 'succeeded' : 'paid'
   if (!workspaceId || !Number.isInteger(credits) || credits <= 0 || credits > 100_000) {
     console.error('[Stripe Credit Webhook] Completed session missing grant metadata')
     return json(200, { received: true, ignored: 'missing metadata' })
   }
-  if (paymentStatus !== 'paid') {
+  if (paymentStatus !== paidValue) {
     return json(200, { received: true, ignored: `payment_status ${paymentStatus ?? 'unknown'}` })
   }
 
@@ -105,7 +117,7 @@ serve(async (req) => {
     p_source: 'purchase',
     p_amount: credits,
     p_expires_at: null,
-    p_reference_kind: 'stripe_checkout',
+    p_reference_kind: event.type === AUTOMATIC ? 'stripe_auto_refill' : 'stripe_checkout',
     p_reference_id: typeof session.id === 'string' ? session.id : null,
     p_actor_user_id: null,
     p_idempotency_key: `stripe:${event.id ?? crypto.randomUUID()}`,
