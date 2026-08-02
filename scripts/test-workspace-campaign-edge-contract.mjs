@@ -1693,3 +1693,12 @@ for (const promptId of ['podcast_research', 'write_email']) {
     `${promptId} must not carry the no-transcript branch as permanent text`,
   )
 }
+
+// The do-not-contact list is about an address, so the gate has to ask about
+// the address. The relationship check resolves one from the relationship row,
+// the last touch, or a verified direct contact — a podcast whose only address
+// is the free published one resolved to nothing, matched no suppression, and
+// could be staged to an address sitting on the list.
+assert.match(edge, /\.from\("workspace_outreach_suppressions"\)[\s\S]{0,260}\.eq\("contact_email", target\.contact_email\.trim\(\)\.toLowerCase\(\)\)/u)
+assert.match(edge, /That address is on the workspace do-not-contact list/u)
+

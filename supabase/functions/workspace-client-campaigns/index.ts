@@ -2389,6 +2389,26 @@ async function stageCampaignLead(
       "This host asked to stop being contacted by this workspace. The pitch cannot be added to the campaign for any client.",
     );
   }
+
+  // The address actually being mailed, not the one the relationship resolved
+  // to. That resolution reads the relationship row, the last touch, or a
+  // *verified* direct contact — so a podcast whose only address is the free
+  // published one resolved to nothing, matched no suppression, and could be
+  // staged to an address sitting on the do-not-contact list. The list is about
+  // an address; this asks about the address.
+  const { data: directSuppression } = await context.admin
+    .from("workspace_outreach_suppressions")
+    .select("reason")
+    .eq("workspace_id", campaign.workspace_id)
+    .eq("contact_email", target.contact_email.trim().toLowerCase())
+    .maybeSingle();
+  if (directSuppression) {
+    throw new HttpError(
+      409,
+      "CAMPAIGN_CONTACT_SUPPRESSED",
+      "That address is on the workspace do-not-contact list. Remove it in Relationships before sending to it.",
+    );
+  }
   if (relationship?.state === "in_conversation") {
     throw new HttpError(
       409,

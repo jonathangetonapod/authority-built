@@ -432,7 +432,7 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
                 <SelectContent>
                   <SelectItem value="all">All podcasts</SelectItem>
                   <SelectItem value="any">Has an email</SelectItem>
-                  <SelectItem value="free">Public email</SelectItem>
+                  <SelectItem value="free">Free email</SelectItem>
                   <SelectItem value="direct">👑 Verified direct email</SelectItem>
                   <SelectItem value="none">No email yet</SelectItem>
                 </SelectContent>
@@ -596,7 +596,7 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
                           </div>
                         ) : podcast.free_podscan_email ? (
                           <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            <Badge className="border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Public email</Badge>
+                            <Badge className="border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Free email</Badge>
                             <span className="truncate text-sm">{podcast.free_podscan_email}</span>
                             <span className="text-xs text-muted-foreground">Free, published by the show and not confirmed</span>
                           </div>
