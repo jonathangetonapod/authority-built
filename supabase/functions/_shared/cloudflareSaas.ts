@@ -96,8 +96,20 @@ async function cloudflareRequest(
   // the thing this provider was chosen for.
   if (!response.ok || payload.success === false) {
     const errors = Array.isArray(payload.errors) ? payload.errors : []
-    const first = (errors[0] ?? {}) as { message?: unknown }
+    const first = (errors[0] ?? {}) as { code?: unknown; message?: unknown }
     const message = typeof first.message === 'string' ? first.message : text.slice(0, 300)
+    // Rate limiting is the one refusal that is not about the domain, and
+    // Cloudflare phrases it for whoever wrote the client — "consider
+    // throttling your request speed" reads as an accusation to an operator
+    // who pressed a button once. Say what happened and what to do, and say
+    // that nothing was created, because the next instinct is to check.
+    if (response.status === 429 || first.code === 971 || /throttling your request speed/iu.test(message)) {
+      throw new HttpError(
+        429,
+        'CLOUDFLARE_RATE_LIMITED',
+        'Cloudflare is temporarily rate-limiting us. Nothing was created — wait a few minutes and try again.',
+      )
+    }
     throw new HttpError(502, 'CLOUDFLARE_REJECTED', `Cloudflare refused the request: ${message}`)
   }
   return payload.result

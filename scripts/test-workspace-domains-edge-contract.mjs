@@ -126,6 +126,13 @@ assert.match(cloudflare, /dnsRecordValue: fallbackOrigin/u)
 // carried through rather than replaced.
 assert.match(cloudflare, /!response\.ok \|\| payload\.success === false/u)
 assert.match(cloudflare, /Cloudflare refused the request: \$\{message\}/u)
+// Except rate limiting, which is not about the domain at all. Cloudflare
+// phrases it for whoever wrote the client, so "consider throttling your
+// request speed" reaches an operator who pressed a button once as an
+// accusation — and says nothing about whether a half-made domain now exists.
+assert.match(cloudflare, /response\.status === 429 \|\| first\.code === 971/u)
+assert.match(cloudflare, /'CLOUDFLARE_RATE_LIMITED'/u)
+assert.match(cloudflare, /Nothing was created — wait a few minutes and try again\./u)
 // One CNAME, not a second TXT record for the agency to get wrong.
 assert.match(cloudflare, /ssl: \{ method: 'http', type: 'dv' \}/u)
 // The same three states, and nothing is called provisioning until the provider
