@@ -57,7 +57,7 @@ export function WorkspaceMonthlyAllowance({ workspaceId, workspaceName }: Worksp
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-lg"><RefreshCw className="h-5 w-5" />Monthly allowance</CardTitle>
+        <CardTitle className="flex items-center gap-2 text-lg"><RefreshCw className="h-5 w-5" />Free credits each month</CardTitle>
         <CardDescription>
           Credits granted to {workspaceName || 'this workspace'} at the start of every month, on top of anything bought
           or granted by hand. Unspent credits from the allowance expire at the end of the following month.
@@ -66,7 +66,7 @@ export function WorkspaceMonthlyAllowance({ workspaceId, workspaceName }: Worksp
       <CardContent className="space-y-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <div className="space-y-2 sm:w-56">
-            <Label htmlFor="monthly-allowance">Credits per month</Label>
+            <Label htmlFor="monthly-allowance">Free credits per month</Label>
             <Input
               id="monthly-allowance"
               inputMode="numeric"

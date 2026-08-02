@@ -26,6 +26,11 @@ import {
   workspaceCredentialIsFresh,
   writeAudit,
 } from '../_shared/workspaceAuth.ts'
+import {
+  addInstantlyBlockListEntry,
+  decryptInstantlyApiKey,
+  removeInstantlyBlockListEntry,
+} from '../_shared/instantly.ts'
 
 const METHODS = ['POST'] as const
 const MANAGER_ROLES = new Set(['owner', 'admin', 'platform_admin'])
@@ -178,6 +183,53 @@ async function resolveShowByEmail(
       hostName: text(row.host_name, 300) ?? text(show?.host_name, 300),
     }
   }))
+}
+
+
+/**
+ * Tell Instantly to stop sending to this address, or to allow it again.
+ *
+ * Our suppression table only ever stopped us adding a lead. A campaign already
+ * running inside Instantly kept mailing an address on the list, because
+ * Instantly had never been told — so the promise on that page, that an opt-out
+ * silences an address for every client, was only true of the things we had not
+ * done yet.
+ *
+ * Never throws. The local row is the record of the opt-out and must be written
+ * whatever the provider says; a failure here is reported back so the operator
+ * knows the far side is out of step, rather than swallowed into a green tick.
+ */
+async function syncInstantlyBlockList(
+  admin: SupabaseClient,
+  workspaceId: string,
+  contactEmail: string,
+  intent: 'block' | 'unblock',
+): Promise<{ synced: boolean; reason: string | null }> {
+  try {
+    const { data: connection } = await admin
+      .from('workspace_instantly_integrations')
+      .select('api_key_ciphertext, api_key_iv, status')
+      .eq('workspace_id', workspaceId)
+      .maybeSingle()
+    if (!connection?.api_key_ciphertext || !connection?.api_key_iv) {
+      return { synced: false, reason: 'Instantly is not connected for this workspace' }
+    }
+    const apiKey = await decryptInstantlyApiKey({
+      ciphertext: connection.api_key_ciphertext,
+      iv: connection.api_key_iv,
+    })
+    if (intent === 'block') {
+      await addInstantlyBlockListEntry(apiKey, contactEmail)
+    } else {
+      await removeInstantlyBlockListEntry(apiKey, contactEmail)
+    }
+    return { synced: true, reason: null }
+  } catch (error) {
+    return {
+      synced: false,
+      reason: error instanceof Error ? error.message.slice(0, 200) : 'Instantly refused the request',
+    }
+  }
 }
 
 serve(async (req) => {
@@ -909,15 +961,28 @@ serve(async (req) => {
       if (error) {
         throw new HttpError(500, 'SUPPRESSION_ADD_FAILED', 'The address could not be added to the do-not-contact list')
       }
+      const blocked = await syncInstantlyBlockList(admin, workspaceId, contactEmail, 'block')
       await writeAudit(admin, {
         workspaceId,
         actorUserId: authContext.user.id,
         action: 'workspace.outreach_suppression.added',
         entityType: 'outreach_suppression',
         entityId: null,
-        metadata: { contact_email: contactEmail, reason },
+        metadata: {
+          contact_email: contactEmail,
+          reason,
+          instantly_blocked: blocked.synced,
+          instantly_error: blocked.reason,
+        },
       })
-      return jsonResponse(req, METHODS, 200, { suppressed: true })
+      // Reported rather than hidden: the row is written either way, but a
+      // workspace whose provider was not updated is still sending from
+      // campaigns already in flight, and only this tells anyone.
+      return jsonResponse(req, METHODS, 200, {
+        suppressed: true,
+        instantly_blocked: blocked.synced,
+        instantly_error: blocked.reason,
+      })
     }
 
     if (action === 'suppression-remove') {
@@ -950,6 +1015,10 @@ serve(async (req) => {
       if (error) {
         throw new HttpError(500, 'SUPPRESSION_REMOVE_FAILED', 'The address could not be removed from the do-not-contact list')
       }
+      // Reinstating has to reach the provider too, or the address stays blocked
+      // in Instantly while this list says it is contactable — the same
+      // disagreement as before, pointing the other way.
+      const unblocked = await syncInstantlyBlockList(admin, workspaceId, contactEmail, 'unblock')
       await writeAudit(admin, {
         workspaceId,
         actorUserId: authContext.user.id,
@@ -958,6 +1027,8 @@ serve(async (req) => {
         entityId: null,
         metadata: {
           contact_email: contactEmail,
+          instantly_unblocked: unblocked.synced,
+          instantly_error: unblocked.reason,
           removal_note: note,
           original_reason: existing.reason,
           original_source: existing.source,
@@ -965,7 +1036,11 @@ serve(async (req) => {
           suppressed_at: existing.created_at,
         },
       })
-      return jsonResponse(req, METHODS, 200, { removed: true })
+      return jsonResponse(req, METHODS, 200, {
+        removed: true,
+        instantly_unblocked: unblocked.synced,
+        instantly_error: unblocked.reason,
+      })
     }
 
     throw new HttpError(400, 'UNSUPPORTED_ACTION', 'Unsupported action')

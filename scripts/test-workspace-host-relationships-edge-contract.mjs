@@ -369,3 +369,27 @@ assert.doesNotMatch(
   'the relationship STATE function must not be changed by a book-listing change',
 )
 assert.match(manualOnlyMigration, /workspace_podcast_relationships_v1\(\s*p_workspace_id,/u)
+
+// A do-not-contact that never reaches the tool doing the sending is not a
+// do-not-contact: our table only ever stopped us adding a lead, while campaigns
+// already running inside Instantly kept mailing the address.
+const instantly = readFileSync('supabase/functions/_shared/instantly.ts', 'utf8')
+assert.match(instantly, /export async function addInstantlyBlockListEntry/u)
+assert.match(instantly, /export async function removeInstantlyBlockListEntry/u)
+// The OpenAPI spec spells this block-lists-entries; the documentation index
+// spells it block-list-entries, and the server answers to the spec.
+assert.match(instantly, /"\/block-lists-entries"/u)
+// A search returns everything containing the value, so the entry to delete is
+// matched exactly — removing the wrong one silently un-blocks somebody.
+assert.match(instantly, /String\(entry\?\.bl_value \?\? ""\)\.trim\(\)\.toLowerCase\(\) === wanted/u)
+
+const relationships = readFileSync('supabase/functions/workspace-host-relationships/index.ts', 'utf8')
+assert.match(relationships, /async function syncInstantlyBlockList/u)
+assert.match(relationships, /syncInstantlyBlockList\(admin, workspaceId, contactEmail, 'block'\)/u)
+assert.match(relationships, /syncInstantlyBlockList\(admin, workspaceId, contactEmail, 'unblock'\)/u)
+// The local row is the record of the opt-out and is written whatever the
+// provider says — but a workspace whose provider was not updated is still
+// sending, so the failure is returned rather than swallowed into a green tick.
+assert.match(relationships, /instantly_blocked: blocked\.synced/u)
+assert.match(relationships, /instantly_error: blocked\.reason/u)
+

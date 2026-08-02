@@ -753,3 +753,54 @@ export function safeInstantlyError(
     status: 502,
   };
 }
+
+/**
+ * The provider's own do-not-contact list.
+ *
+ * Our suppression table only ever stopped *us* adding a lead. A campaign
+ * already running inside Instantly kept sending to an address on it, because
+ * Instantly had never been told — so a do-not-contact was only as good as the
+ * next thing we did, not the things already in flight.
+ *
+ * Paths follow the OpenAPI spec, which spells this "block-lists-entries". The
+ * documentation index spells it "block-list-entries"; the spec is the one the
+ * server answers to.
+ */
+interface BlockListEntry {
+  id?: unknown
+  bl_value?: unknown
+}
+
+export async function addInstantlyBlockListEntry(apiKey: string, value: string): Promise<void> {
+  await instantlyRequest<unknown>(apiKey, "/block-lists-entries", {
+    method: "POST",
+    body: { bl_value: value },
+  });
+}
+
+/** The entry id for an exact value, or null. Search is a match, not an equality. */
+export async function findInstantlyBlockListEntryId(
+  apiKey: string,
+  value: string,
+): Promise<string | null> {
+  const query = new URLSearchParams({ search: value, limit: "100" });
+  const page = await instantlyRequest<{ items?: unknown }>(apiKey, "/block-lists-entries", {
+    method: "GET",
+    query,
+  });
+  const items = Array.isArray(page?.items) ? page.items as BlockListEntry[] : [];
+  const wanted = value.trim().toLowerCase();
+  // Compared exactly: a search for one address can return every address that
+  // contains it, and deleting the wrong entry silently un-blocks somebody.
+  const match = items.find((entry) => String(entry?.bl_value ?? "").trim().toLowerCase() === wanted);
+  return match && typeof match.id === "string" ? match.id : null;
+}
+
+export async function removeInstantlyBlockListEntry(apiKey: string, value: string): Promise<boolean> {
+  const id = await findInstantlyBlockListEntryId(apiKey, value);
+  if (!id) return false;
+  await instantlyRequest<unknown>(apiKey, `/block-lists-entries/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  return true;
+}

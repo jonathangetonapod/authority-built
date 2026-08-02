@@ -101,7 +101,13 @@ export function BillingPortfolio({ workspaceId, selectedWorkspaceId, onSelect }:
                   <tr className="border-b text-left text-xs text-muted-foreground">
                     <th className="py-2 pr-3 font-medium">Workspace</th>
                     <th className="py-2 pr-3 font-medium">Credits</th>
-                    <th className="py-2 pr-3 font-medium">Allowance</th>
+                    <th className="py-2 pr-3 font-medium">
+                      {/* "Allowance" is our word, not a plain one. Say what it
+                          buys rather than making an admin infer it. */}
+                      <span title="Free credits granted to this workspace at the start of every month, on top of anything bought or granted by hand.">
+                        Free each month
+                      </span>
+                    </th>
                     <th className="py-2 pr-3 font-medium">Spent this month</th>
                     <th className="py-2 pr-3 font-medium">Billing</th>
                     <th className="py-2 font-medium sr-only">Action</th>

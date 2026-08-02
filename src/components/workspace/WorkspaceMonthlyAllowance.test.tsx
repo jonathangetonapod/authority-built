@@ -27,15 +27,15 @@ describe('WorkspaceMonthlyAllowance', () => {
   it('shows the figure the renewal actually reads', async () => {
     renderCard()
     await waitFor(() => expect(
-      (screen.getByLabelText('Credits per month') as HTMLInputElement).value,
+      (screen.getByLabelText('Free credits per month') as HTMLInputElement).value,
     ).toBe('100'))
   })
 
   it('saves a new allowance for this workspace', async () => {
     renderCard()
-    await waitFor(() => expect((screen.getByLabelText('Credits per month') as HTMLInputElement).value).toBe('100'))
+    await waitFor(() => expect((screen.getByLabelText('Free credits per month') as HTMLInputElement).value).toBe('100'))
 
-    fireEvent.change(screen.getByLabelText('Credits per month'), { target: { value: '500' } })
+    fireEvent.change(screen.getByLabelText('Free credits per month'), { target: { value: '500' } })
     fireEvent.click(screen.getByRole('button', { name: /Save allowance/i }))
 
     await waitFor(() => expect(setWorkspaceMonthlyAllowance).toHaveBeenCalledWith(workspaceId, 500))
@@ -43,16 +43,16 @@ describe('WorkspaceMonthlyAllowance', () => {
 
   it('will not save a figure that has not changed', async () => {
     renderCard()
-    await waitFor(() => expect((screen.getByLabelText('Credits per month') as HTMLInputElement).value).toBe('100'))
+    await waitFor(() => expect((screen.getByLabelText('Free credits per month') as HTMLInputElement).value).toBe('100'))
 
     expect(screen.getByRole('button', { name: /Save allowance/i })).toBeDisabled()
   })
 
   it('refuses a figure that is not a whole number of credits', async () => {
     renderCard()
-    await waitFor(() => expect((screen.getByLabelText('Credits per month') as HTMLInputElement).value).toBe('100'))
+    await waitFor(() => expect((screen.getByLabelText('Free credits per month') as HTMLInputElement).value).toBe('100'))
 
-    fireEvent.change(screen.getByLabelText('Credits per month'), { target: { value: 'lots' } })
+    fireEvent.change(screen.getByLabelText('Free credits per month'), { target: { value: 'lots' } })
 
     expect(await screen.findByText(/whole number of credits between 0 and 1,000,000/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Save allowance/i })).toBeDisabled()
