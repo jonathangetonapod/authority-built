@@ -378,6 +378,11 @@ async function deliverProvisionedInvite(
         full_name: claimedMembership.full_name,
         workspace_id: claimedMembership.workspace_id,
         workspace_membership_id: claimedMembership.id,
+        // The invitation email can only say the workspace name if it is carried
+        // here; the template has nothing else to read. Safe to add because the
+        // workspace was matched against the claimed membership above, and the
+        // identity check that follows only ever asserts on the ids.
+        workspace_name: workspace.name,
       },
     },
   )
