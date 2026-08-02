@@ -1961,7 +1961,7 @@ BEGIN
   END IF;
 
   IF to_regprocedure(
-    'public.process_resend_webhook_event(text,text,text,timestamptz,text,text)'
+    'public.process_resend_webhook_event(text,text,text,timestamptz,text,text,text)'
   ) IS NULL OR (
     SELECT count(*)
     FROM pg_proc AS function_definition
@@ -1975,15 +1975,15 @@ BEGIN
 
   IF has_function_privilege(
     'authenticated',
-    'public.process_resend_webhook_event(text,text,text,timestamptz,text,text)',
+    'public.process_resend_webhook_event(text,text,text,timestamptz,text,text,text)',
     'EXECUTE'
   ) OR has_function_privilege(
     'anon',
-    'public.process_resend_webhook_event(text,text,text,timestamptz,text,text)',
+    'public.process_resend_webhook_event(text,text,text,timestamptz,text,text,text)',
     'EXECUTE'
   ) OR NOT has_function_privilege(
     'service_role',
-    'public.process_resend_webhook_event(text,text,text,timestamptz,text,text)',
+    'public.process_resend_webhook_event(text,text,text,timestamptz,text,text,text)',
     'EXECUTE'
   ) THEN
     RAISE EXCEPTION 'Resend webhook processing RPC grants are incorrect';
@@ -1993,7 +1993,7 @@ BEGIN
     SELECT 1
     FROM pg_proc AS function_definition
     WHERE function_definition.oid =
-        'public.process_resend_webhook_event(text,text,text,timestamptz,text,text)'::regprocedure
+        'public.process_resend_webhook_event(text,text,text,timestamptz,text,text,text)'::regprocedure
       AND function_definition.prosecdef
       AND EXISTS (
         SELECT 1
@@ -2007,7 +2007,7 @@ BEGIN
   END IF;
 
   resend_function_definition := pg_get_functiondef(
-    'public.process_resend_webhook_event(text,text,text,timestamptz,text,text)'::regprocedure
+    'public.process_resend_webhook_event(text,text,text,timestamptz,text,text,text)'::regprocedure
   );
   resend_suppressed_upsert_definition := split_part(
     resend_function_definition,
@@ -2023,6 +2023,18 @@ BEGIN
       NOT ILIKE '%WHEN ''email.opened''%open_count = GREATEST%+ 1%WHEN ''email.clicked''%click_count = GREATEST%+ 1%'
   THEN
     RAISE EXCEPTION 'Resend webhook processing RPC is not atomically idempotent';
+  END IF;
+
+  -- This Resend account is shared with aisdr.getonapod.com, and Resend scopes
+  -- webhooks to the account rather than the domain. Without the sender gate a
+  -- sibling application's traffic reaches this endpoint, and without the grace
+  -- window an unlogged email retries against it until Resend disables it.
+  IF resend_function_definition
+      NOT ILIKE '%sender_domain%mail.getonapod.com%RETURN ''ignored''%'
+    OR resend_function_definition
+      NOT ILIKE '%IF NOT FOUND THEN%INTERVAL ''5 minutes''%RETURN ''ignored''%RAISE EXCEPTION ''Email log is not available''%'
+  THEN
+    RAISE EXCEPTION 'Resend webhook processing is not scoped to this application''s senders';
   END IF;
 
   IF resend_function_definition

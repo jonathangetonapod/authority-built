@@ -34,6 +34,10 @@ interface ResendWebhookEvent {
   created_at: string
   data: Record<string, unknown> & {
     email_id?: unknown
+    // Which application sent it. This Resend account is shared with
+    // aisdr.getonapod.com, and Resend scopes webhooks to the account rather
+    // than the domain, so both applications' events arrive here.
+    from?: unknown
     // Event-specific fields
     bounce?: {
       type?: string
@@ -238,6 +242,21 @@ serve(async (req) => {
       )
     }
 
+    // The sender decides whether the event is ours at all; the database holds
+    // the list of domains it will accept. A malformed or absent sender is
+    // passed through as null and dropped there rather than guessed at here.
+    const rawFrom = event.data.from
+    if (
+      rawFrom !== undefined
+      && (typeof rawFrom !== 'string' || rawFrom.length > 320)
+    ) {
+      return new Response(
+        JSON.stringify({ received: false, error: 'Invalid webhook payload' }),
+        { status: 400, headers: headers(req) },
+      )
+    }
+    const fromAddress = typeof rawFrom === 'string' ? rawFrom : null
+
     const eventCreatedAt = new Date(event.created_at)
     if (Number.isNaN(eventCreatedAt.getTime())) {
       return new Response(
@@ -258,6 +277,7 @@ serve(async (req) => {
           ? normalizeBounceType(event.data.bounce?.type)
           : null,
         p_complaint_type: event.type === 'email.complained' ? 'abuse' : null,
+        p_from_address: fromAddress,
       },
     )
 
