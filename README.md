@@ -19,7 +19,7 @@ The current product is invite-only:
 - Public workspace registration is disabled.
 - A private workspace has one owner plus optional admins and members.
 - Workspace users and client portal users are separate identities.
-- Billing and self-serve checkout are not part of the workspace release.
+- Workspace operations are metered in credits, with a monthly allowance, self-serve top-ups, and optional automatic refills.
 - The platform owner stays signed in as the platform owner while managing a selected workspace; there is no owner impersonation.
 
 ## Core workflows
@@ -63,12 +63,13 @@ Workspace branding controls the agency name, logo, primary color, and accent col
 | Client Campaigns | Available with Instantly V2 | Encrypted workspace connection, campaign index, AI research and three-touch sequence generation, explicit launch, activity, analytics sync, and settings |
 | Master Inbox | Available for review and drafting; sending is human-only | Classifies interested replies, stages AI reply-and-nudge packages per the client's SDR mode, and routes them to a person; nothing dispatches automatically |
 | Relationships | Available | Workspace host CRM built from real outreach, replies, bookings, and deliberately curated host context |
-| Mailboxes | Layout preview | Future sending-account health, capacity, and assignment surface |
+| Mailboxes | Available | Sending-account health, warmup state, and per-client assignment; domain and mailbox costs are metered |
 | Guest Resources | Available | Workspace-authored resources for all clients or selected clients |
-| Settings | Available to owners/admins | Team access, credentials, branding, agency name, and sidebar order |
+| Settings | Available to owners/admins | Team access, credentials, client-facing brand, agency name, booking link, and sidebar order |
+| Billing & credits | Available to owners/admins | Balance, plan, invoices, credit packs, and automatic top-ups |
 | Prospect Studio | Available | Workspace-scoped prospect dashboards, shortlist building, publication review, and prospect photos |
-| Podcast Database | Planned workspace migration | Read-only shared-catalog browsing before any tenant write support |
-| Client Podcast System | Planned workspace migration | Recording, scheduled, and going-live operations |
+| Podcast Database | Available | Shared-catalog browsing, per-show details, relationship history, and adding shows to a client shortlist |
+| Client Podcast System | Available | Recording, scheduled, and going-live operations per client |
 
 Planned modules remain disabled in the workspace navigation until their complete tenant boundary is implemented. A visible legacy admin page is not automatically safe for workspace users.
 
@@ -150,6 +151,91 @@ The campaign boundary also enforces:
 Client Campaigns currently synchronizes on an explicit operator action; webhook-driven reply ingestion is not part of this release. Master Inbox reads conversations from the provider on demand and owns thread state, classification, and drafting, but delivery stays a human action: no scheduler or SDR mode dispatches a message, and every send is initiated by an operator through the authenticated reply path and audited. Mailboxes remains a non-operational preview.
 
 Legacy Bison/Clay outreach code remains in the repository for operator history. It is global-provider code and must not be wired into workspace routes without the same ownership, event-ledger, and isolation guarantees.
+
+## Credits and billing
+
+Every operation that costs the platform money — an AI research run, a contact
+lookup, a dashboard build, a mailbox — is metered in credits against the
+workspace that caused it. The point is that an agency's spend is visible and
+bounded before an invoice arrives, not after.
+
+**Enforcement is a switch.** `CREDIT_ENFORCEMENT_ENABLED` decides whether
+charging happens at all. With it off, every operation runs and records nothing;
+with it on, an empty balance stops the work with a `402`. Turning it off is the
+rollback for anything credit-related, and it takes effect without a redeploy.
+
+**Balances are derived, never stored.** A grant creates a *lot* with an optional
+expiry; the balance is the sum of what remains in unexpired lots. The ledger is
+append-only and explains every movement:
+
+| Entry | Written when |
+| --- | --- |
+| `grant` | monthly allowance, a purchase, or an admin grant |
+| `debit` | an operation charged, FIFO by expiry so the soonest to lapse is spent first |
+| `refund` | a charge taken before work that then failed, returned to the exact lots it came from |
+| `expiry` | a lot passing its date, recorded by a daily sweep so the journal still reconciles |
+| `adjustment` | an admin removing credits, taken newest-first so a correction claws back what was just given |
+
+**Where money is decided.** Charging happens *before* the provider call, so an
+empty balance never gets a free ride — which is why a failed operation must be
+refundable. Granting from a purchase happens only in the Stripe webhook: the
+payment event is what proves money arrived, and a second grant path would let
+credits exist for a payment that later failed.
+
+**Automatic top-ups** are opt-in per workspace, and only offered where Stripe
+holds a saved card. Checkout attaches a customer and asks to keep the card, which
+is also what puts the consent in front of the person paying; without that Stripe
+refuses an off-session charge. The refill tick charges and stops — the webhook
+grants — and is bounded to one refill per workspace per day, skipping any
+workspace whose payments are already failing.
+
+Platform administration lives at `/app/platform/billing`: a portfolio of every
+workspace worst-first, plan pricing, one-off grants, adjustments, the monthly
+allowance, and each workspace's subscription status.
+
+## Custom domains
+
+A workspace can serve its clients on its own hostname, so dashboards, the
+onboarding form and every emailed link carry the agency's address rather than
+the platform's.
+
+Domains are provisioned per workspace by a platform admin, and the provider is
+recorded on each row rather than read from the environment at use time —
+`CUSTOM_DOMAIN_PROVIDER` decides only where the *next* domain is created, so
+switching cannot strand a domain that is already serving.
+
+- **Cloudflare for SaaS** (current) issues a certificate per custom hostname and
+  reports validation failures as text. Agencies point one `CNAME` at the zone's
+  fallback origin.
+- **Railway** (legacy) remains supported for domains created under it.
+
+Because the origin routes by `Host`, a tenant hostname reaches it through the
+worker in [`infra/cloudflare/`](infra/cloudflare/), which also rewrites the
+document head so link previews carry the agency's name instead of the
+platform's — preview crawlers never run the JavaScript that brands the page.
+
+A domain moves through `awaiting_dns` → `provisioning` → `active`, and reaches
+`failed` only when waiting cannot help. A serving domain is re-checked on a
+schedule and needs two consecutive bad readings before it is demoted, so a
+single provider hiccup cannot silently move an agency's client links back to the
+platform's address.
+
+## Scheduled work
+
+Several behaviours run on `pg_cron` rather than in a request. Each posts to an
+Edge Function with a shared secret, and each is idempotent — the schedule is how
+often the work may be *considered*, not how often it happens.
+
+| Job | Cadence | Purpose |
+| --- | --- | --- |
+| `client-autopilot-tick` | every 10 min | Discovery for clients with autopilot enabled |
+| `inbox-enroll-tick` | every 15 min | Classify replies and stage AI reply packages for review |
+| `inbox-nudge-tick` | every 30 min | Stage follow-up nudges |
+| `campaign-sync-tick` | every 30 min | Refresh campaign analytics from the provider |
+| `workspace-domain-tick` | every 10 min | Re-check custom domains, including ones already serving |
+| `workspace-credit-refill` | hourly | Buy a credit pack for a workspace that opted in and fell below its threshold |
+| `workspace-monthly-allowance` | daily | Grant each workspace its monthly credits, keyed per period so a missed day is made good |
+| `workspace-credit-expiry` | daily | Zero lapsed credit lots and record the expiry |
 
 ## Identity and authorization
 
@@ -311,6 +397,7 @@ supabase/
   migrations/             Ordered schema and authorization changes
   functions/              Edge Functions and shared server code
   tests/                  PostgreSQL behavior/isolation suites
+infra/cloudflare/         Custom-domain worker and its runbook; deployed outside the app build
 scripts/                  Release, security, staging, and diagnostic tooling
 docs/                     Architecture, API references, and operator runbooks
 mcp-prospect-dashboard/   MCP server for prospect-dashboard workflows
@@ -363,6 +450,12 @@ Provider credentials belong in Supabase secret storage or the authorized operato
 - `ONBOARDING_CAPABILITY_SECRET`
 - Google service-account credentials
 - `INSTANTLY_CREDENTIAL_ENCRYPTION_KEY` (at least 32 random characters; server-side encryption key)
+- `STRIPE_SECRET_KEY`, `STRIPE_CREDIT_WEBHOOK_SECRET`, `STRIPE_SUBSCRIPTION_WEBHOOK_SECRET` — credit purchases, automatic top-ups, and subscription state
+- `CREDIT_ENFORCEMENT_ENABLED` — `true` charges for metered work; anything else records nothing. The rollback for the credit system, and it needs no redeploy
+- `CUSTOM_DOMAIN_PROVIDER` — `cloudflare` or `railway`, for *new* tenant domains only
+- `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_SAAS_FALLBACK_ORIGIN`, `CLOUDFLARE_SAAS_WORKER` — custom hostname issuance and the worker route each one needs. Scope the token to SSL and Certificates plus Workers Routes on the one zone; nothing here needs account-wide access
+- `RAILWAY_API_TOKEN`, `RAILWAY_PROJECT_ID`, `RAILWAY_SERVICE_ID`, `RAILWAY_ENVIRONMENT_ID` — legacy custom domains
+- Scheduled-job secrets, one per tick: `AUTOPILOT_TICK_SECRET`, `ENROLL_TICK_SECRET`, `NUDGE_TICK_SECRET`, `CAMPAIGN_SYNC_SECRET`, `DOMAIN_TICK_SECRET`, `REFILL_TICK_SECRET`. Each also needs a matching `vault.decrypted_secrets` entry holding the URL and the secret, or the job fires and does nothing
 
 Each workspace owner's Instantly V2 API key is entered in Client Campaigns and encrypted before database storage. It is tenant data, not a shared deployment secret, and must never be copied into a `VITE_*` variable.
 
@@ -412,6 +505,17 @@ For any backend increment:
 8. Deploy only the Edge Functions in the release and confirm their `verify_jwt` settings against [`supabase/config.toml`](supabase/config.toml).
 9. Run signed-in staging acceptance before production.
 
+Two failure modes are worth naming, because both look like success:
+
+- **A migration is not automatically checked.** `scripts/check-sql-grammar.mjs`
+  reads an explicit file list, so a new migration is unparsed until it is added
+  to it.
+- **A scheduled job with no vault entry fires and does nothing.** Every tick's
+  cron body is guarded on both its URL and secret existing, so an unconfigured
+  job is inert rather than erroring — which reads as "scheduled" in
+  `cron.job` either way. Check `vault.decrypted_secrets` before believing a
+  schedule is live.
+
 Behavior scripts intentionally require explicit targets and confirmation. Do not point them at production casually. Some suites run inside a transaction and end with `ROLLBACK`; read the relevant runbook before execution.
 
 ## Deployment
@@ -453,6 +557,20 @@ Check the function logs using a sanitized request. Common causes are a missing s
 ### The browser reports a CORS preflight failure
 
 The `OPTIONS` request must return a successful status with the shared allowed-origin headers before authentication or request-body validation. Confirm the function is deployed, its route name is correct, and the production origin is allowed. A missing function can look like CORS because the platform rejects the preflight before the handler runs.
+
+### A custom domain never leaves “Waiting for DNS”
+
+Read the DNS answer before blaming propagation. If the record resolves but is
+proxied — orange cloud on Cloudflare — the provider cannot see the value it
+validates against, and waiting never resolves it. The record must be DNS-only
+until the certificate issues.
+
+### An operation fails with `INSUFFICIENT_CREDITS`
+
+The workspace balance is empty and enforcement is on. Grant credits from
+`/app/platform/billing`, raise the monthly allowance, or set
+`CREDIT_ENFORCEMENT_ENABLED` to something other than `true` to stop charging
+entirely while the cause is investigated.
 
 ### A workspace page says “unavailable”
 
