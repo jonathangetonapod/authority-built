@@ -381,7 +381,15 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
                 {/* The badge names a state; this says whose turn it is. */}
                 <p className={`flex items-start gap-2 text-xs leading-5 ${domain.status === 'active' ? 'text-emerald-800' : 'text-muted-foreground'}`}>
                   {domain.status === 'active' && <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
-                  <span>{describeDomainStatus(domain.status)}</span>
+                  <span>
+                    {describeDomainStatus(domain.status)}
+                    {/* From first_activated_at, which survives a dip —
+                        activated_at is pinned to the current status, so it
+                        would restart the clock every time a check wobbled. */}
+                    {domain.status === 'active' && domain.first_activated_at && (
+                      <> Serving since {new Date(domain.first_activated_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}.</>
+                    )}
+                  </span>
                 </p>
 
                 {domain.status === 'active' ? null : domain.dns_record_value ? (

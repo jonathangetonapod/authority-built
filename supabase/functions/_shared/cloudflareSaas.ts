@@ -103,6 +103,12 @@ async function cloudflareRequest(
     // throttling your request speed" reads as an accusation to an operator
     // who pressed a button once. Say what happened and what to do, and say
     // that nothing was created, because the next instinct is to check.
+    // Kept as 404 rather than flattened into a refusal, so a caller can tell
+    // "this no longer exists" from "the provider said no", which are different
+    // answers and only one of them is a state of the domain.
+    if (response.status === 404) {
+      throw new HttpError(404, 'CLOUDFLARE_NOT_FOUND', message)
+    }
     if (response.status === 429 || first.code === 971 || /throttling your request speed/iu.test(message)) {
       throw new HttpError(
         429,
@@ -191,7 +197,21 @@ function firstMessage(value: unknown): string | null {
  * called provisioning until the provider has confirmed the record.
  */
 export async function cloudflareHostnameProgress(hostnameId: string): Promise<ProviderProgress> {
+  // A hostname deleted at the provider is a state, not a transport failure.
+  // Letting the 404 throw made every check 500 while the row stayed active
+  // and links kept pointing at a domain that no longer serves — the one
+  // outcome worse than reporting the failure, because it is unreportable.
   const result = await cloudflareFetch(`/custom_hostnames/${hostnameId}`, { method: 'GET' })
+    .catch((error) => {
+      if (error instanceof HttpError && error.status === 404) return null
+      throw error
+    })
+  if (result === null) {
+    return {
+      status: 'failed',
+      error: 'This hostname no longer exists at Cloudflare. Remove it here and add it again.',
+    }
+  }
   const ssl = (result.ssl ?? {}) as Record<string, unknown>
   if (ssl.status === 'active') return { status: 'active', error: null }
 

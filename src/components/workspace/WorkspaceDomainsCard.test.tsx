@@ -32,6 +32,8 @@ const domain = (overrides: Partial<WorkspaceDomain> = {}): WorkspaceDomain => ({
   dns_record_value: 'target.up.railway.app',
   last_error: null,
   activated_at: null,
+  first_activated_at: null,
+  last_checked_at: null,
   created_at: '2026-08-01T00:00:00Z',
   workspace: { id: workspaceId, name: 'Iveth Gonalez', slug: 'iveth' },
   ...overrides,
@@ -171,11 +173,20 @@ describe('WorkspaceDomainsCard', () => {
     expect(screen.getByText('The DNS record has not been created yet')).toBeInTheDocument()
   })
 
-  it('says what a serving domain gives their clients', async () => {
-    vi.mocked(listWorkspaceDomains).mockResolvedValue([domain({ status: 'active', is_primary: true })])
+  it('says what a serving domain gives their clients, and how long it has', async () => {
+    vi.mocked(listWorkspaceDomains).mockResolvedValue([domain({
+      status: 'active',
+      is_primary: true,
+      activated_at: '2026-08-01T00:00:00Z',
+      // Deliberately older than activated_at: a domain that dipped and
+      // recovered re-mints activated_at, and "serving since" must not restart.
+      first_activated_at: '2026-06-15T00:00:00Z',
+    })])
     renderCard()
 
     expect(await screen.findByText(/Live\./i)).toBeInTheDocument()
+    // Locale decides the order of the parts, so assert the date, not a format.
+    expect(screen.getByText(/Serving since .*Jun.*2026/i)).toBeInTheDocument()
     expect(screen.getByText('Links use this')).toBeInTheDocument()
     // Nothing left to set up, so the DNS record block is gone.
     expect(screen.queryByText('target.up.railway.app')).not.toBeInTheDocument()

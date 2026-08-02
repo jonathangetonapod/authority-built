@@ -20,6 +20,9 @@ export interface WorkspaceDomain {
   dns_record_value: string | null
   last_error: string | null
   activated_at: string | null
+  /** When it first served. Survives a dip; activated_at cannot. */
+  first_activated_at: string | null
+  last_checked_at: string | null
   created_at: string
   workspace: { id: string; name: string; slug: string } | null
 }

@@ -227,6 +227,16 @@ async function railwayDomainProgress(
      }`,
     { id: providerDomainId, projectId },
   )
+  // Railway answers a deleted domain with a null customDomain rather than an
+  // error, which read as "no certificate yet" and parked the row on waiting for
+  // DNS forever — an agency chased for a record that could never help. The
+  // absence is the answer.
+  if (!data.customDomain) {
+    return {
+      status: 'failed',
+      error: 'This domain no longer exists at Railway. Remove it here and add it again.',
+    }
+  }
   const domain = (data.customDomain ?? {}) as Record<string, unknown>
   const status = (domain.status ?? {}) as Record<string, unknown>
   if (status.certificateStatus === CERTIFICATE_VALID) return { status: 'active', error: null }
@@ -330,7 +340,7 @@ serve(async (req) => {
       requireOnlyKeys(body, ['action'])
       const { data, error } = await admin
         .from('workspace_domains')
-        .select('id,workspace_id,hostname,status,is_primary,dns_record_type,dns_record_name,dns_record_value,last_error,activated_at,created_at,workspace:workspaces(id,name,slug)')
+        .select('id,workspace_id,hostname,status,is_primary,dns_record_type,dns_record_name,dns_record_value,last_error,activated_at,first_activated_at,last_checked_at,created_at,workspace:workspaces(id,name,slug)')
         .order('created_at', { ascending: false })
       if (error) throw new HttpError(500, 'DOMAIN_LIST_FAILED', 'Domains could not be loaded')
       return jsonResponse(req, METHODS, 200, { success: true, domains: data ?? [] })
