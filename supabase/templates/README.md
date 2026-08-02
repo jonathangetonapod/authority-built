@@ -43,12 +43,68 @@ failed send is a person who never arrives.
 
 - **Sender and deliverability.** Without custom SMTP configured, GoTrue sends
   from Supabase's shared address with a low hourly rate limit intended for
-  testing. Point Authentication → SMTP Settings at Resend (same API key already
-  in `RESEND_API_KEY`, host `smtp.resend.com`, port 465, user `resend`) so
-  invitations come from the same verified domain as everything else.
+  testing. Pointing Authentication → SMTP Settings at Resend would fix that —
+  **but do not do it yet**, see the Resend status below. Sending through
+  Supabase's own mailer is currently the only invitation path that works.
 - **Link lifetime.** The membership row allows 7 days
   (`invite_expires_at = now() + interval '7 days'`), but the emailed link dies
   after the project's email OTP expiry — `config.toml` declares 86400s (24h),
   and the dashboard value is what actually applies. Until those agree, the
   template deliberately does not promise a number; it says to ask for a fresh
   invitation instead.
+
+## Resend status — read before touching email
+
+As of 2026-08-02, **everything this application sends through Resend is
+failing.** Invitations are unaffected because they go through Supabase Auth,
+not Resend; that is the only reason the invite flow still works, and it is why
+the SMTP change above is on hold.
+
+What happened: this application and the AI SDR app (`aisdr.getonapod.com`)
+shared one Resend account. The plan was to separate them, and a second account
+was opened for this application with `email.getonapod.com` verified on it.
+Before the cutover ran, `mail.getonapod.com` was deleted from the shared
+account — the free plan allows one domain and the sibling application claimed
+the slot for `mail.aisdr.getonapod.com`. The second account was then suspended,
+so there is currently no account this application can send from.
+
+    from mail.getonapod.com  ->  403  domain is not verified
+    new account keys         ->  403  suspended_api_key
+
+Affected: onboarding invitations and changes-requested emails
+(`_shared/workspaceOnboarding.ts`), portal password reset and set-password
+(`_shared/portalResetEmail.ts`), client notifications (`_shared/clientNotify.ts`),
+and the access-request notification (`request-workspace-access`). All of them
+fail closed — `status: 'failed'`, no exception, no mail.
+
+### What is already staged
+
+- `email.getonapod.com` is verified in the second Resend account, and its DNS
+  lives in the `getonapod.com` Cloudflare zone: `resend._domainkey.email` (TXT),
+  `send.email` (MX + SPF TXT). Those records are correct and should be left in
+  place.
+- Migration `20260803000100_resend_sender_domain_moved.sql` has been applied.
+  The webhook sender gate now allowlists **`email.getonapod.com` only**.
+  `mail.getonapod.com` is deliberately excluded: it is what the sibling
+  application sends from, so readmitting it would undo the isolation added in
+  `20260802223000`.
+
+### To restore
+
+Get one account able to send from `email.getonapod.com` — either by clearing
+the suspension on the second account, or by adding the domain to a plan with
+room for it. Then set `RESEND_API_KEY`, `RESEND_FROM_EMAIL` (a local part at
+`@email.getonapod.com`) and, if the webhook is being re-enabled,
+`RESEND_WEBHOOK_SECRET` from whichever account ends up holding the domain.
+
+No code change is needed for either route — the sender gate already expects
+`email.getonapod.com`.
+
+### Do not
+
+- Point Supabase Auth SMTP at Resend until sending works again. It would turn a
+  partial outage into a total one by breaking invitations too.
+- Delete `mail.aisdr.getonapod.com` from the shared account. It is the sibling
+  application's production sender.
+- Re-add `mail.getonapod.com` to the allowlist to "fix" the gate. That address
+  is no longer ours.

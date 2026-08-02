@@ -2030,7 +2030,7 @@ BEGIN
   -- sibling application's traffic reaches this endpoint, and without the grace
   -- window an unlogged email retries against it until Resend disables it.
   IF resend_function_definition
-      NOT ILIKE '%sender_domain%mail.getonapod.com%RETURN ''ignored''%'
+      NOT ILIKE '%sender_domain%email.getonapod.com%RETURN ''ignored''%'
     OR resend_function_definition
       NOT ILIKE '%IF NOT FOUND THEN%INTERVAL ''5 minutes''%RETURN ''ignored''%RAISE EXCEPTION ''Email log is not available''%'
   THEN
