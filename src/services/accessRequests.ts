@@ -108,3 +108,24 @@ export async function setJoinRequestStatus(
 
   if (error) throw new Error(error.message || 'That request could not be updated.')
 }
+
+/**
+ * How many requests are still waiting.
+ *
+ * Returns 0 rather than throwing. This feeds a badge in the app shell, which is
+ * rendered on every workspace page — a count that cannot be read is a reason to
+ * show no badge, never a reason to take down the surrounding page. The queue
+ * itself reports its own failures properly; this is only the nudge toward it.
+ */
+export async function countWaitingJoinRequests(): Promise<number> {
+  try {
+    const { count, error } = await supabase
+      .from('workspace_access_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'new')
+    if (error) return 0
+    return count ?? 0
+  } catch {
+    return 0
+  }
+}

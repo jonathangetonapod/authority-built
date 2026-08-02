@@ -78,6 +78,9 @@ export function JoinRequestsCard() {
       setJoinRequestStatus(id, status),
     onSuccess: async (_result, variables) => {
       await queryClient.invalidateQueries({ queryKey: ['join-requests'] })
+      // The bubble in the app shell counts what is still waiting; clearing a
+      // request should clear it now, not at the next two-minute poll.
+      await queryClient.invalidateQueries({ queryKey: ['join-requests-waiting'] })
       toast.success(`Marked ${STATUS_STYLE[variables.status].label.toLowerCase()}.`)
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'That request could not be updated.'),

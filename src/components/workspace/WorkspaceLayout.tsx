@@ -43,6 +43,7 @@ import {
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 import { CreditBalanceChip } from '@/components/workspace/CreditBalanceChip'
+import { JoinRequestsBadge } from '@/components/workspace/JoinRequestsBadge'
 import { CreditBalanceWarning } from '@/components/workspace/CreditBalanceWarning'
 import { WorkspaceSwitcher } from '@/components/admin/WorkspaceSwitcher'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -610,11 +611,15 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
               />
             )}
             {isPlatformAdmin && (
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/app/manage-workspaces" aria-label="Manage workspaces">
-                  <Building2 className="h-4 w-4 xl:mr-2" /><span className="hidden xl:inline">Manage workspaces</span>
-                </Link>
-              </Button>
+              // Relative, so the waiting-count bubble can sit on the corner.
+              <div className="relative">
+                <Button variant="outline" size="sm" asChild>
+                  <Link to="/app/manage-workspaces" aria-label="Manage workspaces">
+                    <Building2 className="h-4 w-4 xl:mr-2" /><span className="hidden xl:inline">Manage workspaces</span>
+                  </Link>
+                </Button>
+                <JoinRequestsBadge enabled={isPlatformAdmin} />
+              </div>
             )}
             {/* Plan pricing, credit grants and monthly allowances were only
                 reachable through a link inside the platform owner's own
