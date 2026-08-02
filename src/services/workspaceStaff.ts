@@ -946,6 +946,36 @@ export async function grantWorkspaceCredits(
   return { granted: data.granted, balance: typeof data.balance === 'number' ? data.balance : null }
 }
 
+/**
+ * Platform-admin only: what this workspace is granted each month.
+ *
+ * The plan ladder carries an allowance too, but that one is only copied onto a
+ * workspace when a subscription event fires — so for a workspace that has
+ * never been billed, editing the plan changed nothing it would ever receive.
+ * This writes the number the renewal actually reads.
+ *
+ * Takes effect at the next renewal: the current month has already been granted
+ * under the old number.
+ */
+export async function setWorkspaceMonthlyAllowance(
+  workspaceId: string,
+  monthlyCreditAllowance: number,
+): Promise<number> {
+  const canonicalWorkspaceId = canonicalUuid(workspaceId, 'Workspace ID')
+  const data = await invoke({
+    action: 'billing-allowance-set',
+    workspace_id: canonicalWorkspaceId,
+    monthly_credit_allowance: monthlyCreditAllowance,
+  }, 'The monthly allowance could not be saved.') as {
+    success?: boolean
+    monthly_credit_allowance?: number
+  }
+  if (data?.success !== true || typeof data.monthly_credit_allowance !== 'number') {
+    throw new Error('The monthly allowance could not be saved.')
+  }
+  return data.monthly_credit_allowance
+}
+
 export type WorkspacePlanKey = 'founding_member' | 'standard'
 
 export interface BillingPlan {

@@ -2889,7 +2889,7 @@ serve(async (req) => {
           base_price_cents: profileResult.data?.base_price_cents ?? 3900,
           per_client_price_cents: profileResult.data?.per_client_price_cents ?? 3900,
           included_active_clients: profileResult.data?.included_active_clients ?? 1,
-          monthly_credit_allowance: profileResult.data?.monthly_credit_allowance ?? 25,
+          monthly_credit_allowance: profileResult.data?.monthly_credit_allowance ?? 100,
           enforcement_enabled: Deno.env.get("CREDIT_ENFORCEMENT_ENABLED")?.trim() === "true",
           credits_spent_this_month: (spentResult.data ?? [])
             .reduce((sum, row) => sum + Math.abs(Number(row.amount) || 0), 0),
@@ -2966,6 +2966,51 @@ serve(async (req) => {
         granted: amount,
         balance: typeof result?.balance === "number" ? result.balance : null,
         idempotent: result?.idempotent === true,
+      });
+    }
+
+    if (action === "billing-allowance-set") {
+      requireOnlyKeys(body, ["action", "workspace_id", "monthly_credit_allowance"]);
+      await requireWorkspaceFeatureAccess(authContext, workspaceId);
+      if (!platformAdmin) {
+        throw new HttpError(403, "PLATFORM_ADMIN_REQUIRED", "Platform administrator access is required");
+      }
+      const allowance = typeof body.monthly_credit_allowance === "number"
+          && Number.isSafeInteger(body.monthly_credit_allowance)
+        ? body.monthly_credit_allowance
+        : NaN;
+      if (!Number.isSafeInteger(allowance) || allowance < 0 || allowance > 1_000_000) {
+        throw new HttpError(400, "INVALID_ALLOWANCE", "Set an allowance between 0 and 1,000,000 credits");
+      }
+
+      // Upserted rather than updated: the workspaces that most need an
+      // allowance set are the ones that have never been billed, and those have
+      // no profile row at all until something creates one.
+      const { error: allowanceError } = await admin
+        .from("workspace_billing_profiles")
+        .upsert(
+          { workspace_id: workspaceId, monthly_credit_allowance: allowance, updated_at: new Date().toISOString() },
+          { onConflict: "workspace_id" },
+        );
+      if (allowanceError) {
+        throw new HttpError(503, "ALLOWANCE_UPDATE_FAILED", "The monthly allowance could not be saved");
+      }
+
+      await writeAudit(admin, {
+        workspaceId,
+        actorUserId: user.id,
+        action: "workspace.credits.allowance_set",
+        entityType: "workspace",
+        entityId: workspaceId,
+        metadata: { monthly_credit_allowance: allowance },
+      });
+      // Takes effect on the next renewal rather than immediately: the current
+      // month is already granted under the old number, and re-granting the
+      // difference now would need a second idempotency key and would double up
+      // for anyone who ran it twice.
+      return jsonResponse(req, METHODS, 200, {
+        success: true,
+        monthly_credit_allowance: allowance,
       });
     }
 

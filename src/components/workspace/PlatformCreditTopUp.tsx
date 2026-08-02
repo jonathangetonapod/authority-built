@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { WorkspaceCreditGrantPreview } from '@/components/workspace/WorkspaceCreditGrantPreview'
+import { WorkspaceMonthlyAllowance } from '@/components/workspace/WorkspaceMonthlyAllowance'
 
 interface PlatformCreditTopUpProps {
   actorEmail: string
@@ -98,14 +99,24 @@ export function PlatformCreditTopUp({ actorEmail }: PlatformCreditTopUpProps) {
       )}
 
       {selectedWorkspaceId && !staffQuery.isLoading && (
-        <WorkspaceCreditGrantPreview
-          key={selectedWorkspaceId}
-          workspaceId={selectedWorkspaceId}
-          workspaceName={selectedName}
-          ownerName={owner ? owner.full_name || owner.email : null}
-          ownerEmail={owner?.email ?? null}
-          actorEmail={actorEmail}
-        />
+        <div className="space-y-4">
+          <WorkspaceCreditGrantPreview
+            key={selectedWorkspaceId}
+            workspaceId={selectedWorkspaceId}
+            workspaceName={selectedName}
+            ownerName={owner ? owner.full_name || owner.email : null}
+            ownerEmail={owner?.email ?? null}
+            actorEmail={actorEmail}
+          />
+          {/* A grant is a one-off; this is what arrives every month without
+              anyone doing anything. Both belong to the workspace already
+              selected above. */}
+          <WorkspaceMonthlyAllowance
+            key={`allowance-${selectedWorkspaceId}`}
+            workspaceId={selectedWorkspaceId}
+            workspaceName={selectedName}
+          />
+        </div>
       )}
     </section>
   )
