@@ -636,7 +636,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                               disabled={!canManageWorkspaceName || workspaceNameMutation.isPending}
                               onChange={(event) => setWorkspaceNameDraft(event.target.value)}
                             />
-                            <p className="text-xs text-muted-foreground">Clients only see this name if you also use it as the public agency name.</p>
+                            <p className="text-xs text-muted-foreground">Only your team sees this — it names the workspace in the sidebar and in the workspace switcher. Clients never see it unless you type the same name into the client-facing brand below.</p>
                             <div className="flex flex-wrap gap-2 pt-1">
                               <Button
                                 type="button"
@@ -735,7 +735,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                                 }))}
                                 placeholder={data.workspace.name}
                               />
-                              <p className="text-xs text-muted-foreground">Use the agency or consultant name your clients recognize.</p>
+                              <p className="text-xs text-muted-foreground">The name your clients recognize, shown on their dashboards, onboarding and portal. Leave it empty and they see the workspace name instead.</p>
                             </div>
 
                             <div className="space-y-2">
@@ -768,20 +768,38 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                                   Save link
                                 </Button>
                               </div>
-                              <p className="text-xs text-muted-foreground">
-                                Paste your scheduler link, or the whole embed code it gives you. Every prospect dashboard without a
-                                call-to-action of its own shows it under &ldquo;Ready to turn your shortlist into conversations?&rdquo;
-                                instead of asking the prospect to reply to an email.
-                                {!bookingLinkDraft.trim()
-                                  ? ''
-                                  : !bookingLinkResolved
-                                    ? ' No booking link found in that. Paste the scheduler address or its embed code.'
-                                    : bookingLinkPreviewName
-                                      ? ` Saving ${bookingLinkResolved} — ${bookingLinkPreviewName} loads on the page itself.`
-                                      : ` Saving ${bookingLinkResolved} — this one opens in a new tab. Calendly, Cal.com, SavvyCal, TidyCal, HubSpot, and Zcal load on the page itself.`}
+                              {/* Two lines rather than one paragraph: what to
+                                  do never changes, and what will happen
+                                  changes with every keystroke. Reading the
+                                  second used to mean re-reading the first. */}
+                              <p className="text-xs leading-5 text-muted-foreground">
+                                Paste the scheduler link, or the whole embed code it gives you — either works.
                               </p>
+                              <p className="text-xs leading-5 text-muted-foreground">
+                                Prospect dashboards without a call-to-action of their own show it under
+                                &ldquo;Ready to turn your shortlist into conversations?&rdquo;, instead of asking the
+                                prospect to reply to an email. Saved on its own with Save link.
+                              </p>
+                              {bookingLinkDraft.trim() ? (
+                                <p className={`text-xs leading-5 ${bookingLinkResolved ? 'text-muted-foreground' : 'text-destructive'}`}>
+                                  {!bookingLinkResolved
+                                    ? 'No booking link found in that. Paste the scheduler address, or the embed code it gives you.'
+                                    : bookingLinkPreviewName
+                                      ? `Saving ${bookingLinkResolved} — ${bookingLinkPreviewName} loads on the page itself.`
+                                      : `Saving ${bookingLinkResolved} — this one opens in a new tab. Calendly, Cal.com, SavvyCal, TidyCal, HubSpot, and Zcal load on the page itself.`}
+                                </p>
+                              ) : null}
                             </div>
 
+                            <div className="space-y-2">
+                              {/* Named for what they do, not where they sit in
+                                  a palette: "primary" and "accent" mean
+                                  nothing until you know which one moves. */}
+                              <p className="text-xs leading-5 text-muted-foreground">
+                                Primary is the solid colour behind headers and buttons on a client&rsquo;s pages. Accent
+                                marks the active item — the current tab, a selected row. The live preview on the right
+                                updates as you change them.
+                              </p>
                             <div className="grid gap-4 sm:grid-cols-2">
                               {[
                                 { key: 'client_brand_primary_color' as const, label: 'Primary color' },
@@ -820,6 +838,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                                   </div>
                                 )
                               })}
+                            </div>
                             </div>
 
                             <div className="border-t border-border/70 pt-6">

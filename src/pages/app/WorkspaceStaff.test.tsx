@@ -408,6 +408,37 @@ describe('WorkspaceStaff', () => {
     await waitFor(() => expect(refreshAccount).toHaveBeenCalledTimes(1))
   })
 
+  // Two fields on this page are called a name, and which one a client sees was
+  // described only from the other one's helper text.
+  it('says plainly which name a client sees and which one they never do', async () => {
+    renderPage()
+    await screen.findByText('Agency Admin')
+
+    expect(screen.getByText(/Only your team sees this/i)).toBeInTheDocument()
+    expect(screen.getByText(/Clients never see it unless you type the same name/i)).toBeInTheDocument()
+    expect(screen.getByText(/Leave it empty and they see the workspace name instead/i)).toBeInTheDocument()
+  })
+
+  it('says what the two brand colours actually move', async () => {
+    renderPage()
+    await screen.findByText('Agency Admin')
+
+    expect(screen.getByText(/Primary is the solid colour behind headers and buttons/i)).toBeInTheDocument()
+    expect(screen.getByText(/Accent marks the active item/i)).toBeInTheDocument()
+  })
+
+  // The instruction never changes and the status changes with every keystroke,
+  // so reading the status used to mean re-reading the instruction.
+  it('keeps the booking-link instruction apart from its live status', async () => {
+    renderPage()
+    await screen.findByText('Agency Admin')
+
+    expect(screen.getByText(/Paste the scheduler link, or the whole embed code/i)).toBeInTheDocument()
+    expect(screen.getByText(/Saved on its own with Save link/i)).toBeInTheDocument()
+    // Nothing typed yet, so there is no status line to read.
+    expect(screen.queryByText(/^Saving /)).not.toBeInTheDocument()
+  })
+
   it('invites through the authenticated workspace and its allowed default role', async () => {
     renderPage()
     await screen.findByText('Agency Admin')
