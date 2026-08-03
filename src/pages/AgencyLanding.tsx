@@ -6,12 +6,13 @@ import { Chrome, Shot } from '@/components/landing/Shot'
 import PageSEO from '@/components/seo/PageSEO'
 import '@/styles/agencyLanding.css'
 
-/** Whether to hold still. Read on use, and safe where matchMedia is absent. */
+/** Whether to hold still. Read on use, and safe with no window and no matchMedia. */
 const prefersReducedMotion = () =>
-  typeof window.matchMedia === 'function'
+  typeof window !== 'undefined'
+  && typeof window.matchMedia === 'function'
   && window.matchMedia('(prefers-reduced-motion: reduce)')?.matches === true
 
-interface Shot {
+interface TourShot {
   src: string
   alt: string
   /** Shown in the frame until the screenshot is dropped in. */
@@ -22,7 +23,7 @@ interface Shot {
   body: string
 }
 
-const SHOTS: Shot[] = [
+const SHOTS: TourShot[] = [
   {
     src: '/shots/discovery.png',
     alt: 'The podcast finder, listing shows with audience size and whether a contact address is known.',
@@ -104,16 +105,21 @@ const FAQ = [
  * /podcast-booking.
  */
 const AgencyLanding = () => {
-  const { hash } = useLocation()
+  const { hash, key } = useLocation()
 
   // Arriving on /#start from the sign-in page has to land on the form. The
   // router changes the URL without moving the page, so nothing would happen.
+  //
+  // `key` changes on every navigation, including one to the hash already in the
+  // address bar. Keying on the hash alone meant pressing "Request to join" while
+  // already at #start did nothing at all, which is exactly when someone who has
+  // scrolled away presses it.
   useEffect(() => {
     if (!hash) return
     const target = document.getElementById(hash.slice(1))
     if (!target) return
     target.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' })
-  }, [hash])
+  }, [hash, key])
 
   return (
     <div className="gp-page">
@@ -130,7 +136,7 @@ const AgencyLanding = () => {
             Get On A Pod
           </Link>
           <nav className="gp-nav" aria-label="Sections">
-            <a href="#tour">See it</a>
+            <a href="#tour">How it works</a>
             <a href="#portal">Client portal</a>
             <a href="#faq">FAQ</a>
           </nav>
@@ -152,7 +158,7 @@ const AgencyLanding = () => {
               </p>
               <div className="gp-cta-row">
                 <a className="gp-btn gp-btn-primary" href="#start">Request to join</a>
-                <a className="gp-btn gp-btn-quiet" href="#tour">See the screens</a>
+                <a className="gp-btn gp-btn-quiet" href="#tour">See how it works</a>
               </div>
               <p className="gp-who">
                 Built for podcast agencies, PR teams and freelancers who book guests for clients.
@@ -163,7 +169,7 @@ const AgencyLanding = () => {
               <Chrome url="podcasts.yourbrand.com" />
               <Shot
                 src="/shots/hero.png"
-                alt="The workspace client list: five agency clients with their contact, AI SDR profile progress and status."
+                alt="The workspace client list: five agency clients, each with their contact, outreach setup progress, and status."
                 placeholder="shots/hero.png — main workspace"
                 ratio="16 / 10"
                 priority
@@ -172,8 +178,13 @@ const AgencyLanding = () => {
           </div>
         </section>
 
-        <section style={{ paddingTop: 0 }}>
+        <section className="gp-cards-section">
           <div className="gp-wrap gp-cards">
+            {/* The three claims sat at h3 directly under the hero's h1, so the
+                outline skipped a level and they hung off nothing. They belong to
+                a section, and the section needed a name — but not a visible one,
+                because the cards are the design here. */}
+            <h2 className="sr-only">What it changes</h2>
             <div className="gp-card">
               <h3>More bookings</h3>
               <p>Better shows, better pitches, faster follow-up.</p>
@@ -192,7 +203,7 @@ const AgencyLanding = () => {
         <section id="tour">
           <div className="gp-wrap">
             <div className="gp-sec-head">
-              <span className="gp-eyebrow">See it</span>
+              <span className="gp-eyebrow">How it works</span>
               <h2>Find shows. Pitch them. Get booked.</h2>
             </div>
             <div className="gp-bento">

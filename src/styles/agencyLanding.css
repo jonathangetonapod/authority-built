@@ -173,6 +173,8 @@
 }
 
 /* ---------- benefit row ---------- */
+/* Sits directly under the hero, which already carries the space above it. */
+.gp-cards-section { padding-top: 0; }
 .gp-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
 .gp-card { border: 1px solid var(--line); background: var(--card); border-radius: 16px; padding: 1.3rem 1.4rem; }
 .gp-card p { color: var(--muted); font-size: 0.93rem; margin-top: 0.3rem; }
