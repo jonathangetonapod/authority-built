@@ -30,6 +30,7 @@ import {
   WorkspaceBrandLogo,
   WorkspaceLayout,
 } from '@/components/workspace/WorkspaceLayout'
+import { WorkspaceDeletionCard } from '@/components/workspace/WorkspaceDeletionCard'
 import { WorkspaceAiKeysCard } from '@/components/workspace/WorkspaceAiKeysCard'
 import { useAuth } from '@/contexts/AuthContext'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
@@ -229,6 +230,16 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
     && validWorkspaceId
   const canManageAiKeys = validWorkspaceId
     && (isPlatformWorkspace || membership?.role === 'owner' || onOwnPlatformWorkspace)
+  /*
+   * Only the owner of a real tenant workspace, and never the default one — that
+   * is the platform's own, and closing it would take the operator's access with
+   * it. A platform admin looking at somebody else's workspace closes it from
+   * the platform screen, not from inside their settings.
+   */
+  const canCloseWorkspace = !isPlatformWorkspace
+    && membership?.role === 'owner'
+    && Boolean(workspace)
+    && !workspace?.is_default
   const queryKey = [
     isPlatformWorkspace ? 'platform' : 'tenant',
     user?.id || 'unknown',
@@ -1164,6 +1175,12 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
   return (
     <WorkspaceLayout platformWorkspace={platformWorkspace}>
       {body}
+
+      {canCloseWorkspace && workspace && (
+        <div className="mt-8">
+          <WorkspaceDeletionCard workspaceId={workspace.id} workspaceName={workspace.name} />
+        </div>
+      )}
 
       <Dialog open={inviteOpen} onOpenChange={(open) => !inviteBusy && setInviteOpen(open)}>
         <DialogContent
