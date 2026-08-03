@@ -203,6 +203,43 @@ describe('WorkspacePodcastDatabase', () => {
     expect(mockedAddToProspect.mock.calls[0][2][0]).not.toHaveProperty('podcast_email')
   })
 
+  /*
+   * The shared catalogue holds websites somebody typed without a scheme —
+   * simplecast.com, www.AngelInvestorsNetwork.com. The prospect endpoint
+   * validates URLs because the dashboard it builds is public, so one untidy
+   * address refused the whole batch with INVALID_FIELD.
+   */
+  it('repairs a catalogue website that was typed without a scheme', async () => {
+    mockedCatalog.mockResolvedValue({
+      ...catalogResponse,
+      items: [{ ...catalogResponse.items[0], podcast_url: 'simplecast.com', podcast_image_url: null }],
+    } as never)
+    mockedProspects.mockResolvedValue({
+      workspace: { id: workspaceId, name: 'Northwind', slug: 'northwind' },
+      viewer_role: 'owner',
+      can_manage: true,
+      dashboards: [{ id: 'prospect-1', prospect_name: 'Ada Bell', lifecycle_status: 'draft' }],
+    } as never)
+    mockedAddToProspect.mockResolvedValue({
+      added: 1, skipped: 0, podcast_ids: ['podcast-one'], unpublished_for_review: false,
+    })
+
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Select The Founder Show' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add to client' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'A prospect' }))
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Prospect' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Ada Bell' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add to dashboard' }))
+
+    await waitFor(() => expect(mockedAddToProspect).toHaveBeenCalled())
+    const sent = mockedAddToProspect.mock.calls[0][2][0]
+    expect(sent.podcast_url).toBe('https://simplecast.com/')
+    // Absent is fine; invalid is not.
+    expect(sent.podcast_image_url).toBeNull()
+  })
+
   // The same podcast is a row here and a relationship in the book, keyed by the
   // same podcast_id — but only the book knew this host had already passed, or
   // been marked do not contact. Someone building a shortlist saw none of it.

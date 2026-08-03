@@ -34,6 +34,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { repairableExternalUrl } from '@/lib/externalUrl'
 import { addClientShortlistPodcasts, type ClientShortlistPodcastInput } from '@/services/clientShortlist'
 import {
   addWorkspaceProspectPodcasts,
@@ -118,8 +119,12 @@ function toProspectPodcast(podcast: WorkspacePodcastCatalogItem): ProspectShortl
     podcast_id: podcast.podcast_id,
     podcast_name: podcast.podcast_name,
     podcast_description: podcast.podcast_description,
-    podcast_image_url: podcast.podcast_image_url,
-    podcast_url: podcast.podcast_url,
+    // The prospect endpoint validates both of these, because the dashboard it
+    // builds is public. The catalogue holds websites typed without a scheme —
+    // simplecast.com, www.AngelInvestorsNetwork.com — so passing them straight
+    // through failed the whole batch on one row's untidy address.
+    podcast_image_url: repairableExternalUrl(podcast.podcast_image_url),
+    podcast_url: repairableExternalUrl(podcast.podcast_url),
     publisher_name: podcast.publisher_name,
     itunes_rating: podcast.itunes_rating,
     episode_count: podcast.episode_count,
