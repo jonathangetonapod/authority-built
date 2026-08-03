@@ -8,6 +8,9 @@ password_requirements = "lower_upper_letters_digits_symbols"
 enable_signup = false
 otp_expiry = 86400
 
+[functions.workspace-deletion]
+verify_jwt = true
+
 [functions.stripe-webhook]
 verify_jwt = false
 

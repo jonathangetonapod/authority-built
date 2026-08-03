@@ -6,10 +6,13 @@ export interface AdminWorkspace {
   id: string
   name: string
   slug: string
-  status: 'active' | 'suspended' | 'archived'
+  status: 'active' | 'suspended' | 'archived' | 'deleted'
   is_default: boolean
   logo_path?: string | null
   logo_updated_at?: string | null
+  /** Set while a deleted workspace is still inside its recovery window. */
+  deleted_at?: string | null
+  purge_after?: string | null
 }
 
 export interface AdminWorkspaceView {
