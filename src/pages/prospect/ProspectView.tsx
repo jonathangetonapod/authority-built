@@ -824,7 +824,12 @@ function ProspectViewContent() {
       <section className="px-4 pb-10 pt-14 md:pb-12 md:pt-16">
         <div className="container mx-auto">
           <div className="grid gap-6 rounded-[32px] border border-[#0d1b2a]/8 bg-white px-5 py-6 shadow-[0_18px_38px_rgba(13,27,42,0.08)] sm:px-6 sm:py-7 lg:grid-cols-[minmax(0,1.2fr)_360px] lg:gap-8">
-            <div>
+            {/* Grid children stretch to the tallest in the row, and the panel
+                beside this one is taller — so this column's content ended at the
+                stats and left the rest of the stretched cell blank underneath
+                them. Made a column so the slack can be pushed above the stats
+                rather than trailing below. */}
+            <div className="flex flex-col">
               <div className="flex flex-wrap items-center gap-3">
                 {workspaceBrand?.logo_url && (
                   <img src={workspaceBrand.logo_url} alt={`${workspaceBrand.brand_name} logo`} className="mr-1 h-9 max-w-28 object-contain" />
@@ -890,7 +895,10 @@ function ProspectViewContent() {
                 )}
               </div>
 
-              <div className="mt-7 grid gap-3 sm:grid-cols-3">
+              {/* mt-auto only once the two columns sit side by side: stacked on
+                  a narrow screen there is no slack to take up, and pushing would
+                  just be a gap of its own. */}
+              <div className="mt-7 grid gap-3 sm:grid-cols-3 lg:mt-auto lg:pt-7">
                 <div className="rounded-[22px] border border-[#0d1b2a]/8 bg-[#f8fbff] px-4 py-4">
                   <p className="section-kicker">Total listeners</p>
                   <p className="mt-2 font-display text-3xl font-semibold tracking-[-0.05em] text-[#0d1b2a]">
