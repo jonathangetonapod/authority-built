@@ -1822,12 +1822,23 @@ function ProspectViewContent() {
           <div className="container mx-auto">
             <div className="mx-auto grid gap-6 rounded-[32px] border border-[#0d1b2a]/8 bg-[#0d1b2a] px-6 py-8 text-white shadow-[0_20px_42px_rgba(13,27,42,0.16)] md:px-8 md:py-10 lg:grid-cols-[1fr_auto] lg:items-center">
               <div className="max-w-2xl">
-                <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-white/60">Next step</p>
-                <h2 className="mt-3 font-editorial text-4xl leading-[0.95] tracking-[-0.045em] sm:text-5xl">
-                  Ready to turn your shortlist into conversations?
+                <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-white/60">
+                  The no-pressure next step
+                </p>
+                <h2 className="mt-3 font-editorial text-4xl leading-[0.96] tracking-[-0.045em] sm:text-5xl">
+                  Fifteen minutes. That&rsquo;s it.
                 </h2>
+                {/*
+                 * Says what the call is rather than asking for it. "Ready to
+                 * turn your shortlist into conversations?" is a question with
+                 * one acceptable answer, which is a sales move; this describes
+                 * the fifteen minutes and what somebody leaves with even if
+                 * they say no.
+                 */}
                 <p className="mt-4 max-w-xl text-base leading-7 text-white/72">
-                  Approve the shows that feel right, add any notes, and let us know when you are ready to move forward.
+                  Bring your approved shows — or none at all. We will walk through which rooms to
+                  pitch first, what your angle would be, and what a realistic first month looks
+                  like. If it is not a fit, you leave with a sharper shortlist anyway.
                 </p>
               </div>
 
