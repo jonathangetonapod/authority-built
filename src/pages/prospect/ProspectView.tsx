@@ -1062,6 +1062,38 @@ function ProspectViewContent() {
       </section>
 
       {/*
+       * The bar appears once something has been approved, and only then. Its job
+       * is to close the loop the page opens: approving is not the finish line,
+       * the call is, and until now nothing said so once the reading was done.
+       *
+       * Fixed to the bottom rather than parked at the end of the page, because
+       * the moment worth catching is the one just after a decision — which
+       * happens in the middle of the grid, not at the foot of it.
+       */}
+      {approvedCountTotal > 0 && bookingLink && (
+        <div className="fixed bottom-5 left-1/2 z-[46] w-[min(calc(100vw-2rem),640px)] -translate-x-1/2">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[999px] bg-[#0d1b2a] py-2.5 pl-6 pr-2.5 text-[#f7fafc] shadow-[0_20px_45px_rgba(13,27,42,0.35)]">
+            <p className="text-sm" role="status">
+              <strong className="font-semibold">
+                {approvedCountTotal} {approvedCountTotal === 1 ? 'show' : 'shows'} approved
+              </strong>
+              <span className="text-[#f7fafc]/65">
+                {' '}&mdash; {workspaceBrand?.brand_name?.trim() || 'we'} will start with these.
+              </span>
+            </p>
+            <button
+              type="button"
+              onClick={() => openExternalUrl(bookingLink)}
+              className="h-[42px] shrink-0 rounded-full px-5 text-sm font-semibold text-[#0d1b2a] transition-transform hover:-translate-y-px"
+              style={{ background: accentColor }}
+            >
+              Book the call
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/*
        * What happens next, in three steps, across the full width. It used to be
        * a panel in the hero's right column, where it competed with the shortlist
        * for the reader's first look and made that column taller than the one
