@@ -965,7 +965,10 @@ function ProspectViewContent() {
             </div>
 
             <div className="rounded-[28px] border border-[#0d1b2a]/8 bg-[#f8fbff] p-5">
-              <p className="section-kicker">How this works</p>
+              {/* The three-step explanation moved to a full-width strip below
+                  the hero, so this panel says where to begin instead of
+                  repeating it. */}
+              <p className="section-kicker">Start here</p>
               <h2 className="mt-3 font-display text-2xl font-semibold tracking-[-0.04em] text-[#0d1b2a]">
                 Approve the shows you want us to pitch.
               </h2>
@@ -1055,6 +1058,39 @@ function ProspectViewContent() {
               )}
             </div>
           </div>
+        </div>
+      </section>
+
+      {/*
+       * What happens next, in three steps, across the full width. It used to be
+       * a panel in the hero's right column, where it competed with the shortlist
+       * for the reader's first look and made that column taller than the one
+       * beside it — which is where the gap under the greeting came from.
+       */}
+      <section className="px-4 pb-6 pt-2">
+        <div className="mx-auto grid max-w-[1320px] gap-4 md:grid-cols-3">
+          {[
+            { step: '1', lead: 'Browse the shortlist.', body: 'Open any show to see why it fits you and what you would talk about.' },
+            { step: '2', lead: 'Approve your favourites.', body: 'One tap. Pass on anything that feels off — that helps too.' },
+            { step: '3', lead: 'We take it from there.', body: 'Pitching, follow-up, scheduling, prep — handled for you.' },
+          ].map((item) => (
+            <div
+              key={item.step}
+              className="flex items-start gap-4 rounded-[22px] border border-[#0d1b2a]/8 bg-white/70 px-5 py-5 backdrop-blur-[4px]"
+            >
+              <span
+                className="font-editorial text-[28px] leading-none"
+                style={{ color: accentColor }}
+                aria-hidden="true"
+              >
+                {item.step}
+              </span>
+              <p className="text-sm leading-[23px] text-[#4c5d73]">
+                <strong className="font-semibold text-[#0d1b2a]">{item.lead}</strong>{' '}
+                {item.body}
+              </p>
+            </div>
+          ))}
         </div>
       </section>
 
