@@ -381,7 +381,9 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
+          model: 'claude-sonnet-5',
+          // Thinks by default; see THINKS_BY_DEFAULT in _shared/promptModels.ts.
+          thinking: { type: 'disabled' },
           max_tokens: 2_500,
           system: 'You draft podcast-guest AI SDR profiles for booking agencies. Write in the voice of the agency describing their client. Return ONLY a JSON object, no markdown.',
           messages: [{

@@ -120,9 +120,10 @@ Write a bio that will get them booked on top podcasts. Make it compelling, authe
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5-20241022',
+        model: 'claude-sonnet-5',
+        // Thinks by default; see THINKS_BY_DEFAULT in _shared/promptModels.ts.
+        thinking: { type: 'disabled' },
         max_tokens: 1000,
-        temperature: 0.7,
         messages: [
           {
             role: 'user',

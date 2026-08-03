@@ -56,7 +56,9 @@ async function anthropicJson(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5',
+      // Thinks by default; see THINKS_BY_DEFAULT in _shared/promptModels.ts.
+      thinking: { type: 'disabled' },
       max_tokens: maxTokens,
       system,
       messages: [{ role: 'user', content }],
