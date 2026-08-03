@@ -20,8 +20,8 @@ const CONFIG_PATH = path.join(REPOSITORY_ROOT, 'supabase', 'config.toml')
 const FUNCTIONS_ROOT = path.join(REPOSITORY_ROOT, 'supabase', 'functions')
 
 const EXPECTED_COUNTS = Object.freeze({
-  changedFunctions: 117,
-  deployedFunctions: 115,
+  changedFunctions: 118,
+  deployedFunctions: 116,
   excludedFunctions: 2,
   retiredFunctions: 17,
   unauthenticatedTombstones: 5,
@@ -44,10 +44,12 @@ const EXPECTED_COUNTS = Object.freeze({
   // 164 with automatic credit refills: the tick, _shared/creditPacks.ts (moved
   // out of the checkout function so reading a price no longer executes its
   // serve), and the tick's own test surface.
+  // 166 with the purge tick, which finishes those deletions on a schedule
+  // rather than in a request.
   // 165 with workspace deletion: one entrypoint. It reuses the Instantly and
   // domain-provider helpers rather than adding its own, because tearing a
   // workspace down has to stop sending exactly the way pausing does.
-  edgeTypeScriptFiles: 165,
+  edgeTypeScriptFiles: 166,
 })
 
 const EXPECTED_PHASE_KEYS = Object.freeze([
@@ -106,6 +108,10 @@ const EXPECTED_PUBLIC_NON_JWT_FUNCTIONS = Object.freeze([
   // Charges a saved card off-session when a balance falls under the threshold
   // an agency set. Driven by pg_cron with a shared secret, so no user JWT.
   'workspace-credit-refill-tick',
+  // Hard-deletes workspaces past their recovery window. Driven by pg_cron with
+  // a shared secret, so no user JWT — and it is the most destructive thing on
+  // this list, so the secret is the whole gate: WORKSPACE_PURGE_SECRET.
+  'workspace-purge-tick',
   'inbox-nudge-tick',
   'stripe-credit-webhook',
   // Stripe signs the request body; there is no user session on a webhook. Both

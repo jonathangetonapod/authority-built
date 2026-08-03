@@ -26,7 +26,7 @@ mapfile -d '' edge_files < <(
     sort -z
 )
 
-expected_count=117
+expected_count=118
 if [[ "${#edge_files[@]}" -ne "$expected_count" ]]; then
   echo "Expected $expected_count Edge Function entrypoints; found ${#edge_files[@]}." >&2
   exit 1

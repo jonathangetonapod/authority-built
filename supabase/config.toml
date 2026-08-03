@@ -17,6 +17,9 @@ verify_jwt = false
 [functions.resend-webhook]
 verify_jwt = false
 
+[functions.workspace-purge-tick]
+verify_jwt = false
+
 [functions.client-autopilot-tick]
 verify_jwt = false
 
