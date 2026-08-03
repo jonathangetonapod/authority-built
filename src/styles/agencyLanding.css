@@ -177,6 +177,29 @@
 .gp-cards-section { padding-top: 0; }
 .gp-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
 .gp-card { border: 1px solid var(--line); background: var(--card); border-radius: 16px; padding: 1.3rem 1.4rem; }
+
+/* Pricing. Two plans side by side, the recommended one lifted rather than
+   shouted: a border in the accent and a lighter ground, no ribbon. */
+.gp-plans { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 2rem; }
+@media (max-width: 820px) { .gp-plans { grid-template-columns: 1fr; } }
+.gp-plan {
+  display: flex; flex-direction: column; gap: 0.55rem;
+  border: 1px solid var(--line); background: var(--card);
+  border-radius: 16px; padding: 1.6rem 1.5rem;
+}
+.gp-plan-featured { border-color: var(--gold); background: var(--tint); }
+.gp-plan-price { font-size: 2.4rem; line-height: 1; letter-spacing: -0.03em; font-weight: 600; }
+.gp-plan-price span { font-size: 0.95rem; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+.gp-plan-credits { font-size: 0.9rem; color: var(--accent-ink); font-weight: 500; }
+.gp-plan-who { font-size: 0.93rem; color: var(--muted); }
+.gp-plan-list { list-style: none; display: grid; gap: 0.4rem; margin: 0.4rem 0 0; padding: 0; font-size: 0.93rem; }
+.gp-plan-list li { padding-left: 1.15rem; position: relative; }
+.gp-plan-list li::before {
+  content: ""; position: absolute; left: 0; top: 0.55em;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--gold);
+}
+.gp-plan-cta { margin-top: auto; align-self: start; }
+.gp-plan-note { margin-top: 1.4rem; font-size: 0.9rem; line-height: 1.65; color: var(--muted); max-width: 62ch; }
 .gp-card p { color: var(--muted); font-size: 0.93rem; margin-top: 0.3rem; }
 @media (max-width: 820px) { .gp-cards { grid-template-columns: 1fr; } }
 

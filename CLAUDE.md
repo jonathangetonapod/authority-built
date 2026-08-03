@@ -106,7 +106,14 @@ The legacy inline-CORS/`[Function Name]` logging style exists in ~50 older funct
   reappear in copy, docs or comments.
 - Target audience: Entrepreneurs, founders, thought leaders seeking podcast guest appearances
 - Avoid: Overpromising, vague claims, exclamation marks in body copy
-- Billing/pricing is out of scope for the invite-only MVP — do not add pricing or checkout copy
+- Pricing may be **stated** publicly, but nothing may be **sold** publicly: the
+  landing page names what a plan costs so people can self-qualify before asking
+  to join, and every call to action still goes to the request-to-join form.
+  Checkout copy remains out of scope — the billing edge functions are retired
+  and return 410, so a public page must never imply you can buy on the spot.
+  Public prices come from `billing_plans` (seeded in
+  `20260730000100_billing_plans.sql`, priced in `20260731000100/000200`); if the
+  page and `/app/platform/billing` disagree, that screen is right.
 
 ## 7. Testing and Quality Bar
 

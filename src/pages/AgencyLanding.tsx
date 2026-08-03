@@ -73,6 +73,56 @@ const PORTAL_ACTIVITY = [
   { title: 'They hear the result', body: 'The episode link, ready to share.' },
 ]
 
+/*
+ * What it costs, taken from the plans seeded in
+ * 20260730000100_billing_plans.sql and priced in 20260731000100/000200 —
+ * not numbers invented for the page. Platform admins can change the live
+ * values at /app/platform/billing without a migration, so if these ever
+ * disagree with that screen, that screen is right and this is stale.
+ *
+ * This fold states a price. It does not sell: joining is still by invitation,
+ * so every button here goes to the same form as the rest of the page, and
+ * nothing touches the retired checkout.
+ */
+const PER_CLIENT_MONTHLY = '$39'
+
+interface Plan {
+  name: string
+  price: string
+  credits: string
+  who: string
+  includes: string[]
+  featured?: boolean
+}
+
+const PLANS: Plan[] = [
+  {
+    name: 'Founding member',
+    price: '$39',
+    credits: '100 credits a month',
+    who: 'For a freelancer, or an agency with its first client on the platform.',
+    includes: [
+      'One active client included',
+      'Podcast discovery and shortlists',
+      'Drafted pitches and sorted replies',
+      'Client portal on your own domain',
+    ],
+    featured: true,
+  },
+  {
+    name: 'Standard',
+    price: '$99',
+    credits: '300 credits a month',
+    who: 'For an agency running several clients at once.',
+    includes: [
+      'One active client included',
+      'Everything in Founding member',
+      'Three times the monthly credits',
+      'Staff accounts for your team',
+    ],
+  },
+]
+
 const FAQ = [
   {
     q: 'Does it send emails on its own?',
@@ -138,6 +188,7 @@ const AgencyLanding = () => {
           <nav className="gp-nav" aria-label="Sections">
             <a href="#tour">How it works</a>
             <a href="#portal">Client portal</a>
+            <a href="#pricing">Pricing</a>
             <a href="#faq">FAQ</a>
           </nav>
           <div className="gp-masthead-actions">
@@ -265,6 +316,39 @@ const AgencyLanding = () => {
                 <p className="gp-url gp-url-yours">https://podcasts.<b>yourbrand</b>.com/portal</p>
               </div>
             </div>
+          </div>
+        </section>
+
+        <section id="pricing">
+          <div className="gp-wrap">
+            <div className="gp-sec-head">
+              <span className="gp-eyebrow">Pricing</span>
+              <h2>What it costs.</h2>
+              <p>Two plans, the same platform. You pay for the clients you actually run.</p>
+            </div>
+
+            <div className="gp-plans">
+              {PLANS.map((plan) => (
+                <article key={plan.name} className={plan.featured ? 'gp-plan gp-plan-featured' : 'gp-plan'}>
+                  <h3>{plan.name}</h3>
+                  <p className="gp-plan-price">
+                    {plan.price}<span> a month</span>
+                  </p>
+                  <p className="gp-plan-credits">{plan.credits}</p>
+                  <p className="gp-plan-who">{plan.who}</p>
+                  <ul className="gp-plan-list">
+                    {plan.includes.map((line) => <li key={line}>{line}</li>)}
+                  </ul>
+                  <a className="gp-btn gp-btn-primary gp-plan-cta" href="#start">Request to join</a>
+                </article>
+              ))}
+            </div>
+
+            <p className="gp-plan-note">
+              Each additional active client is {PER_CLIENT_MONTHLY} a month. Credits pay for research,
+              contact finding and dashboard builds — the work that costs us money to run. Sending goes
+              through your own mailboxes, so there is nothing here for the emails themselves.
+            </p>
           </div>
         </section>
 
