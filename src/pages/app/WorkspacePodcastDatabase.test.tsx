@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuth } from '@/contexts/AuthContext'
 import WorkspacePodcastDatabase from '@/pages/app/WorkspacePodcastDatabase'
 import { addClientShortlistPodcasts } from '@/services/clientShortlist'
+import { addWorkspaceProspectPodcasts, getWorkspaceProspects } from '@/services/prospectDashboards'
 import { listHostRelationships } from '@/services/hostRelationships'
 import { getWorkspaceClients } from '@/services/clients'
 import { getWorkspacePodcastCatalog } from '@/services/workspacePodcastCatalog'
@@ -17,11 +18,17 @@ vi.mock('@/services/workspacePodcastCatalog', () => ({ getWorkspacePodcastCatalo
 vi.mock('@/services/clients', () => ({ getWorkspaceClients: vi.fn() }))
 vi.mock('@/services/clientShortlist', () => ({ addClientShortlistPodcasts: vi.fn() }))
 vi.mock('@/services/hostRelationships', () => ({ listHostRelationships: vi.fn() }))
+vi.mock('@/services/prospectDashboards', () => ({
+  getWorkspaceProspects: vi.fn(),
+  addWorkspaceProspectPodcasts: vi.fn(),
+}))
 
 const mockedUseAuth = vi.mocked(useAuth)
 const mockedCatalog = vi.mocked(getWorkspacePodcastCatalog)
 const mockedClients = vi.mocked(getWorkspaceClients)
 const mockedAdd = vi.mocked(addClientShortlistPodcasts)
+const mockedProspects = vi.mocked(getWorkspaceProspects)
+const mockedAddToProspect = vi.mocked(addWorkspaceProspectPodcasts)
 const mockedRelationships = vi.mocked(listHostRelationships)
 const workspaceId = '11111111-1111-4111-8111-111111111111'
 const clientId = '22222222-2222-4222-8222-222222222222'
@@ -150,6 +157,50 @@ describe('WorkspacePodcastDatabase', () => {
         podcast_email: 'show@example.com',
       })],
     ))
+  })
+
+  /*
+   * A prospect dashboard is the pitch for work nobody has bought yet, and it is
+   * built out of the same catalogue as a client's shortlist. Until now the only
+   * way to fill one was to go and find the shows again from inside the prospect.
+   */
+  it('adds selected shared podcasts to a prospect dashboard', async () => {
+    mockedProspects.mockResolvedValue({
+      workspace: { id: workspaceId, name: 'Northwind', slug: 'northwind' },
+      viewer_role: 'owner',
+      can_manage: true,
+      dashboards: [
+        { id: 'prospect-1', prospect_name: 'Ada Bell', lifecycle_status: 'draft' },
+        // Archived is not somewhere anything should be added to.
+        { id: 'prospect-2', prospect_name: 'Old Lead', lifecycle_status: 'archived' },
+      ],
+    } as never)
+    mockedAddToProspect.mockResolvedValue({
+      added: 1, skipped: 0, podcast_ids: ['podcast-one'], unpublished_for_review: false,
+    })
+
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Select The Founder Show' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add to client' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'A prospect' }))
+
+    const picker = await screen.findByRole('combobox', { name: 'Prospect' })
+    expect(picker).toBeInTheDocument()
+    expect(screen.queryByText('Old Lead')).not.toBeInTheDocument()
+
+    fireEvent.click(picker)
+    fireEvent.click(await screen.findByRole('option', { name: 'Ada Bell' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add to dashboard' }))
+
+    await waitFor(() => expect(mockedAddToProspect).toHaveBeenCalledWith(
+      workspaceId,
+      'prospect-1',
+      [expect.objectContaining({ podcast_id: 'podcast-one', podcast_name: 'The Founder Show' })],
+    ))
+    // The prospect shape is narrower on purpose: a dashboard goes to someone
+    // who has signed nothing, so the contact address is not gathered for it.
+    expect(mockedAddToProspect.mock.calls[0][2][0]).not.toHaveProperty('podcast_email')
   })
 
   // The same podcast is a row here and a relationship in the book, keyed by the

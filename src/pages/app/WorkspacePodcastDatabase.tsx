@@ -35,6 +35,11 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { addClientShortlistPodcasts, type ClientShortlistPodcastInput } from '@/services/clientShortlist'
+import {
+  addWorkspaceProspectPodcasts,
+  getWorkspaceProspects,
+  type ProspectShortlistPodcastInput,
+} from '@/services/prospectDashboards'
 import { getWorkspaceClients } from '@/services/clients'
 import {
   getWorkspacePodcastCatalog,
@@ -102,6 +107,28 @@ function toShortlistPodcast(podcast: WorkspacePodcastCatalogItem): ClientShortli
   }
 }
 
+/*
+ * The prospect shortlist takes a narrower row than a client's: no contact
+ * address, no feed, no language or region. That is the point of the two shapes
+ * — a prospect dashboard is something you send to someone who has not signed
+ * anything yet, so the things worth protecting are not gathered for it.
+ */
+function toProspectPodcast(podcast: WorkspacePodcastCatalogItem): ProspectShortlistPodcastInput {
+  return {
+    podcast_id: podcast.podcast_id,
+    podcast_name: podcast.podcast_name,
+    podcast_description: podcast.podcast_description,
+    podcast_image_url: podcast.podcast_image_url,
+    podcast_url: podcast.podcast_url,
+    publisher_name: podcast.publisher_name,
+    itunes_rating: podcast.itunes_rating,
+    episode_count: podcast.episode_count,
+    audience_size: podcast.audience_size,
+    last_posted_at: podcast.last_posted_at,
+    podcast_categories: shortlistCategories(podcast),
+  }
+}
+
 function formattedDate(value: string | null) {
   if (!value) return 'Not available'
   const date = new Date(value)
@@ -143,6 +170,11 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [detailsPodcast, setDetailsPodcast] = useState<WorkspacePodcastCatalogItem | null>(null)
   const [selectedClientId, setSelectedClientId] = useState(targetClientId)
+  // Which kind of thing the selection is being added to. A prospect dashboard
+  // is a pitch to someone who is not a client yet, and the same shows are
+  // exactly what you want to put in front of them.
+  const [addTarget, setAddTarget] = useState<'client' | 'prospect'>('client')
+  const [selectedProspectId, setSelectedProspectId] = useState('')
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -262,21 +294,51 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
     retry: false,
   })
 
+  const prospectsQuery = useQuery({
+    queryKey: ['workspace-podcast-catalog', user?.id || 'unknown', workspaceId, 'prospects'],
+    queryFn: () => getWorkspaceProspects(workspaceId),
+    enabled: validWorkspaceId && canAddToClient && addDialogOpen && addTarget === 'prospect',
+    retry: false,
+  })
+
   const addMutation = useMutation({
     mutationFn: async () => {
+      const podcasts = Array.from(selectedPodcasts.values())
+      if (addTarget === 'prospect') {
+        if (!selectedProspectId) throw new Error('Choose a prospect first.')
+        return await addWorkspaceProspectPodcasts(
+          workspaceId,
+          selectedProspectId,
+          podcasts.map(toProspectPodcast),
+        )
+      }
       if (!selectedClientId) throw new Error('Choose a client first.')
       return await addClientShortlistPodcasts(
         workspaceId,
         selectedClientId,
-        Array.from(selectedPodcasts.values()).map(toShortlistPodcast),
+        podcasts.map(toShortlistPodcast),
       )
     },
     onSuccess: (result) => {
-      const client = clientsQuery.data?.find((candidate) => candidate.id === selectedClientId)
-      if (result.added > 0) {
-        toast.success(`Added ${result.added} podcast${result.added === 1 ? '' : 's'} to ${client?.name || 'the client shortlist'}.`)
+      if (addTarget === 'prospect') {
+        const prospect = availableProspects.find((candidate) => candidate.id === selectedProspectId)
+        if (result.added > 0) {
+          toast.success(`Added ${result.added} podcast${result.added === 1 ? '' : 's'} to ${prospect?.prospect_name || 'the prospect dashboard'}.`)
+        } else {
+          toast.info('Those podcasts are already on this prospect dashboard.')
+        }
+        // Adding to a published dashboard takes it back to review rather than
+        // changing what a prospect is looking at while they look at it.
+        if ('unpublished_for_review' in result && result.unpublished_for_review) {
+          toast.info('The dashboard was unpublished so you can review it before sending again.')
+        }
       } else {
-        toast.info('Those podcasts are already on this client shortlist.')
+        const client = clientsQuery.data?.find((candidate) => candidate.id === selectedClientId)
+        if (result.added > 0) {
+          toast.success(`Added ${result.added} podcast${result.added === 1 ? '' : 's'} to ${client?.name || 'the client shortlist'}.`)
+        } else {
+          toast.info('Those podcasts are already on this client shortlist.')
+        }
       }
       setSelectedPodcasts(new Map())
       setSelectedClientId(targetClientId)
@@ -291,6 +353,9 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
   const catalog = catalogQuery.data
   const podcasts = catalog?.items || []
   const activeClients = (clientsQuery.data || []).filter((client) => client.status === 'active')
+  // Archived dashboards are not somewhere anything should be added to.
+  const availableProspects = (prospectsQuery.data?.dashboards || [])
+    .filter((prospect) => prospect.lifecycle_status !== 'archived')
   const targetClient = activeClients.find((client) => client.id === targetClientId) || null
   const pagePodcastIds = podcasts.map((podcast) => podcast.podcast_id)
   const allPageSelected = pagePodcastIds.length > 0
@@ -655,10 +720,52 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
       <Dialog open={addDialogOpen} onOpenChange={(open) => { if (!addMutation.isPending) setAddDialogOpen(open) }}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Add {selectedPodcasts.size} podcast{selectedPodcasts.size === 1 ? '' : 's'} to a client</DialogTitle>
-            <DialogDescription>The selected shows will be added to the client’s review shortlist. Existing entries are skipped.</DialogDescription>
+            <DialogTitle>Add {selectedPodcasts.size} podcast{selectedPodcasts.size === 1 ? '' : 's'}</DialogTitle>
+            <DialogDescription>{addTarget === 'prospect'
+              ? 'The selected shows will be added to the prospect’s dashboard. Existing entries are skipped.'
+              : 'The selected shows will be added to the client’s review shortlist. Existing entries are skipped.'}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {/* The same shows serve both: a client shortlist is work already
+                sold, a prospect dashboard is the pitch for work that is not. */}
+            <div className="space-y-2">
+              <Label>Add to</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={addTarget === 'client' ? 'secondary' : 'outline'}
+                  aria-pressed={addTarget === 'client'}
+                  onClick={() => setAddTarget('client')}
+                >
+                  A client
+                </Button>
+                <Button
+                  type="button"
+                  variant={addTarget === 'prospect' ? 'secondary' : 'outline'}
+                  aria-pressed={addTarget === 'prospect'}
+                  onClick={() => setAddTarget('prospect')}
+                >
+                  A prospect
+                </Button>
+              </div>
+            </div>
+            {addTarget === 'prospect' ? (
+              <div className="space-y-2">
+                <Label htmlFor="podcast-database-prospect">Prospect</Label>
+                {prospectsQuery.isLoading ? (
+                  <Skeleton className="h-10 w-full" />
+                ) : prospectsQuery.error ? (
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{prospectsQuery.error instanceof Error ? prospectsQuery.error.message : 'Prospects could not be loaded.'}</div>
+                ) : availableProspects.length === 0 ? (
+                  <div className="rounded-lg border p-4 text-sm text-muted-foreground">No prospect dashboards are available in this workspace.</div>
+                ) : (
+                  <Select value={selectedProspectId} onValueChange={setSelectedProspectId}>
+                    <SelectTrigger id="podcast-database-prospect" aria-label="Prospect"><SelectValue placeholder="Choose a prospect" /></SelectTrigger>
+                    <SelectContent>{availableProspects.map((prospect) => <SelectItem key={prospect.id} value={prospect.id}>{prospect.prospect_name}</SelectItem>)}</SelectContent>
+                  </Select>
+                )}
+              </div>
+            ) : (
             <div className="space-y-2">
               <Label htmlFor="podcast-database-client">Client</Label>
               {clientsQuery.isLoading ? (
@@ -674,14 +781,22 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
                 </Select>
               )}
             </div>
+            )}
             <div className="rounded-xl bg-muted/50 p-4">
               <p className="text-sm font-medium">What happens next</p>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">The shows appear in the client’s Podcasts section for review, research, contact selection, and campaign preparation. This action does not send outreach.</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">{addTarget === 'prospect'
+                ? 'The shows appear on the prospect’s dashboard for you to review and order before it is sent. A published dashboard is unpublished so the change is not made under the reader.'
+                : 'The shows appear in the client’s Podcasts section for review, research, contact selection, and campaign preparation. This action does not send outreach.'}</p>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddDialogOpen(false)} disabled={addMutation.isPending}>Cancel</Button>
-            <Button onClick={() => addMutation.mutate()} disabled={!selectedClientId || addMutation.isPending || activeClients.length === 0}>{addMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Add to shortlist</Button>
+            <Button
+              onClick={() => addMutation.mutate()}
+              disabled={addMutation.isPending || (addTarget === 'prospect'
+                ? !selectedProspectId || availableProspects.length === 0
+                : !selectedClientId || activeClients.length === 0)}
+            >{addMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{addTarget === 'prospect' ? 'Add to dashboard' : 'Add to shortlist'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
