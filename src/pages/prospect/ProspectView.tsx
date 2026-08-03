@@ -1609,7 +1609,23 @@ function ProspectViewContent() {
 
                   {podcast.publisher_name && (
                     <p className="text-xs sm:text-sm text-muted-foreground truncate">
-                      by {podcast.publisher_name}
+                      with {podcast.publisher_name}
+                    </p>
+                  )}
+
+                  {/*
+                   * Why this one was chosen, on the card.
+                   *
+                   * The reasoning already existed on every row and was only
+                   * readable by opening the show, so the shortlist read as a
+                   * list of logos and the argument for each was a click away.
+                   * Put it here and the page reads as what it is: a set of
+                   * recommendations, each with its reason attached.
+                   */}
+                  {podcast.ai_fit_reasons?.[0] && (
+                    <p className="text-xs leading-5 text-[#4c5d73] sm:text-[13px]">
+                      <span className="font-semibold" style={{ color: accentColor }}>Why this fits: </span>
+                      <span className="line-clamp-2">{podcast.ai_fit_reasons[0]}</span>
                     </p>
                   )}
 
