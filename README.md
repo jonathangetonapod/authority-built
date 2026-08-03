@@ -68,7 +68,7 @@ Workspace branding controls the agency name, logo, primary color, and accent col
 | Settings | Available to owners/admins | Team access, credentials, client-facing brand, agency name, booking link, and sidebar order |
 | Billing & credits | Available to owners/admins | Balance, plan, invoices, credit packs, and automatic top-ups |
 | Prospect Studio | Available | Workspace-scoped prospect dashboards, shortlist building, publication review, and prospect photos |
-| Podcast Database | Available | Shared-catalog browsing, per-show details, relationship history, and adding shows to a client shortlist |
+| Podcast Database | Available | Shared-catalog browsing, per-show details, relationship history, and adding shows to either a client shortlist or a prospect dashboard |
 | Client Podcast System | Available | Recording, scheduled, and going-live operations per client |
 
 Planned modules remain disabled in the workspace navigation until their complete tenant boundary is implemented. A visible legacy admin page is not automatically safe for workspace users.
@@ -220,6 +220,44 @@ schedule and needs two consecutive bad readings before it is demoted, so a
 single provider hiccup cannot silently move an agency's client links back to the
 platform's address.
 
+## Closing a workspace
+
+An owner can delete their own workspace and a platform admin can delete any of
+them, through `workspace-deletion`. Deletion is staged rather than immediate:
+the workspace is revoked at once and its data is removed thirty days later.
+
+**Revocation is immediate and needs no new gate.** `can_access_workspace`
+already requires `status = 'active'`, and every tenant policy is written on top
+of it, so moving the workspace to `deleted` revokes the whole tenant in one
+statement. The same statement raises `access_not_before_epoch`, so tokens
+already issued stop working rather than lasting until they expire.
+
+**External state is settled first, and the failures are not equal.** A
+workspace holds state in four systems this database cannot reach, each keyed by
+an id stored on the rows being deleted, so they are settled before anything is
+marked:
+
+| System | On failure |
+| --- | --- |
+| Stripe subscription | Abort. Revoking access while the card is still charged is the worst outcome, and the one nobody notices until the statement. |
+| Instantly campaigns | Abort. Campaigns left running mail a departed agency's clients from that agency's own mailboxes, with nothing in the product still showing it. |
+| Custom domains | Record and continue. A stranded domain costs a little money and serves a workspace that now refuses every request. |
+| Auth users | Deleted by the purge, not here — they are needed for the recovery window. |
+
+**Recovery is platform-admin only.** Marking revokes the owner's access in the
+same statement, so by the time they want it back they cannot sign in to ask.
+`restore_workspace_v1` refuses once `purge_after` has passed: a workspace
+restored after its subscription and sending accounts were torn down would come
+back without the things that made it work.
+
+**The purge is a separate, scheduled job.** `workspace-purge-tick` reads the
+date on the row rather than deciding for itself, so a tick that runs twice or
+runs late purges the same set. It deletes the Auth users *before* the workspace
+row, because the cascade takes the membership rows carrying those ids with it.
+
+The default workspace cannot be deleted at all — it is the platform's own, and
+losing it would take the operator's access with it.
+
 ## Scheduled work
 
 Several behaviours run on `pg_cron` rather than in a request. Each posts to an
@@ -236,6 +274,7 @@ often the work may be *considered*, not how often it happens.
 | `workspace-credit-refill` | hourly | Buy a credit pack for a workspace that opted in and fell below its threshold |
 | `workspace-monthly-allowance` | daily | Grant each workspace its monthly credits, keyed per period so a missed day is made good |
 | `workspace-credit-expiry` | daily | Zero lapsed credit lots and record the expiry |
+| `workspace-purge` | daily 03:17 | Remove workspaces whose thirty-day recovery window has closed |
 
 ## Identity and authorization
 
@@ -449,6 +488,10 @@ Provider credentials belong in Supabase secret storage or the authorized operato
 - `RESEND_API_KEY`
 - `ACCESS_REQUEST_NOTIFY_EMAIL` — where an access request from the public landing page is emailed. Optional: the request is recorded in `workspace_access_requests` either way, so an unset value means the queue is only visible in the table, never that a request was lost
 - `ONBOARDING_CAPABILITY_SECRET`
+- `WORKSPACE_PURGE_SECRET` — the only gate on the job that hard-deletes
+  workspaces. Its value must equal the `purge_tick_secret` vault entry that
+  `pg_cron` sends; different values are a nightly 401 nobody sees, and the
+  data is never removed
 - Google service-account credentials
 - `INSTANTLY_CREDENTIAL_ENCRYPTION_KEY` (at least 32 random characters; server-side encryption key)
 - `STRIPE_SECRET_KEY`, `STRIPE_CREDIT_WEBHOOK_SECRET`, `STRIPE_SUBSCRIPTION_WEBHOOK_SECRET` — credit purchases, automatic top-ups, and subscription state
