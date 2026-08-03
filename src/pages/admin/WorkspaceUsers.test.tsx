@@ -26,7 +26,11 @@ vi.mock('@/services/adminWorkspaces', () => ({
   listAdminWorkspaces: vi.fn().mockResolvedValue([
     { id: '11111111-1111-4111-8111-111111111111', name: 'Acme Agency' },
   ]),
+  // The recovery card lives on this page now. Nothing closed by default: that
+  // is the normal state, and these tests are about the owner list.
+  listDeletedWorkspaces: vi.fn().mockResolvedValue([]),
 }))
+vi.mock('@/services/workspaceDeletion', () => ({ restoreWorkspace: vi.fn() }))
 vi.mock('@/services/workspaceDomains', () => ({
   listWorkspaceDomains: vi.fn().mockResolvedValue([]),
   addWorkspaceDomain: vi.fn(),

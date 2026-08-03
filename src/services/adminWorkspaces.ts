@@ -95,6 +95,35 @@ export async function listAdminWorkspaces(): Promise<AdminWorkspace[]> {
 }
 
 /**
+ * Workspaces on their way out, and how long is left to change that.
+ *
+ * Deliberately not listAdminWorkspaces: that one filters to active, which is
+ * correct for every screen that acts on a working workspace and useless for the
+ * only screen that can undo a deletion. Closing revokes the owner's access in
+ * the same statement, so by the time anyone wants a workspace back they cannot
+ * sign in to ask — this list is the only route to it.
+ */
+export interface DeletedAdminWorkspace {
+  id: string
+  name: string
+  slug: string
+  deleted_at: string | null
+  purge_after: string | null
+  deletion_reason: string | null
+}
+
+export async function listDeletedWorkspaces(): Promise<DeletedAdminWorkspace[]> {
+  const { data, error } = await supabase
+    .from('workspaces')
+    .select('id,name,slug,deleted_at,purge_after,deletion_reason')
+    .eq('status', 'deleted')
+    .order('purge_after', { ascending: true })
+
+  if (error) throw new Error('Closed workspaces could not be loaded.')
+  return (data || []) as DeletedAdminWorkspace[]
+}
+
+/**
  * Workspaces a platform admin can credit.
  *
  * Deliberately not listAdminWorkspaces: that list answers "whose owner can I

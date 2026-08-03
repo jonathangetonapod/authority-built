@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { WorkspaceRecoveryCard } from '@/components/workspace/WorkspaceRecoveryCard'
 import { selectedWorkspaceBaseHref, workspaceModuleHref } from '@/lib/workspaceRoutes'
 import { resetWorkspaceStaffTemporaryPassword } from '@/services/workspaceStaff'
 import { WorkspaceDomainsCard } from '@/components/workspace/WorkspaceDomainsCard'
@@ -501,6 +502,10 @@ const WorkspaceUsers = () => {
           </form>
         </DialogContent>
       </Dialog>
+
+      <div className="mt-6">
+        <WorkspaceRecoveryCard />
+      </div>
 
       <Dialog open={Boolean(confirmation)} onOpenChange={(open) => { if (!open) setConfirmation(null) }}>
         <DialogContent>
