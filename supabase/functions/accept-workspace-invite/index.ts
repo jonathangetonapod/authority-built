@@ -62,6 +62,23 @@ serve(async (req) => {
       if (message.includes('pending') || message.includes('status')) {
         throw new HttpError(409, 'INVITE_NOT_PENDING', 'This invitation cannot be accepted')
       }
+      // Both of these are refusals the RPC raises deliberately, and neither
+      // matched a branch above — so a conflict the caller can act on was
+      // arriving as an opaque 500.
+      if (message.includes('already exists')) {
+        throw new HttpError(
+          409,
+          'MEMBERSHIP_ALREADY_EXISTS',
+          'This email already belongs to a workspace. Sign in instead of accepting again',
+        )
+      }
+      if (message.includes('different auth user')) {
+        throw new HttpError(
+          409,
+          'INVITE_IDENTITY_MISMATCH',
+          'This invitation was issued to a different sign-in. Sign in with the address it was sent to',
+        )
+      }
       throw new HttpError(500, 'INVITE_ACCEPT_FAILED', 'The invitation could not be accepted')
     }
 

@@ -97,14 +97,34 @@ export function JoinRequestsCard() {
         full_name: request.full_name,
         workspace_name: workspaceNameFor(request),
       })
-      await setJoinRequestStatus(request.id, 'invited')
+
+      /*
+       * The email has now gone. Recording it is bookkeeping about something
+       * that already happened, so a failure here cannot be reported as a
+       * failure to send — that told an admin the invitation had not gone out
+       * and invited them to click again, mailing a stranger twice and
+       * creating a second workspace in their name.
+       */
+      try {
+        await setJoinRequestStatus(request.id, 'invited')
+        return { recorded: true }
+      } catch {
+        return { recorded: false }
+      }
     },
-    onSuccess: async (_result, request) => {
+    onSuccess: async (result, request) => {
       await queryClient.invalidateQueries({ queryKey: ['join-requests'] })
       await queryClient.invalidateQueries({ queryKey: ['join-requests-waiting'] })
       await queryClient.invalidateQueries({ queryKey: ['platform', 'workspace-users'] })
       setConfirming(null)
-      toast.success(`Invitation sent to ${request.email}.`)
+      if (result.recorded) {
+        toast.success(`Invitation sent to ${request.email}.`)
+      } else {
+        toast.warning(
+          `Invitation sent to ${request.email}, but the queue still shows them waiting. `
+          + 'Do not send again — move the row to invited by hand.',
+        )
+      }
     },
     onError: (error) => toast.error(
       error instanceof Error ? error.message : 'The invitation could not be sent.',

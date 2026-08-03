@@ -1,11 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { toFunctionError } from '@/lib/functionErrors'
 import { AuthShell } from '@/components/landing/AuthShell'
+
+/** The role is an enum; this is the sentence it appears in. */
+const ROLE_WORDS: Record<string, string> = {
+  owner: 'the owner',
+  admin: 'an administrator',
+  member: 'a member',
+}
 
 const AcceptInvite = () => {
   const {
@@ -21,6 +28,14 @@ const AcceptInvite = () => {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  /*
+   * Acceptance and the account re-read are two calls, and only the first one
+   * decides whether this person is a member. When the re-read failed, the
+   * membership it had just cleared sent this page to "no active invitation
+   * matches" — telling someone who had in fact just been provisioned to go
+   * and ask for another invitation. This remembers what actually happened.
+   */
+  const [accepted, setAccepted] = useState(false)
 
   useEffect(() => {
     const suggestedName = user?.user_metadata?.full_name || membership?.full_name || ''
@@ -75,8 +90,12 @@ const AcceptInvite = () => {
         throw await toFunctionError(acceptanceError, 'Unable to accept this invitation.')
       }
 
+      setAccepted(true)
+
       const refreshed = await refreshAccount()
-      if (!refreshed) throw new Error('Your invitation was accepted. Sign in again to refresh access.')
+      // The invitation is accepted either way. A failed re-read is a stale
+      // session, not a failed acceptance, and the screen below says so.
+      if (!refreshed) return
       toast.success('Invitation accepted.')
       navigate('/app/clients', { replace: true })
     } catch (error) {
@@ -88,7 +107,7 @@ const AcceptInvite = () => {
 
   if (accountState === 'loading') {
     return (
-      <div className="gp-page gp-auth-page gp-auth-loading">
+      <div className="gp-page gp-auth-loading" role="status">
         <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
         <span className="sr-only">Opening your invitation</span>
       </div>
@@ -106,7 +125,28 @@ const AcceptInvite = () => {
         footer={<>No invitation yet? <Link to="/register">Request to join</Link></>}
       >
         <p className="gp-auth-reason">
-          The invitation link is invalid or has expired. Sign in with the invited email, or ask for a new invitation.
+          You are not signed in. Open the button in your invitation email, or sign in with the address
+          it was sent to. If the link has already been used, signing in is all that is left to do.
+        </p>
+        <div className="gp-auth-actions">
+          <Link className="gp-btn gp-btn-primary" to="/login">Go to sign in</Link>
+        </div>
+      </AuthShell>
+    )
+  }
+
+  if (accepted && accountState !== 'active') {
+    return (
+      <AuthShell
+        title="Invitation accepted | Get On A Pod"
+        description="Your Get On A Pod workspace is ready."
+        path="/accept-invite"
+        tone="notice"
+        heading="You're in."
+        footer={<>Wrong account? <Link to="/login">Sign in as someone else</Link></>}
+      >
+        <p className="gp-auth-reason">
+          Your invitation is accepted and your password is set. Sign in to open your workspace.
         </p>
         <div className="gp-auth-actions">
           <Link className="gp-btn gp-btn-primary" to="/login">Go to sign in</Link>
@@ -128,7 +168,7 @@ const AcceptInvite = () => {
         <p className="gp-auth-reason">
           {accountState === 'expired'
             ? `The invitation for ${user.email} has expired.`
-            : `No active invitation matches ${user.email}.`} Ask a workspace administrator to send a new invitation.
+            : `No active invitation matches ${user.email}.`} Ask whoever invited you to send a new one.
         </p>
         <div className="gp-auth-actions">
           <Link className="gp-btn gp-btn-ghost" to="/login">Back to sign in</Link>
@@ -143,10 +183,15 @@ const AcceptInvite = () => {
       description="Set your name and password to finish joining a Get On A Pod workspace."
       path="/accept-invite"
       heading="Accept your invitation."
-      standfirst={`Join ${workspace?.name || 'your workspace'} as ${membership.role}, using ${user.email}.`}
+      standfirst={`Join ${workspace?.name || 'your workspace'} as ${ROLE_WORDS[membership.role] ?? 'a member'}, using ${user.email}.`}
       footer={<>Wrong account? <Link to="/login">Sign in as someone else</Link></>}
     >
       <form className="gp-form" onSubmit={acceptInvite}>
+        {/* Password managers need the account this password belongs to, in the
+            same form, or they file it against nothing and the person is locked
+            out of the account they just created. */}
+        <input type="email" name="username" autoComplete="username" value={user.email} readOnly hidden />
+
         <div className="gp-field">
           <label htmlFor="invite-name">Full name</label>
           <input
@@ -178,7 +223,7 @@ const AcceptInvite = () => {
               onClick={() => setShowPassword((value) => !value)}
               aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
-              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showPassword ? 'Hide' : 'Show'}
             </button>
           </div>
           {/* The rules are stated before the attempt, not returned as an error

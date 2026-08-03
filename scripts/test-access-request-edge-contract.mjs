@@ -50,10 +50,30 @@ assert.match(code, /AUDIENCES\.has\(audience\)/u)
 // constant is. Declaring a limit and never comparing it is the failure mode.
 assert.match(code, /MAX_PER_IP_PER_DAY = \d+/u)
 assert.match(code, /source_ip_hash/u)
-assert.match(code, /\.eq\('source_ip_hash', ipHash\)/u)
-assert.match(code, /\.gte\('created_at', since\)/u)
-assert.match(code, /count \?\? 0\) >= ceiling/u)
+assert.match(code, /p_source_ip_hash: ipHash/u)
+assert.match(code, /p_daily_ceiling: ceiling/u)
+assert.match(code, /outcome === 'rate_limited'/u)
 assert.match(code, /new HttpError\(\s*429,\s*'TOO_MANY_REQUESTS'/u)
+
+// Counting and inserting have to happen under one lock. Two round trips let
+// simultaneous callers all read the same under-ceiling count and all insert,
+// which is the ceiling holding only against a caller who waits politely.
+assert.match(code, /admin\.rpc\('record_workspace_access_request'/u)
+assert.doesNotMatch(
+  code,
+  /from\('workspace_access_requests'\)/u,
+  'the request must go through the atomic RPC, not a direct table write',
+)
+const rateLimitMigration = readFileSync(
+  'supabase/migrations/20260803001000_access_request_rate_limit_atomic.sql',
+  'utf8',
+).replace(/(^|\s)--[^\n]*/gu, '$1')
+assert.match(rateLimitMigration, /pg_advisory_xact_lock/u)
+assert.match(rateLimitMigration, /SELECT count\(\*\)[\s\S]*?INTO recent_count/u)
+assert.match(rateLimitMigration, /recent_count >= p_daily_ceiling[\s\S]*?RETURN 'rate_limited'/u)
+assert.match(rateLimitMigration, /INSERT INTO public\.workspace_access_requests/u)
+assert.match(rateLimitMigration, /SET search_path = ''/u)
+assert.match(rateLimitMigration, /REVOKE ALL ON FUNCTION[\s\S]*?FROM PUBLIC, anon, authenticated/u)
 
 // A caller who strips their headers must not thereby buy a bigger allowance.
 // This was briefly inverted: 5 per address, 20 for anyone unidentifiable.
@@ -79,7 +99,7 @@ assert.doesNotMatch(code, /already (requested|applied|exists)/iu)
 
 // Notification is best effort: the request is saved first, and a mail provider
 // having a bad afternoon must not turn a saved request into a visible error.
-const insertIndex = fn.indexOf('.insert({')
+const insertIndex = fn.indexOf("admin.rpc('record_workspace_access_request'")
 const notifyIndex = fn.indexOf('await notifyPlatform')
 assert.ok(insertIndex > 0 && notifyIndex > insertIndex, 'the request must be saved before notifying')
 

@@ -67,37 +67,40 @@ serve(async (req) => {
     // strips both headers should end up more restricted, not unlimited.
     const ipHash = await hashSourceIp(req) ?? UNIDENTIFIED_BUCKET
 
-    {
-      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-      const { count, error } = await admin
-        .from('workspace_access_requests')
-        .select('id', { count: 'exact', head: true })
-        .eq('source_ip_hash', ipHash)
-        .gte('created_at', since)
-      // A rate-limit lookup that fails is not a reason to lose the request; it
-      // is a reason to accept this one and let the admin see the volume.
-      const ceiling = ipHash === UNIDENTIFIED_BUCKET ? MAX_UNIDENTIFIED_PER_DAY : MAX_PER_IP_PER_DAY
-      if (!error && (count ?? 0) >= ceiling) {
-        throw new HttpError(
-          429,
-          'TOO_MANY_REQUESTS',
-          'A few requests have already come from here today. Email jonathan@getonapod.com and we will pick it up there.',
-        )
-      }
+    const ceiling = ipHash === UNIDENTIFIED_BUCKET ? MAX_UNIDENTIFIED_PER_DAY : MAX_PER_IP_PER_DAY
+
+    // Counting and inserting were two round trips with nothing held between
+    // them, so simultaneous callers all read the same under-ceiling count and
+    // all got in. Both happen inside one function now, behind a per-bucket
+    // transaction lock, so the ceiling holds against a caller who does not wait
+    // for each response.
+    const { data: outcome, error: recordError } = await admin.rpc('record_workspace_access_request', {
+      p_email: email,
+      p_full_name: fullName,
+      p_company: company,
+      p_website: website,
+      p_audience: audience,
+      p_clients_now: clientsNow,
+      p_notes: notes,
+      p_source_ip_hash: ipHash,
+      p_daily_ceiling: ceiling,
+    })
+
+    if (recordError) {
+      console.error('[Request Workspace Access] Could not record the request')
+      throw new HttpError(500, 'REQUEST_NOT_SAVED', 'The request could not be saved. Please try again.')
     }
 
-    const { error: insertError } = await admin.from('workspace_access_requests').insert({
-      email,
-      full_name: fullName,
-      company,
-      website,
-      audience,
-      clients_now: clientsNow,
-      notes,
-      source_ip_hash: ipHash,
-    })
-    if (insertError) {
-      console.error('[Request Workspace Access] Could not record the request')
+    if (outcome === 'rate_limited') {
+      throw new HttpError(
+        429,
+        'TOO_MANY_REQUESTS',
+        'A few requests have already come from here today. Email jonathan@getonapod.com and we will pick it up there.',
+      )
+    }
+
+    if (outcome !== 'recorded') {
+      console.error('[Request Workspace Access] Unexpected record outcome')
       throw new HttpError(500, 'REQUEST_NOT_SAVED', 'The request could not be saved. Please try again.')
     }
 

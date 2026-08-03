@@ -33,7 +33,9 @@ describe('AgencyLanding', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/more podcasts, in less time/iu)
     expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login')
     expect(screen.getByRole('main')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /skip to content/iu })).toHaveAttribute('href', '#tour')
+    // #tour sits below the hero and below the primary call to action, so a
+    // keyboard user who skipped was skipping past the thing they came for.
+    expect(screen.getByRole('link', { name: /skip to content/iu })).toHaveAttribute('href', '#main')
   })
 
   /*

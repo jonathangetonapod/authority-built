@@ -71,14 +71,35 @@ describe('Login', () => {
     expect(screen.getByRole('button', { name: 'Hide password' })).toBeInTheDocument()
   })
 
-  // Google is the platform-admin door; a tenant signing in must not be shown it.
-  it('shows admin sign-in only on the admin route', () => {
+  /*
+   * Google is the platform-admin door, and it used to appear only on /admin
+   * paths. An administrator whose account was created through Google has no
+   * password to type, so bookmarking /login — or being bounced there from an
+   * /app route — left them looking at a form they could not use, with no way
+   * through. Showing it everywhere costs a tenant one quiet line they will not
+   * press; hiding it cost an admin the only door they have.
+   */
+  it('offers admin sign-in wherever the sign-in form is', () => {
     const { unmount } = renderLogin('/login')
-    expect(screen.queryByRole('button', { name: /continue with google/iu })).toBeNull()
+    expect(screen.getByRole('button', { name: /continue with google/iu })).toBeInTheDocument()
     unmount()
 
     renderLogin('/admin/login')
     expect(screen.getByRole('button', { name: /continue with google/iu })).toBeInTheDocument()
+  })
+
+  // Sending a reset hid the control, so a typo in the address could only be
+  // corrected by reloading the page.
+  it('offers the reset again once the address is changed', async () => {
+    renderLogin()
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'wrong@example.com' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Forgot password?' }))
+
+    await screen.findByText(/a password reset link is on the way/iu)
+    expect(screen.queryByRole('button', { name: 'Forgot password?' })).toBeNull()
+
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'right@example.com' } })
+    expect(screen.getByRole('button', { name: 'Forgot password?' })).toBeInTheDocument()
   })
 
   it('sends the reset to the address typed, pointed at this app', async () => {

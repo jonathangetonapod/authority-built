@@ -21,7 +21,7 @@ const RequestAccess = () => (
     path="/register"
     heading="Request to join."
     standfirst="Tell us what you run today — how many clients, what you are using now, and whether you are adding podcasts to an existing service or starting from scratch."
-    footer={<>Already a member? <Link to="/login">Sign in</Link></>}
+    footer={<>Already have a workspace? <Link to="/login">Sign in</Link></>}
   >
     <AccessRequestForm />
   </AuthShell>

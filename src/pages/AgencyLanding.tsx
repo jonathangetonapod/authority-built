@@ -83,7 +83,7 @@ const FAQ = [
   },
   {
     q: 'Can clients tell it is not ours?',
-    a: 'No. Everything they see is your domain, your logo, your colours.',
+    a: 'Not from what they see: the portal, the links and the emails are on your domain, with your logo and colours.',
   },
   {
     q: 'What if a host asks us to stop?',
@@ -91,7 +91,7 @@ const FAQ = [
   },
   {
     q: 'I am just starting out. Too early?',
-    a: 'No. Selling this is easy; delivering it is the hard part, and that is the part you get on day one.',
+    a: 'Delivery is the hard part, not the pitch, and delivery is what you get on day one.',
   },
 ]
 
@@ -121,7 +121,7 @@ const AgencyLanding = () => {
         title="Podcast booking software for agencies | Get On A Pod"
         description="Book your clients on more podcasts in less time: find shows, get the client's approval, pitch, and land the booking — with a client portal under your own name."
       />
-      <a className="gp-skip" href="#tour">Skip to content</a>
+      <a className="gp-skip" href="#main">Skip to content</a>
 
       <header className="gp-masthead">
         <div className="gp-wrap gp-masthead-in">
@@ -141,7 +141,7 @@ const AgencyLanding = () => {
         </div>
       </header>
 
-      <main>
+      <main id="main">
         <section className="gp-hero">
           <div className="gp-wrap gp-hero-in">
             <div>
@@ -176,7 +176,7 @@ const AgencyLanding = () => {
           <div className="gp-wrap gp-cards">
             <div className="gp-card">
               <h3>More bookings</h3>
-              <p>Better shows, better pitches, faster follow-up. The calendar fills up.</p>
+              <p>Better shows, better pitches, faster follow-up.</p>
             </div>
             <div className="gp-card">
               <h3>More clients, same team</h3>
@@ -184,7 +184,7 @@ const AgencyLanding = () => {
             </div>
             <div className="gp-card">
               <h3>Clients who stay</h3>
-              <p>They can see the work happening, so they stop asking and keep paying.</p>
+              <p>They can see what is happening, so there are fewer status emails.</p>
             </div>
           </div>
         </section>
@@ -297,7 +297,7 @@ const AgencyLanding = () => {
             <a href="mailto:jonathan@getonapod.com">jonathan@getonapod.com</a>
             <Link to="/privacy">Privacy</Link>
             <Link to="/terms">Terms</Link>
-            <span>© 2026 Get On A Pod</span>
+            <span>© {new Date().getFullYear()} Get On A Pod</span>
           </div>
         </div>
       </footer>

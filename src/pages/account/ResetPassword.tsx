@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { queryClient } from '@/lib/queryClient'
@@ -56,7 +56,7 @@ const ResetPassword = () => {
 
   if (loading) {
     return (
-      <div className="gp-page gp-auth-page gp-auth-loading">
+      <div className="gp-page gp-auth-loading" role="status">
         <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
         <span className="sr-only">Opening your reset link</span>
       </div>
@@ -93,6 +93,12 @@ const ResetPassword = () => {
       footer={<>Remembered it? <Link to="/login">Back to sign in</Link></>}
     >
       <form className="gp-form" onSubmit={handleSubmit}>
+        {/* The account this password belongs to, so a password manager
+            has something to file it against. Without it the credential is
+            skipped or misfiled, and the person is locked out of the account
+            they just set a password for. */}
+        <input type="email" name="username" autoComplete="username" value={user.email} readOnly hidden />
+
         <div className="gp-field">
           <label htmlFor="new-password">New password</label>
           <div className="gp-field-with-toggle">
@@ -111,7 +117,7 @@ const ResetPassword = () => {
               onClick={() => setShowPassword((value) => !value)}
               aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
-              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showPassword ? 'Hide' : 'Show'}
             </button>
           </div>
           <span id="password-requirements" className="gp-field-hint">

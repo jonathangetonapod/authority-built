@@ -32,7 +32,6 @@ const Login = () => {
   const attemptedPath = locationState?.from?.pathname
   const passwordChanged = locationState?.passwordChanged === true
   const signInAgain = locationState?.signInAgain === true
-  const adminEntry = location.pathname.startsWith('/admin') || attemptedPath?.startsWith('/admin') === true
 
   useEffect(() => {
     if (accountState === 'pending') {
@@ -112,7 +111,7 @@ const Login = () => {
 
   if (user && accountState === 'loading') {
     return (
-      <div className="gp-page gp-auth-page gp-auth-loading">
+      <div className="gp-page gp-auth-loading" role="status">
         <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
         <span className="sr-only">Checking your account</span>
       </div>
@@ -133,7 +132,7 @@ const Login = () => {
           {accountState === 'suspended'
             ? 'Your workspace access is suspended.'
             : accountState === 'expired'
-              ? 'Your invitation has expired. Ask a platform administrator for a new invitation.'
+              ? 'Your invitation has expired. Ask whoever invited you for a new one.'
               : accountError || 'This account has not been invited to an active workspace.'}
         </p>
         <p className="gp-auth-note">Signed in as {user.email}</p>
@@ -158,14 +157,14 @@ const Login = () => {
       path="/login"
       heading="Welcome back."
       standfirst="Use the email from your invitation, or the account an administrator created for you."
-      footer={<>No account yet? <Link to="/register">Request to join</Link></>}
+      footer={<>No workspace yet? <Link to="/register">Request to join</Link></>}
     >
       <form className="gp-form" onSubmit={handlePasswordSignIn}>
         {(passwordChanged || signInAgain) && (
           <p className="gp-auth-status" role="status">
             {passwordChanged
               ? 'Password changed. Sign in with your new password.'
-              : 'Your credentials changed. Sign in again with the newest password.'}
+              : 'Your password was changed. Sign in with the new one.'}
           </p>
         )}
 
@@ -177,7 +176,13 @@ const Login = () => {
             autoComplete="email"
             value={email}
             disabled={isSubmitting}
-            onChange={(event) => setEmail(event.target.value)}
+            onChange={(event) => {
+              setEmail(event.target.value)
+              // Sending a reset hid the control. Correcting the address is
+              // exactly what someone does when it went to the wrong one, so
+              // changing it offers the control again.
+              setResetRequested(false)
+            }}
           />
         </div>
 
@@ -222,6 +227,7 @@ const Login = () => {
           // Said the same way whether or not that email has an account.
           <p className="gp-auth-status" role="status">
             If that email has an account, a password reset link is on the way.
+            Wrong address? Change it above and ask again.
           </p>
         )}
 
@@ -230,15 +236,13 @@ const Login = () => {
         </button>
       </form>
 
-      {adminEntry && (
-        <div className="gp-auth-alt">
-          <span className="gp-auth-rule">Admin sign-in</span>
-          <button type="button" className="gp-btn gp-btn-quiet gp-btn-block" onClick={handleGoogleSignIn}>
-            <Chrome className="h-4 w-4" aria-hidden="true" />
-            Continue with Google
-          </button>
-        </div>
-      )}
+      <div className="gp-auth-alt">
+        <span className="gp-auth-rule">Admin sign-in</span>
+        <button type="button" className="gp-btn gp-btn-quiet gp-btn-block" onClick={handleGoogleSignIn}>
+          <Chrome className="h-4 w-4" aria-hidden="true" />
+          Continue with Google
+        </button>
+      </div>
     </AuthShell>
   )
 }

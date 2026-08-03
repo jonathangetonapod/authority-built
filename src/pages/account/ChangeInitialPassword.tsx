@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Eye, EyeOff, Loader2, LogOut } from 'lucide-react'
+import { Loader2, LogOut } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { AuthShell } from '@/components/landing/AuthShell'
 import { useAuth } from '@/contexts/AuthContext'
@@ -101,7 +101,7 @@ const ChangeInitialPassword = () => {
 
   if (accountState === 'loading' || accountState === 'reauthentication_required') {
     return (
-      <div className="gp-page gp-auth-page gp-auth-loading">
+      <div className="gp-page gp-auth-loading" role="status">
         <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
         <span className="sr-only">Checking your account</span>
       </div>
@@ -129,7 +129,7 @@ const ChangeInitialPassword = () => {
         <div className="gp-auth-actions">
           <button type="button" className="gp-btn gp-btn-ghost" disabled={submitting} onClick={() => void leaveAccount()}>
             <LogOut className="h-4 w-4" aria-hidden="true" />
-            Sign out and use the newest credential
+            Sign in with another account
           </button>
         </div>
       </AuthShell>
@@ -146,6 +146,12 @@ const ChangeInitialPassword = () => {
       footer={<>Wrong account? <Link to="/login">Sign in as someone else</Link></>}
     >
       <form className="gp-form" onSubmit={submit}>
+        {/* The account this password belongs to, so a password manager
+            has something to file it against. Without it the credential is
+            skipped or misfiled, and the person is locked out of the account
+            they just set a password for. */}
+        <input type="email" name="username" autoComplete="username" value={user.email} readOnly hidden />
+
         <div className="gp-field">
           <label htmlFor="new-password">New password</label>
           <div className="gp-field-with-toggle">
@@ -164,7 +170,7 @@ const ChangeInitialPassword = () => {
               onClick={() => setShowPassword((value) => !value)}
               aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
-              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showPassword ? 'Hide' : 'Show'}
             </button>
           </div>
           <span id="password-requirements" className="gp-field-hint">
@@ -191,7 +197,7 @@ const ChangeInitialPassword = () => {
         </button>
         <button type="button" className="gp-btn gp-btn-ghost gp-btn-block" disabled={submitting} onClick={() => void leaveAccount()}>
           <LogOut className="h-4 w-4" aria-hidden="true" />
-          Sign out and use another credential
+          Sign in with another account
         </button>
       </form>
     </AuthShell>

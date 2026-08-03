@@ -101,7 +101,7 @@ describe('ChangeInitialPassword', () => {
     // disabled prop is `submitting`, and that is false at first render. Assert
     // the outcome a person would notice — leaving the dead end for sign-in —
     // rather than which of the two sign-out paths ran.
-    fireEvent.click(screen.getByRole('button', { name: /sign out and use the newest credential/i }))
+    fireEvent.click(screen.getByRole('button', { name: /sign in with another account/i }))
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/login'))
   })
 })

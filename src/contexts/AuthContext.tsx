@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import { queryClient } from '@/lib/queryClient'
+import { toFunctionError } from '@/lib/functionErrors'
 
 export type AccountState =
   | 'loading'
@@ -100,6 +101,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
   const accountRequestRef = useRef(0)
   const lastUserIdRef = useRef<string | null>(null)
+  // Which user we have already loaded the account for. The difference between
+  // a sign-in and a background token refresh is not visible in the token
+  // itself, and only one of the two may unmount the page.
+  const resolvedForUserRef = useRef<string | null>(null)
 
   const clearAccount = useCallback((nextState: AccountState = 'signed_out') => {
     accountRequestRef.current += 1
@@ -137,8 +142,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (requestId !== accountRequestRef.current) return false
 
     if (error || !data) {
+      // The SDK's own message for any non-2xx is the same sentence every time,
+      // so reading it here threw away every specific refusal account-context
+      // takes the trouble to name — invalid auth, context unavailable,
+      // authorization unavailable. This is the project's normalizer and it
+      // reads the real body.
+      const normalized = error
+        ? await toFunctionError(error, 'Unable to load account access.')
+        : new Error('Unable to load account access.')
+      if (requestId !== accountRequestRef.current) return false
       setAccountState('error')
-      setAccountError(error?.message || 'Unable to load account access.')
+      setAccountError(normalized.message)
       setIsPlatformAdmin(false)
       setMembership(null)
       setWorkspace(null)
@@ -161,6 +175,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       queryClient.clear()
       clearSensitiveAccountStorage()
       lastUserIdRef.current = nextUserId
+      resolvedForUserRef.current = null
       accountRequestRef.current += 1
       setAccountError(null)
       setIsPlatformAdmin(false)
@@ -213,8 +228,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const accessToken = session?.access_token
   useEffect(() => {
     if (!accessToken) return
-    setAccountState('loading')
-    void refreshAccount()
+
+    /*
+     * Supabase refreshes the access token on its own schedule, and every
+     * refresh lands here. Reloading loudly meant ProtectedRoute answered a
+     * routine token rotation by unmounting whatever page someone was using
+     * and showing a full-screen spinner — losing an in-progress form to
+     * change nothing anyone can see.
+     *
+     * The first token for a user is the sign-in, where loud is right because
+     * there is nothing on screen yet to lose. Every token after it is the
+     * client's own housekeeping, and re-reads the account underneath the page.
+     */
+    const userId = lastUserIdRef.current
+    const firstTokenForUser = resolvedForUserRef.current !== userId
+    resolvedForUserRef.current = userId
+    void refreshAccount({ quiet: !firstTokenForUser })
   }, [accessToken, refreshAccount])
 
   const signInWithGoogle = useCallback(async () => {

@@ -5,13 +5,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { JoinRequestsCard } from './JoinRequestsCard'
 import { listJoinRequests, setJoinRequestStatus, type JoinRequest } from '@/services/accessRequests'
 import { inviteWorkspaceUser } from '@/services/workspaceUsers'
+import { toast } from 'sonner'
 
 vi.mock('@/services/accessRequests', () => ({
   listJoinRequests: vi.fn(),
   setJoinRequestStatus: vi.fn(),
 }))
 vi.mock('@/services/workspaceUsers', () => ({ inviteWorkspaceUser: vi.fn() }))
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }))
 
 const list = vi.mocked(listJoinRequests)
 const move = vi.mocked(setJoinRequestStatus)
@@ -137,6 +138,24 @@ describe('JoinRequestsCard', () => {
 
     await waitFor(() => expect(sendInvite).toHaveBeenCalled())
     expect(move).not.toHaveBeenCalled()
+  })
+
+  // The email has already gone by the time the status write runs. Reporting
+  // that write's failure as "the invitation could not be sent" is how an admin
+  // ends up mailing a stranger twice.
+  it('reports a sent invitation as sent even when recording it fails', async () => {
+    list.mockResolvedValue([request({})])
+    move.mockRejectedValue(new Error('could not update the request'))
+    renderCard()
+
+    fireEvent.click(await screen.findByRole('button', { name: /send invitation/iu }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: /send invitation/iu }))
+
+    await waitFor(() => expect(toast.warning).toHaveBeenCalled())
+    expect(vi.mocked(toast.warning).mock.calls[0][0]).toMatch(/sent to dana@example.com/iu)
+    expect(vi.mocked(toast.warning).mock.calls[0][0]).toMatch(/do not send again/iu)
+    expect(toast.error).not.toHaveBeenCalled()
   })
 
   it('falls back to their own name when they gave no company', async () => {

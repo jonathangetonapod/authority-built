@@ -83,6 +83,7 @@ export const AccessRequestForm = () => {
           <label htmlFor="gp-name">Your name</label>
           <input
             id="gp-name"
+            aria-describedby={missing === 'fullName' ? 'gp-request-error' : undefined}
             required
             autoComplete="name"
             maxLength={120}
@@ -95,6 +96,7 @@ export const AccessRequestForm = () => {
           <label htmlFor="gp-email">Work email</label>
           <input
             id="gp-email"
+            aria-describedby={missing === 'email' ? 'gp-request-error' : undefined}
             required
             type="email"
             autoComplete="email"
@@ -162,7 +164,7 @@ export const AccessRequestForm = () => {
       </div>
 
       {(problem || submit.isError) && (
-        <p className="gp-form-error" role="alert">
+        <p className="gp-form-error" id="gp-request-error" role="alert">
           {problem
             ? problem.message
             : submit.error instanceof Error ? submit.error.message : 'Your request could not be sent. Please try again.'}
