@@ -318,6 +318,16 @@ function ProspectViewContent() {
   // The agency's own scheduler, pasted once in workspace settings. A dashboard
   // with its own call-to-action still wins; this is what the page falls back to
   // instead of "reply to the email that brought you here".
+  /*
+   * The dashboard is white-label, so the accent and the person signing the note
+   * come from the workspace, not from us. The fallback is the design's own
+   * terracotta, used only when a workspace has set no accent of its own.
+   */
+  const accentColor = workspaceBrand?.accent_color?.trim() || '#b46a3c'
+  const conciergeName = workspaceBrand?.brand_name?.trim()
+    ? `${workspaceBrand.brand_name.trim()}, your booking team`
+    : 'Your booking team'
+  const conciergeInitial = (workspaceBrand?.brand_name?.trim() || 'G').charAt(0).toUpperCase()
   const bookingLink = bookingLinkUrl(workspaceBrand?.booking_url)
   const bookingEmbedUrl = schedulerEmbedUrl(workspaceBrand?.booking_url)
   const bookingProvider = schedulerName(workspaceBrand?.booking_url)
@@ -855,8 +865,10 @@ function ProspectViewContent() {
                 </p>
               </div>
 
-              <h1 className="mt-6 font-editorial text-[clamp(2.8rem,7vw,5.4rem)] leading-[0.92] tracking-[-0.05em] text-[#0d1b2a] text-balance">
-                Hi, {prospectFirstName}. Your shortlist is ready.
+              <h1 className="mt-6 font-editorial text-[clamp(2.6rem,6.4vw,4.9rem)] leading-[0.94] tracking-[-0.05em] text-[#0d1b2a] text-balance">
+                {uniquePodcasts.length > 0
+                  ? `${prospectFirstName}, we found ${uniquePodcasts.length} rooms where your story belongs.`
+                  : `${prospectFirstName}, your shortlist is ready.`}
               </h1>
 
               <p className="mt-5 max-w-2xl text-lg leading-8 text-[#4c5d73]">
@@ -864,8 +876,41 @@ function ProspectViewContent() {
                   ? 'Loading your personalized podcast matches.'
                   : podcastsError
                     ? 'Your profile is ready, but the shortlist needs a quick refresh.'
-                  : personalizedTagline || `${sortedPodcasts.length} podcasts matched to your expertise and audience fit.`}
+                    : personalizedTagline
+                      || `Every show below was matched to your expertise and the audience you want in front of you${totalReach > 0 ? ` — ${formatNumber(totalReach)} combined listeners` : ''}. Approve the ones that feel right; we do everything after that.`}
               </p>
+
+              {/*
+               * The note from whoever built the shortlist. It is signed by the
+               * workspace rather than by us: this page is white-label, so a
+               * fixed name here would put one agency's booking lead on every
+               * other agency's dashboard.
+               */}
+              <div
+                className="mt-7 flex max-w-[620px] items-start gap-4 rounded-[22px] border p-5"
+                style={{ borderColor: `${accentColor}2e`, background: `${accentColor}0f` }}
+              >
+                <div
+                  className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full font-editorial text-lg text-white"
+                  style={{ background: `linear-gradient(135deg, ${accentColor}, ${accentColor}b0)` }}
+                  aria-hidden="true"
+                >
+                  {conciergeInitial}
+                </div>
+                <div>
+                  <p className="text-[15px] leading-[25px] text-[#4c5d73]">
+                    “{prospectFirstName}, these were picked by hand after going through your
+                    background. Start with the ones marked strongest — they are your best openings.
+                    Any questions, grab a time below.”
+                  </p>
+                  <p
+                    className="mt-2 font-mono text-[11px] uppercase tracking-[0.18em]"
+                    style={{ color: accentColor }}
+                  >
+                    — {conciergeName}
+                  </p>
+                </div>
+              </div>
 
               <div className="mt-7 flex flex-col gap-3 sm:flex-row">
                 <Button variant="hero" size="xl" className="rounded-full px-8 text-base" asChild>
@@ -895,30 +940,27 @@ function ProspectViewContent() {
                 )}
               </div>
 
-              {/* The panel beside this column is taller, so there is height left
-                  over once the greeting, the button and these three tiles are
-                  laid out. Pushing the tiles down only moved the gap under the
-                  button; letting them grow into it removes it. Side by side
-                  only — stacked there is no leftover height to take. */}
-              <div className="mt-7 grid gap-3 sm:grid-cols-3 lg:mt-8 lg:flex-1">
-                <div className="flex flex-col justify-center rounded-[22px] border border-[#0d1b2a]/8 bg-[#f8fbff] px-4 py-4">
-                  <p className="section-kicker">Total listeners</p>
-                  <p className="mt-2 font-display text-3xl font-semibold tracking-[-0.05em] text-[#0d1b2a]">
-                    {totalReach > 0 ? `${formatNumber(totalReach)}+` : '—'}
-                  </p>
-                </div>
-                <div className="flex flex-col justify-center rounded-[22px] border border-[#0d1b2a]/8 bg-[#f8fbff] px-4 py-4">
-                  <p className="section-kicker">Shows matched</p>
-                  <p className="mt-2 font-display text-3xl font-semibold tracking-[-0.05em] text-[#0d1b2a]">
-                    {podcastsError ? '—' : uniquePodcasts.length}
-                  </p>
-                </div>
-                <div className="flex flex-col justify-center rounded-[22px] border border-[#0d1b2a]/8 bg-[#f8fbff] px-4 py-4">
-                  <p className="section-kicker">Average rating</p>
-                  <p className="mt-2 font-display text-3xl font-semibold tracking-[-0.05em] text-[#0d1b2a]">
-                    {avgRating > 0 ? avgRating.toFixed(1) : '—'}
-                  </p>
-                </div>
+              {/*
+               * Four figures on a baseline rather than three boxed tiles, as
+               * drawn. mt-auto because the panel beside this column is taller:
+               * the leftover height collects above these rather than under
+               * them, so the two columns finish level. Side by side only —
+               * stacked there is no leftover height to take up.
+               */}
+              <div className="mt-8 flex flex-wrap gap-x-8 gap-y-5 lg:mt-auto lg:pt-8">
+                {[
+                  { value: totalReach > 0 ? `${formatNumber(totalReach)}+` : '—', label: 'combined listeners' },
+                  { value: podcastsError ? '—' : String(uniquePodcasts.length), label: 'shows matched' },
+                  { value: avgRating > 0 ? `${avgRating.toFixed(1)}★` : '—', label: 'average rating' },
+                  { value: '2–4 wks', label: 'to first booking' },
+                ].map((stat) => (
+                  <div key={stat.label}>
+                    <p className="text-[28px] font-semibold tracking-[-0.04em] text-[#0d1b2a]">{stat.value}</p>
+                    <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.2em] text-[#7a6554]">
+                      {stat.label}
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
 
