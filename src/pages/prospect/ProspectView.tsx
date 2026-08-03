@@ -1190,16 +1190,20 @@ function ProspectViewContent() {
       </div>
 
       {/* Podcast Grid */}
-      <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-12">
-        {/* Section Header */}
-        <div className="text-center mb-6 sm:mb-8">
-          <h2 className="text-2xl sm:text-3xl font-bold mb-2">
-            Your Podcast Opportunities
+      <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-12" id="shortlist">
+        {/*
+         * Left-aligned and editorial, as drawn. Centred bold sans read as a
+         * marketing page; this is a document addressed to one person, and the
+         * heading is the promise the cards underneath have to keep.
+         */}
+        <div className="mb-6 sm:mb-8">
+          <p className="section-kicker">The full shortlist</p>
+          <h2 className="mt-3 font-editorial text-[clamp(1.9rem,3.4vw,2.8rem)] leading-[1.02] tracking-[-0.04em] text-[#0d1b2a]">
+            Every room, and why it&rsquo;s yours.
           </h2>
-          <p className="text-muted-foreground max-w-xl mx-auto">
-            Click any podcast to learn why it's a perfect fit for you.
-            <span className="text-primary font-medium"> Approve the ones you love</span>,
-            and we'll start reaching out on your behalf.
+          <p className="mt-3 max-w-xl text-[15px] leading-[25px] text-[#4c5d73]">
+            Open any show to see why it fits and what you would talk about. Approve the ones
+            you want and we start reaching out on your behalf.
           </p>
         </div>
 
