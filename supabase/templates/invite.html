@@ -18,7 +18,7 @@
   Source of truth lives here; the dashboard copy is a paste of it. See README.md
   in this folder before editing.
 -->
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0;padding:0;background:#f5f6f8;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0;padding:0;background:#FBFAF8;">
   <tr>
     <td align="center" style="padding:0;">
 
@@ -27,30 +27,30 @@
         Accept your invitation and choose a password to open Get On A Pod.
       </div>
 
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;margin:0 auto;padding:32px 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#19172d;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;margin:0 auto;padding:32px 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#0E1519;">
         <tr>
           <td style="padding:0;">
 
             <!-- Outlook ignores the gradient and keeps the solid colour under it. -->
-            <div style="background:#171827;background-image:linear-gradient(135deg,#171827,#665CF2);border-radius:20px 20px 0 0;padding:36px 32px;color:#ffffff;">
-              <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.75;">Get On A Pod</div>
-              <h1 style="margin:12px 0 0;font-size:30px;line-height:1.15;font-weight:700;color:#ffffff;">You're invited</h1>
+            <div style="background:#0E1519;background-image:linear-gradient(135deg,#0E1519,#22323A);border-radius:20px 20px 0 0;padding:36px 32px;color:#E7EDEA;">
+              <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#E0A33E;">Get On A Pod</div>
+              <h1 style="margin:12px 0 0;font-size:30px;line-height:1.15;font-weight:700;color:#E7EDEA;">You're invited</h1>
             </div>
 
-            <div style="background:#ffffff;border:1px solid #e5e7eb;border-top:0;border-radius:0 0 20px 20px;padding:32px;">
+            <div style="background:#ffffff;border:1px solid #EBE8E2;border-top:0;border-radius:0 0 20px 20px;padding:32px;">
 
               <p style="margin:0 0 16px;font-size:17px;">
                 {{ if .Data }}{{ if .Data.full_name }}Hi {{ .Data.full_name }},{{ else }}Hello,{{ end }}{{ else }}Hello,{{ end }}
               </p>
 
-              <p style="margin:0 0 20px;font-size:15px;line-height:1.65;color:#514d68;">
-                {{ if .Data }}{{ if .Data.workspace_name }}Your workspace <strong style="color:#19172d;">{{ .Data.workspace_name }}</strong> is set up and waiting for you. Accept the invitation to choose a password and open it.{{ else }}You have been invited to a workspace on Get On A Pod. Accept the invitation to choose a password and sign in.{{ end }}{{ else }}You have been invited to a workspace on Get On A Pod. Accept the invitation to choose a password and sign in.{{ end }}
+              <p style="margin:0 0 20px;font-size:15px;line-height:1.65;color:#5C6B72;">
+                {{ if .Data }}{{ if .Data.workspace_name }}Your workspace <strong style="color:#0E1519;">{{ .Data.workspace_name }}</strong> is set up and waiting for you. Accept the invitation to choose a password and open it.{{ else }}You have been invited to a workspace on Get On A Pod. Accept the invitation to choose a password and sign in.{{ end }}{{ else }}You have been invited to a workspace on Get On A Pod. Accept the invitation to choose a password and sign in.{{ end }}
               </p>
 
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 28px;">
                 <tr>
-                  <td style="border-radius:10px;background:#665CF2;">
-                    <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:15px 28px;font-size:16px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:10px;">Accept your invitation</a>
+                  <td style="border-radius:999px;background:#E0A33E;">
+                    <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:15px 28px;font-size:16px;font-weight:700;color:#191202;text-decoration:none;border-radius:999px;">Accept your invitation</a>
                   </td>
                 </tr>
               </table>
@@ -58,34 +58,34 @@
               <!-- Three steps, because "click the link" is not the whole job: the
                    password rules are enforced on the page and people meet them as
                    an error unless they are told first. -->
-              <div style="border-top:1px solid #eceef2;padding-top:24px;">
-                <p style="margin:0 0 16px;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#77728e;">What happens next</p>
+              <div style="border-top:1px solid #EBE8E2;padding-top:24px;">
+                <p style="margin:0 0 16px;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#66757D;">What happens next</p>
 
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr>
                     <td width="28" valign="top" style="padding:0 12px 18px 0;">
-                      <div style="width:24px;height:24px;border-radius:12px;background:#efedfe;color:#4b40d4;font-size:13px;font-weight:700;text-align:center;line-height:24px;">1</div>
+                      <div style="width:24px;height:24px;border-radius:12px;background:#F6EAD3;color:#8A6210;font-size:13px;font-weight:700;text-align:center;line-height:24px;">1</div>
                     </td>
-                    <td valign="top" style="padding:0 0 18px;font-size:15px;line-height:1.6;color:#514d68;">
-                      <strong style="color:#19172d;">Open the invitation.</strong>
+                    <td valign="top" style="padding:0 0 18px;font-size:15px;line-height:1.6;color:#5C6B72;">
+                      <strong style="color:#0E1519;">Open the invitation.</strong>
                       The button above signs you in as {{ .Email }} — no password needed yet.
                     </td>
                   </tr>
                   <tr>
                     <td width="28" valign="top" style="padding:0 12px 18px 0;">
-                      <div style="width:24px;height:24px;border-radius:12px;background:#efedfe;color:#4b40d4;font-size:13px;font-weight:700;text-align:center;line-height:24px;">2</div>
+                      <div style="width:24px;height:24px;border-radius:12px;background:#F6EAD3;color:#8A6210;font-size:13px;font-weight:700;text-align:center;line-height:24px;">2</div>
                     </td>
-                    <td valign="top" style="padding:0 0 18px;font-size:15px;line-height:1.6;color:#514d68;">
-                      <strong style="color:#19172d;">Choose your password.</strong>
+                    <td valign="top" style="padding:0 0 18px;font-size:15px;line-height:1.6;color:#5C6B72;">
+                      <strong style="color:#0E1519;">Choose your password.</strong>
                       At least 12 characters, with an uppercase letter, a lowercase letter, a number and a symbol. You pick it — we never send one.
                     </td>
                   </tr>
                   <tr>
                     <td width="28" valign="top" style="padding:0 12px 0 0;">
-                      <div style="width:24px;height:24px;border-radius:12px;background:#efedfe;color:#4b40d4;font-size:13px;font-weight:700;text-align:center;line-height:24px;">3</div>
+                      <div style="width:24px;height:24px;border-radius:12px;background:#F6EAD3;color:#8A6210;font-size:13px;font-weight:700;text-align:center;line-height:24px;">3</div>
                     </td>
-                    <td valign="top" style="padding:0;font-size:15px;line-height:1.6;color:#514d68;">
-                      <strong style="color:#19172d;">Add your first client.</strong>
+                    <td valign="top" style="padding:0;font-size:15px;line-height:1.6;color:#5C6B72;">
+                      <strong style="color:#0E1519;">Add your first client.</strong>
                       You land on your client list. Add a client, then start finding podcasts to pitch them to.
                     </td>
                   </tr>
@@ -93,26 +93,26 @@
               </div>
 
               <!-- Some clients strip the button; nobody should be stuck because of that. -->
-              <div style="margin-top:28px;padding:16px;background:#f7f7fb;border-radius:10px;">
-                <p style="margin:0 0 6px;font-size:13px;color:#77728e;">If the button does not work, paste this into your browser:</p>
+              <div style="margin-top:28px;padding:16px;background:#FCFBF9;border-radius:10px;">
+                <p style="margin:0 0 6px;font-size:13px;color:#66757D;">If the button does not work, paste this into your browser:</p>
                 <p style="margin:0;font-size:12px;line-height:1.5;word-break:break-all;">
-                  <a href="{{ .ConfirmationURL }}" style="color:#4b40d4;text-decoration:underline;">{{ .ConfirmationURL }}</a>
+                  <a href="{{ .ConfirmationURL }}" style="color:#8A6210;text-decoration:underline;">{{ .ConfirmationURL }}</a>
                 </p>
               </div>
 
-              <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#77728e;">
+              <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#66757D;">
                 This link is private to {{ .Email }} and can only be used once — please do not forward it.
                 If it has expired, ask for a fresh invitation and we will send one.
               </p>
 
-              <p style="margin:12px 0 0;font-size:13px;line-height:1.6;color:#77728e;">
+              <p style="margin:12px 0 0;font-size:13px;line-height:1.6;color:#66757D;">
                 If you were not expecting this, you can ignore this email. Nothing happens until the link is opened.
               </p>
 
             </div>
 
-            <p style="margin:20px 0 0;text-align:center;font-size:12px;color:#9d99ad;">
-              Get On A Pod · <a href="{{ .SiteURL }}" style="color:#9d99ad;text-decoration:underline;">{{ .SiteURL }}</a>
+            <p style="margin:20px 0 0;text-align:center;font-size:12px;color:#66757D;">
+              Get On A Pod · <a href="{{ .SiteURL }}" style="color:#66757D;text-decoration:underline;">{{ .SiteURL }}</a>
             </p>
 
           </td>
