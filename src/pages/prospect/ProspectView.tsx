@@ -831,6 +831,53 @@ function ProspectViewContent() {
         Skip to opportunities
       </a>
 
+      {/*
+       * A sticky bar carrying who this was prepared for and the way to talk to
+       * somebody about it.
+       *
+       * The page is long and the booking link lived only in the hero, so the
+       * further anyone read the further they were from acting on it. It is
+       * branded by the workspace, not by us: on a white-label dashboard the
+       * name at the top is the agency's, and the prospect should never learn
+       * ours from it.
+       */}
+      <div className="sticky top-0 z-[45] border-b border-[#0d1b2a]/[0.07] bg-[#fbf8f3]/85 backdrop-blur-[12px]">
+        <div className="mx-auto flex max-w-[1320px] flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
+          {workspaceBrand?.logo_url ? (
+            <img
+              src={workspaceBrand.logo_url}
+              alt={`${workspaceBrand.brand_name} logo`}
+              className="h-7 max-w-24 object-contain"
+            />
+          ) : (
+            <span className="font-editorial text-lg font-semibold tracking-[-0.02em]">
+              {workspaceBrand?.brand_name || 'Your shortlist'}
+            </span>
+          )}
+          <span className="hidden h-4 w-px bg-[#0d1b2a]/15 sm:block" aria-hidden="true" />
+          <span className="hidden font-mono text-[10px] uppercase tracking-[0.22em] text-[#7a6554] sm:inline">
+            Prepared for {dashboard.prospect_name}
+          </span>
+          <div className="ml-auto flex items-center gap-3">
+            {approvedCountTotal > 0 && (
+              <span className="hidden text-[13px] text-[#5d7188] sm:inline">
+                {approvedCountTotal} of {uniquePodcasts.length} approved
+              </span>
+            )}
+            {bookingLink && (
+              <button
+                type="button"
+                onClick={() => openExternalUrl(bookingLink)}
+                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-full bg-[#0d1b2a] px-5 text-sm font-semibold text-[#f7fafc] shadow-[0_8px_20px_rgba(13,27,42,0.18)] transition-transform hover:-translate-y-px"
+              >
+                <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
+                Book a 15-min call
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       <section className="px-4 pb-10 pt-14 md:pb-12 md:pt-16">
         <div className="container mx-auto">
           <div className="grid gap-6 rounded-[32px] border border-[#0d1b2a]/8 bg-white px-5 py-6 shadow-[0_18px_38px_rgba(13,27,42,0.08)] sm:px-6 sm:py-7 lg:grid-cols-[minmax(0,1.2fr)_360px] lg:gap-8">
