@@ -895,23 +895,25 @@ function ProspectViewContent() {
                 )}
               </div>
 
-              {/* mt-auto only once the two columns sit side by side: stacked on
-                  a narrow screen there is no slack to take up, and pushing would
-                  just be a gap of its own. */}
-              <div className="mt-7 grid gap-3 sm:grid-cols-3 lg:mt-auto lg:pt-7">
-                <div className="rounded-[22px] border border-[#0d1b2a]/8 bg-[#f8fbff] px-4 py-4">
+              {/* The panel beside this column is taller, so there is height left
+                  over once the greeting, the button and these three tiles are
+                  laid out. Pushing the tiles down only moved the gap under the
+                  button; letting them grow into it removes it. Side by side
+                  only — stacked there is no leftover height to take. */}
+              <div className="mt-7 grid gap-3 sm:grid-cols-3 lg:mt-8 lg:flex-1">
+                <div className="flex flex-col justify-center rounded-[22px] border border-[#0d1b2a]/8 bg-[#f8fbff] px-4 py-4">
                   <p className="section-kicker">Total listeners</p>
                   <p className="mt-2 font-display text-3xl font-semibold tracking-[-0.05em] text-[#0d1b2a]">
                     {totalReach > 0 ? `${formatNumber(totalReach)}+` : '—'}
                   </p>
                 </div>
-                <div className="rounded-[22px] border border-[#0d1b2a]/8 bg-[#f8fbff] px-4 py-4">
+                <div className="flex flex-col justify-center rounded-[22px] border border-[#0d1b2a]/8 bg-[#f8fbff] px-4 py-4">
                   <p className="section-kicker">Shows matched</p>
                   <p className="mt-2 font-display text-3xl font-semibold tracking-[-0.05em] text-[#0d1b2a]">
                     {podcastsError ? '—' : uniquePodcasts.length}
                   </p>
                 </div>
-                <div className="rounded-[22px] border border-[#0d1b2a]/8 bg-[#f8fbff] px-4 py-4">
+                <div className="flex flex-col justify-center rounded-[22px] border border-[#0d1b2a]/8 bg-[#f8fbff] px-4 py-4">
                   <p className="section-kicker">Average rating</p>
                   <p className="mt-2 font-display text-3xl font-semibold tracking-[-0.05em] text-[#0d1b2a]">
                     {avgRating > 0 ? avgRating.toFixed(1) : '—'}
