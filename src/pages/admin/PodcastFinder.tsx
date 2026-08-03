@@ -29,6 +29,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
+import { repairableExternalUrl } from '@/lib/externalUrl'
 import { DashboardLayout } from '@/components/admin/DashboardLayout'
 import { WorkspaceLayout, type PlatformWorkspaceConfig } from '@/components/workspace/WorkspaceLayout'
 import {
@@ -202,8 +203,13 @@ function toProspectShortlistPodcast(result: ResearchResult): ProspectShortlistPo
     podcast_id: podcast.podcast_id,
     podcast_name: podcast.podcast_name,
     podcast_description: podcast.podcast_description,
-    podcast_image_url: podcast.podcast_image_url,
-    podcast_url: podcast.podcast_url,
+    // The prospect endpoint validates these, because the dashboard it builds is
+    // published. Podscan returns websites typed without a scheme, so passing
+    // them through refused the whole batch over one result's untidy address.
+    // The client mapper above deliberately keeps the raw value: that endpoint
+    // stores what it is given, and a shortlist is not published to anyone.
+    podcast_image_url: repairableExternalUrl(podcast.podcast_image_url),
+    podcast_url: repairableExternalUrl(podcast.podcast_url),
     publisher_name: podcast.publisher_name,
     episode_count: podcast.episode_count,
     itunes_rating: podcast.reach?.itunes?.itunes_rating_average
