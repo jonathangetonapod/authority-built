@@ -730,24 +730,34 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
                 sold, a prospect dashboard is the pitch for work that is not. */}
             <div className="space-y-2">
               <Label>Add to</Label>
+              {/* secondary and outline read almost the same here, so the chosen
+                  side did not look chosen. Filled plus a tick, the way selecting
+                  a podcast already looks on this page. */}
               <div className="grid grid-cols-2 gap-2">
                 <Button
                   type="button"
-                  variant={addTarget === 'client' ? 'secondary' : 'outline'}
+                  variant={addTarget === 'client' ? 'default' : 'outline'}
                   aria-pressed={addTarget === 'client'}
                   onClick={() => setAddTarget('client')}
                 >
+                  {addTarget === 'client' && <Check className="mr-2 h-4 w-4" aria-hidden="true" />}
                   A client
                 </Button>
                 <Button
                   type="button"
-                  variant={addTarget === 'prospect' ? 'secondary' : 'outline'}
+                  variant={addTarget === 'prospect' ? 'default' : 'outline'}
                   aria-pressed={addTarget === 'prospect'}
                   onClick={() => setAddTarget('prospect')}
                 >
+                  {addTarget === 'prospect' && <Check className="mr-2 h-4 w-4" aria-hidden="true" />}
                   A prospect
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground">
+                {addTarget === 'prospect'
+                  ? 'Adding to a prospect dashboard — a pitch for someone who is not a client yet.'
+                  : 'Adding to a client’s review shortlist.'}
+              </p>
             </div>
             {addTarget === 'prospect' ? (
               <div className="space-y-2">
