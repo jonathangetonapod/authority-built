@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type CSSProperties } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent } from '@/components/ui/card'
@@ -9,6 +9,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { supabase } from '@/lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
@@ -68,7 +69,6 @@ import type { PodcastDemographics } from '@/services/podscan'
 import { cn } from '@/lib/utils'
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts'
 import { FeatureDetailModal } from '@/components/pricing/FeatureDetailModal'
-import { PricingFAQ } from '@/components/pricing/PricingFAQ'
 import PageSEO from '@/components/seo/PageSEO'
 import { openExternalUrl } from '@/lib/externalUrl'
 import { currentHostname } from '@/lib/workspaceHost'
@@ -384,6 +384,45 @@ function ProspectViewContent() {
 
   // The design's card is a quote, so one without a quote has nothing to say here.
   const quotedTestimonials = curatedTestimonials.filter((testimonial) => testimonial.quote?.trim())
+
+  /*
+   * Written for the agency to be able to stand behind without being asked:
+   * every answer is about how this page works, and none of them promises a
+   * price, a date, or a number of bookings on their behalf. The team is named
+   * from the workspace, so the prospect reads their agency's name and not ours.
+   */
+  const faqTeamName = workspaceBrand?.brand_name?.trim() || 'We'
+  const prospectFaqs = [
+    {
+      question: 'How were these shows chosen?',
+      answer:
+        'Each one was matched against your background, the audience you are trying to reach, and whether the format actually gives a guest room to talk. The reason a show made your list is written on its card.',
+    },
+    {
+      question: 'What happens when I approve a show?',
+      answer: `It joins the outreach list. ${faqTeamName} pitches you to the host with an angle drawn from your own work, then handles the follow-up and the scheduling. Nothing is ever sent to a show you have not approved.`,
+    },
+    {
+      question: 'What if a show is not right for me?',
+      answer:
+        'Pass on it. A decline is as useful as an approval — it says something about what you want, and the next set of suggestions is sharper for it.',
+    },
+    {
+      question: 'Am I committing to anything by approving?',
+      answer:
+        'No. Approving marks which rooms are worth a pitch. It is not a booking and it is not a contract, and you can change your mind on any show before it is pitched.',
+    },
+    {
+      question: 'What do you need from me?',
+      answer:
+        'Your decisions on this page, and your time on the recordings themselves. The pitching, the chasing, the scheduling and the prep notes are handled for you.',
+    },
+    {
+      question: 'Who else can see this page?',
+      answer:
+        'Only the people you send the link to. It is not listed anywhere, and search engines are asked not to index it.',
+    },
+  ]
 
   // Fetch the shortlist in parallel with the dashboard so a slow request cannot block both.
   const {
@@ -2116,26 +2155,60 @@ function ProspectViewContent() {
               </div>
             </div>
 
-            <div className="mt-10 rounded-[32px] border border-[#0d1b2a]/8 bg-white/84 p-5 text-[#0d1b2a] shadow-[0_20px_42px_rgba(13,27,42,0.08)] backdrop-blur-sm sm:p-6 lg:p-8">
-              <div className="grid gap-8 lg:grid-cols-[0.34fr_0.66fr] lg:items-start">
-                <div>
-                  <p className="section-kicker">Q+A</p>
-                  <h3 className="mt-3 font-display text-3xl font-semibold tracking-[-0.04em] text-[#0d1b2a] sm:text-4xl">
-                    Common questions before you approve the shortlist.
-                  </h3>
-                  <p className="mt-4 max-w-md text-base leading-7 text-[#4c5d73]">
-                    These cover how approvals work, what happens after you choose shows, and how the campaign moves into outreach.
-                  </p>
-                </div>
-
-                <div className="min-w-0">
-                  <PricingFAQ variant="compact" />
-                </div>
-              </div>
-            </div>
           </div>
         </section>
       )}
+
+      {/*
+       * The FAQ is the agency's, not ours. It used to be PricingFAQ, which is
+       * the marketing site's copy: it quotes $749, names the Podcast Command
+       * Center, and answers for our guarantee and our compliance position.
+       * Every one of those is a commercial term the agency reading over this
+       * prospect's shoulder never agreed to, printed under their own logo.
+       *
+       * So these six answer the page instead — what approving does, what a
+       * decline does, who can see this — and say nothing about price, timing,
+       * or guarantees. The team is named from the workspace where a name is
+       * needed. Being sat inside the pricing block also meant a dashboard with
+       * pricing turned off had no questions answered at all; it is page-level
+       * now, under whichever call-to-action ran.
+       */}
+      <section className="px-4 pb-10 pt-2 md:pb-14">
+        <div
+          className="mx-auto max-w-[1320px] rounded-[32px] border border-[#0d1b2a]/8 bg-white/84 px-6 py-8 text-[#0d1b2a] shadow-[0_20px_42px_rgba(13,27,42,0.08)] backdrop-blur-[4px] md:px-10 md:py-9"
+          style={{ '--faq-chevron': accentColor } as CSSProperties}
+        >
+          <div className="grid gap-8 lg:grid-cols-[0.36fr_0.64fr] lg:items-start lg:gap-10">
+            <div>
+              <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-[#7a6554]">
+                Before you decide
+              </p>
+              <h3 className="mt-3 font-editorial text-3xl leading-[1.05] tracking-[-0.03em] sm:text-[34px]">
+                The questions everyone asks first.
+              </h3>
+            </div>
+
+            <div className="min-w-0">
+              <Accordion type="single" collapsible className="w-full">
+                {prospectFaqs.map((faq, index) => (
+                  <AccordionItem
+                    key={faq.question}
+                    value={`faq-${index}`}
+                    className="border-[#0d1b2a]/8"
+                  >
+                    <AccordionTrigger className="gap-3 py-4 text-left text-[15.5px] font-medium text-[#0d1b2a] hover:no-underline [&>svg]:h-[18px] [&>svg]:w-[18px] [&>svg]:text-[var(--faq-chevron)]">
+                      {faq.question}
+                    </AccordionTrigger>
+                    <AccordionContent className="pr-8 text-[14.5px] leading-6 text-[#4c5d73]">
+                      {faq.answer}
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Footer */}
       <footer className="border-t border-[#0d1b2a]/8 bg-white/40 backdrop-blur-sm">
