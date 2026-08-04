@@ -1,10 +1,11 @@
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
-
+/**
+ * The marketing site's FAQ copy. It speaks for Get On A Pod — price, guarantee,
+ * compliance position — so it belongs on our own pages only, and deliberately
+ * not on the white-label prospect dashboard, which answers in the agency's voice.
+ *
+ * FAQSection renders it. The accordion component that used to live here went
+ * with its last caller.
+ */
 export const faqCategories = [
   {
     category: "Fit & Booking",
@@ -79,42 +80,3 @@ export const faqCategories = [
   },
 ];
 
-interface PricingFAQProps {
-  className?: string;
-  variant?: 'default' | 'compact';
-}
-
-export function PricingFAQ({ className = '', variant = 'default' }: PricingFAQProps) {
-  const isCompact = variant === 'compact';
-
-  return (
-    <div className={`${isCompact ? 'space-y-6' : 'space-y-10'} ${className}`}>
-      {faqCategories.map((category, categoryIndex) => (
-        <div key={categoryIndex}>
-          <h3 className={`${isCompact ? 'text-xs' : 'text-sm'} font-semibold uppercase tracking-wider text-muted-foreground mb-4`}>
-            {category.category}
-          </h3>
-
-          <Accordion type="single" collapsible className="w-full">
-            {category.faqs.map((faq, index) => (
-              <AccordionItem
-                key={index}
-                value={`${categoryIndex}-${index}`}
-                className="border-border"
-              >
-                <AccordionTrigger className={`text-left text-foreground hover:no-underline hover:text-foreground/80 ${isCompact ? 'text-sm py-3' : ''}`}>
-                  {faq.question}
-                </AccordionTrigger>
-                <AccordionContent className={`text-muted-foreground ${isCompact ? 'text-sm' : ''}`}>
-                  {faq.answer}
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export default PricingFAQ;
