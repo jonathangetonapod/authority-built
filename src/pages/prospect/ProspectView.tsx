@@ -14,7 +14,6 @@ import { supabase } from '@/lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import confetti from 'canvas-confetti'
 import { toast } from 'sonner'
-import SocialProofSection from '@/components/SocialProofSection'
 import {
   Mic,
   Users,
@@ -56,6 +55,7 @@ import {
   Rocket,
   Info,
   Phone,
+  Quote,
   Calendar,
   DollarSign,
   FileText,
@@ -113,6 +113,14 @@ interface ProspectWorkspaceBrand {
   accent_color: string | null
   /** Workspace scheduler link, used when this dashboard sets no CTA. */
   booking_url?: string | null
+}
+
+interface ProspectTestimonial {
+  id: string
+  client_name: string
+  client_title: string | null
+  client_company: string | null
+  quote: string | null
 }
 
 interface PodcastCategory {
@@ -226,6 +234,19 @@ function shouldRetryPublicRead(failureCount: number, error: unknown): boolean {
   return error.status >= 500 || [408, 425, 429].includes(error.status)
 }
 
+function testimonialInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '—'
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()
+}
+
+function testimonialRole(testimonial: ProspectTestimonial): string {
+  return [testimonial.client_title, testimonial.client_company]
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join(', ')
+}
+
 function ProspectViewContent() {
   const { slug } = useParams<{ slug: string }>()
   const [searchParams] = useSearchParams()
@@ -331,6 +352,38 @@ function ProspectViewContent() {
   const bookingLink = bookingLinkUrl(workspaceBrand?.booking_url)
   const bookingEmbedUrl = schedulerEmbedUrl(workspaceBrand?.booking_url)
   const bookingProvider = schedulerName(workspaceBrand?.booking_url)
+
+  /*
+   * Only the testimonials somebody chose for this dashboard, and deliberately
+   * no fallback to the featured ones. The testimonials table is not
+   * workspace-scoped — it is the platform's own library, publicly readable —
+   * so falling back would print our clients on another agency's white-label
+   * page, which is the same mistake as signing the hero note with a fixed name.
+   */
+  const curatedTestimonialIds =
+    dashboard?.show_testimonials === false
+      ? []
+      : (dashboard?.testimonial_ids ?? []).filter((id) => typeof id === 'string' && id.trim())
+
+  const { data: curatedTestimonials = [] } = useQuery({
+    queryKey: ['prospect-testimonials', slug, curatedTestimonialIds],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('testimonials')
+        .select('id,client_name,client_title,client_company,quote')
+        .in('id', curatedTestimonialIds)
+        .eq('is_active', true)
+        .order('display_order', { ascending: true })
+
+      if (error) throw error
+      return (data ?? []) as ProspectTestimonial[]
+    },
+    enabled: curatedTestimonialIds.length > 0,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // The design's card is a quote, so one without a quote has nothing to say here.
+  const quotedTestimonials = curatedTestimonials.filter((testimonial) => testimonial.quote?.trim())
 
   // Fetch the shortlist in parallel with the dashboard so a slow request cannot block both.
   const {
@@ -1817,6 +1870,75 @@ function ProspectViewContent() {
         )}
       </div>
 
+      {/*
+       * Proof sits between the shortlist and the call, where the design puts
+       * it: the reader has just finished deciding and the next thing asked of
+       * them is a conversation. It was previously buried inside the pricing
+       * block, so a dashboard with pricing turned off showed no proof at all,
+       * and the rest showed whichever testimonials were featured on our own
+       * marketing site.
+       *
+       * Nothing chosen, nothing shown. That is the intended resting state
+       * until a dashboard names its testimonials, not a bug.
+       */}
+      {quotedTestimonials.length > 0 && (
+        <section className="px-4 pb-2 pt-8 md:pt-10">
+          <div className="mx-auto max-w-[1320px] rounded-[32px] bg-[#081a2b] px-6 py-12 text-[#f7fafc] md:px-10 md:py-16">
+            <div className="mx-auto mb-11 max-w-[880px] text-center">
+              <p
+                className="font-mono text-[11px] uppercase tracking-[0.24em]"
+                style={{ color: accentColor }}
+              >
+                You&rsquo;re in good company
+              </p>
+              <h2 className="mt-4 font-editorial text-3xl leading-[1.02] tracking-[-0.04em] sm:text-4xl md:text-5xl">
+                People like you, already in the rooms that matter.
+              </h2>
+            </div>
+
+            <div className="mx-auto grid max-w-[1152px] gap-5 md:grid-cols-2 xl:grid-cols-3">
+              {quotedTestimonials.map((testimonial) => {
+                const role = testimonialRole(testimonial)
+
+                return (
+                  <figure
+                    key={testimonial.id}
+                    className="flex flex-col rounded-[26px] border border-white/10 bg-white/5 p-7"
+                  >
+                    <Quote
+                      className="mb-4 h-[22px] w-[22px] flex-shrink-0"
+                      strokeWidth={1.8}
+                      style={{ color: accentColor }}
+                      aria-hidden="true"
+                    />
+                    <blockquote className="flex-1 text-base leading-7">
+                      &ldquo;{testimonial.quote!.trim()}&rdquo;
+                    </blockquote>
+                    <figcaption className="mt-5 flex items-center gap-3">
+                      <span
+                        className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full font-editorial text-[15px] text-[#0d1b2a]"
+                        style={{ background: accentColor }}
+                        aria-hidden="true"
+                      >
+                        {testimonialInitials(testimonial.client_name)}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold">
+                          {testimonial.client_name}
+                        </span>
+                        {role && (
+                          <span className="mt-0.5 block truncate text-[13px] text-[#d8c8b5]">{role}</span>
+                        )}
+                      </span>
+                    </figcaption>
+                  </figure>
+                )
+              })}
+            </div>
+          </div>
+        </section>
+      )}
+
       {dashboard?.show_pricing_section === false && dashboard.cta_type !== 'none' && (
         <section className="px-4 py-12 md:py-16">
           <div className="container mx-auto">
@@ -1992,10 +2114,6 @@ function ProspectViewContent() {
                   </div>
                 </div>
               </div>
-            </div>
-
-            <div className="my-12 sm:my-16">
-              <SocialProofSection />
             </div>
 
             <div className="mt-10 rounded-[32px] border border-[#0d1b2a]/8 bg-white/84 p-5 text-[#0d1b2a] shadow-[0_20px_42px_rgba(13,27,42,0.08)] backdrop-blur-sm sm:p-6 lg:p-8">
