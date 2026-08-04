@@ -765,8 +765,18 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
   const workspaceBaseHref = isPlatformWorkspace
     ? selectedWorkspaceBaseHref(selectedWorkspaceId)
     : '/app'
+  /*
+   * A prospect has to be handed to the finder that knows what a prospect is.
+   * /app/podcast-finder is the one-click Smart Finder, and it reads ?client=
+   * and nothing else, so a prospect id arriving there was dropped and the page
+   * opened unscoped. The prospect-aware finder sits at /advanced on the tenant
+   * path; on the platform path the plain address already resolves to it.
+   */
+  const prospectFinderHref = isPlatformWorkspace
+    ? `${workspaceBaseHref}/podcast-finder`
+    : `${workspaceBaseHref}/podcast-finder/advanced`
   const finderHref = selected
-    ? `${workspaceBaseHref}/podcast-finder?prospect=${encodeURIComponent(selected.id)}`
+    ? `${prospectFinderHref}?prospect=${encodeURIComponent(selected.id)}`
     : `${workspaceBaseHref}/podcast-finder`
 
   const openCreate = () => {
