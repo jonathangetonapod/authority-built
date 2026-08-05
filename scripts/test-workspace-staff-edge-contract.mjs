@@ -448,7 +448,9 @@ const staffPage = readFileSync('src/pages/app/WorkspaceStaff.tsx', 'utf8')
 assert.match(staffPage, /Booking link or embed code/u)
 assert.match(staffPage, /bookingLinkMutation\.mutate\(bookingLinkResolved\)/u)
 assert.match(schedulerEmbed, /url\.protocol === 'https:'/u)
-assert.match(prospectView, /bookingEmbedUrl && \(/u)
+// The scheduler frames itself when there is one to frame — and not onto a
+// dashboard whose operator asked for no call to action at all.
+assert.match(prospectView, /bookingEmbedUrl && dashboard\.cta_type !== 'none' && \(/u)
 assert.match(prospectView, /sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"/u)
 // The embed spans the section, under the copy: a scheduler beside a paragraph
 // is too narrow to pick a time in.

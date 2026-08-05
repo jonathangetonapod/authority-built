@@ -8,7 +8,7 @@ import {
   requireUuid,
   requireWorkspaceFeatureAccess,
 } from '../_shared/workspaceAuth.ts'
-import { chargeCredits, logOperationCost, retryWindowKey } from '../_shared/billing.ts'
+import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 
 const corsHeaders = {
@@ -212,9 +212,9 @@ serve(async (req) => {
      * archived, a bio existing, podcasts actually being sent — can refuse the
      * request, and each refusal used to bill a workspace for nothing.
      *
-     * The idempotency key makes a retry inside the window free, which matters
-     * because a dropped response leaves the client re-sending the same batch:
-     * unscored is exactly how it decides what to send again.
+     * No idempotency key, deliberately, and the metering contract asserts its
+     * absence: a search is not an artifact, so repeating one inside the window
+     * is an ordinary second search rather than a retry of the first.
      */
     if (metering) {
       await chargeCredits(metering.admin, {
@@ -223,7 +223,6 @@ serve(async (req) => {
         referenceKind: metering.referenceKind,
         referenceId: metering.referenceId,
         clientId: metering.clientId,
-        idempotencyKey: retryWindowKey(['compatibility_scoring', metering.referenceId, String(podcasts?.length ?? 0)]),
         actorUserId: meteringActorUserId,
         byoKeyUsed: metering.byoKeyUsed,
       })
@@ -294,7 +293,7 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, ju
 
           const content = message.content[0]
           if (content.type !== 'text') {
-            return { podcast_id: podcast.podcast_id, ...deterministicScore(targetBio, podcast) }
+            return { podcast_id: podcast.podcast_id, ...deterministicScore(targetBio, podcast), source: 'deterministic' as const }
           }
 
           // Strip markdown code blocks if present
@@ -327,12 +326,12 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, ju
               }
             }
             errorCount++
-            return { podcast_id: podcast.podcast_id, ...deterministicScore(targetBio, podcast) }
+            return { podcast_id: podcast.podcast_id, ...deterministicScore(targetBio, podcast), source: 'deterministic' as const }
           }
         } catch (error) {
           console.error(`❌ [ERROR] Scoring ${podcast.podcast_name.substring(0, 50)}:`, error)
           errorCount++
-          return { podcast_id: podcast.podcast_id, ...deterministicScore(targetBio, podcast) }
+          return { podcast_id: podcast.podcast_id, ...deterministicScore(targetBio, podcast), source: 'deterministic' as const }
         }
       })
     )
@@ -371,7 +370,16 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, ju
     }
 
     return new Response(
-      JSON.stringify({ scores }),
+      /*
+       * deterministic_count says how many of these came from the local
+       * keyword heuristic rather than the model. The charge is flat per
+       * request, so without it a workspace pays full price for a fallback run
+       * during an outage and has no way to know it happened.
+       */
+      JSON.stringify({
+        scores,
+        deterministic_count: scores.filter((score) => (score as { source?: string }).source === 'deterministic').length,
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error) {

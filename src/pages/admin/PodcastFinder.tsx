@@ -329,7 +329,7 @@ export default function PodcastFinder({
   const [addedPodcastIds, setAddedPodcastIds] = useState<Set<string>>(new Set())
   const [resultPage, setResultPage] = useState(1)
   const [detailId, setDetailId] = useState<string | null>(null)
-  const [isEnriching, setIsEnriching] = useState(false)
+  const [enrichingId, setEnrichingId] = useState<string | null>(null)
   const [scopeResetOpen, setScopeResetOpen] = useState(false)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [isAdding, setIsAdding] = useState(false)
@@ -485,7 +485,6 @@ export default function PodcastFinder({
     const fallbackProspect = scopedProspectOptions[0]?.id
     setPickedProspectId(fallbackClient ? '' : fallbackProspect || '')
     setClientId(fallbackClient || fallbackProspect || '')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId, isClientSelectable, scopedClientOptions, scopedProspectOptions, scopedClientsQuery.isLoading, scopedProspectsQuery.isLoading])
 
   useEffect(() => {
@@ -607,7 +606,8 @@ export default function PodcastFinder({
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / RESULTS_PER_PAGE))
   const visibleRows = filteredRows.slice((resultPage - 1) * RESULTS_PER_PAGE, resultPage * RESULTS_PER_PAGE)
-  const visibleSelectableRows = visibleRows.filter((row) => !row.existing)
+  // Matches what the add payload accepts, so the badge and the button agree.
+  const visibleSelectableRows = visibleRows.filter((row) => !row.existing && row.tier !== 'excluded')
   const selectedDetail = rows.find((row) => row.podcast.podcast_id === detailId)
   const existingResultCount = rows.filter((row) => row.existing).length
   const newResultCount = rows.length - existingResultCount
@@ -1117,6 +1117,7 @@ export default function PodcastFinder({
   }
 
   const handleToggleSelection = (podcastId: string) => {
+    if (excludedIds.has(podcastId)) return
     if (existingPodcastIds.has(podcastId.toLowerCase())) return
     setSelectedIds((current) => {
       const next = new Set(current)
@@ -1167,15 +1168,18 @@ export default function PodcastFinder({
 
   const handleEnrichDetail = async () => {
     if (!detailId) return
-    setIsEnriching(true)
+    // Keyed to the row it was started for, so closing this sheet and opening
+    // another does not hand the second one the first one's spinner.
+    const podcastId = detailId
+    setEnrichingId(podcastId)
     try {
-      const podcast = await getPodcastById(detailId, selectedWorkspace?.id)
+      const podcast = await getPodcastById(podcastId, selectedWorkspace?.id)
       setResults((current) => mergeResearchResults(current, [podcast], 'Podscan profile'))
       toast.success('Full Podscan profile loaded.')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Podcast profile could not be loaded.')
     } finally {
-      setIsEnriching(false)
+      setEnrichingId((current) => (current === podcastId ? null : current))
     }
   }
 
@@ -2071,7 +2075,7 @@ export default function PodcastFinder({
               )}
 
               <div className="grid grid-cols-2 gap-2">
-                <Button variant="outline" onClick={() => void handleEnrichDetail()} disabled={isEnriching || isDiscovering}>{isEnriching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />} Load full profile</Button>
+                <Button variant="outline" onClick={() => void handleEnrichDetail()} disabled={enrichingId !== null || isDiscovering}>{enrichingId === selectedDetail.podcast.podcast_id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />} Load full profile</Button>
                 <Button asChild disabled={!safeExternalUrl(selectedDetail.podcast.podcast_url)}><a href={safeExternalUrl(selectedDetail.podcast.podcast_url) ?? undefined} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-2 h-4 w-4" /> Open Podscan</a></Button>
               </div>
 

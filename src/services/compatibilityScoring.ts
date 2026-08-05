@@ -31,6 +31,12 @@ export class InsufficientCreditsError extends Error {
 }
 
 /** Some batches scored, some did not. Carries what did, so it is not lost. */
+/** How many scores in a run came from the local heuristic, not the model. */
+export interface ScoringRunSummary {
+  scores: CompatibilityScore[]
+  deterministicCount: number
+}
+
 export class PartialScoringError extends Error {
   constructor(message: string, readonly scored: CompatibilityScore[], readonly failedCount: number) {
     super(message)
