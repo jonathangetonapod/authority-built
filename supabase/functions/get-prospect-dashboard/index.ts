@@ -127,6 +127,13 @@ serve(async (req) => {
      *
      * Deliberately after the host check: on an agency's own hostname another
      * agency's dashboard still does not exist, published or not.
+     *
+     * Reviews keep asking whether answering 409 rather than 404 tells a
+     * slug-guesser that an unpublished dashboard exists. It does, and it does
+     * not matter: the slug is the credential, and
+     * generate_prospect_dashboard_capability_slug (20260720000300) mints it as
+     * 'prospect-' plus 24 hex characters from two separate UUIDs. Nobody
+     * reaches this line without having been sent the link.
      */
     if (dashboardRow.content_ready !== true || !dashboardRow.published_at) {
       throw new HttpError(
