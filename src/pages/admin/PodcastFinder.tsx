@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -281,6 +281,13 @@ export default function PodcastFinder({
   const [customQuery, setCustomQuery] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [isDiscovering, setIsDiscovering] = useState(false)
+  /*
+   * A run is a long sequence of network requests, and the operator is watching
+   * results arrive. Once they have seen enough there is no reason to make them
+   * wait for a target they no longer care about — every result is already in
+   * state, so stopping keeps all of it.
+   */
+  const stopRequestedRef = useRef(false)
   const [progress, setProgress] = useState<DiscoveryProgress | null>(null)
   const [runScope, setRunScope] = useState<RunScope | null>(null)
   const [results, setResults] = useState<ResearchResult[]>([])
@@ -729,6 +736,7 @@ export default function PodcastFinder({
     setTierOverrides({})
     setExcludedIds(new Set())
     setRunScope(nextRun)
+    stopRequestedRef.current = false
     setIsDiscovering(true)
     setProgress({ completed: 0, total: targetCount, message: `Looking for ${targetCount} podcasts…` })
 
@@ -749,6 +757,7 @@ export default function PodcastFinder({
       // The database we already own, before the one we pay per call for.
       setProgress({ completed, total: targetCount, message: 'Checking the shared podcast database…' })
       for (const query of normalizedQueries) {
+        if (stopRequestedRef.current) break
         try {
           const catalogPage = await getWorkspacePodcastCatalog(selectedWorkspace.id, {
             search: query.replace(/["*]/gu, ' ').replace(/\s+/gu, ' ').trim(),
@@ -779,9 +788,9 @@ export default function PodcastFinder({
        * rather than everything the first keyword could produce.
        */
       const spent = new Set<string>()
-      for (let page = 1; page <= MAX_PAGES_PER_QUERY && completed < targetCount; page += 1) {
+      for (let page = 1; page <= MAX_PAGES_PER_QUERY && completed < targetCount && !stopRequestedRef.current; page += 1) {
         for (const query of normalizedQueries) {
-          if (completed >= targetCount) break
+          if (completed >= targetCount || stopRequestedRef.current) break
           if (spent.has(query)) continue
           setProgress({
             completed,
@@ -841,10 +850,14 @@ export default function PodcastFinder({
       setProgress({
         completed: found,
         total: targetCount,
-        message: `${found.toLocaleString()} podcasts ready for review`,
+        message: stopRequestedRef.current
+          ? `Stopped — ${found.toLocaleString()} podcasts kept`
+          : `${found.toLocaleString()} podcasts ready for review`,
       })
       if (errors > 0) {
         toast.warning(`Discovery finished with ${errors} failed request${errors === 1 ? '' : 's'}.`)
+      } else if (stopRequestedRef.current) {
+        toast.success(`Stopped with ${found.toLocaleString()} podcasts kept.`)
       } else if (found < targetCount) {
         // Said plainly rather than presented as success: the keywords ran out
         // before the number did, and only more or different keywords fix that.
@@ -1446,11 +1459,25 @@ export default function PodcastFinder({
                 disabled={!selectedClient?.bio || isGenerating || isDiscovering || scopeLocked}
               >
                 {isGenerating || isDiscovering ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {isGenerating ? 'Building strategy…' : 'Discovering…'}</>
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {isGenerating ? 'Finding keywords…' : 'Searching…'}</>
                 ) : (
                   <><Play className="mr-2 h-4 w-4" /> Find {targetCount} podcasts</>
                 )}
               </Button>
+              {isDiscovering && (
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => {
+                    stopRequestedRef.current = true
+                    setProgress((current) => (current
+                      ? { ...current, message: 'Stopping after this search…' }
+                      : current))
+                  }}
+                >
+                  <X className="mr-2 h-4 w-4" />Stop and keep {results.length.toLocaleString()}
+                </Button>
+              )}
             </div>
 
             {showAdvanced && (

@@ -415,6 +415,46 @@ describe('PodcastFinder', () => {
     }))
   })
 
+  it('stops on request and keeps everything found so far', async () => {
+    mockedGenerateQueries.mockResolvedValue(['founder stories'])
+    // One result per page, so the target of 25 is never reached and the run
+    // only ends because it was asked to.
+    let page = 0
+    mockedSearchPodcasts.mockImplementation(async () => {
+      page += 1
+      return {
+        data: {
+          podcasts: [{
+            podcast_id: `pod-${page}`,
+            podcast_name: `Show ${page}`,
+            podcast_url: `https://example.com/show-${page}`,
+            last_posted_at: '2026-07-21T00:00:00.000Z',
+          }],
+          pagination: { last_page: '99' },
+        },
+      } as never
+    })
+
+    renderPage({ workspaceScoped: true })
+
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Client' }))
+    fireEvent.click(await screen.findByRole('option', { name: /Own Client/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '25 podcasts' }))
+
+    const runButton = await screen.findByRole('button', { name: 'Find 25 podcasts' })
+    await waitFor(() => expect(runButton).toBeEnabled())
+    fireEvent.click(runButton)
+
+    await screen.findByText('Show 1')
+    fireEvent.click(await screen.findByRole('button', { name: /stop and keep/i }))
+
+    // What was found stays on screen, and the run really did end.
+    expect(await screen.findByText('Show 1')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('button', { name: /stop and keep/i })).not.toBeInTheDocument())
+    const callsAtStop = mockedSearchPodcasts.mock.calls.length
+    await waitFor(() => expect(mockedSearchPodcasts.mock.calls.length).toBe(callsAtStop))
+  })
+
   /*
    * Discovery used to consult Podscan alone, so a show this platform had
    * already researched — contact details and all — could be missed because a
