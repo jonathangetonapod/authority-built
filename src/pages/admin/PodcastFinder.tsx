@@ -84,6 +84,7 @@ import { scoreCompatibilityBatch } from '@/services/compatibilityScoring'
 import { addClientShortlistPodcasts, type ClientShortlistPodcastInput } from '@/services/clientShortlist'
 import {
   addWorkspaceProspectPodcasts,
+  PartialShortlistAddError,
   getWorkspaceProspect,
   type ProspectShortlistPodcastInput,
 } from '@/services/prospectDashboards'
@@ -1156,7 +1157,30 @@ export default function PodcastFinder({
       setSelectedIds(new Set())
       setAddDialogOpen(false)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Podcasts could not be added.')
+      /*
+       * A batch that failed partway already committed its earlier chunks. Saying
+       * only "could not be added" left those rows added — and on a live prospect
+       * dashboard, hidden pending review — with nothing on screen admitting it,
+       * so nobody would go looking for them.
+       */
+      if (error instanceof PartialShortlistAddError) {
+        const partial = error.partial
+        setAddedPodcastIds((current) => {
+          const next = new Set(current)
+          partial.podcast_ids.forEach((podcastId) => next.add(podcastId.toLowerCase()))
+          return next
+        })
+        toast.warning(
+          `Added ${partial.added} before the rest failed. ${
+            partial.hidden_pending_review
+              ? 'Those are hidden on the dashboard until you review them. '
+              : ''
+          }Try the remainder again.`,
+          { duration: 10000 },
+        )
+      } else {
+        toast.error(error instanceof Error ? error.message : 'Podcasts could not be added.')
+      }
     } finally {
       setIsAdding(false)
     }

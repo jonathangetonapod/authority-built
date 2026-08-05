@@ -98,6 +98,28 @@ describe('prospectDashboards service', () => {
     })
   })
 
+  it('reports what landed when a batch fails partway', async () => {
+    invoke
+      .mockResolvedValueOnce({
+        data: { added: 50, skipped: 0, podcast_ids: ['first-chunk'], unpublished_for_review: false, changes_pending_review: true, hidden_pending_review: true },
+        error: null,
+      } as never)
+      .mockResolvedValueOnce({ data: null, error: { message: 'network gave out' } } as never)
+
+    const podcasts = Array.from({ length: 60 }, (_unused, index) => ({
+      podcast_id: `podcast-${index}`,
+      podcast_name: `Show ${index}`,
+    }))
+
+    // The first fifty are already committed server-side, so a flat failure would
+    // hide real rows — on a live dashboard, hidden ones nobody was told about.
+    await expect(addWorkspaceProspectPodcasts(workspaceId, dashboardId, podcasts))
+      .rejects.toMatchObject({
+        name: 'PartialShortlistAddError',
+        partial: expect.objectContaining({ added: 50, hidden_pending_review: true }),
+      })
+  })
+
   it('adds Finder results to the selected prospect in bounded batches', async () => {
     invoke.mockResolvedValueOnce({
       data: {

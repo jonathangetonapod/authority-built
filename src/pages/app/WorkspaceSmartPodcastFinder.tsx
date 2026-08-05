@@ -273,7 +273,13 @@ const WorkspaceSmartPodcastFinder = () => {
     if (!workspaceId || !clientId || !clientBio || isRegenerating) return
     setIsRegenerating(true)
     try {
-      const generated = (await generatePodcastQueries({ workspaceId, clientId }))
+      // Regenerating should look somewhere else, not draft the same angles
+      // again. The advanced finder already asks this way.
+      const generated = (await generatePodcastQueries({
+        workspaceId,
+        clientId,
+        ...(aiQueries.length > 0 ? { avoidQueries: aiQueries } : {}),
+      }))
         .map(normalizePodscanQuery)
         .filter(Boolean)
         .slice(0, MAX_QUERIES)

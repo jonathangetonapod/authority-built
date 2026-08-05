@@ -117,6 +117,19 @@ export interface ProspectShortlistPodcastInput {
   relevance_reason?: string | null
 }
 
+/**
+ * A batch that failed partway. Earlier chunks are already committed server-side,
+ * so the caller has to be told what landed — reporting a flat failure left rows
+ * added (and, on a live dashboard, hidden pending review) with nothing on screen
+ * saying so.
+ */
+export class PartialShortlistAddError extends Error {
+  constructor(message: string, readonly partial: ProspectShortlistAddResult) {
+    super(message)
+    this.name = 'PartialShortlistAddError'
+  }
+}
+
 export interface ProspectShortlistAddResult {
   added: number
   skipped: number
@@ -310,12 +323,21 @@ export async function addWorkspaceProspectPodcasts(
     hidden_pending_review: false,
   }
   for (let offset = 0; offset < podcasts.length; offset += 50) {
-    const result = await invokeProspectStudio<ProspectShortlistAddResult>({
-      action: 'podcast-add',
-      workspace_id: workspaceId.toLowerCase(),
-      dashboard_id: dashboardId.toLowerCase(),
-      podcasts: podcasts.slice(offset, offset + 50),
-    }, 'Failed to add podcasts to the prospect shortlist.')
+    let result: ProspectShortlistAddResult
+    try {
+      result = await invokeProspectStudio<ProspectShortlistAddResult>({
+        action: 'podcast-add',
+        workspace_id: workspaceId.toLowerCase(),
+        dashboard_id: dashboardId.toLowerCase(),
+        podcasts: podcasts.slice(offset, offset + 50),
+      }, 'Failed to add podcasts to the prospect shortlist.')
+    } catch (error) {
+      if (combined.added === 0) throw error
+      throw new PartialShortlistAddError(
+        error instanceof Error ? error.message : 'Failed to add podcasts to the prospect shortlist.',
+        combined,
+      )
+    }
     combined.added += result.added
     combined.skipped += result.skipped
     combined.podcast_ids.push(...result.podcast_ids)

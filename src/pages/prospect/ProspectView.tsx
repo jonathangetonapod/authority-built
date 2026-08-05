@@ -54,8 +54,6 @@ import {
   MousePointerClick,
   ListChecks,
   Rocket,
-  Info,
-  Phone,
   Quote,
   Calendar,
   DollarSign,
@@ -68,7 +66,6 @@ import { bookingLinkUrl, schedulerEmbedUrl, schedulerName } from '@/lib/schedule
 import type { PodcastDemographics } from '@/services/podscan'
 import { cn } from '@/lib/utils'
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts'
-import { FeatureDetailModal } from '@/components/pricing/FeatureDetailModal'
 import PageSEO from '@/components/seo/PageSEO'
 import { openExternalUrl } from '@/lib/externalUrl'
 import { currentHostname } from '@/lib/workspaceHost'
@@ -307,7 +304,6 @@ function ProspectViewContent() {
   const [showReviewPanel, setShowReviewPanel] = useState(false)
 
   // Pricing feature modal state
-  const [selectedPricingFeature, setSelectedPricingFeature] = useState<string | null>(null)
 
   // React Query: Fetch dashboard + feedback via edge function (cached for 5 minutes)
   const {
@@ -2027,7 +2023,15 @@ function ProspectViewContent() {
         </section>
       )}
 
-      {dashboard && dashboard.cta_type !== 'none' && (
+      {/*
+       * Rendered for every dashboard. Before the platform pricing block was
+       * removed, a dashboard with pricing on and cta_type 'none' still got a
+       * booking button out of that block — so deleting it left exactly that
+       * configuration with no next step anywhere on the page. 'none' now
+       * suppresses the button, not the section: the reply-to-the-email fallback
+       * still tells a prospect what to do, in the agency's voice.
+       */}
+      {dashboard && (
         <section className="px-4 py-12 md:py-16">
           <div className="container mx-auto">
             <div className="mx-auto grid gap-6 rounded-[32px] border border-[#0d1b2a]/8 bg-[#0d1b2a] px-6 py-8 text-white shadow-[0_20px_42px_rgba(13,27,42,0.16)] md:px-8 md:py-10 lg:grid-cols-[1fr_auto] lg:items-center">
@@ -2052,7 +2056,15 @@ function ProspectViewContent() {
                 </p>
               </div>
 
-              {dashboard.cta_url && (dashboard.cta_type === 'book_call' || dashboard.cta_type === 'learn_more') ? (
+              {dashboard.cta_type === 'none' ? (
+                <div className="flex max-w-sm items-start gap-3 rounded-[22px] border border-white/14 bg-white/8 px-5 py-4">
+                  <MessageSquare className="mt-0.5 h-5 w-5 flex-shrink-0 text-white/80" />
+                  <div>
+                    <p className="font-semibold">Reply to move forward</p>
+                    <p className="mt-1 text-sm leading-6 text-white/65">Reply to the email that brought you here and we will take care of the next step.</p>
+                  </div>
+                </div>
+              ) : dashboard.cta_url && (dashboard.cta_type === 'book_call' || dashboard.cta_type === 'learn_more') ? (
                 <Button
                   variant="secondary"
                   size="xl"
@@ -2083,7 +2095,7 @@ function ProspectViewContent() {
                 </div>
               )}
 
-              {bookingEmbedUrl && (
+              {bookingEmbedUrl && dashboard.cta_type !== 'none' && (
                 // Under the copy and across the section, because a scheduler
                 // beside a paragraph is too narrow to pick a time in.
                 <div className="lg:col-span-2">
@@ -3165,10 +3177,6 @@ function ProspectViewContent() {
       </Dialog>
 
       {/* Pricing Feature Detail Modal */}
-      <FeatureDetailModal
-        selectedFeature={selectedPricingFeature}
-        onClose={() => setSelectedPricingFeature(null)}
-      />
 
       {/* Loom Video Modal */}
       {loomEmbedUrl && (

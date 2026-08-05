@@ -474,9 +474,17 @@ function ProspectListCard({
             {[prospect.prospect_title, prospect.prospect_company].filter(Boolean).join(' · ') || 'Profile draft'}
           </p>
         </div>
-        <Badge variant="outline" className={cn('shrink-0 font-normal', lifecycleClass(prospect.lifecycle_status))}>
-          {lifecycleLabel(prospect.lifecycle_status)}
-        </Badge>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <Badge variant="outline" className={cn('font-normal', lifecycleClass(prospect.lifecycle_status))}>
+            {lifecycleLabel(prospect.lifecycle_status)}
+          </Badge>
+          {/* Live and edited look identical without this. */}
+          {prospect.pending_review_at && (
+            <Badge variant="outline" className="border-amber-200 bg-amber-50 font-normal text-amber-700">
+              To review
+            </Badge>
+          )}
+        </div>
       </div>
       {/* The link is stored on the client, so a prospect page could not say
           whether it converted without reading it back. */}
@@ -963,7 +971,15 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
     if (shortlistFiltered) clearShortlistFilters()
   }
   const publishedCount = prospects.filter((prospect) => prospect.published_at).length
-  const reviewCount = prospects.filter((prospect) => ['review', 'failed'].includes(prospect.lifecycle_status)).length
+  /*
+   * A live dashboard with unreviewed edits keeps a live lifecycle_status, so
+   * counting only 'review' and 'failed' meant the summary and the list looked
+   * identical whether or not anything was waiting. Nobody would find it without
+   * opening every prospect in turn.
+   */
+  const reviewCount = prospects.filter((prospect) => (
+    ['review', 'failed'].includes(prospect.lifecycle_status) || Boolean(prospect.pending_review_at)
+  )).length
   const totalViews = prospects.reduce((total, prospect) => total + (prospect.view_count || 0), 0)
   const building = buildMutation.isPending || ['matching', 'analyzing'].includes(selected?.lifecycle_status || '')
   const mutating = building || publicationMutation.isPending || podcastMutation.isPending || photoMutation.isPending || archiveMutation.isPending
@@ -1186,11 +1202,13 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                             * state rather than a contradiction, so it needs
                             * saying: the page is up, the changes are not on it.
                             */}
-                          {selected.pending_review_at && selected.published_at && (
+                          {selected.pending_review_at && (
                             <Alert className="mt-4 border-amber-200 bg-amber-50">
                               <AlertTitle className="text-amber-900">Changes waiting for review</AlertTitle>
                               <AlertDescription className="text-amber-900/80">
-                                The dashboard is still live and unchanged for the prospect.
+                                {selected.published_at
+                                  ? 'The dashboard is still live and unchanged for the prospect.'
+                                  : 'This is not live, and the changes below are still unreviewed. Publishing clears both.'}
                                 {pendingAdditions.length > 0
                                   ? ` ${pendingAdditions.length} ${pendingAdditions.length === 1 ? 'show is' : 'shows are'} hidden until you show them.`
                                   : ` Edited ${formatDate(selected.pending_review_at)}.`}

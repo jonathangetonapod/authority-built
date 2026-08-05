@@ -44,10 +44,17 @@ vi.mock('@/services/queryGeneration', () => ({ generatePodcastQueries: vi.fn() }
 vi.mock('@/services/workspacePodcastCatalog', () => ({ getWorkspacePodcastCatalog: vi.fn() }))
 vi.mock('@/services/compatibilityScoring', () => ({ scoreCompatibilityBatch: vi.fn() }))
 vi.mock('@/services/clientShortlist', () => ({ addClientShortlistPodcasts: vi.fn() }))
-vi.mock('@/services/prospectDashboards', () => ({
-  addWorkspaceProspectPodcasts: vi.fn(),
-  getWorkspaceProspect: vi.fn(),
-}))
+vi.mock('@/services/prospectDashboards', async () => {
+  // The error class is real so `instanceof` still means something in the test.
+  const actual = await vi.importActual<typeof import('@/services/prospectDashboards')>(
+    '@/services/prospectDashboards',
+  )
+  return {
+    PartialShortlistAddError: actual.PartialShortlistAddError,
+    addWorkspaceProspectPodcasts: vi.fn(),
+    getWorkspaceProspect: vi.fn(),
+  }
+})
 vi.mock('@/services/podscan', () => ({
   getChartCategories: vi.fn(),
   getChartCountries: vi.fn(),

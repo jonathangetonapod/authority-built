@@ -1585,6 +1585,24 @@ serve(async (req) => {
       if (!data) throw new HttpError(404, 'PODCAST_NOT_FOUND', 'Podcast is not on this prospect shortlist')
       const detail = await detailPayload(context.admin, workspaceId, dashboardId)
       /*
+       * Curation may not empty a live page. Hiding shows one at a time used to
+       * unpublish once readiness broke, which was the wrong cure but did stop
+       * this: a published dashboard with nothing visible serves a prospect an
+       * empty shell under their own name. Refused rather than silently
+       * unpublished, because taking the page down is the operator's call.
+       */
+      if (
+        existing.published_at
+        && changes.visibility === 'archived'
+        && detail.dashboard.readiness.visible_count === 0
+      ) {
+        throw new HttpError(
+          409,
+          'SHORTLIST_WOULD_BE_EMPTY',
+          'This is the last visible show on a live dashboard. Unpublish it first, or show another before hiding this one.',
+        )
+      }
+      /*
        * Curating the shortlist does not close the page either. Hiding one show
        * on a dashboard sitting at the readiness floor used to drop it below the
        * bar and unpublish it through the same RPC as an explicit unpublish —
