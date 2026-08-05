@@ -10,7 +10,7 @@ import { getClients, getWorkspaceClients, getWorkspaceResearchContext } from '@/
 import { generatePodcastQueries } from '@/services/queryGeneration'
 import { getWorkspacePodcastCatalog } from '@/services/workspacePodcastCatalog'
 import { searchPodcastsWithMeta } from '@/services/podscan'
-import { addWorkspaceProspectPodcasts, getWorkspaceProspect } from '@/services/prospectDashboards'
+import { addWorkspaceProspectPodcasts, getWorkspaceProspect, getWorkspaceProspects } from '@/services/prospectDashboards'
 
 vi.mock('@/components/admin/DashboardLayout', () => ({
   DashboardLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -53,6 +53,7 @@ vi.mock('@/services/prospectDashboards', async () => {
     PartialShortlistAddError: actual.PartialShortlistAddError,
     addWorkspaceProspectPodcasts: vi.fn(),
     getWorkspaceProspect: vi.fn(),
+    getWorkspaceProspects: vi.fn(),
   }
 })
 vi.mock('@/services/podscan', () => ({
@@ -91,6 +92,7 @@ function catalogPage(items: Array<Record<string, unknown>>) {
 const mockedSearchPodcasts = vi.mocked(searchPodcastsWithMeta)
 const mockedAddToProspect = vi.mocked(addWorkspaceProspectPodcasts)
 const mockedProspect = vi.mocked(getWorkspaceProspect)
+const mockedProspectList = vi.mocked(getWorkspaceProspects)
 
 const myWorkspace = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -181,6 +183,22 @@ describe('PodcastFinder', () => {
       existing_podcast_ids: [],
     })
     mockedCatalog.mockResolvedValue(catalogPage([]))
+    mockedProspectList.mockResolvedValue({
+      workspace: {
+        id: myWorkspace.id,
+        name: myWorkspace.name,
+        status: myWorkspace.status,
+        is_default: myWorkspace.is_default,
+        logo_path: null,
+        logo_updated_at: null,
+        client_brand_name: null,
+        client_brand_primary_color: null,
+        client_brand_accent_color: null,
+      },
+      viewer_role: 'owner',
+      can_manage: true,
+      dashboards: [],
+    } as never)
     mockedAddToShortlist.mockResolvedValue({ added: 1, skipped: 0, podcast_ids: ['pod-new'] })
     mockedAddToProspect.mockResolvedValue({ added: 1, skipped: 0, podcast_ids: ['pod-new'], unpublished_for_review: true })
     mockedProspect.mockResolvedValue({
@@ -242,7 +260,7 @@ describe('PodcastFinder', () => {
     renderPage({ workspaceScoped: true })
 
     expect(await screen.findByRole('heading', { name: 'Podcast Finder' })).toBeInTheDocument()
-    expect(await screen.findByRole('combobox', { name: 'Client' })).toBeInTheDocument()
+    expect(await screen.findByRole('combobox', { name: 'Research for' })).toBeInTheDocument()
     expect(await screen.findByText('Ready for Own Client’s weekly discovery')).toBeInTheDocument()
     expect(screen.queryByText('Choose the client workspace')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Workspace')).not.toBeInTheDocument()
@@ -261,12 +279,48 @@ describe('PodcastFinder', () => {
     renderPage({ workspaceScoped: true })
 
     expect(await screen.findByRole('heading', { name: 'Podcast Finder' })).toBeInTheDocument()
-    expect(await screen.findByText('No active clients')).toBeInTheDocument()
-    expect(screen.getAllByText('No active clients')).toHaveLength(1)
-    expect(screen.getByText('Add or reactivate a client to start finding podcasts.')).toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'Client' })).not.toBeInTheDocument()
+    // A workspace with no clients AND no profiled prospects has nothing to
+    // research; either one on its own is enough to make the finder usable.
+    expect(await screen.findByText('Nothing to research yet')).toBeInTheDocument()
+    expect(screen.getByText(/Add a client, or give a prospect a profile/i)).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Research for' })).not.toBeInTheDocument()
     expect(screen.queryByText('Podscan quota')).not.toBeInTheDocument()
     expect(screen.queryByText(/existing podcasts excluded/i)).not.toBeInTheDocument()
+  })
+
+  it('offers prospects alongside clients, and routes their results to the dashboard', async () => {
+    const prospectId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+    mockedWorkspaceClients.mockResolvedValue([])
+    mockedProspectList.mockResolvedValue({
+      workspace: {
+        id: myWorkspace.id,
+        name: myWorkspace.name,
+        status: myWorkspace.status,
+        is_default: myWorkspace.is_default,
+        logo_path: null,
+        logo_updated_at: null,
+        client_brand_name: null,
+        client_brand_primary_color: null,
+        client_brand_accent_color: null,
+      },
+      viewer_role: 'owner',
+      can_manage: true,
+      dashboards: [{
+        id: prospectId,
+        workspace_id: myWorkspace.id,
+        prospect_name: 'Dallas Fontaine',
+        prospect_bio: 'Dallas helps founders build durable revenue operations across long sales cycles.',
+        lifecycle_status: 'review',
+        is_active: true,
+      }],
+    } as never)
+
+    renderPage({ workspaceScoped: true })
+
+    // A workspace with no clients at all still gets a usable finder.
+    expect(await screen.findByRole('combobox', { name: 'Research for' })).toBeInTheDocument()
+    expect(screen.queryByText('Nothing to research yet')).not.toBeInTheDocument()
+    await waitFor(() => expect(mockedProspect).toHaveBeenCalledWith(myWorkspace.id, prospectId))
   })
 
   it('lets the user switch between every active client in the workspace', async () => {
@@ -296,7 +350,7 @@ describe('PodcastFinder', () => {
     }))
     renderPage({ workspaceScoped: true })
 
-    const selector = await screen.findByRole('combobox', { name: 'Client' })
+    const selector = await screen.findByRole('combobox', { name: 'Research for' })
     await screen.findByText('Ready for Own Client’s weekly discovery')
     fireEvent.click(selector)
     fireEvent.click(await screen.findByRole('option', { name: 'Second Client' }))
@@ -404,7 +458,7 @@ describe('PodcastFinder', () => {
 
     renderPage({ workspaceScoped: true })
 
-    fireEvent.click(await screen.findByRole('combobox', { name: 'Client' }))
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Research for' }))
     fireEvent.click(await screen.findByRole('option', { name: /Own Client/ }))
 
     fireEvent.click(await screen.findByRole('button', { name: '25 podcasts' }))
@@ -444,7 +498,7 @@ describe('PodcastFinder', () => {
 
     renderPage({ workspaceScoped: true })
 
-    fireEvent.click(await screen.findByRole('combobox', { name: 'Client' }))
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Research for' }))
     fireEvent.click(await screen.findByRole('option', { name: /Own Client/ }))
     fireEvent.click(await screen.findByRole('button', { name: '25 podcasts' }))
 
@@ -502,7 +556,7 @@ describe('PodcastFinder', () => {
 
     renderPage({ workspaceScoped: true })
 
-    fireEvent.click(await screen.findByRole('combobox', { name: 'Client' }))
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Research for' }))
     fireEvent.click(await screen.findByRole('option', { name: /Own Client/ }))
 
     const runButton = await screen.findByRole('button', { name: `Find ${DEFAULT_DISCOVERY_TARGET} podcasts` })
@@ -538,7 +592,7 @@ describe('PodcastFinder', () => {
 
     expect(await screen.findByText('Adding to Dallas Fontaine')).toBeInTheDocument()
     expect(screen.getByText(/1 currently shortlisted/i)).toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'Client' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Research for' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Back to Studio' })).toHaveAttribute(
       'href',
       `/app/prospects?prospect=${prospectId}&view=all`,

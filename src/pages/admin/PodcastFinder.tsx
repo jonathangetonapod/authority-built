@@ -49,7 +49,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -84,6 +84,7 @@ import { scoreCompatibilityBatch } from '@/services/compatibilityScoring'
 import { addClientShortlistPodcasts, type ClientShortlistPodcastInput } from '@/services/clientShortlist'
 import {
   addWorkspaceProspectPodcasts,
+  getWorkspaceProspects,
   PartialShortlistAddError,
   getWorkspaceProspect,
   type ProspectShortlistPodcastInput,
@@ -249,13 +250,20 @@ export default function PodcastFinder({
   const queryClient = useQueryClient()
   const storedScope = useMemo(readStoredScope, [])
   const isClientBound = fixedClientId !== undefined
-  const isProspectBound = initialProspectId !== undefined
-  const isTargetBound = isClientBound || isProspectBound
+  /*
+   * A prospect can be arrived at (?prospect=, from Studio) or chosen here.
+   * Only the first pins the page — otherwise picking one would immediately hide
+   * the picker that chose it — but both make this a prospect run, so results are
+   * routed back to that prospect's dashboard rather than to a client shortlist.
+   */
+  const [pickedProspectId, setPickedProspectId] = useState('')
+  const isProspectBound = initialProspectId !== undefined || pickedProspectId !== ''
+  const isTargetBound = isClientBound || initialProspectId !== undefined
   const isWorkspaceScoped = isTargetBound || workspaceScoped || platformWorkspaceId !== undefined
   const isClientSelectable = isWorkspaceScoped && !isTargetBound
   const fixedWorkspaceId = (platformWorkspaceId || workspace?.id || '').toLowerCase()
   const canonicalFixedClientId = (fixedClientId || '').toLowerCase()
-  const canonicalProspectId = (initialProspectId || '').toLowerCase()
+  const canonicalProspectId = (initialProspectId || pickedProspectId || '').toLowerCase()
   const fixedTargetId = isProspectBound ? canonicalProspectId : canonicalFixedClientId
   const requestedClientId = (initialClientId || '').toLowerCase()
   const storedScopedClientId = storedScope.workspaceId?.toLowerCase() === fixedWorkspaceId
@@ -356,6 +364,14 @@ export default function PodcastFinder({
     retry: false,
   })
 
+  const scopedProspectsQuery = useQuery({
+    queryKey: ['podcast-research', user?.id || 'unknown', 'workspace', fixedWorkspaceId, 'prospect-options'],
+    queryFn: () => getWorkspaceProspects(fixedWorkspaceId),
+    enabled: isClientSelectable && Boolean(fixedWorkspaceId),
+    staleTime: 30_000,
+    retry: false,
+  })
+
   const researchContextQueryKey = [
     'podcast-research',
     user?.id || 'unknown',
@@ -408,6 +424,17 @@ export default function PodcastFinder({
     () => (scopedClientsQuery.data || []).filter((client) => client.status === 'active'),
     [scopedClientsQuery.data],
   )
+  // A prospect needs a profile before discovery can use it, and an archived one
+  // is not a research target.
+  const scopedProspectOptions = useMemo(
+    () => (scopedProspectsQuery.data?.dashboards || []).filter((prospect) => (
+      prospect.is_active
+      && prospect.lifecycle_status !== 'archived'
+      && (prospect.prospect_bio?.trim().length || 0) >= 80
+    )),
+    [scopedProspectsQuery.data?.dashboards],
+  )
+  const hasAnyTarget = scopedClientOptions.length > 0 || scopedProspectOptions.length > 0
   const selectedWorkspace = isWorkspaceScoped
     ? researchContextQuery.data?.workspace
       || (workspace?.id.toLowerCase() === fixedWorkspaceId ? workspace : undefined)
@@ -448,12 +475,18 @@ export default function PodcastFinder({
   }, [clientId, fixedTargetId, fixedWorkspaceId, isTargetBound, isWorkspaceScoped, workspaceId])
 
   useEffect(() => {
-    if (!isClientSelectable || scopedClientsQuery.isLoading) return
+    if (!isClientSelectable || scopedClientsQuery.isLoading || scopedProspectsQuery.isLoading) return
     if (scopedClientOptions.some((client) => client.id === clientId)) return
+    if (scopedProspectOptions.some((prospect) => prospect.id === clientId)) return
     resetResearch()
     setAddedPodcastIds(new Set())
-    setClientId(scopedClientOptions[0]?.id || '')
-  }, [clientId, isClientSelectable, scopedClientOptions, scopedClientsQuery.isLoading])
+    // A workspace with only prospects still gets a usable finder.
+    const fallbackClient = scopedClientOptions[0]?.id
+    const fallbackProspect = scopedProspectOptions[0]?.id
+    setPickedProspectId(fallbackClient ? '' : fallbackProspect || '')
+    setClientId(fallbackClient || fallbackProspect || '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, isClientSelectable, scopedClientOptions, scopedProspectOptions, scopedClientsQuery.isLoading, scopedProspectsQuery.isLoading])
 
   useEffect(() => {
     if (isTargetBound) return
@@ -606,7 +639,17 @@ export default function PodcastFinder({
   const handleClientChange = (nextClientId: string) => {
     resetResearch()
     setAddedPodcastIds(new Set())
+    setPickedProspectId('')
     setClientId(nextClientId)
+  }
+
+  // One picker, two kinds of target. The value carries which.
+  const handleTargetChange = (value: string) => {
+    const [kind, id] = value.split(':')
+    resetResearch()
+    setAddedPodcastIds(new Set())
+    setPickedProspectId(kind === 'prospect' ? id : '')
+    setClientId(id)
   }
 
   const handleGenerateQueries = async (options: { fresh?: boolean } = {}): Promise<string[]> => {
@@ -1263,22 +1306,37 @@ export default function PodcastFinder({
             </p>
           </div>
           <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end">
-            {isClientSelectable && (scopedClientsQuery.isLoading || scopedClientOptions.length > 0) && (
+            {isClientSelectable && (scopedClientsQuery.isLoading || hasAnyTarget) && (
               <div className="min-w-64 space-y-1.5">
-                <Label htmlFor="finder-client-select">Client</Label>
+                <Label htmlFor="finder-client-select">Research for</Label>
                 <div className="flex gap-2">
                   <Select
-                    value={clientId}
-                    onValueChange={handleClientChange}
-                    disabled={scopeLocked || scopedClientsQuery.isLoading || scopedClientOptions.length === 0}
+                    value={clientId ? `${isProspectBound ? 'prospect' : 'client'}:${clientId}` : ''}
+                    onValueChange={handleTargetChange}
+                    disabled={scopeLocked || scopedClientsQuery.isLoading || !hasAnyTarget}
                   >
                     <SelectTrigger id="finder-client-select" className="h-10 bg-card">
-                      <SelectValue placeholder="Loading clients…" />
+                      <SelectValue placeholder="Loading…" />
                     </SelectTrigger>
                     <SelectContent>
-                      {scopedClientOptions.map((client) => (
-                        <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
-                      ))}
+                      {scopedClientOptions.length > 0 && (
+                        <SelectGroup>
+                          <SelectLabel>Clients</SelectLabel>
+                          {scopedClientOptions.map((client) => (
+                            <SelectItem key={client.id} value={`client:${client.id}`}>{client.name}</SelectItem>
+                          ))}
+                        </SelectGroup>
+                      )}
+                      {scopedProspectOptions.length > 0 && (
+                        <SelectGroup>
+                          <SelectLabel>Prospects</SelectLabel>
+                          {scopedProspectOptions.map((prospect) => (
+                            <SelectItem key={prospect.id} value={`prospect:${prospect.id}`}>
+                              {prospect.prospect_name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      )}
                     </SelectContent>
                   </Select>
                   {scopeLocked && (
@@ -1322,13 +1380,15 @@ export default function PodcastFinder({
           </div>
         )}
 
-        {isClientSelectable && !scopedClientsQuery.isLoading && !scopedClientsQuery.error && scopedClientOptions.length === 0 && (
+        {isClientSelectable && !scopedClientsQuery.isLoading && !scopedProspectsQuery.isLoading && !scopedClientsQuery.error && !hasAnyTarget && (
           <Card className="border-dashed">
             <CardContent className="flex min-h-40 flex-col items-center justify-center gap-3 text-center">
               <Users className="h-9 w-9 text-muted-foreground" />
               <div>
-                <p className="font-medium">No active clients</p>
-                <p className="text-sm text-muted-foreground">Add or reactivate a client to start finding podcasts.</p>
+                <p className="font-medium">Nothing to research yet</p>
+                <p className="text-sm text-muted-foreground">
+                  Add a client, or give a prospect a profile in Studio, and it will be selectable here.
+                </p>
               </div>
               <Button asChild variant="outline"><Link to={clientsHref}>Open clients</Link></Button>
             </CardContent>
