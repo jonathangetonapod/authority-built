@@ -80,7 +80,7 @@ import {
   getWorkspaceResearchContext,
   type WorkspaceResearchContext,
 } from '@/services/clients'
-import { scoreCompatibilityBatch } from '@/services/compatibilityScoring'
+import { PartialScoringError, scoreCompatibilityBatch } from '@/services/compatibilityScoring'
 import { addClientShortlistPodcasts, type ClientShortlistPodcastInput } from '@/services/clientShortlist'
 import {
   addWorkspaceProspectPodcasts,
@@ -595,6 +595,16 @@ export default function PodcastFinder({
     })
   }, [activeTab, contactableOnly, hideExisting, resultSearch, resultSort, rows])
 
+  /*
+   * The filtered set also shrinks for reasons no filter changed: adding rows
+   * makes them existing, and scoring moves rows between tiers. Landing on
+   * "Page 3 of 2" over an empty table, with eighty valid rows behind it, is the
+   * result.
+   */
+  useEffect(() => {
+    setResultPage((current) => Math.min(current, Math.max(1, Math.ceil(filteredRows.length / RESULTS_PER_PAGE))))
+  }, [filteredRows.length])
+
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / RESULTS_PER_PAGE))
   const visibleRows = filteredRows.slice((resultPage - 1) * RESULTS_PER_PAGE, resultPage * RESULTS_PER_PAGE)
   const visibleSelectableRows = visibleRows.filter((row) => !row.existing)
@@ -608,6 +618,11 @@ export default function PodcastFinder({
     && !existingPodcastIds.has(result.podcast.podcast_id.toLowerCase())
   ))
   const selectedContactableCount = selectedResults.filter((result) => Boolean(result.podcast.reach?.email)).length
+  const selectedUnscoredCount = results.filter((result) => (
+    selectedIds.has(result.podcast.podcast_id)
+    && result.relevanceScore === null
+    && !existingPodcastIds.has(result.podcast.podcast_id.toLowerCase())
+  )).length
   const unscoredCount = results.filter((result) => (
     result.relevanceScore === null
     && !excludedIds.has(result.podcast.podcast_id)
@@ -969,6 +984,19 @@ export default function PodcastFinder({
     }
   }
 
+  const applyScores = (scores: Array<{ podcast_id: string; score: number | null; reasoning?: string }>) => {
+    const byId = new Map(scores.map((score) => [score.podcast_id, score]))
+    setResults((current) => current.map((result) => {
+      const score = byId.get(result.podcast.podcast_id)
+      if (!score || score.score === null) return result
+      return {
+        ...result,
+        relevanceScore: Math.round(score.score * 10),
+        relevanceReasoning: score.reasoning,
+      }
+    }))
+  }
+
   const handleScoreResults = async () => {
     if (!selectedWorkspace || !selectedClient?.bio || !runScope) {
       toast.error(`A ${targetLabel}-bound discovery run is required before scoring.`)
@@ -984,7 +1012,17 @@ export default function PodcastFinder({
       && result.relevanceScore === null
       && !existingPodcastIds.has(result.podcast.podcast_id.toLowerCase())
     ))
-    const candidates = selectedUnscored.length > 0
+    /*
+     * A selection means the selection. This used to fall through to every
+     * unscored row in the run whenever the selected ones happened to be scored
+     * already — so "Score selection (5)" could quietly spend AI calls on fifty
+     * podcasts the operator had not chosen, and report it as success.
+     */
+    if (selectedIds.size > 0 && selectedUnscored.length === 0) {
+      toast.info('Everything selected is already scored.')
+      return
+    }
+    const candidates = selectedIds.size > 0
       ? selectedUnscored
       : results.filter((result) => (
           result.relevanceScore === null
@@ -1022,19 +1060,18 @@ export default function PodcastFinder({
           : { workspaceId: selectedWorkspace.id, clientId: selectedClient.id },
       )
 
-      const byId = new Map(scores.map((score) => [score.podcast_id, score]))
-      setResults((current) => current.map((result) => {
-        const score = byId.get(result.podcast.podcast_id)
-        if (!score || score.score === null) return result
-        return {
-          ...result,
-          relevanceScore: Math.round(score.score * 10),
-          relevanceReasoning: score.reasoning,
-        }
-      }))
+      applyScores(scores)
       toast.success(`Relevance scoring completed for ${candidates.length} podcasts.`)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Relevance scoring failed.')
+      // Scores that did land are applied rather than discarded, and the number
+      // that did not is named — "scoring completed" over an unscored list was
+      // the worst of both.
+      if (error instanceof PartialScoringError) {
+        applyScores(error.scored)
+        toast.warning(`${error.message} Score the rest again when you are ready.`, { duration: 10000 })
+      } else {
+        toast.error(error instanceof Error ? error.message : 'Relevance scoring failed.')
+      }
     } finally {
       setIsScoring(false)
     }
@@ -1211,6 +1248,11 @@ export default function PodcastFinder({
         setAddedPodcastIds((current) => {
           const next = new Set(current)
           partial.podcast_ids.forEach((podcastId) => next.add(podcastId.toLowerCase()))
+          return next
+        })
+        setSelectedIds((current) => {
+          const next = new Set(current)
+          partial.podcast_ids.forEach((podcastId) => next.delete(podcastId))
           return next
         })
         toast.warning(
@@ -1748,7 +1790,7 @@ export default function PodcastFinder({
                   <div className="flex flex-wrap gap-2">
                     <Button variant="outline" onClick={() => void handleScoreResults()} disabled={isScoring || isDiscovering}>
                       {isScoring ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Star className="mr-2 h-4 w-4" />}
-                      {selectedIds.size > 0 ? `Score selection (${selectedIds.size})` : `Score unscored (${unscoredCount})`}
+                      {selectedIds.size > 0 ? `Score selection (${selectedUnscoredCount})` : `Score unscored (${unscoredCount})`}
                     </Button>
                     <Button variant="outline" onClick={() => setShowChartDiscovery((value) => !value)} disabled={isDiscovering}>
                       <TrendingUp className="mr-2 h-4 w-4" /> Add from charts
@@ -2029,7 +2071,7 @@ export default function PodcastFinder({
               )}
 
               <div className="grid grid-cols-2 gap-2">
-                <Button variant="outline" onClick={() => void handleEnrichDetail()} disabled={isEnriching}>{isEnriching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />} Load full profile</Button>
+                <Button variant="outline" onClick={() => void handleEnrichDetail()} disabled={isEnriching || isDiscovering}>{isEnriching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />} Load full profile</Button>
                 <Button asChild disabled={!safeExternalUrl(selectedDetail.podcast.podcast_url)}><a href={safeExternalUrl(selectedDetail.podcast.podcast_url) ?? undefined} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-2 h-4 w-4" /> Open Podscan</a></Button>
               </div>
 

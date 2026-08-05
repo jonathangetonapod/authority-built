@@ -30,6 +30,14 @@ export class InsufficientCreditsError extends Error {
   }
 }
 
+/** Some batches scored, some did not. Carries what did, so it is not lost. */
+export class PartialScoringError extends Error {
+  constructor(message: string, readonly scored: CompatibilityScore[], readonly failedCount: number) {
+    super(message)
+    this.name = 'PartialScoringError'
+  }
+}
+
 export async function scoreCompatibilityBatch(
   bio: string,
   podcasts: PodcastForScoring[],
@@ -57,6 +65,8 @@ export async function scoreCompatibilityBatch(
 
   const results: CompatibilityScore[] = []
   let completed = 0
+  let failedBatches = 0
+  let failedPodcasts = 0
 
   // Process in batches
   for (let i = 0; i < podcasts.length; i += batchSize) {
@@ -109,7 +119,10 @@ export async function scoreCompatibilityBatch(
     } catch (error) {
       if (error instanceof InsufficientCreditsError) throw error
       console.error('Error scoring batch:', error)
-      // Add null scores for failed batch
+      // Counted, not just swallowed: a run where every batch failed used to
+      // report "scoring completed" with nothing scored.
+      failedBatches += 1
+      failedPodcasts += batch.length
       batch.forEach(podcast => {
         results.push({ podcast_id: podcast.podcast_id, score: null })
       })
@@ -120,6 +133,13 @@ export async function scoreCompatibilityBatch(
     }
   }
 
+  if (failedBatches > 0) {
+    throw new PartialScoringError(
+      `${podcasts.length - failedPodcasts} of ${podcasts.length} scored before the rest failed.`,
+      results,
+      failedPodcasts,
+    )
+  }
   return results
 }
 

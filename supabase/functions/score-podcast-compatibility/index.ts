@@ -2,12 +2,13 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import Anthropic from 'npm:@anthropic-ai/sdk@0.32.1'
 import {
   HttpError,
+  parseJsonObject,
   requireAuthenticatedUser,
   requirePlatformAdminOrService,
   requireUuid,
   requireWorkspaceFeatureAccess,
 } from '../_shared/workspaceAuth.ts'
-import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
+import { chargeCredits, logOperationCost, retryWindowKey } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 
 const corsHeaders = {
@@ -60,7 +61,12 @@ serve(async (req) => {
   }
 
   try {
-    const body = await req.json() as {
+    /*
+     * Size-capped. Podcast names, descriptions and publishers go straight into
+     * the prompt, the credit charge is flat per request, and a workspace with
+     * no key of its own spends the platform's — so an unbounded body is a bill.
+     */
+    const body = await parseJsonObject(req, 262_144) as {
       clientBio?: string
       prospectBio?: string
       podcasts: PodcastForScoring[]
@@ -78,6 +84,7 @@ serve(async (req) => {
       : body.podcasts
 
     let anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY') || ''
+    let meteringActorUserId = ''
     let metering: {
       admin: Awaited<ReturnType<typeof requireAuthenticatedUser>>['admin']
       workspaceId: string
@@ -100,6 +107,7 @@ serve(async (req) => {
       const resolvedKey = await resolveAiKey(context.admin, workspaceId, 'anthropic')
       const byoKeyUsed = resolvedKey?.source === 'workspace'
       if (resolvedKey) anthropicApiKey = resolvedKey.apiKey
+      meteringActorUserId = context.user.id
       metering = {
         admin: context.admin,
         workspaceId,
@@ -108,16 +116,6 @@ serve(async (req) => {
         referenceId: String(hasProspect ? body.prospectDashboardId : body.clientId),
         byoKeyUsed,
       }
-      await chargeCredits(context.admin, {
-        workspaceId,
-        operationType: 'compatibility_scoring',
-        referenceKind: metering.referenceKind,
-        referenceId: metering.referenceId,
-        clientId: metering.clientId,
-        actorUserId: context.user.id,
-        byoKeyUsed,
-      })
-
       if (hasProspect) {
         const prospectDashboardId = requireUuid(body.prospectDashboardId, 'prospectDashboardId')
         const { data: scopedProspect, error: scopedProspectError } = await context.admin
@@ -206,6 +204,29 @@ serve(async (req) => {
         JSON.stringify({ error: `${isProspectMode ? 'Prospect' : 'Client'} bio is required for compatibility scoring` }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
+    }
+
+    /*
+     * Charged here rather than on arrival. Every check between the old charge
+     * site and this line — the client still being active, the prospect not
+     * archived, a bio existing, podcasts actually being sent — can refuse the
+     * request, and each refusal used to bill a workspace for nothing.
+     *
+     * The idempotency key makes a retry inside the window free, which matters
+     * because a dropped response leaves the client re-sending the same batch:
+     * unscored is exactly how it decides what to send again.
+     */
+    if (metering) {
+      await chargeCredits(metering.admin, {
+        workspaceId: metering.workspaceId,
+        operationType: 'compatibility_scoring',
+        referenceKind: metering.referenceKind,
+        referenceId: metering.referenceId,
+        clientId: metering.clientId,
+        idempotencyKey: retryWindowKey(['compatibility_scoring', metering.referenceId, String(podcasts?.length ?? 0)]),
+        actorUserId: meteringActorUserId,
+        byoKeyUsed: metering.byoKeyUsed,
+      })
     }
 
     if (!podcasts || !Array.isArray(podcasts) || podcasts.length === 0) {
