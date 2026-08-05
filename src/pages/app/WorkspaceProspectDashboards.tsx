@@ -496,6 +496,48 @@ function ProspectListCard({
   )
 }
 
+type ShortlistSort = 'curated' | 'fit' | 'audience' | 'name' | 'recent'
+
+const SHORTLIST_PAGE_SIZE = 25
+/** Below this the list is readable as it stands and the controls are clutter. */
+const SHORTLIST_CONTROLS_THRESHOLD = 8
+
+function podcastCategoryNames(podcast: ProspectShortlistPodcast): string[] {
+  return (podcast.podcast_categories || [])
+    .map((category) => category?.category_name?.trim())
+    .filter((name): name is string => Boolean(name))
+}
+
+/** Everything an operator might reasonably type to find a show again. */
+function shortlistHaystack(podcast: ProspectShortlistPodcast): string {
+  return [
+    podcast.podcast_name,
+    podcast.publisher_name,
+    podcast.relevance_reason,
+    podcast.ai_clean_description,
+    podcast.podcast_description,
+    podcast.operator_notes,
+    ...(podcast.ai_fit_reasons || []),
+    ...podcastCategoryNames(podcast),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
+function compareShortlist(sort: ShortlistSort) {
+  // Nulls sort last on every numeric order: an unscored show is not a zero-fit
+  // one, and burying it under the worst real scores would say that it is.
+  const numeric = (value: number | null) => (value === null || value === undefined ? -Infinity : Number(value))
+  return (left: ProspectShortlistPodcast, right: ProspectShortlistPodcast): number => {
+    if (sort === 'fit') return numeric(right.relevance_score) - numeric(left.relevance_score)
+    if (sort === 'audience') return numeric(right.audience_size) - numeric(left.audience_size)
+    if (sort === 'name') return left.podcast_name.localeCompare(right.podcast_name)
+    if (sort === 'recent') return new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+    return 0
+  }
+}
+
 function ShortlistRow({
   podcast,
   disabled,
@@ -576,6 +618,11 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
   const [profileForm, setProfileForm] = useState<ProspectProfileForm>(emptyProfileForm)
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
   const [rebuildDialogOpen, setRebuildDialogOpen] = useState(false)
+  const [shortlistSearch, setShortlistSearch] = useState('')
+  const [shortlistCategory, setShortlistCategory] = useState('all')
+  const [shortlistSort, setShortlistSort] = useState<ShortlistSort>('curated')
+  const [shortlistUnanalyzedOnly, setShortlistUnanalyzedOnly] = useState(false)
+  const [shortlistLimit, setShortlistLimit] = useState(SHORTLIST_PAGE_SIZE)
   const [shortlistView, setShortlistView] = useState<'featured' | 'all' | 'removed'>(requestedShortlistView)
   const isPlatformWorkspace = platformWorkspaceId !== undefined
   const selectedWorkspaceId = (platformWorkspaceId || '').toLowerCase()
@@ -612,6 +659,18 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
   useEffect(() => {
     if (requestedProspectId) setShortlistView(requestedShortlistView)
   }, [requestedProspectId, requestedShortlistView])
+
+  // Another prospect's shortlist has its own categories, so a filter carried
+  // across would silently show nothing.
+  useEffect(() => {
+    setShortlistSearch('')
+    setShortlistCategory('all')
+    setShortlistUnanalyzedOnly(false)
+  }, [selectedId])
+
+  useEffect(() => {
+    setShortlistLimit(SHORTLIST_PAGE_SIZE)
+  }, [selectedId, shortlistView, shortlistSearch, shortlistCategory, shortlistSort, shortlistUnanalyzedOnly])
 
   const detailQueryKey = ['workspace-prospect', user?.id || 'unknown', workspaceId, selectedId] as const
   const detailQuery = useQuery({
@@ -817,13 +876,45 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
   const visiblePodcasts = detail?.podcasts.filter((podcast) => podcast.visibility === 'visible') || []
   const removedPodcasts = detail?.podcasts.filter((podcast) => podcast.visibility === 'archived') || []
   const featuredPodcasts = visiblePodcasts.filter((podcast) => podcast.is_featured)
-  const displayedPodcasts = shortlistView === 'removed'
+  const shortlistBase = shortlistView === 'removed'
     ? removedPodcasts
     : shortlistView === 'all'
       ? visiblePodcasts
       : featuredPodcasts.length > 0
         ? featuredPodcasts
         : visiblePodcasts.slice(0, 5)
+
+  /*
+   * Two hundred shows is a list you scroll past, not one you read. The controls
+   * appear once there is enough to lose something in, and default to the
+   * curated order — display_order is what the prospect sees, so reordering the
+   * operator's view by default would quietly hide the shape of their own page.
+   */
+  const shortlistCategories = useMemo(() => {
+    const names = new Set<string>()
+    shortlistBase.forEach((podcast) => podcastCategoryNames(podcast).forEach((name) => names.add(name)))
+    return Array.from(names).sort((left, right) => left.localeCompare(right))
+  }, [shortlistBase])
+
+  const shortlistQuery = shortlistSearch.trim().toLowerCase()
+  const filteredPodcasts = useMemo(() => {
+    const matches = shortlistBase.filter((podcast) => {
+      if (shortlistCategory !== 'all' && !podcastCategoryNames(podcast).includes(shortlistCategory)) return false
+      if (shortlistUnanalyzedOnly && podcast.ai_analyzed_at) return false
+      if (!shortlistQuery) return true
+      return shortlistHaystack(podcast).includes(shortlistQuery)
+    })
+    return shortlistSort === 'curated' ? matches : [...matches].sort(compareShortlist(shortlistSort))
+  }, [shortlistBase, shortlistCategory, shortlistQuery, shortlistSort, shortlistUnanalyzedOnly])
+
+  const shortlistFiltered = shortlistQuery !== '' || shortlistCategory !== 'all' || shortlistUnanalyzedOnly
+  const showShortlistControls = shortlistBase.length > SHORTLIST_CONTROLS_THRESHOLD || shortlistFiltered
+  const displayedPodcasts = filteredPodcasts.slice(0, shortlistLimit)
+  const clearShortlistFilters = () => {
+    setShortlistSearch('')
+    setShortlistCategory('all')
+    setShortlistUnanalyzedOnly(false)
+  }
   const publishedCount = prospects.filter((prospect) => prospect.published_at).length
   const reviewCount = prospects.filter((prospect) => ['review', 'failed'].includes(prospect.lifecycle_status)).length
   const totalViews = prospects.reduce((total, prospect) => total + (prospect.view_count || 0), 0)
@@ -1143,16 +1234,102 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                           </div>
                         )}
                       </div>
+
+                      {showShortlistControls && (
+                        <div className="mt-3 space-y-2">
+                          <div className="flex flex-col gap-2 sm:flex-row">
+                            <div className="relative flex-1">
+                              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                              <Input
+                                value={shortlistSearch}
+                                onChange={(event) => setShortlistSearch(event.target.value)}
+                                placeholder="Search shows, publishers, categories, or why they fit"
+                                className="h-9 pl-9"
+                                aria-label="Search this shortlist"
+                              />
+                            </div>
+                            {shortlistCategories.length > 1 && (
+                              <Select value={shortlistCategory} onValueChange={setShortlistCategory}>
+                                <SelectTrigger className="h-9 sm:w-52" aria-label="Filter by category">
+                                  <SelectValue placeholder="All categories" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="all">All categories</SelectItem>
+                                  {shortlistCategories.map((category) => (
+                                    <SelectItem key={category} value={category}>{category}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                            <Select value={shortlistSort} onValueChange={(value) => setShortlistSort(value as ShortlistSort)}>
+                              <SelectTrigger className="h-9 sm:w-44" aria-label="Sort this shortlist">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="curated">Dashboard order</SelectItem>
+                                <SelectItem value="fit">Best fit first</SelectItem>
+                                <SelectItem value="audience">Largest audience</SelectItem>
+                                <SelectItem value="name">Name A–Z</SelectItem>
+                                <SelectItem value="recent">Recently added</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                            <span>
+                              Showing {displayedPodcasts.length} of {filteredPodcasts.length}
+                              {shortlistFiltered && ` filtered from ${shortlistBase.length}`}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={cn('h-6 px-2 text-xs', shortlistUnanalyzedOnly && 'bg-muted text-foreground')}
+                              onClick={() => setShortlistUnanalyzedOnly((current) => !current)}
+                            >
+                              Not analyzed yet
+                            </Button>
+                            {shortlistFiltered && (
+                              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={clearShortlistFilters}>
+                                Clear filters
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </CardHeader>
                     <CardContent className="p-4 pt-0">
-                      {displayedPodcasts.length === 0 ? (
+                      {displayedPodcasts.length === 0 && shortlistFiltered ? (
+                        <div className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-xl border border-dashed p-6 text-center">
+                          <div className="rounded-full bg-muted p-3 text-muted-foreground"><Search className="h-6 w-6" /></div>
+                          <div>
+                            <p className="font-semibold">No shows match</p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              Nothing in this {shortlistBase.length}-show view matches what you typed.
+                            </p>
+                          </div>
+                          <Button variant="outline" size="sm" onClick={clearShortlistFilters}>Clear filters</Button>
+                        </div>
+                      ) : displayedPodcasts.length === 0 ? (
                         <div className="flex min-h-52 flex-col items-center justify-center gap-4 rounded-xl border border-dashed p-6 text-center">
                           <div className="rounded-full bg-primary/10 p-4 text-primary"><Mic2 className="h-7 w-7" /></div>
                           <div><p className="font-semibold">{shortlistView === 'removed' ? 'No removed podcasts' : 'No matches yet'}</p><p className="mt-1 max-w-md text-sm text-muted-foreground">{shortlistView === 'removed' ? 'Removed matches will appear here and can be restored.' : 'A focused profile lets Scout find and explain the strongest 8–12 opportunities.'}</p></div>
                           {shortlistView !== 'removed' && canManage && <Button disabled={mutating || !selected.readiness.profile_ready} onClick={startBuild}>{building ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}Build shortlist</Button>}
                         </div>
                       ) : (
-                        <div className="space-y-2">{displayedPodcasts.map((podcast) => <ShortlistRow key={podcast.id} podcast={podcast} disabled={!canManage || podcastMutation.isPending} onFeature={() => podcastMutation.mutate({ podcast, changes: { is_featured: !podcast.is_featured } })} onVisibility={() => podcastMutation.mutate({ podcast, changes: { visibility: podcast.visibility === 'visible' ? 'archived' : 'visible' } })} />)}</div>
+                        <div className="space-y-2">
+                          {displayedPodcasts.map((podcast) => <ShortlistRow key={podcast.id} podcast={podcast} disabled={!canManage || podcastMutation.isPending} onFeature={() => podcastMutation.mutate({ podcast, changes: { is_featured: !podcast.is_featured } })} onVisibility={() => podcastMutation.mutate({ podcast, changes: { visibility: podcast.visibility === 'visible' ? 'archived' : 'visible' } })} />)}
+                          {filteredPodcasts.length > displayedPodcasts.length && (
+                            <Button
+                              variant="outline"
+                              className="w-full"
+                              onClick={() => setShortlistLimit((current) => current + SHORTLIST_PAGE_SIZE)}
+                            >
+                              Show {Math.min(SHORTLIST_PAGE_SIZE, filteredPodcasts.length - displayedPodcasts.length)} more
+                              <span className="ml-1 text-muted-foreground">
+                                ({filteredPodcasts.length - displayedPodcasts.length} left)
+                              </span>
+                            </Button>
+                          )}
+                        </div>
                       )}
                     </CardContent>
                   </Card>
