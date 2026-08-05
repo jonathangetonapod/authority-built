@@ -50,6 +50,8 @@ export interface WorkspaceProspect {
   build_started_at: string | null
   build_completed_at: string | null
   published_at: string | null
+  /** An unreviewed change to a live dashboard. Independent of publication. */
+  pending_review_at: string | null
   sent_at: string | null
   first_engaged_at: string | null
   converted_at: string | null
@@ -117,7 +119,12 @@ export interface ProspectShortlistAddResult {
   added: number
   skipped: number
   podcast_ids: string[]
+  /** Always false now — a live dashboard is no longer taken down to accept an addition. */
   unpublished_for_review: boolean
+  /** Additions were made to a live dashboard and are waiting on an operator. */
+  changes_pending_review?: boolean
+  /** Those additions are hidden from the prospect until they are reviewed. */
+  hidden_pending_review?: boolean
 }
 
 export interface ProspectWorkspaceSummary {
@@ -297,6 +304,8 @@ export async function addWorkspaceProspectPodcasts(
     skipped: 0,
     podcast_ids: [],
     unpublished_for_review: false,
+    changes_pending_review: false,
+    hidden_pending_review: false,
   }
   for (let offset = 0; offset < podcasts.length; offset += 50) {
     const result = await invokeProspectStudio<ProspectShortlistAddResult>({
@@ -309,6 +318,8 @@ export async function addWorkspaceProspectPodcasts(
     combined.skipped += result.skipped
     combined.podcast_ids.push(...result.podcast_ids)
     combined.unpublished_for_review ||= result.unpublished_for_review
+    combined.changes_pending_review ||= Boolean(result.changes_pending_review)
+    combined.hidden_pending_review ||= Boolean(result.hidden_pending_review)
   }
   return combined
 }

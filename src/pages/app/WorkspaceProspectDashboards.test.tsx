@@ -70,6 +70,7 @@ const prospect: WorkspaceProspect = {
   build_started_at: null,
   build_completed_at: null,
   published_at: null,
+  pending_review_at: null,
   sent_at: null,
   first_engaged_at: null,
   converted_at: null,

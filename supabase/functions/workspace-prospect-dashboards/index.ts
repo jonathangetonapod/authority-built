@@ -79,6 +79,7 @@ const DASHBOARD_FIELDS = [
   'show_pricing_section',
   'is_active',
   'content_ready',
+  'pending_review_at',
   'view_count',
   'last_viewed_at',
   'created_by',
@@ -1233,10 +1234,10 @@ serve(async (req) => {
         build_error: null,
         updated_at: now,
       }
+      // A headshot is the operator's own asset, like the profile text around it.
+      // Swapping it marks a review; it does not close the page.
       if (existing.published_at) {
-        update.lifecycle_status = 'review'
-        update.published_at = null
-        update.content_ready = false
+        update.pending_review_at = now
       }
       const { data: updated, error: updateError } = await context.admin
         .from('prospect_dashboards')
@@ -1263,7 +1264,7 @@ serve(async (req) => {
         action: 'workspace.prospect.photo_uploaded',
         entityType: 'prospect_dashboard',
         entityId: dashboardId,
-        metadata: { unpublished_for_review: Boolean(existing.published_at) },
+        metadata: { changes_pending_review: Boolean(existing.published_at) },
       })
       return jsonResponse(req, METHODS, 200, await detailPayload(context.admin, workspaceId, dashboardId))
     }
@@ -1276,10 +1277,10 @@ serve(async (req) => {
         build_error: null,
         updated_at: now,
       }
+      // A headshot is the operator's own asset, like the profile text around it.
+      // Swapping it marks a review; it does not close the page.
       if (existing.published_at) {
-        update.lifecycle_status = 'review'
-        update.published_at = null
-        update.content_ready = false
+        update.pending_review_at = now
       }
       const { data: updated, error: updateError } = await context.admin
         .from('prospect_dashboards')
@@ -1303,7 +1304,7 @@ serve(async (req) => {
         action: 'workspace.prospect.photo_removed',
         entityType: 'prospect_dashboard',
         entityId: dashboardId,
-        metadata: { unpublished_for_review: Boolean(existing.published_at) },
+        metadata: { changes_pending_review: Boolean(existing.published_at) },
       })
       return jsonResponse(req, METHODS, 200, await detailPayload(context.admin, workspaceId, dashboardId))
     }
@@ -1316,10 +1317,15 @@ serve(async (req) => {
       }
       const profile = profilePayload(body.profile)
       const update: Record<string, unknown> = { ...profile, build_error: null }
+      /*
+       * A live dashboard stays live through a profile edit. This is the
+       * operator's own writing about their own prospect — there is no generated
+       * content here for anyone to have got wrong, and taking the page down
+       * while somebody is reading it is worse than showing them the newer
+       * sentence. It is still marked for review; that no longer means offline.
+       */
       if (existing.published_at) {
-        update.lifecycle_status = 'review'
-        update.published_at = null
-        update.content_ready = false
+        update.pending_review_at = new Date().toISOString()
       }
       const { data, error } = await context.admin
         .from('prospect_dashboards')
@@ -1337,7 +1343,7 @@ serve(async (req) => {
         action: 'workspace.prospect.profile_updated',
         entityType: 'prospect_dashboard',
         entityId: dashboardId,
-        metadata: { unpublished_for_review: Boolean(existing.published_at) },
+        metadata: { changes_pending_review: Boolean(existing.published_at) },
       })
       return jsonResponse(req, METHODS, 200, await detailPayload(context.admin, workspaceId, dashboardId))
     }
@@ -1381,14 +1387,22 @@ serve(async (req) => {
 
       if (newPodcasts.length > 0) {
         const now = new Date().toISOString()
-        const moveDashboardToReview = async () => {
+        const isLive = Boolean(existing.published_at)
+        /*
+         * Additions to a live dashboard arrive hidden rather than closing the
+         * page. The property worth keeping is that an unreviewed Finder
+         * addition is never visible to the prospect; unpublishing achieved that
+         * by making nothing visible at all, including the shortlist somebody
+         * was already reading. Writing the rows archived achieves it without
+         * the collateral: the live page is unchanged until an operator shows
+         * them, and a failure part-way through leaves rows nobody can see.
+         */
+        const markPendingReview = async () => {
           const { error: dashboardUpdateError } = await context.admin
             .from('prospect_dashboards')
             .update({
-              lifecycle_status: 'review',
               build_error: null,
-              published_at: null,
-              content_ready: false,
+              pending_review_at: now,
               updated_at: now,
             })
             .eq('id', dashboardId)
@@ -1398,9 +1412,10 @@ serve(async (req) => {
           }
         }
 
-        // Close the public surface before writing new rows so a failed state update
-        // can never expose unreviewed Finder additions on an already-live dashboard.
-        if (existing.published_at) await moveDashboardToReview()
+        // Mark the review before writing, for the same reason the old code
+        // unpublished first: a failure between the two must not leave additions
+        // that nobody has been told to look at.
+        if (isLive) await markPendingReview()
 
         const catalogMerge = await context.admin.rpc('merge_global_podcast_catalog_batch_v1', {
           p_workspace_id: workspaceId,
@@ -1452,14 +1467,16 @@ serve(async (req) => {
             audience_size: podcast.audience_size,
             last_posted_at: podcast.last_posted_at,
             podcast_categories: podcast.podcast_categories,
-            visibility: 'visible',
+            // Hidden on a live dashboard until an operator reviews them; visible
+            // immediately on one nobody can read yet.
+            visibility: isLive ? 'archived' : 'visible',
+            archived_at: isLive ? now : null,
             display_order: startingOrder + index,
             is_featured: false,
             featured_order: null,
             relevance_score: podcast.relevance_score,
             relevance_reason: podcast.relevance_reason,
             match_source: 'manual',
-            archived_at: null,
             archived_by: null,
             updated_at: now,
           })), { onConflict: 'prospect_dashboard_id,podcast_id', ignoreDuplicates: true })
@@ -1469,9 +1486,21 @@ serve(async (req) => {
         }
         addedPodcastIds = (addedPodcasts || []).map((podcast) => String(podcast.podcast_id))
 
-        if (addedPodcastIds.length > 0 && !existing.published_at) await moveDashboardToReview()
+        // A dashboard nobody can read yet keeps the old behaviour: additions are
+        // visible straight away and the lifecycle says it wants a look.
+        if (addedPodcastIds.length > 0 && !isLive) {
+          const { error: reviewError } = await context.admin
+            .from('prospect_dashboards')
+            .update({ lifecycle_status: 'review', build_error: null, updated_at: now })
+            .eq('id', dashboardId)
+            .eq('workspace_id', workspaceId)
+          if (reviewError) {
+            throw new HttpError(500, 'SHORTLIST_ADD_FAILED', 'The prospect review state could not be updated')
+          }
+        }
       }
 
+      const changesPendingReview = Boolean(existing.published_at && addedPodcastIds.length > 0)
       await writeAudit(context.admin, {
         workspaceId,
         actorUserId: context.user.id,
@@ -1480,14 +1509,18 @@ serve(async (req) => {
         entityId: dashboardId,
         metadata: {
           podcast_ids: addedPodcastIds,
-          unpublished_for_review: Boolean(existing.published_at && addedPodcastIds.length > 0),
+          changes_pending_review: changesPendingReview,
         },
       })
       return jsonResponse(req, METHODS, 200, {
         added: addedPodcastIds.length,
         skipped: podcasts.length - addedPodcastIds.length,
         podcast_ids: addedPodcastIds,
-        unpublished_for_review: Boolean(existing.published_at && addedPodcastIds.length > 0),
+        // Kept in the shape because callers read it, and now always false: a
+        // live dashboard is no longer taken down to accept an addition.
+        unpublished_for_review: false,
+        changes_pending_review: changesPendingReview,
+        hidden_pending_review: changesPendingReview,
       })
     }
 

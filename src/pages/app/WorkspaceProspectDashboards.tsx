@@ -575,6 +575,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
   const [editingProfile, setEditingProfile] = useState(false)
   const [profileForm, setProfileForm] = useState<ProspectProfileForm>(emptyProfileForm)
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
+  const [rebuildDialogOpen, setRebuildDialogOpen] = useState(false)
   const [shortlistView, setShortlistView] = useState<'featured' | 'all' | 'removed'>(requestedShortlistView)
   const isPlatformWorkspace = platformWorkspaceId !== undefined
   const selectedWorkspaceId = (platformWorkspaceId || '').toLowerCase()
@@ -778,6 +779,19 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
   const finderHref = selected
     ? `${prospectFinderHref}?prospect=${encodeURIComponent(selected.id)}`
     : `${workspaceBaseHref}/podcast-finder`
+
+  /*
+   * A rebuild is the one edit that still has to close the page: it regenerates
+   * the shortlist, and half-built content in front of a prospect is worse than
+   * nothing. So it asks first, and only when there is something live to lose.
+   */
+  const startBuild = () => {
+    if (selected?.published_at) {
+      setRebuildDialogOpen(true)
+      return
+    }
+    buildMutation.mutate()
+  }
 
   const openCreate = () => {
     setEditingProfile(false)
@@ -1022,11 +1036,37 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                           {canManage && (
                             <div className="mt-4 flex flex-wrap gap-2">
                               {(nextActionKind === 'profile' || nextActionKind === 'cta') && <Button onClick={openEdit}><Pencil className="mr-2 h-4 w-4" />{nextActionKind === 'cta' ? 'Edit next step' : 'Edit profile'}</Button>}
-                              {(nextActionKind === 'build' || nextActionKind === 'analyze') && <Button disabled={mutating} onClick={() => buildMutation.mutate()}>{building ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{nextActionKind === 'build' ? 'Build shortlist' : 'Analyze matches'}</Button>}
+                              {(nextActionKind === 'build' || nextActionKind === 'analyze') && <Button disabled={mutating} onClick={startBuild}>{building ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{nextActionKind === 'build' ? 'Build shortlist' : 'Analyze matches'}</Button>}
                               {nextActionKind === 'publish' && <Button disabled={mutating} onClick={() => publicationMutation.mutate(true)}><Send className="mr-2 h-4 w-4" />Publish dashboard</Button>}
                               {nextActionKind === 'share' && <Button onClick={() => void copyLiveLink()}><Copy className="mr-2 h-4 w-4" />Copy private link</Button>}
                               {nextActionKind === 'share' && <Button variant="outline" onClick={() => openExternalUrl(publicProspectUrl(selected.slug))}><Eye className="mr-2 h-4 w-4" />Open live</Button>}
                             </div>
+                          )}
+
+                          {/*
+                            * Live and edited at the same time is now a normal
+                            * state rather than a contradiction, so it needs
+                            * saying: the page is up, the changes are not on it.
+                            */}
+                          {selected.pending_review_at && selected.published_at && (
+                            <Alert className="mt-4 border-amber-200 bg-amber-50">
+                              <AlertTitle className="text-amber-900">Changes waiting for review</AlertTitle>
+                              <AlertDescription className="text-amber-900/80">
+                                The dashboard is still live and unchanged for the prospect. Anything
+                                added since {formatDate(selected.pending_review_at)} is hidden under
+                                Removed until you show it and publish.
+                                {canManage && (
+                                  <Button
+                                    size="sm"
+                                    className="ml-0 mt-3 block"
+                                    disabled={mutating}
+                                    onClick={() => publicationMutation.mutate(true)}
+                                  >
+                                    <Send className="mr-2 h-4 w-4" />Publish updates
+                                  </Button>
+                                )}
+                              </AlertDescription>
+                            </Alert>
                           )}
 
                           {canManage && selected.readiness.profile_ready && (
@@ -1109,7 +1149,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                         <div className="flex min-h-52 flex-col items-center justify-center gap-4 rounded-xl border border-dashed p-6 text-center">
                           <div className="rounded-full bg-primary/10 p-4 text-primary"><Mic2 className="h-7 w-7" /></div>
                           <div><p className="font-semibold">{shortlistView === 'removed' ? 'No removed podcasts' : 'No matches yet'}</p><p className="mt-1 max-w-md text-sm text-muted-foreground">{shortlistView === 'removed' ? 'Removed matches will appear here and can be restored.' : 'A focused profile lets Scout find and explain the strongest 8–12 opportunities.'}</p></div>
-                          {shortlistView !== 'removed' && canManage && <Button disabled={mutating || !selected.readiness.profile_ready} onClick={() => buildMutation.mutate()}>{building ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}Build shortlist</Button>}
+                          {shortlistView !== 'removed' && canManage && <Button disabled={mutating || !selected.readiness.profile_ready} onClick={startBuild}>{building ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}Build shortlist</Button>}
                         </div>
                       ) : (
                         <div className="space-y-2">{displayedPodcasts.map((podcast) => <ShortlistRow key={podcast.id} podcast={podcast} disabled={!canManage || podcastMutation.isPending} onFeature={() => podcastMutation.mutate({ podcast, changes: { is_featured: !podcast.is_featured } })} onVisibility={() => podcastMutation.mutate({ podcast, changes: { visibility: podcast.visibility === 'visible' ? 'archived' : 'visible' } })} />)}</div>
@@ -1139,6 +1179,31 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
         onUploadPhoto={(photo) => photoMutation.mutate({ photo })}
         onRemovePhoto={() => photoMutation.mutate({})}
       />
+
+      <Dialog open={rebuildDialogOpen} onOpenChange={setRebuildDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rebuild {selected?.prospect_name}&rsquo;s shortlist?</DialogTitle>
+            <DialogDescription>
+              This one does take the public page down. The shortlist is generated again from
+              scratch, so anyone opening the link will see &ldquo;being updated&rdquo; until you
+              publish it back. Editing the profile and adding podcasts no longer do this.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRebuildDialogOpen(false)}>Cancel</Button>
+            <Button
+              disabled={mutating}
+              onClick={() => {
+                setRebuildDialogOpen(false)
+                buildMutation.mutate()
+              }}
+            >
+              <Sparkles className="mr-2 h-4 w-4" />Rebuild and take it offline
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
         <DialogContent>

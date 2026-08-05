@@ -100,7 +100,16 @@ describe('prospectDashboards service', () => {
 
   it('adds Finder results to the selected prospect in bounded batches', async () => {
     invoke.mockResolvedValueOnce({
-      data: { added: 1, skipped: 0, podcast_ids: ['podcast-one'], unpublished_for_review: true },
+      data: {
+        added: 1,
+        skipped: 0,
+        podcast_ids: ['podcast-one'],
+        // A live dashboard is no longer taken down to accept an addition: the
+        // podcast arrives hidden and waits for an operator.
+        unpublished_for_review: false,
+        changes_pending_review: true,
+        hidden_pending_review: true,
+      },
       error: null,
     } as never)
 
@@ -115,7 +124,9 @@ describe('prospectDashboards service', () => {
       added: 1,
       skipped: 0,
       podcast_ids: ['podcast-one'],
-      unpublished_for_review: true,
+      unpublished_for_review: false,
+      changes_pending_review: true,
+      hidden_pending_review: true,
     })
     expect(invoke).toHaveBeenCalledWith('workspace-prospect-dashboards', {
       body: {

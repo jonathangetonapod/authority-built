@@ -11,6 +11,10 @@ const migration = readFileSync(
   'supabase/migrations/20260725000100_workspace_prospect_studio_foundation.sql',
   'utf8',
 )
+const pendingReviewMigration = readFileSync(
+  'supabase/migrations/20260805000100_prospect_pending_review.sql',
+  'utf8',
+)
 const config = readFileSync('supabase/config.toml', 'utf8')
 
 assert.match(studio, /const context = await requireAuthenticatedUser\(req\)/u)
@@ -34,15 +38,37 @@ assert.match(studio, /ranking_source: rankingSource/u)
 assert.match(studio, /\.from\('prospect_dashboard_podcasts'\)[\s\S]*?\.upsert\(selected, \{ onConflict: 'prospect_dashboard_id,podcast_id' \}\)/u)
 assert.match(studio, /\.in\('match_source', \['legacy', 'sheet', 'semantic', 'ai_ranked'\]\)/u)
 assert.match(studio, /rpc\('set_workspace_prospect_publication_v1'/u)
-assert.match(studio, /if \(existing\.published_at\)[\s\S]*?update\.published_at = null[\s\S]*?update\.content_ready = false/u, 'profile edits must unpublish stale positioning')
+// Publication now means only what the prospect can read. Review is its own
+// column, so an edit marks the dashboard without closing it — and the property
+// that used to justify closing it, that no unreviewed change reaches a
+// prospect, is kept by writing Finder additions hidden instead.
+assert.doesNotMatch(
+  studio,
+  /update\.published_at = null/u,
+  'no edit may unpublish a live prospect dashboard',
+)
+assert.match(
+  studio,
+  /if \(existing\.published_at\)\s*\{\s*update\.pending_review_at = /u,
+  'edits to a live dashboard must mark a pending review',
+)
 assert.match(studio, /if \(action === 'podcast-add'\)[\s\S]*?prospectShortlistPodcasts\(body\.podcasts\)/u)
 assert.match(studio, /action: 'workspace\.prospect\.shortlist\.added'/u)
-assert.match(studio, /lifecycle_status: 'review'[\s\S]*?published_at: null[\s\S]*?content_ready: false/u, 'Finder additions must return a live prospect to review')
+assert.match(
+  studio,
+  /const isLive = Boolean\(existing\.published_at\)[\s\S]*?if \(isLive\) await markPendingReview\(\)/u,
+  'Finder additions to a live prospect must be marked for review before they are written',
+)
+assert.match(
+  studio,
+  /visibility: isLive \? 'archived' : 'visible'/u,
+  'Finder additions must be hidden from a live dashboard until they are reviewed',
+)
 assert.match(studio, /requireManager\(access\)[\s\S]*?if \(action === 'photo-upload'\)/u, 'photo changes must require manager access')
 assert.match(studio, /if \(action === 'photo-upload'\)[\s\S]*?const path = `\$\{workspaceId\}\/\$\{dashboardId\}\/\$\{crypto\.randomUUID\(\)\}\.\$\{extension\}`/u)
-assert.match(studio, /if \(action === 'photo-upload'\)[\s\S]*?if \(existing\.published_at\)[\s\S]*?update\.lifecycle_status = 'review'[\s\S]*?update\.published_at = null[\s\S]*?update\.content_ready = false/u, 'a new photo must unpublish stale public positioning')
+assert.match(studio, /if \(action === 'photo-upload'\)[\s\S]*?if \(existing\.published_at\)[\s\S]*?update.pending_review_at = now/u, 'a new photo must mark a review without closing the page')
 assert.match(studio, /action: 'workspace\.prospect\.photo_uploaded'/u)
-assert.match(studio, /if \(action === 'photo-remove'\)[\s\S]*?if \(existing\.published_at\)[\s\S]*?update\.lifecycle_status = 'review'[\s\S]*?update\.published_at = null[\s\S]*?update\.content_ready = false/u, 'removing a photo must unpublish stale public positioning')
+assert.match(studio, /if \(action === 'photo-remove'\)[\s\S]*?if \(existing\.published_at\)[\s\S]*?update\.pending_review_at = now/u, 'removing a photo must mark a review without closing the page')
 assert.match(studio, /action: 'workspace\.prospect\.photo_removed'/u)
 assert.match(config, /\[functions\.workspace-prospect-dashboards\]\s+verify_jwt = true/u)
 
@@ -64,6 +90,22 @@ assert.match(migration, /workspace_staff_actor_role_v1\([\s\S]*?true[\s\S]*?acto
 assert.match(migration, /REVOKE ALL ON FUNCTION public\.set_workspace_prospect_publication_v1\([\s\S]*?FROM PUBLIC, anon, authenticated, service_role[\s\S]*?TO service_role/u)
 assert.match(migration, /REVOKE ALL PRIVILEGES ON TABLE public\.prospect_dashboards FROM anon/u)
 assert.match(migration, /REVOKE ALL PRIVILEGES ON TABLE public\.prospect_dashboard_podcasts FROM anon/u)
+
+// Review lives in its own column, and publishing is the operator saying they are
+// happy with what is live, so it clears it. Unpublishing must not: the changes
+// are still unreviewed and the studio has to keep saying so.
+assert.match(pendingReviewMigration, /ADD COLUMN IF NOT EXISTS pending_review_at TIMESTAMPTZ/u)
+assert.match(pendingReviewMigration, /CREATE OR REPLACE FUNCTION public\.set_workspace_prospect_publication_v1/u)
+assert.match(
+  pendingReviewMigration,
+  /pending_review_at = CASE WHEN p_publish THEN NULL ELSE dashboard\.pending_review_at END/u,
+  'publishing must clear a pending review and unpublishing must keep it',
+)
+assert.match(
+  pendingReviewMigration,
+  /REVOKE ALL ON FUNCTION public\.set_workspace_prospect_publication_v1\([\s\S]*?FROM PUBLIC, anon, authenticated, service_role[\s\S]*?TO service_role/u,
+  'the redefined publication function must keep its grants',
+)
 
 // Writing feedback still refuses an unpublished dashboard in the query itself:
 // nobody is reading the page, so there is nothing to soften.
