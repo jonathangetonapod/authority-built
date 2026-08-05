@@ -616,7 +616,9 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
     ? 'all'
     : searchParams.get('view') === 'removed'
       ? 'removed'
-      : 'featured'
+      : searchParams.get('view') === 'new'
+        ? 'new'
+        : 'featured'
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [prospectFilter, setProspectFilter] = useState<ProspectListFilter>('all')
@@ -678,6 +680,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
   useEffect(() => {
     setShortlistLimit(SHORTLIST_PAGE_SIZE)
   }, [selectedId, shortlistView, shortlistSearch, shortlistCategory, shortlistSort, shortlistUnanalyzedOnly])
+
 
   const detailQueryKey = ['workspace-prospect', user?.id || 'unknown', workspaceId, selectedId] as const
   const detailQuery = useQuery({
@@ -892,6 +895,12 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
    */
   const pendingAdditions = removedPodcasts.filter((podcast) => !podcast.archived_by)
   const removedByHand = removedPodcasts.filter((podcast) => podcast.archived_by)
+  // Restoring the last pending addition, or the last removed show, takes its tab
+  // away while the operator is standing on it.
+  useEffect(() => {
+    if (shortlistView === 'new' && pendingAdditions.length === 0) setShortlistView('all')
+    if (shortlistView === 'removed' && removedByHand.length === 0) setShortlistView('all')
+  }, [pendingAdditions.length, removedByHand.length, shortlistView])
   const allPodcasts = detail?.podcasts || []
   const browseBase = shortlistView === 'new'
     ? pendingAdditions
@@ -1259,7 +1268,11 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                     <CardHeader className="p-4 pb-3">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div><CardTitle className="flex items-center gap-2"><Mic2 className="h-5 w-5" />Podcast shortlist</CardTitle><CardDescription>{visiblePodcasts.length > 0 ? `${visiblePodcasts.length} approved opportunities. Start with the strongest featured matches.` : 'Build the shortlist once the profile is ready.'}</CardDescription></div>
-                        {visiblePodcasts.length > 0 && (
+                        {/* Gated on the whole shortlist, not the visible part of
+                            it: removing every visible show used to hide the tabs
+                            that were the only way back to the hidden ones, and
+                            then offer to rebuild. */}
+                        {allPodcasts.length > 0 && (
                           <div className="flex shrink-0 rounded-lg border bg-muted/30 p-1">
                             <Button variant={shortlistView === 'featured' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShortlistView('featured')}>Featured ({featuredPodcasts.length})</Button>
                             <Button variant={shortlistView === 'all' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShortlistView('all')}>All ({visiblePodcasts.length})</Button>

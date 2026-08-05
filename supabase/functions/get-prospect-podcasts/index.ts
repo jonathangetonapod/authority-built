@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
+import { ensureWorkspaceOriginAllowed, getCorsHeaders } from '../_shared/cors.ts'
 import { getCachedPodcasts, batchUpsertPodcastCache, type PodcastCacheData } from '../_shared/podcastCache.ts'
 import {
   HttpError,
@@ -8,11 +9,16 @@ import {
   requirePlatformAdminOrService,
 } from '../_shared/workspaceAuth.ts'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || 'https://getonapod.com',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Cache-Control': 'no-store',
-  'Vary': 'Origin',
+/*
+ * Static single-origin CORS meant this function answered every request with the
+ * platform origin, while the dashboard read next to it resolves the caller's
+ * workspace domain. On an agency's own hostname the browser accepted the
+ * dashboard and rejected the shortlist, so the page loaded with a permanent
+ * "needs a quick refresh" where the podcasts should be — the core of the page,
+ * broken exactly where white-labelling matters.
+ */
+function requestCorsHeaders(req: Request): Record<string, string> {
+  return { ...getCorsHeaders(req), 'Cache-Control': 'no-store' }
 }
 
 /**
@@ -448,6 +454,14 @@ Return ONLY valid JSON, no markdown code blocks.`
 }
 
 serve(async (req) => {
+  const admin = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  )
+  // Refreshes the live custom-domain allowlist before any header is built.
+  await ensureWorkspaceOriginAllowed(admin, req).catch(() => {})
+  const corsHeaders = requestCorsHeaders(req)
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }

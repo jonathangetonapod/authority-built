@@ -145,7 +145,14 @@ export function mergeResearchResults(
 
     byId.set(key(podcast.podcast_id), {
       ...current,
-      podcast: mergePodcastData(current.podcast, podcast),
+      /*
+       * The stored podcast_id keeps the casing it was first seen with.
+       * mergePodcastData overwrites every defined field, so without this the
+       * exact-case id changes to whichever source merged last — and selection,
+       * tier overrides, exclusions and the open detail panel are all keyed on
+       * the raw id, so they silently detached from the row they belonged to.
+       */
+      podcast: { ...mergePodcastData(current.podcast, podcast), podcast_id: current.podcast.podcast_id },
       sources: Array.from(new Set([...current.sources, source])),
       matchedQueries: matchedQuery
         ? Array.from(new Set([...current.matchedQueries, matchedQuery]))

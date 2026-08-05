@@ -859,7 +859,10 @@ export default function PodcastFinder({
                   message: `Podscan is busy. Retrying this page in ${retrySeconds} seconds…`,
                 })
                 await new Promise((resolve) => window.setTimeout(resolve, retrySeconds * 1000))
-                if (stopRequestedRef.current) throw error
+                // Distinguishable from a real failure: rethrowing the throttle
+                // error made an intentional stop count as an error and report
+                // "finished with 1 failed request" instead of "stopped".
+                if (stopRequestedRef.current) throw new Error('DISCOVERY_STOPPED')
               }
             }
             if (!response) throw new Error('Podscan did not return a search response.')
@@ -875,6 +878,7 @@ export default function PodcastFinder({
             const lastPage = Number.parseInt(response.data.pagination?.last_page || String(page), 10)
             if (podcasts.length === 0 || !Number.isFinite(lastPage) || page >= lastPage) spent.add(query)
           } catch (error) {
+            if (error instanceof Error && error.message === 'DISCOVERY_STOPPED') break
             errors += 1
             console.error('Podcast discovery page failed:', error)
             // Retired only after a second failure: erroring once is not the same
@@ -905,10 +909,10 @@ export default function PodcastFinder({
           ? `Stopped — ${found.toLocaleString()} podcasts kept`
           : `${found.toLocaleString()} podcasts ready for review`,
       })
-      if (errors > 0) {
-        toast.warning(`Discovery finished with ${errors} failed request${errors === 1 ? '' : 's'}.`)
-      } else if (stopRequestedRef.current) {
+      if (stopRequestedRef.current) {
         toast.success(`Stopped with ${found.toLocaleString()} podcasts kept.`)
+      } else if (errors > 0) {
+        toast.warning(`Discovery finished with ${errors} failed request${errors === 1 ? '' : 's'}.`)
       } else if (found < targetCount) {
         // Said plainly rather than presented as success: the keywords ran out
         // before the number did, and only more or different keywords fix that.

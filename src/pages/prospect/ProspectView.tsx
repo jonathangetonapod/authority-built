@@ -2027,7 +2027,7 @@ function ProspectViewContent() {
         </section>
       )}
 
-      {dashboard?.show_pricing_section === false && dashboard.cta_type !== 'none' && (
+      {dashboard && dashboard.cta_type !== 'none' && (
         <section className="px-4 py-12 md:py-16">
           <div className="container mx-auto">
             <div className="mx-auto grid gap-6 rounded-[32px] border border-[#0d1b2a]/8 bg-[#0d1b2a] px-6 py-8 text-white shadow-[0_20px_42px_rgba(13,27,42,0.16)] md:px-8 md:py-10 lg:grid-cols-[1fr_auto] lg:items-center">
@@ -2116,97 +2116,18 @@ function ProspectViewContent() {
         </section>
       )}
 
-      {/* CTA Section */}
-      {dashboard?.show_pricing_section !== false && (
-        <section className="px-4 py-12 md:py-16">
-          <div className="container mx-auto">
-            <div className="mx-auto overflow-hidden rounded-[32px] border border-[#0d1b2a]/8 bg-white shadow-[0_20px_42px_rgba(13,27,42,0.08)]">
-              <div className="grid gap-8 px-6 py-8 md:px-8 md:py-10 lg:grid-cols-[1.06fr_0.94fr] lg:gap-10">
-                <div className="max-w-2xl">
-                  <p className="section-kicker">Next step</p>
-                  <h2 className="mt-4 font-editorial text-4xl leading-[0.92] tracking-[-0.05em] text-[#0d1b2a] sm:text-5xl">
-                    Turn the approved rooms into real bookings.
-                  </h2>
-
-                  <p className="mt-5 max-w-xl text-base leading-8 text-[#4c5d73] md:text-lg">
-                    Once you approve the podcasts that feel right, our team handles host outreach, follow-up, scheduling, and the booking workflow.
-                  </p>
-
-                  <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                    <Button
-                      variant="hero"
-                      size="xl"
-                      className="min-h-[48px] w-full rounded-full text-sm sm:min-h-[56px] sm:w-auto sm:text-base"
-                      onClick={() => openExternalUrl('https://calendly.com/getonapodjg/30min')}
-                    >
-                      <Phone className="mr-2 h-4 w-4" />
-                      Book a Call
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="xl"
-                      className="min-h-[48px] w-full rounded-full border-[#0d1b2a]/10 bg-white text-sm text-[#0d1b2a] sm:min-h-[56px] sm:w-auto sm:text-base"
-                      onClick={() => openExternalUrl(`${window.location.origin}/what-to-expect`)}
-                    >
-                      See What to Expect
-                    </Button>
-                  </div>
-
-                  <p className="mt-5 text-sm text-[#5d7188]">
-                    Month-to-month. Cancel anytime. Use the dashboard first, then decide how you want to move.
-                  </p>
-                </div>
-
-                <div className="rounded-[28px] border border-[#0d1b2a]/8 bg-[#f8fbff] p-6">
-                  <p className="section-kicker">Starter plan</p>
-                  <div className="mt-4 flex items-end gap-2">
-                    <span className="font-display text-6xl font-semibold tracking-[-0.06em] text-[#0d1b2a]">$749</span>
-                    <span className="pb-2 text-sm text-[#5d7188]">/month</span>
-                  </div>
-
-                  <div className="mt-6 space-y-3">
-                    <button
-                      type="button"
-                      className="flex w-full items-start gap-3 rounded-[20px] border border-[#0d1b2a]/8 bg-white px-4 py-4 text-left transition-colors hover:bg-[#f2f7ff]"
-                      onClick={() => setSelectedPricingFeature('2+ guaranteed podcast bookings every month')}
-                    >
-                      <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#2d6df6]" />
-                      <span className="flex-1 text-sm leading-7 text-[#4c5d73]">2+ guaranteed podcast bookings every month</span>
-                      <Info className="mt-0.5 h-4 w-4 text-[#2d6df6]" />
-                    </button>
-                    <button
-                      type="button"
-                      className="flex w-full items-start gap-3 rounded-[20px] border border-[#0d1b2a]/8 bg-white px-4 py-4 text-left transition-colors hover:bg-[#f2f7ff]"
-                      onClick={() => setSelectedPricingFeature('Podcast Command Center access')}
-                    >
-                      <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#2d6df6]" />
-                      <span className="flex-1 text-sm leading-7 text-[#4c5d73]">Podcast Command Center access</span>
-                      <Info className="mt-0.5 h-4 w-4 text-[#2d6df6]" />
-                    </button>
-                    <button
-                      type="button"
-                      className="flex w-full items-start gap-3 rounded-[20px] border border-[#0d1b2a]/8 bg-white px-4 py-4 text-left transition-colors hover:bg-[#f2f7ff]"
-                      onClick={() => setSelectedPricingFeature('Reporting & analytics dashboard')}
-                    >
-                      <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#2d6df6]" />
-                      <span className="flex-1 text-sm leading-7 text-[#4c5d73]">Reporting and analytics dashboard</span>
-                      <Info className="mt-0.5 h-4 w-4 text-[#2d6df6]" />
-                    </button>
-                  </div>
-
-                  <div className="mt-6 rounded-[22px] border border-[#0d1b2a]/8 bg-white px-4 py-4">
-                    <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-[#5d7188]">Best for</p>
-                    <p className="mt-2 text-sm leading-7 text-[#4c5d73]">
-                      Founders, operators, and experts who want steady guest appearances without managing the booking process themselves.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-          </div>
-        </section>
-      )}
+      {/*
+       * The platform's own pricing block used to render here whenever a
+       * dashboard opted back into pricing: our Calendly, our $749 plan, our
+       * Command Center, and a button to our marketing site — under another
+       * agency's logo, on the one page the landing page promises clients never
+       * see our name on. Nothing about it could be true for a different agency.
+       *
+       * The call-to-action above is white-label and already covers this: it
+       * takes the dashboard's own CTA, falls back to the workspace scheduler,
+       * and says "reply to the email that brought you here" when there is
+       * neither. There is no second version of that worth keeping.
+       */}
 
       {/*
        * The FAQ is the agency's, not ours. It used to be PricingFAQ, which is
@@ -2263,7 +2184,7 @@ function ProspectViewContent() {
       <footer className="border-t border-[#0d1b2a]/8 bg-white/40 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 text-center">
           <p className="text-xs sm:text-sm text-[#5d7188]">
-            Prepared by <span className="font-semibold text-[#0d1b2a]">{workspaceBrand?.brand_name || 'Get On A Pod'}</span>
+            Prepared by <span className="font-semibold text-[#0d1b2a]">{workspaceBrand?.brand_name?.trim() || 'your booking team'}</span>
           </p>
         </div>
       </footer>
