@@ -97,6 +97,10 @@ import {
   type PodscanRateLimit,
   type SearchOptions,
 } from '@/services/podscan'
+import {
+  getWorkspacePodcastCatalog,
+  type WorkspacePodcastCatalogItem,
+} from '@/services/workspacePodcastCatalog'
 import { generatePodcastQueries } from '@/services/queryGeneration'
 import { toast } from 'sonner'
 
@@ -576,7 +580,7 @@ export default function PodcastFinder({
     setClientId(nextClientId)
   }
 
-  const handleGenerateQueries = async (): Promise<string[]> => {
+  const handleGenerateQueries = async (options: { fresh?: boolean } = {}): Promise<string[]> => {
     if (!selectedWorkspace || !selectedClient?.bio) {
       toast.error(`Add an approved ${targetLabel} profile before generating a search strategy.`)
       return []
@@ -592,10 +596,24 @@ export default function PodcastFinder({
         // The strategy decides how wide to cast, and the number of distinct
         // searches is most of what "wide" means.
         queryCount: DISCOVERY_STRATEGIES[strategy].queryCount,
+        // Asking again on the same profile should look somewhere else rather
+        // than re-running the searches that produced the list already on screen.
+        ...(options.fresh && queries.length > 0 ? { avoidQueries: queries } : {}),
       })
-      const normalized = generated.map(normalizePodscanQuery).filter(Boolean)
+      const normalized = generated
+        .map(normalizePodscanQuery)
+        .filter(Boolean)
+        .filter((query) => !(options.fresh && queries.includes(query)))
+      if (normalized.length === 0) {
+        toast.info('No searches came back that had not already been tried.')
+        return queries
+      }
       setQueries(normalized)
-      toast.success(`${targetLabelTitle} search strategy is ready — ${normalized.length} searches.`)
+      toast.success(
+        options.fresh
+          ? `${normalized.length} different searches ready.`
+          : `${targetLabelTitle} search strategy is ready — ${normalized.length} searches.`,
+      )
       return normalized
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Search strategy could not be generated.')
@@ -615,6 +633,43 @@ export default function PodcastFinder({
     setQueries((current) => [...current, normalized])
     setCustomQuery('')
   }
+
+  /*
+   * The shared database is a second index, and it was never consulted. Every
+   * run went to Podscan only, so shows this platform has already researched —
+   * with contact details already on them — could be missed by a live search
+   * that happens to word things differently. Catalog rows carry the same shape
+   * as a search hit once mapped, so they merge into the same result set and are
+   * tiered, scored and routed identically.
+   */
+  const catalogItemToPodcast = (item: WorkspacePodcastCatalogItem): PodcastData => ({
+    podcast_id: item.podcast_id,
+    podcast_name: item.podcast_name,
+    podcast_url: item.podcast_url || item.website || '',
+    podcast_description: item.podcast_description || undefined,
+    podcast_image_url: item.podcast_image_url || undefined,
+    podcast_reach_score: item.podcast_reach_score ?? undefined,
+    podcast_categories: (item.podcast_categories || []).map((category) => (
+      typeof category === 'string'
+        ? { category_id: category, category_name: category }
+        : { category_id: category.category_id, category_name: category.category_name }
+    )),
+    episode_count: item.episode_count ?? undefined,
+    language: item.language || undefined,
+    region: item.region || undefined,
+    publisher_name: item.publisher_name || undefined,
+    is_active: item.is_active,
+    rss_url: item.rss_feed || undefined,
+    last_posted_at: item.last_posted_at || undefined,
+    reach: {
+      audience_size: item.audience_size ?? undefined,
+      email: item.direct_email || item.free_podscan_email || undefined,
+      website: item.website || undefined,
+      itunes: item.itunes_rating !== null
+        ? { itunes_rating_average: String(item.itunes_rating) }
+        : undefined,
+    },
+  })
 
   const buildSearchOptions = (query: string, page: number): SearchOptions => {
     const options: SearchOptions = {
@@ -684,6 +739,32 @@ export default function PodcastFinder({
     let errors = 0
 
     try {
+      // The database we already own, before the one we pay per call for.
+      setProgress({ completed, total: totalRequests, message: 'Checking the shared podcast database…' })
+      for (const query of normalizedQueries) {
+        try {
+          const catalogPage = await getWorkspacePodcastCatalog(selectedWorkspace.id, {
+            search: query.replace(/["*]/gu, ' ').replace(/\s+/gu, ' ').trim(),
+            activity: 'all',
+            pageSize: 100,
+          })
+          const catalogPodcasts = catalogPage.items.map(catalogItemToPodcast)
+          rawResults += catalogPodcasts.length
+          collected = mergeResearchResults(collected, catalogPodcasts, 'Podcast database', query)
+          setResults(collected)
+        } catch (error) {
+          errors += 1
+          console.error('Podcast database lookup failed:', error)
+        }
+      }
+      if (collected.length > 0) {
+        setProgress({
+          completed,
+          total: totalRequests,
+          message: `${collected.length.toLocaleString()} from the shared database. Searching Podscan…`,
+        })
+      }
+
       for (let queryIndex = 0; queryIndex < normalizedQueries.length; queryIndex += 1) {
         const query = normalizedQueries[queryIndex]
         for (let page = 1; page <= config.pagesPerQuery; page += 1) {
@@ -1378,13 +1459,25 @@ export default function PodcastFinder({
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <Label>Podscan query strategy</Label>
-                      <p className="text-xs text-muted-foreground">Exact phrases use Podscan’s documented double-quote syntax.</p>
+                      <Label>Search strategy</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Run against the shared podcast database and Podscan. Exact phrases use Podscan’s
+                        documented double-quote syntax.
+                      </p>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => void handleGenerateQueries()} disabled={!selectedClient?.bio || isGenerating || scopeLocked}>
-                      {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                      {queries.length ? 'Regenerate' : 'Generate five queries'}
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" size="sm" onClick={() => void handleGenerateQueries()} disabled={!selectedClient?.bio || isGenerating || scopeLocked}>
+                        {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                        {queries.length ? 'Regenerate' : `Generate ${DISCOVERY_STRATEGIES[strategy].queryCount} searches`}
+                      </Button>
+                      {/* Regenerate can land on the same searches. This one is
+                          told what has been tried and asked to avoid it. */}
+                      {queries.length > 0 && (
+                        <Button variant="outline" size="sm" onClick={() => void handleGenerateQueries({ fresh: true })} disabled={!selectedClient?.bio || isGenerating || scopeLocked}>
+                          <RefreshCw className="mr-2 h-4 w-4" />Try different searches
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   {queries.map((query, index) => (
                     <div key={`${index}-${query}`} className="flex gap-2">

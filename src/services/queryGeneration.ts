@@ -13,6 +13,8 @@ export interface GenerateQueriesInput {
   prospectBio?: string
   /** Distinct searches to build the run from. The function clamps to 3–20. */
   queryCount?: number
+  /** Searches already used, so a fresh run looks somewhere else. */
+  avoidQueries?: string[]
   additionalContext?: Record<string, unknown>
 }
 
@@ -29,7 +31,7 @@ export interface GenerateQueriesResponse {
 export async function generatePodcastQueries(
   input: GenerateQueriesInput
 ): Promise<string[]> {
-  const { workspaceId, clientId, prospectDashboardId, clientName, clientBio, clientEmail, prospectName, prospectBio, queryCount } = input
+  const { workspaceId, clientId, prospectDashboardId, clientName, clientBio, clientEmail, prospectName, prospectBio, queryCount, avoidQueries } = input
   const scopedRequest = Boolean(workspaceId && (clientId || prospectDashboardId))
 
   // Support both client and prospect mode
@@ -53,8 +55,21 @@ export async function generatePodcastQueries(
         'Authorization': `Bearer ${session.access_token}`,
       },
       body: JSON.stringify(scopedRequest
-        ? { workspaceId, ...(prospectDashboardId ? { prospectDashboardId } : { clientId }), ...(queryCount ? { queryCount } : {}) }
-        : { clientName, clientBio, clientEmail, prospectName, prospectBio, ...(queryCount ? { queryCount } : {}) }),
+        ? {
+          workspaceId,
+          ...(prospectDashboardId ? { prospectDashboardId } : { clientId }),
+          ...(queryCount ? { queryCount } : {}),
+          ...(avoidQueries?.length ? { avoidQueries } : {}),
+        }
+        : {
+          clientName,
+          clientBio,
+          clientEmail,
+          prospectName,
+          prospectBio,
+          ...(queryCount ? { queryCount } : {}),
+          ...(avoidQueries?.length ? { avoidQueries } : {}),
+        }),
     })
 
     if (!response.ok) {

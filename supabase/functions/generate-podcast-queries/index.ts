@@ -88,6 +88,11 @@ serve(async (req) => {
     let { clientName, clientBio, clientEmail, prospectName, prospectBio } = body
     const { oldQuery } = body
     const queryCount = resolveQueryCount(body.queryCount)
+    // Searches a previous run already used. Repeating them returns the same
+    // shows, so a second run on the same profile should look elsewhere.
+    const avoidQueries: string[] = Array.isArray(body.avoidQueries)
+      ? body.avoidQueries.filter((entry: unknown) => typeof entry === 'string' && entry.trim()).slice(0, 40)
+      : []
     const scopedRequest = body.workspaceId !== undefined
       || body.clientId !== undefined
       || body.prospectDashboardId !== undefined
@@ -400,7 +405,10 @@ QUALITY GUIDELINES:
 - "sales * leaders" OR "revenue growth"
 - "women in tech" OR "technology innovation"
 
-Based on the following ${isProspectMode ? 'prospect' : 'client'} data:
+${avoidQueries.length > 0 ? `ALREADY SEARCHED — do not repeat these or anything close to them, and deliberately go after different vocabulary, adjacent industries, and different show formats:
+${avoidQueries.map((query: string) => `- ${query}`).join('\n')}
+
+` : ''}Based on the following ${isProspectMode ? 'prospect' : 'client'} data:
 - Name: ${targetName}
 - Bio: ${targetBio}
 ${clientEmail ? `- Email: ${clientEmail}` : ''}

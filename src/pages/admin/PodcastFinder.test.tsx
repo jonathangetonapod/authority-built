@@ -8,6 +8,7 @@ import { listPodcastResearchWorkspaces } from '@/services/adminWorkspaces'
 import { addClientShortlistPodcasts } from '@/services/clientShortlist'
 import { getClients, getWorkspaceClients, getWorkspaceResearchContext } from '@/services/clients'
 import { generatePodcastQueries } from '@/services/queryGeneration'
+import { getWorkspacePodcastCatalog } from '@/services/workspacePodcastCatalog'
 import { searchPodcastsWithMeta } from '@/services/podscan'
 import { addWorkspaceProspectPodcasts, getWorkspaceProspect } from '@/services/prospectDashboards'
 
@@ -40,6 +41,7 @@ vi.mock('@/services/clients', () => ({
   getWorkspaceResearchContext: vi.fn(),
 }))
 vi.mock('@/services/queryGeneration', () => ({ generatePodcastQueries: vi.fn() }))
+vi.mock('@/services/workspacePodcastCatalog', () => ({ getWorkspacePodcastCatalog: vi.fn() }))
 vi.mock('@/services/compatibilityScoring', () => ({ scoreCompatibilityBatch: vi.fn() }))
 vi.mock('@/services/clientShortlist', () => ({ addClientShortlistPodcasts: vi.fn() }))
 vi.mock('@/services/prospectDashboards', () => ({
@@ -60,6 +62,25 @@ const mockedClients = vi.mocked(getClients)
 const mockedWorkspaceClients = vi.mocked(getWorkspaceClients)
 const mockedResearchContext = vi.mocked(getWorkspaceResearchContext)
 const mockedGenerateQueries = vi.mocked(generatePodcastQueries)
+const mockedCatalog = vi.mocked(getWorkspacePodcastCatalog)
+
+function catalogPage(items: Array<Record<string, unknown>>) {
+  return {
+    workspace: { id: myWorkspace.id, name: 'My Workspace' },
+    items,
+    categories: [],
+    pagination: { page: 1, page_size: 100, total: items.length, total_pages: 1 },
+    summary: {
+      total_podcasts: items.length,
+      active_podcasts: items.length,
+      podcasts_with_free_email: 0,
+      podcasts_with_direct_email: 0,
+      podcasts_used_in_shortlists: 0,
+      shortlist_uses: 0,
+      contributing_workspaces: 1,
+    },
+  } as never
+}
 const mockedSearchPodcasts = vi.mocked(searchPodcastsWithMeta)
 const mockedAddToProspect = vi.mocked(addWorkspaceProspectPodcasts)
 const mockedProspect = vi.mocked(getWorkspaceProspect)
@@ -152,6 +173,7 @@ describe('PodcastFinder', () => {
       },
       existing_podcast_ids: [],
     })
+    mockedCatalog.mockResolvedValue(catalogPage([]))
     mockedAddToShortlist.mockResolvedValue({ added: 1, skipped: 0, podcast_ids: ['pod-new'] })
     mockedAddToProspect.mockResolvedValue({ added: 1, skipped: 0, podcast_ids: ['pod-new'], unpublished_for_review: true })
     mockedProspect.mockResolvedValue({
@@ -352,6 +374,61 @@ describe('PodcastFinder', () => {
       })],
     ))
     expect(screen.queryByText(/google sheet/i)).not.toBeInTheDocument()
+  })
+
+  /*
+   * Discovery used to consult Podscan alone, so a show this platform had
+   * already researched — contact details and all — could be missed because a
+   * live search worded things differently.
+   */
+  it('searches the shared podcast database alongside Podscan', async () => {
+    mockedGenerateQueries.mockResolvedValue(['founder stories'])
+    mockedCatalog.mockResolvedValue(catalogPage([{
+      podcast_id: 'pod-catalog',
+      podcast_name: 'Already Known Show',
+      podcast_description: 'A show the database already had.',
+      podcast_image_url: null,
+      podcast_url: 'https://example.com/already-known',
+      publisher_name: 'Known Media',
+      host_name: null,
+      podcast_categories: [],
+      episode_count: 90,
+      itunes_rating: 4.6,
+      spotify_rating: null,
+      audience_size: 5000,
+      podcast_reach_score: 60,
+      language: 'en',
+      region: 'US',
+      website: 'https://example.com',
+      rss_feed: null,
+      last_posted_at: '2026-07-20T00:00:00.000Z',
+      is_active: true,
+      catalog_updated_at: null,
+      free_podscan_email: null,
+      direct_email: 'host@example.com',
+      direct_verified_at: null,
+      shortlist_uses: 2,
+      workspace_uses: 1,
+    }]))
+    mockedSearchPodcasts.mockResolvedValue({
+      data: { podcasts: [], pagination: { last_page: '1' } },
+    } as never)
+
+    renderPage({ workspaceScoped: true })
+
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Client' }))
+    fireEvent.click(await screen.findByRole('option', { name: /Own Client/ }))
+
+    const runButton = await screen.findByRole('button', { name: 'Run balanced discovery' })
+    await waitFor(() => expect(runButton).toBeEnabled())
+    fireEvent.click(runButton)
+
+    // Podscan returned nothing at all; the result came from the database.
+    expect(await screen.findByText('Already Known Show')).toBeInTheDocument()
+    await waitFor(() => expect(mockedCatalog).toHaveBeenCalledWith(
+      myWorkspace.id,
+      expect.objectContaining({ search: 'founder stories' }),
+    ))
   })
 
   it('keeps a Studio prospect locked while researching and adds results back to that lead magnet', async () => {
