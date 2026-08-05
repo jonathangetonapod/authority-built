@@ -298,6 +298,20 @@ describe('WorkspaceProspectDashboards shortlist search and filters', () => {
     expect(screen.getByText('Removed')).toBeInTheDocument()
   })
 
+  it('treats picking a tab as browsing, which ends the search', async () => {
+    await openAllView()
+
+    const search = await screen.findByLabelText(/search this shortlist/i)
+    fireEvent.change(search, { target: { value: 'private practice' } })
+    expect(await screen.findByText('Private Practice Owners Club')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: `All (${visibleCount})` }))
+
+    // The search is over rather than silently ignored, so the tab shows what it says.
+    await waitFor(() => expect(screen.getByLabelText(/search this shortlist/i)).toHaveValue(''))
+    expect(await screen.findByText('Operations Show 0')).toBeInTheDocument()
+  })
+
   it('searches the publisher and the reason, not only the title', async () => {
     await openAllView()
 

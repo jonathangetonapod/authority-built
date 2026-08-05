@@ -36,7 +36,8 @@ describe('schedulerEmbedUrl', () => {
   it('asks Calendly to drop its own chrome', () => {
     const embed = new URL(schedulerEmbedUrl('https://calendly.com/agency/intro') as string)
     expect(embed.searchParams.get('embed_type')).toBe('Inline')
-    expect(embed.searchParams.get('embed_domain')).toBe('getonapod.com')
+    // The host serving the page, so an agency's own domain frames its own embed.
+    expect(embed.searchParams.get('embed_domain')).toBe(window.location.hostname)
     expect(embed.searchParams.get('hide_gdpr_banner')).toBe('1')
   })
 

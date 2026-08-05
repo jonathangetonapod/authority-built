@@ -950,6 +950,18 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
     setShortlistCategory('all')
     setShortlistUnanalyzedOnly(false)
   }
+
+  /*
+   * Picking a tab is browsing, and searching overrides browsing — so while a
+   * filter is active the tabs changed nothing on screen, silently reset paging,
+   * and then decided which bucket the operator landed in when they eventually
+   * cleared the search. Choosing a tab now ends the search, which is what
+   * choosing it appears to do.
+   */
+  const browseShortlist = (view: 'featured' | 'all' | 'removed' | 'new') => {
+    setShortlistView(view)
+    if (shortlistFiltered) clearShortlistFilters()
+  }
   const publishedCount = prospects.filter((prospect) => prospect.published_at).length
   const reviewCount = prospects.filter((prospect) => ['review', 'failed'].includes(prospect.lifecycle_status)).length
   const totalViews = prospects.reduce((total, prospect) => total + (prospect.view_count || 0), 0)
@@ -1185,7 +1197,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                                 {canManage && (
                                   <span className="mt-3 flex flex-wrap gap-2">
                                     {pendingAdditions.length > 0 && (
-                                      <Button size="sm" variant="outline" onClick={() => setShortlistView('new')}>
+                                      <Button size="sm" variant="outline" onClick={() => browseShortlist('new')}>
                                         Review {pendingAdditions.length} new
                                       </Button>
                                     )}
@@ -1274,10 +1286,10 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                             then offer to rebuild. */}
                         {allPodcasts.length > 0 && (
                           <div className="flex shrink-0 rounded-lg border bg-muted/30 p-1">
-                            <Button variant={shortlistView === 'featured' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShortlistView('featured')}>Featured ({featuredPodcasts.length})</Button>
-                            <Button variant={shortlistView === 'all' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShortlistView('all')}>All ({visiblePodcasts.length})</Button>
-                            {pendingAdditions.length > 0 && <Button variant={shortlistView === 'new' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShortlistView('new')}>New ({pendingAdditions.length})</Button>}
-                            {removedByHand.length > 0 && <Button variant={shortlistView === 'removed' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShortlistView('removed')}>Removed ({removedByHand.length})</Button>}
+                            <Button variant={shortlistView === 'featured' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => browseShortlist('featured')}>Featured ({featuredPodcasts.length})</Button>
+                            <Button variant={shortlistView === 'all' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => browseShortlist('all')}>All ({visiblePodcasts.length})</Button>
+                            {pendingAdditions.length > 0 && <Button variant={shortlistView === 'new' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => browseShortlist('new')}>New ({pendingAdditions.length})</Button>}
+                            {removedByHand.length > 0 && <Button variant={shortlistView === 'removed' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => browseShortlist('removed')}>Removed ({removedByHand.length})</Button>}
                           </div>
                         )}
                       </div>

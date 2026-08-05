@@ -91,6 +91,12 @@ export function bookingLinkFromPaste(value: string | null | undefined): string |
   return null
 }
 
+/** Where the embed is actually being framed. */
+function embedHost(): string {
+  const hostname = typeof window !== 'undefined' ? window.location?.hostname?.trim() : ''
+  return hostname || 'getonapod.com'
+}
+
 /**
  * The same link prepared for an iframe, or null when this host is not one we
  * inline. Calendly wants its chrome hidden; the rest embed as they are.
@@ -101,7 +107,12 @@ export function schedulerEmbedUrl(rawUrl: string | null | undefined): string | n
   const host = url.hostname.toLowerCase().replace(/^www\./u, '')
   if (!EMBEDDABLE_HOSTS.has(host)) return null
   if (host === 'calendly.com') {
-    url.searchParams.set('embed_domain', 'getonapod.com')
+    /*
+     * The page's own host, not ours. Calendly reads embed_domain to know where
+     * it is being framed, and hard-coding it shipped our domain inside every
+     * agency's iframe — on a white-label page served from their own hostname.
+     */
+    url.searchParams.set('embed_domain', embedHost())
     url.searchParams.set('embed_type', 'Inline')
     url.searchParams.set('hide_gdpr_banner', '1')
   }
