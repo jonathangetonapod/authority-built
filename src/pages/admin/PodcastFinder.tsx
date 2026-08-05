@@ -59,12 +59,14 @@ import { safeExternalUrl } from '@/lib/externalUrl'
 import {
   calculateOutreachPriority,
   compositeResearchScore,
-  DISCOVERY_STRATEGIES,
+  DEFAULT_DISCOVERY_TARGET,
+  DISCOVERY_TARGETS,
   getResearchTier,
+  MAX_PAGES_PER_QUERY,
   mergeResearchResults,
   normalizePodscanQuery,
+  queryCountForTarget,
   tierLabel,
-  type DiscoveryStrategy,
   type ResearchResult,
   type ResearchTier,
 } from '@/lib/podcastResearch'
@@ -121,7 +123,7 @@ interface RunScope {
   id: string
   workspaceId: string
   clientId: string
-  strategy: DiscoveryStrategy
+  targetCount: number
   startedAt: string
   completedAt?: string
   rawResults: number
@@ -132,7 +134,7 @@ interface RunScope {
 interface StoredScope {
   workspaceId?: string
   clientId?: string
-  strategy?: DiscoveryStrategy
+  targetCount?: number
 }
 
 interface FinderResearchContext extends WorkspaceResearchContext {
@@ -266,7 +268,7 @@ export default function PodcastFinder({
         ? requestedClientId || storedScopedClientId
         : storedScope.clientId || '',
   )
-  const [strategy, setStrategy] = useState<DiscoveryStrategy>(storedScope.strategy || 'balanced')
+  const [targetCount, setTargetCount] = useState<number>(storedScope.targetCount || DEFAULT_DISCOVERY_TARGET)
   const [language, setLanguage] = useState('en')
   const [region, setRegion] = useState('US')
   const [activityWindow, setActivityWindow] = useState('180')
@@ -433,11 +435,11 @@ export default function PodcastFinder({
   useEffect(() => {
     if (isTargetBound) return
     try {
-      window.sessionStorage.setItem(SCOPE_STORAGE_KEY, JSON.stringify({ workspaceId, clientId, strategy }))
+      window.sessionStorage.setItem(SCOPE_STORAGE_KEY, JSON.stringify({ workspaceId, clientId, targetCount }))
     } catch {
       // The selected scope remains usable in memory when browser storage is unavailable.
     }
-  }, [workspaceId, clientId, isTargetBound, strategy])
+  }, [workspaceId, clientId, isTargetBound, targetCount])
 
   useEffect(() => {
     setResultPage(1)
@@ -595,7 +597,7 @@ export default function PodcastFinder({
           : { clientId: selectedClient.id }),
         // The strategy decides how wide to cast, and the number of distinct
         // searches is most of what "wide" means.
-        queryCount: DISCOVERY_STRATEGIES[strategy].queryCount,
+        queryCount: queryCountForTarget(targetCount),
         // Asking again on the same profile should look somewhere else rather
         // than re-running the searches that produced the list already on screen.
         ...(options.fresh && queries.length > 0 ? { avoidQueries: queries } : {}),
@@ -709,14 +711,12 @@ export default function PodcastFinder({
     if (searchQueries.length === 0) return
 
     const normalizedQueries = Array.from(new Set(searchQueries.map(normalizePodscanQuery).filter(Boolean)))
-    const config = DISCOVERY_STRATEGIES[strategy]
-    const totalRequests = normalizedQueries.length * config.pagesPerQuery
     const startedAt = new Date().toISOString()
     const nextRun: RunScope = {
       id: crypto.randomUUID(),
       workspaceId: selectedWorkspace.id,
       clientId: selectedClient.id,
-      strategy,
+      targetCount,
       startedAt,
       rawResults: 0,
       apiCalls: 0,
@@ -730,7 +730,14 @@ export default function PodcastFinder({
     setExcludedIds(new Set())
     setRunScope(nextRun)
     setIsDiscovering(true)
-    setProgress({ completed: 0, total: totalRequests, message: `Starting ${targetLabel} discovery…` })
+    setProgress({ completed: 0, total: targetCount, message: `Looking for ${targetCount} podcasts…` })
+
+    // Progress is measured in podcasts found, not requests issued: the run stops
+    // when it has the number asked for, and how many searches that took is not
+    // something anybody needs to watch.
+    const countNew = (found: ResearchResult[]) => found
+      .filter((result) => !existingPodcastIds.has(result.podcast.podcast_id.toLowerCase()))
+      .length
 
     let collected: ResearchResult[] = []
     let completed = 0
@@ -740,7 +747,7 @@ export default function PodcastFinder({
 
     try {
       // The database we already own, before the one we pay per call for.
-      setProgress({ completed, total: totalRequests, message: 'Checking the shared podcast database…' })
+      setProgress({ completed, total: targetCount, message: 'Checking the shared podcast database…' })
       for (const query of normalizedQueries) {
         try {
           const catalogPage = await getWorkspacePodcastCatalog(selectedWorkspace.id, {
@@ -757,21 +764,29 @@ export default function PodcastFinder({
           console.error('Podcast database lookup failed:', error)
         }
       }
+      completed = countNew(collected)
       if (collected.length > 0) {
         setProgress({
           completed,
-          total: totalRequests,
-          message: `${collected.length.toLocaleString()} from the shared database. Searching Podscan…`,
+          total: targetCount,
+          message: `${completed.toLocaleString()} from the shared database. Searching Podscan…`,
         })
       }
 
-      for (let queryIndex = 0; queryIndex < normalizedQueries.length; queryIndex += 1) {
-        const query = normalizedQueries[queryIndex]
-        for (let page = 1; page <= config.pagesPerQuery; page += 1) {
+      /*
+       * Round robin: page one of every keyword before page two of any of them.
+       * Stopping at the target then leaves a spread across the whole strategy
+       * rather than everything the first keyword could produce.
+       */
+      const spent = new Set<string>()
+      for (let page = 1; page <= MAX_PAGES_PER_QUERY && completed < targetCount; page += 1) {
+        for (const query of normalizedQueries) {
+          if (completed >= targetCount) break
+          if (spent.has(query)) continue
           setProgress({
             completed,
-            total: totalRequests,
-            message: `Searching strategy ${queryIndex + 1} of ${normalizedQueries.length}, page ${page}…`,
+            total: targetCount,
+            message: `${completed.toLocaleString()} of ${targetCount} found — searching “${query}”…`,
           })
           try {
             let response: Awaited<ReturnType<typeof searchPodcastsWithMeta>> | null = null
@@ -788,7 +803,7 @@ export default function PodcastFinder({
                 const retrySeconds = Math.min(30, Math.max(1, requestError.retryAfterSeconds || 5))
                 setProgress({
                   completed,
-                  total: totalRequests,
+                  total: targetCount,
                   message: `Podscan is busy. Retrying this page in ${retrySeconds} seconds…`,
                 })
                 await new Promise((resolve) => window.setTimeout(resolve, retrySeconds * 1000))
@@ -802,36 +817,40 @@ export default function PodcastFinder({
             collected = mergeResearchResults(collected, podcasts, 'AI search', query)
             setResults(collected)
 
-            const lastPage = Number.parseInt(response.data.pagination?.last_page || String(config.pagesPerQuery), 10)
-            if (podcasts.length === 0 || page >= lastPage) {
-              completed += config.pagesPerQuery - page + 1
-              break
-            }
+            const lastPage = Number.parseInt(response.data.pagination?.last_page || String(page), 10)
+            if (podcasts.length === 0 || page >= lastPage) spent.add(query)
           } catch (error) {
             errors += 1
             console.error('Podcast discovery page failed:', error)
+            spent.add(query)
           }
-          completed += 1
+          completed = countNew(collected)
           setProgress({
             completed,
-            total: totalRequests,
-            message: `${collected.length.toLocaleString()} unique podcasts found so far`,
+            total: targetCount,
+            message: `${completed.toLocaleString()} of ${targetCount} found`,
           })
-          if (completed < totalRequests) await new Promise((resolve) => window.setTimeout(resolve, 525))
+          if (completed < targetCount) await new Promise((resolve) => window.setTimeout(resolve, 525))
         }
+        if (spent.size >= normalizedQueries.length) break
       }
 
       const completedAt = new Date().toISOString()
+      const found = countNew(collected)
       setRunScope({ ...nextRun, completedAt, rawResults, apiCalls, errors })
       setProgress({
-        completed: totalRequests,
-        total: totalRequests,
-        message: `${collected.length.toLocaleString()} unique podcasts ready for review`,
+        completed: found,
+        total: targetCount,
+        message: `${found.toLocaleString()} podcasts ready for review`,
       })
       if (errors > 0) {
-        toast.warning(`Discovery completed with ${errors} failed request${errors === 1 ? '' : 's'}.`)
+        toast.warning(`Discovery finished with ${errors} failed request${errors === 1 ? '' : 's'}.`)
+      } else if (found < targetCount) {
+        // Said plainly rather than presented as success: the keywords ran out
+        // before the number did, and only more or different keywords fix that.
+        toast.warning(`Found ${found.toLocaleString()} of ${targetCount} — these keywords are exhausted. Try different searches for more.`)
       } else {
-        toast.success(`Found ${collected.length.toLocaleString()} unique podcasts for ${selectedClient.name}.`)
+        toast.success(`Found ${found.toLocaleString()} podcasts for ${selectedClient.name}.`)
       }
     } finally {
       setIsDiscovering(false)
@@ -933,7 +952,7 @@ export default function PodcastFinder({
             id: crypto.randomUUID(),
             workspaceId,
             clientId,
-            strategy,
+            targetCount,
             startedAt: new Date().toISOString(),
             completedAt: new Date().toISOString(),
             rawResults: podcasts.length,
@@ -1332,42 +1351,37 @@ export default function PodcastFinder({
 
         <Card className={cn(!selectedClient && 'opacity-60')}>
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg">{isWorkspaceScoped ? '1.' : '2.'} Set the discovery balance</CardTitle>
-            <CardDescription>All modes keep relevant podcasts; the preset controls how broadly and deeply Podscan is searched.</CardDescription>
+            <CardTitle className="text-lg">{isWorkspaceScoped ? '1.' : '2.'} How many podcasts do you want?</CardTitle>
+            <CardDescription>
+              Discovery searches the shared database and Podscan for your keywords, and stops when it
+              has this many.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-3">
-              {(Object.keys(DISCOVERY_STRATEGIES) as DiscoveryStrategy[]).map((strategyId) => {
-                const option = DISCOVERY_STRATEGIES[strategyId]
-                const selected = strategy === strategyId
-                return (
-                  <button
-                    key={strategyId}
-                    type="button"
-                    aria-pressed={selected}
-                    disabled={!selectedClient || scopeLocked}
-                    onClick={() => setStrategy(strategyId)}
-                    className={cn(
-                      'rounded-xl border p-4 text-left transition-colors disabled:cursor-not-allowed',
-                      selected ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:border-primary/40 hover:bg-muted/30',
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold">{option.label}</span>
-                      {selected && <CheckCircle2 className="h-4 w-4 text-primary" />}
-                    </div>
-                    <p className="mt-1 text-sm text-muted-foreground">{option.description.replace(/\bclient\b/gu, targetLabel)}</p>
-                    <p className="mt-3 text-xs font-medium text-foreground">
-                      {option.queryCount} AI searches, {option.pagesPerQuery} pages each
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Up to {option.estimatedMaximum.toLocaleString()} raw matches
-                      {' · '}about {Math.max(1, Math.round((option.queryCount * option.pagesPerQuery * 1.4) / 60))} min
-                    </p>
-                  </button>
-                )
-              })}
+            <div className="flex flex-wrap gap-2">
+              {DISCOVERY_TARGETS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  aria-pressed={targetCount === option}
+                  disabled={!selectedClient || scopeLocked}
+                  onClick={() => setTargetCount(option)}
+                  className={cn(
+                    'rounded-xl border px-5 py-3 text-left transition-colors disabled:cursor-not-allowed',
+                    targetCount === option
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                      : 'hover:border-primary/40 hover:bg-muted/30',
+                  )}
+                >
+                  <span className="text-xl font-semibold">{option}</span>
+                  <span className="ml-1 text-sm text-muted-foreground">podcasts</span>
+                </button>
+              ))}
             </div>
+            <p className="text-xs text-muted-foreground">
+              About {queryCountForTarget(targetCount)} keyword searches, stopping early once it has
+              {' '}{targetCount}. Podcasts already on this {targetLabel}&rsquo;s list do not count toward it.
+            </p>
 
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1.5">
@@ -1422,7 +1436,7 @@ export default function PodcastFinder({
             <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
               <Button variant="ghost" size="sm" onClick={() => setShowAdvanced((value) => !value)}>
                 <SlidersHorizontal className="mr-2 h-4 w-4" />
-                Advanced strategy
+                Advanced filters
                 <ChevronDown className={cn('ml-2 h-4 w-4 transition-transform', showAdvanced && 'rotate-180')} />
               </Button>
               <Button
@@ -1434,7 +1448,7 @@ export default function PodcastFinder({
                 {isGenerating || isDiscovering ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {isGenerating ? 'Building strategy…' : 'Discovering…'}</>
                 ) : (
-                  <><Play className="mr-2 h-4 w-4" /> Run {DISCOVERY_STRATEGIES[strategy].label.toLowerCase()} discovery</>
+                  <><Play className="mr-2 h-4 w-4" /> Find {targetCount} podcasts</>
                 )}
               </Button>
             </div>
@@ -1468,7 +1482,7 @@ export default function PodcastFinder({
                     <div className="flex flex-wrap gap-2">
                       <Button variant="outline" size="sm" onClick={() => void handleGenerateQueries()} disabled={!selectedClient?.bio || isGenerating || scopeLocked}>
                         {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                        {queries.length ? 'Regenerate' : `Generate ${DISCOVERY_STRATEGIES[strategy].queryCount} searches`}
+                        {queries.length ? 'Suggest again' : 'Suggest keywords'}
                       </Button>
                       {/* Regenerate can land on the same searches. This one is
                           told what has been tried and asked to avoid it. */}

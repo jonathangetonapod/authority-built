@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PodcastFinder from '@/pages/admin/PodcastFinder'
-import { DISCOVERY_STRATEGIES } from '@/lib/podcastResearch'
+import { DEFAULT_DISCOVERY_TARGET, queryCountForTarget } from '@/lib/podcastResearch'
 import { listPodcastResearchWorkspaces } from '@/services/adminWorkspaces'
 import { addClientShortlistPodcasts } from '@/services/clientShortlist'
 import { getClients, getWorkspaceClients, getWorkspaceResearchContext } from '@/services/clients'
@@ -326,7 +326,7 @@ describe('PodcastFinder', () => {
     })
     renderPage({ workspaceScoped: true })
 
-    const runButton = await screen.findByRole('button', { name: 'Run balanced discovery' })
+    const runButton = await screen.findByRole('button', { name: `Find ${DEFAULT_DISCOVERY_TARGET} podcasts` })
     await waitFor(() => expect(runButton).toBeEnabled())
     fireEvent.click(runButton)
     expect(await screen.findByText('New Podcast')).toBeInTheDocument()
@@ -356,7 +356,7 @@ describe('PodcastFinder', () => {
     })
     renderPage({ workspaceScoped: true })
 
-    const runButton = await screen.findByRole('button', { name: 'Run balanced discovery' })
+    const runButton = await screen.findByRole('button', { name: `Find ${DEFAULT_DISCOVERY_TARGET} podcasts` })
     await waitFor(() => expect(runButton).toBeEnabled())
     fireEvent.click(runButton)
     await screen.findByText('New Podcast')
@@ -374,6 +374,45 @@ describe('PodcastFinder', () => {
       })],
     ))
     expect(screen.queryByText(/google sheet/i)).not.toBeInTheDocument()
+  })
+
+  /*
+   * The whole control is now "how many do you want". Three named strategies
+   * were three ways of saying "some", and none of them was the number anybody
+   * actually needed.
+   */
+  it('stops as soon as it has the number asked for', async () => {
+    mockedGenerateQueries.mockResolvedValue(['founder stories'])
+    mockedSearchPodcasts.mockResolvedValue({
+      data: {
+        podcasts: Array.from({ length: 30 }, (_, index) => ({
+          podcast_id: `pod-${index}`,
+          podcast_name: `Show ${index}`,
+          podcast_url: `https://example.com/show-${index}`,
+          last_posted_at: '2026-07-21T00:00:00.000Z',
+        })),
+        pagination: { last_page: '9' },
+      },
+    } as never)
+
+    renderPage({ workspaceScoped: true })
+
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Client' }))
+    fireEvent.click(await screen.findByRole('option', { name: /Own Client/ }))
+
+    fireEvent.click(await screen.findByRole('button', { name: '25 podcasts' }))
+
+    const runButton = await screen.findByRole('button', { name: 'Find 25 podcasts' })
+    await waitFor(() => expect(runButton).toBeEnabled())
+    fireEvent.click(runButton)
+
+    await screen.findByText('Show 0')
+    // Thirty came back on the first page against a target of twenty-five, so
+    // there is no reason to ask for page two of nine.
+    await waitFor(() => expect(mockedSearchPodcasts).toHaveBeenCalledTimes(1))
+    expect(mockedGenerateQueries).toHaveBeenCalledWith(expect.objectContaining({
+      queryCount: queryCountForTarget(25),
+    }))
   })
 
   /*
@@ -419,7 +458,7 @@ describe('PodcastFinder', () => {
     fireEvent.click(await screen.findByRole('combobox', { name: 'Client' }))
     fireEvent.click(await screen.findByRole('option', { name: /Own Client/ }))
 
-    const runButton = await screen.findByRole('button', { name: 'Run balanced discovery' })
+    const runButton = await screen.findByRole('button', { name: `Find ${DEFAULT_DISCOVERY_TARGET} podcasts` })
     await waitFor(() => expect(runButton).toBeEnabled())
     fireEvent.click(runButton)
 
@@ -459,16 +498,16 @@ describe('PodcastFinder', () => {
     )
     expect(mockedProspect).toHaveBeenCalledWith(myWorkspace.id, prospectId)
 
-    const runButton = screen.getByRole('button', { name: 'Run balanced discovery' })
+    const runButton = screen.getByRole('button', { name: `Find ${DEFAULT_DISCOVERY_TARGET} podcasts` })
     await waitFor(() => expect(runButton).toBeEnabled())
     fireEvent.click(runButton)
     await screen.findByText('SaaS Founder Show')
-    // The strategy decides how many distinct searches a run is built from, and
-    // the default is Balanced. It used to be five for every strategy.
+    // How many keywords a run is built from follows from how many podcasts were
+    // asked for. It used to be five, whatever anybody wanted.
     expect(mockedGenerateQueries).toHaveBeenCalledWith({
       workspaceId: myWorkspace.id,
       prospectDashboardId: prospectId,
-      queryCount: DISCOVERY_STRATEGIES.balanced.queryCount,
+      queryCount: queryCountForTarget(DEFAULT_DISCOVERY_TARGET),
     })
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select SaaS Founder Show' }))

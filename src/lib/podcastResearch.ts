@@ -1,50 +1,26 @@
 import type { PodcastData } from '@/services/podscan'
 
-export type DiscoveryStrategy = 'volume' | 'balanced' | 'precision'
 export type ResearchTier = 'a' | 'b' | 'c' | 'review' | 'excluded'
 
-export interface DiscoveryStrategyConfig {
-  id: DiscoveryStrategy
-  label: string
-  description: string
-  /** Distinct searches a run is built from. The lever that actually matters. */
-  queryCount: number
-  pagesPerQuery: number
-  estimatedMaximum: number
-}
-
 /*
- * Reach is queries × pages × 50, and the two multiplicands are not equal.
- * Page four of one search returns the tail of a set the first page already
- * covered, while a different search looks somewhere else in the index — so
- * volume comes from asking more questions before it comes from asking the same
- * one for longer. Every strategy used to be built from exactly five questions.
+ * Discovery asks one question — how many do you want? — and keeps searching
+ * until it has them or the keywords run dry. Three named strategies were three
+ * ways of saying "some", and the operator still had to guess which one produced
+ * the number they actually needed.
  */
-export const DISCOVERY_STRATEGIES: Record<DiscoveryStrategy, DiscoveryStrategyConfig> = {
-  volume: {
-    id: 'volume',
-    label: 'High volume',
-    description: 'Cast the widest relevant net for scaled cold outreach.',
-    queryCount: 20,
-    pagesPerQuery: 6,
-    estimatedMaximum: 6000,
-  },
-  balanced: {
-    id: 'balanced',
-    label: 'Balanced',
-    description: 'Build a large list while preserving meaningful client fit.',
-    queryCount: 12,
-    pagesPerQuery: 4,
-    estimatedMaximum: 2400,
-  },
-  precision: {
-    id: 'precision',
-    label: 'High precision',
-    description: 'Prioritize a smaller pool for deeper personalization.',
-    queryCount: 6,
-    pagesPerQuery: 2,
-    estimatedMaximum: 600,
-  },
+export const DISCOVERY_TARGETS = [25, 50, 100, 250, 500] as const
+export const DEFAULT_DISCOVERY_TARGET = 100
+
+/** Pages of one keyword before it is considered spent, whatever the target. */
+export const MAX_PAGES_PER_QUERY = 10
+
+/**
+ * Keywords to search for a target. Breadth beats depth — a further keyword
+ * reaches new shows where a further page of the same one returns the tail of a
+ * set already collected — so this grows with the target and then stops.
+ */
+export function queryCountForTarget(target: number): number {
+  return Math.min(20, Math.max(4, Math.ceil(target / 12)))
 }
 
 export interface ResearchResult {
