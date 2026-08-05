@@ -4,6 +4,9 @@ export interface AccountMembershipRecord {
   full_name: string | null
   role: string
   status: string
+  /** The member's own picture, shown beside their name in the sidebar. */
+  avatar_path?: string | null
+  avatar_updated_at?: string | null
 }
 
 export interface AccountMembershipDto {
@@ -12,6 +15,8 @@ export interface AccountMembershipDto {
   full_name: string | null
   role: string
   status: string
+  avatar_path: string | null
+  avatar_updated_at: string | null
 }
 
 export interface AccountWorkspaceRecord {
@@ -43,6 +48,8 @@ export function toAccountMembershipDto(
     full_name: membership.full_name,
     role: membership.role,
     status: membership.status,
+    avatar_path: membership.avatar_path ?? null,
+    avatar_updated_at: membership.avatar_updated_at ?? null,
   }
 }
 

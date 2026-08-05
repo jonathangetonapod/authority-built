@@ -1,6 +1,11 @@
 import { supabase } from '@/lib/supabase'
 import { toFunctionError } from '@/lib/functionErrors'
-import { WORKSPACE_LOGO_MAX_BYTES, WORKSPACE_LOGO_MIME_TYPES } from '@/lib/workspaceLogo'
+import {
+  MEMBER_AVATAR_MAX_BYTES,
+  MEMBER_AVATAR_MIME_TYPES,
+  WORKSPACE_LOGO_MAX_BYTES,
+  WORKSPACE_LOGO_MIME_TYPES,
+} from '@/lib/workspaceLogo'
 
 export type WorkspaceStaffRole = 'owner' | 'admin' | 'member'
 export type WorkspaceStaffStatus = 'provisioning' | 'invited' | 'active' | 'suspended' | 'revoked'
@@ -607,6 +612,55 @@ export async function updateWorkspaceLogo(
     image_base64: await fileBase64(file),
   }, 'The workspace logo could not be uploaded.')
   return parseBrandingMutation(data, canonicalWorkspaceId)
+}
+
+export interface MembershipAvatar {
+  avatar_path: string | null
+  avatar_updated_at: string | null
+}
+
+function parseAvatarMutation(data: unknown): MembershipAvatar {
+  const record = (data as { membership?: Record<string, unknown> } | null)?.membership
+  return {
+    avatar_path: typeof record?.avatar_path === 'string' ? record.avatar_path : null,
+    avatar_updated_at: typeof record?.avatar_updated_at === 'string' ? record.avatar_updated_at : null,
+  }
+}
+
+/** The member's own picture. Every active member may set their own. */
+export async function uploadMemberAvatar(
+  workspaceId: string,
+  file: File,
+  expectedAvatarPath: string | null,
+): Promise<MembershipAvatar> {
+  const canonicalWorkspaceId = canonicalUuid(workspaceId, 'Workspace ID')
+  if (!MEMBER_AVATAR_MIME_TYPES.includes(file.type as typeof MEMBER_AVATAR_MIME_TYPES[number])) {
+    throw new Error('Choose a PNG, JPEG, or WebP image.')
+  }
+  if (file.size === 0 || file.size > MEMBER_AVATAR_MAX_BYTES) {
+    throw new Error('Profile picture must be 2 MB or smaller.')
+  }
+  const data = await invoke({
+    action: 'update_avatar',
+    workspace_id: canonicalWorkspaceId,
+    expected_avatar_path: expectedAvatarPath,
+    mime_type: file.type,
+    image_base64: await fileBase64(file),
+  }, 'The profile picture could not be uploaded.')
+  return parseAvatarMutation(data)
+}
+
+export async function removeMemberAvatar(
+  workspaceId: string,
+  expectedAvatarPath: string,
+): Promise<MembershipAvatar> {
+  const canonicalWorkspaceId = canonicalUuid(workspaceId, 'Workspace ID')
+  const data = await invoke({
+    action: 'remove_avatar',
+    workspace_id: canonicalWorkspaceId,
+    expected_avatar_path: expectedAvatarPath,
+  }, 'The profile picture could not be removed.')
+  return parseAvatarMutation(data)
 }
 
 export async function removeWorkspaceLogo(

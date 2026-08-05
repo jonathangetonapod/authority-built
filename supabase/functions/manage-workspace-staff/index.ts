@@ -66,6 +66,7 @@ const LIFECYCLE_ACTIONS = [
 // separate defensive response bound instead of hiding the roster at 101.
 const MAX_ROSTER_RESPONSE_MEMBERS = 1_000;
 const WORKSPACE_LOGO_BUCKET = "workspace-logos";
+const MEMBER_AVATAR_BUCKET = "member-avatars";
 const MAX_WORKSPACE_LOGO_BYTES = 2 * 1024 * 1024;
 const MAX_WORKSPACE_LOGO_REQUEST_BYTES = 2_900_000;
 const WORKSPACE_LOGO_MIME_TYPES = {
@@ -1058,6 +1059,52 @@ function requireWorkspaceLogoImage(
     extension: WORKSPACE_LOGO_MIME_TYPES[mimeType],
     mimeType,
   };
+}
+
+function requireExpectedAvatarPath(
+  value: unknown,
+  workspaceId: string,
+): string | null {
+  if (value === null || value === undefined) return null;
+  const path = requireString(value, "expected_avatar_path", { max: 320 });
+  // Confined to this workspace's folder, so no caller can name another's object.
+  if (!path.startsWith(`${workspaceId}/`)) {
+    throw new HttpError(400, "INVALID_FIELD", "expected_avatar_path is invalid");
+  }
+  return path;
+}
+
+async function removeMemberAvatarObject(
+  admin: AdminClient,
+  path: string | null,
+): Promise<void> {
+  if (!path) return;
+  const { error } = await admin.storage.from(MEMBER_AVATAR_BUCKET).remove([path]);
+  // A leftover object is untidy, not incorrect; the row is what is read.
+  if (error) console.error("Member avatar cleanup failed");
+}
+
+async function setMembershipAvatar(
+  admin: AdminClient,
+  input: {
+    workspaceId: string;
+    expectedAvatarPath: string | null;
+    avatarPath: string | null;
+    actorUserId: string;
+    tokenIssuedAt: number;
+  },
+): Promise<Record<string, unknown>> {
+  const { data, error } = await admin.rpc("set_membership_avatar_v1", {
+    p_workspace_id: input.workspaceId,
+    p_expected_avatar_path: input.expectedAvatarPath,
+    p_avatar_path: input.avatarPath,
+    p_actor_user_id: input.actorUserId,
+    p_token_issued_at: input.tokenIssuedAt,
+  });
+  if (error) {
+    rpcFailure(error, "AVATAR_UPDATE_FAILED", "The profile picture could not be updated");
+  }
+  return (data ?? {}) as Record<string, unknown>;
 }
 
 async function setWorkspaceLogo(
@@ -3412,6 +3459,77 @@ serve(async (req) => {
         success: true,
         workspace: branding,
       });
+    }
+
+    /*
+     * A member's own picture. Not a manager action — everyone owns their own
+     * face — so there is no role check here, and the RPC locates the row by the
+     * authenticated actor rather than by anything the caller sends. The image
+     * validation is the logo's, since the constraints are identical.
+     */
+    if (action === "update_avatar") {
+      requireOnlyKeys(body, [
+        "action",
+        "workspace_id",
+        "expected_avatar_path",
+        "mime_type",
+        "image_base64",
+      ]);
+      const expectedAvatarPath = requireExpectedAvatarPath(
+        body.expected_avatar_path,
+        workspaceId,
+      );
+      const image = requireWorkspaceLogoImage(body.mime_type, body.image_base64);
+      const avatarPath =
+        `${workspaceId}/${user.id}/${crypto.randomUUID()}.${image.extension}`;
+      const { error: uploadError } = await admin.storage
+        .from(MEMBER_AVATAR_BUCKET)
+        .upload(avatarPath, image.bytes, {
+          cacheControl: "31536000",
+          contentType: image.mimeType,
+          upsert: false,
+        });
+      if (uploadError) {
+        throw new HttpError(
+          502,
+          "AVATAR_UPLOAD_FAILED",
+          "The profile picture could not be uploaded",
+        );
+      }
+
+      let avatar: Record<string, unknown>;
+      try {
+        avatar = await setMembershipAvatar(admin, {
+          workspaceId,
+          expectedAvatarPath,
+          avatarPath,
+          actorUserId: user.id,
+          tokenIssuedAt,
+        });
+      } catch (error) {
+        // The row did not take it, so the object should not linger.
+        await removeMemberAvatarObject(admin, avatarPath);
+        throw error;
+      }
+      await removeMemberAvatarObject(admin, expectedAvatarPath);
+      return jsonResponse(req, METHODS, 200, { success: true, membership: avatar });
+    }
+
+    if (action === "remove_avatar") {
+      requireOnlyKeys(body, ["action", "workspace_id", "expected_avatar_path"]);
+      const expectedAvatarPath = requireExpectedAvatarPath(
+        body.expected_avatar_path,
+        workspaceId,
+      );
+      const avatar = await setMembershipAvatar(admin, {
+        workspaceId,
+        expectedAvatarPath,
+        avatarPath: null,
+        actorUserId: user.id,
+        tokenIssuedAt,
+      });
+      await removeMemberAvatarObject(admin, expectedAvatarPath);
+      return jsonResponse(req, METHODS, 200, { success: true, membership: avatar });
     }
 
     if (action === "update_logo") {

@@ -24,6 +24,8 @@ const ACCOUNT_MEMBERSHIP_COLUMNS = [
   'workspace_id',
   'email_normalized',
   'full_name',
+  'avatar_path',
+  'avatar_updated_at',
   'role',
   'status',
   'invite_expires_at',

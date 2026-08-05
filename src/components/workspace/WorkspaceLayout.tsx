@@ -50,7 +50,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { workspaceLogoUrl } from '@/lib/workspaceLogo'
+import { memberAvatarUrl, workspaceLogoUrl } from '@/lib/workspaceLogo'
 
 interface WorkspaceNavItem {
   id: string
@@ -310,9 +310,32 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
     .map((part) => part[0]?.toUpperCase())
     .join('') || 'W'
   const viewerEmail = user?.email
+  /*
+   * account-context returns the member's own picture alongside their name.
+   * Read through a local widening rather than by extending WorkspaceMembership,
+   * because AuthContext is on the do-not-modify-without-approval list and this
+   * needs no behaviour from it — only two fields it already carries at runtime.
+   */
+  const viewerAvatar = membership as (typeof membership & {
+    avatar_path?: string | null
+    avatar_updated_at?: string | null
+  }) | null
+  const viewerAvatarUrl = memberAvatarUrl(
+    workspace?.id,
+    user?.id,
+    viewerAvatar?.avatar_path,
+    viewerAvatar?.avatar_updated_at,
+  )
   const viewerName = membership?.full_name
     || user?.user_metadata?.full_name
     || 'Workspace user'
+  // Initials read better than a generic silhouette while no picture is set.
+  const viewerInitials = viewerName
+    .split(/\s+/u)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('')
   const viewerRole = platformWorkspace ? 'platform owner' : membership?.role
   const baseHref = platformWorkspace?.baseHref || '/app'
   const navStorageOwner = user?.id || user?.email?.trim().toLowerCase() || 'current-user'
@@ -560,7 +583,10 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
           <div className="border-t border-border p-4">
             <div className="mb-3 flex items-center gap-3">
               <Avatar className="h-10 w-10">
-                <AvatarFallback><User className="h-5 w-5" /></AvatarFallback>
+                {viewerAvatarUrl && <AvatarImage src={viewerAvatarUrl} alt={viewerName ? `${viewerName} profile picture` : 'Profile picture'} className="object-cover" />}
+                <AvatarFallback>
+                  {viewerInitials || <User className="h-5 w-5" />}
+                </AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{viewerName}</p>

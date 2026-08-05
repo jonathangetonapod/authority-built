@@ -45,7 +45,13 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
-import { WORKSPACE_LOGO_MIME_TYPES, workspaceLogoUrl } from '@/lib/workspaceLogo'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import {
+  MEMBER_AVATAR_MIME_TYPES,
+  memberAvatarUrl,
+  WORKSPACE_LOGO_MIME_TYPES,
+  workspaceLogoUrl,
+} from '@/lib/workspaceLogo'
 import { selectedWorkspaceBaseHref } from '@/lib/workspaceRoutes'
 import {
   createWorkspaceStaffTemporaryPassword,
@@ -54,8 +60,10 @@ import {
   mutateWorkspaceStaff,
   resetWorkspaceStaffTemporaryPassword,
   retryWorkspaceStaffTemporaryPassword,
+  removeMemberAvatar,
   removeWorkspaceLogo,
   updateWorkspaceLogo,
+  uploadMemberAvatar,
   updateWorkspaceBookingLink,
   updateWorkspaceClientBranding,
   updateWorkspaceName,
@@ -216,6 +224,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
   const [clientBrandDraft, setClientBrandDraft] = useState(defaultClientBrand)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const logoInputRef = useRef<HTMLInputElement>(null)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
   const isPlatformWorkspace = platformWorkspaceId !== undefined
   const workspaceId = (isPlatformWorkspace ? platformWorkspaceId : workspace?.id || '').toLowerCase()
   const validWorkspaceId = UUID_PATTERN.test(workspaceId)
@@ -353,6 +362,33 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
       toast.success('Workspace logo updated.')
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'The workspace logo could not be uploaded.'),
+  })
+
+  /*
+   * The member's own picture, not the workspace's. Every active member owns
+   * theirs — the server locates the row by the authenticated actor — so these
+   * carry no permission check beyond being signed in to this workspace.
+   */
+  const avatarPath = (membership as { avatar_path?: string | null } | null)?.avatar_path ?? null
+  const avatarMutation = useMutation({
+    mutationFn: (file: File) => uploadMemberAvatar(workspaceId, file, avatarPath),
+    onSuccess: async () => {
+      await refreshShellIdentity()
+      toast.success('Profile picture updated.')
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'The profile picture could not be uploaded.'),
+  })
+
+  const removeAvatarMutation = useMutation({
+    mutationFn: () => {
+      if (!avatarPath) throw new Error('There is no profile picture to remove.')
+      return removeMemberAvatar(workspaceId, avatarPath)
+    },
+    onSuccess: async () => {
+      await refreshShellIdentity()
+      toast.success('Profile picture removed.')
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'The profile picture could not be removed.'),
   })
 
   const removeLogoMutation = useMutation({
@@ -621,6 +657,77 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                 </aside>
 
                 <div className="min-w-0 space-y-12">
+                  {/*
+                    * First, because it is the only thing on this page that
+                    * belongs to the person rather than to the workspace, and it
+                    * is the one setting every member can change for themselves.
+                    */}
+                  <section id="your-profile" className="min-w-0 scroll-mt-28 space-y-4" aria-labelledby="your-profile-title">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">You</p>
+                      <h2 id="your-profile-title" className="mt-1 text-2xl font-semibold tracking-tight">Profile picture</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">Shown beside your name at the foot of the sidebar.</p>
+                    </div>
+
+                    <Card className="min-w-0 max-w-full overflow-hidden border-border/70 shadow-sm">
+                      <CardContent className="flex flex-wrap items-center gap-5 p-6 sm:p-7">
+                        <Avatar className="h-16 w-16">
+                          {memberAvatarUrl(workspaceId, user?.id, avatarPath, (membership as { avatar_updated_at?: string | null } | null)?.avatar_updated_at) && (
+                            <AvatarImage
+                              src={memberAvatarUrl(workspaceId, user?.id, avatarPath, (membership as { avatar_updated_at?: string | null } | null)?.avatar_updated_at) || undefined}
+                              alt="Your profile picture"
+                              className="object-cover"
+                            />
+                          )}
+                          <AvatarFallback>{(membership?.full_name || user?.email || '?').charAt(0).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <input
+                            ref={avatarInputRef}
+                            id="member-avatar"
+                            aria-label="Profile picture file"
+                            type="file"
+                            className="sr-only"
+                            accept={MEMBER_AVATAR_MIME_TYPES.join(',')}
+                            disabled={avatarMutation.isPending || removeAvatarMutation.isPending}
+                            onChange={(event) => {
+                              const file = event.currentTarget.files?.[0]
+                              event.currentTarget.value = ''
+                              if (file) avatarMutation.mutate(file)
+                            }}
+                          />
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={avatarMutation.isPending || removeAvatarMutation.isPending}
+                              onClick={() => avatarInputRef.current?.click()}
+                            >
+                              {avatarMutation.isPending
+                                ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                : <Upload className="mr-2 h-4 w-4" />}
+                              {avatarPath ? 'Replace picture' : 'Upload picture'}
+                            </Button>
+                            {avatarPath && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                disabled={avatarMutation.isPending || removeAvatarMutation.isPending}
+                                onClick={() => removeAvatarMutation.mutate()}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />Remove
+                              </Button>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground">PNG, JPEG, or WebP, up to 2 MB. Only you can change yours.</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </section>
+
                   <section id="workspace-general" className="min-w-0 scroll-mt-28 space-y-4" aria-labelledby="workspace-general-title">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Workspace</p>

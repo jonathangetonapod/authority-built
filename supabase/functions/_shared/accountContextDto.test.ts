@@ -19,13 +19,18 @@ Deno.test('account membership DTO exposes only the stable browser contract', () 
     invited_by: '44444444-4444-4444-8444-444444444444',
     accepted_at: '2026-07-21T00:00:00.000Z',
     workspace_access_not_before_epoch: 1,
+    avatar_path: '22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333/pic.webp',
+    avatar_updated_at: '2026-08-05T00:00:00.000Z',
   }
   const dto = toAccountMembershipDto(membership)
 
+  // The picture the sidebar draws is part of the browser contract; user_id,
+  // email_normalized, invited_by and the epoch remain firmly not.
   assert(
-    Object.keys(dto).join(',') === 'id,workspace_id,full_name,role,status',
+    Object.keys(dto).join(',') === 'id,workspace_id,full_name,role,status,avatar_path,avatar_updated_at',
     'membership DTO fields changed',
   )
+  assert(dto.avatar_path === membership.avatar_path, 'avatar path must pass through')
 })
 
 Deno.test('account workspace DTO omits creator and lifecycle metadata', () => {
