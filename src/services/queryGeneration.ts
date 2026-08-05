@@ -11,6 +11,8 @@ export interface GenerateQueriesInput {
   clientEmail?: string
   prospectName?: string
   prospectBio?: string
+  /** Distinct searches to build the run from. The function clamps to 3–20. */
+  queryCount?: number
   additionalContext?: Record<string, unknown>
 }
 
@@ -19,13 +21,15 @@ export interface GenerateQueriesResponse {
 }
 
 /**
- * Generate 5 AI-powered podcast search queries for a client OR prospect
- * Uses strategic mix: 1 precise + 4 broad queries for volume + relevance
+ * Generate AI-powered podcast search queries for a client OR prospect.
+ * Strategic mix of precise, broad-synonym, wildcard and adjacent-category
+ * searches. Count comes from the discovery strategy; the function defaults to
+ * five when nothing is asked for, which is what it always used to produce.
  */
 export async function generatePodcastQueries(
   input: GenerateQueriesInput
 ): Promise<string[]> {
-  const { workspaceId, clientId, prospectDashboardId, clientName, clientBio, clientEmail, prospectName, prospectBio } = input
+  const { workspaceId, clientId, prospectDashboardId, clientName, clientBio, clientEmail, prospectName, prospectBio, queryCount } = input
   const scopedRequest = Boolean(workspaceId && (clientId || prospectDashboardId))
 
   // Support both client and prospect mode
@@ -49,8 +53,8 @@ export async function generatePodcastQueries(
         'Authorization': `Bearer ${session.access_token}`,
       },
       body: JSON.stringify(scopedRequest
-        ? { workspaceId, ...(prospectDashboardId ? { prospectDashboardId } : { clientId }) }
-        : { clientName, clientBio, clientEmail, prospectName, prospectBio }),
+        ? { workspaceId, ...(prospectDashboardId ? { prospectDashboardId } : { clientId }), ...(queryCount ? { queryCount } : {}) }
+        : { clientName, clientBio, clientEmail, prospectName, prospectBio, ...(queryCount ? { queryCount } : {}) }),
     })
 
     if (!response.ok) {
@@ -78,7 +82,7 @@ export async function regenerateQuery(
   input: GenerateQueriesInput,
   oldQuery: string
 ): Promise<string> {
-  const { workspaceId, clientId, prospectDashboardId, clientName, clientBio, clientEmail, prospectName, prospectBio } = input
+  const { workspaceId, clientId, prospectDashboardId, clientName, clientBio, clientEmail, prospectName, prospectBio, queryCount } = input
   const scopedRequest = Boolean(workspaceId && (clientId || prospectDashboardId))
 
   // Support both client and prospect mode

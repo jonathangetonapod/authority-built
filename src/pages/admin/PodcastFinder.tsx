@@ -589,10 +589,13 @@ export default function PodcastFinder({
         ...(isProspectBound
           ? { prospectDashboardId: selectedClient.id }
           : { clientId: selectedClient.id }),
+        // The strategy decides how wide to cast, and the number of distinct
+        // searches is most of what "wide" means.
+        queryCount: DISCOVERY_STRATEGIES[strategy].queryCount,
       })
       const normalized = generated.map(normalizePodscanQuery).filter(Boolean)
       setQueries(normalized)
-      toast.success(`${targetLabelTitle} search strategy is ready.`)
+      toast.success(`${targetLabelTitle} search strategy is ready — ${normalized.length} searches.`)
       return normalized
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Search strategy could not be generated.')
@@ -1274,7 +1277,11 @@ export default function PodcastFinder({
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">{option.description.replace(/\bclient\b/gu, targetLabel)}</p>
                     <p className="mt-3 text-xs font-medium text-foreground">
-                      Up to {option.estimatedMaximum.toLocaleString()} raw matches from five AI strategies
+                      {option.queryCount} AI searches, {option.pagesPerQuery} pages each
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Up to {option.estimatedMaximum.toLocaleString()} raw matches
+                      {' · '}about {Math.max(1, Math.round((option.queryCount * option.pagesPerQuery * 1.4) / 60))} min
                     </p>
                   </button>
                 )

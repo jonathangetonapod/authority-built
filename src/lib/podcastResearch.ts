@@ -7,31 +7,43 @@ export interface DiscoveryStrategyConfig {
   id: DiscoveryStrategy
   label: string
   description: string
+  /** Distinct searches a run is built from. The lever that actually matters. */
+  queryCount: number
   pagesPerQuery: number
   estimatedMaximum: number
 }
 
+/*
+ * Reach is queries × pages × 50, and the two multiplicands are not equal.
+ * Page four of one search returns the tail of a set the first page already
+ * covered, while a different search looks somewhere else in the index — so
+ * volume comes from asking more questions before it comes from asking the same
+ * one for longer. Every strategy used to be built from exactly five questions.
+ */
 export const DISCOVERY_STRATEGIES: Record<DiscoveryStrategy, DiscoveryStrategyConfig> = {
   volume: {
     id: 'volume',
     label: 'High volume',
     description: 'Cast the widest relevant net for scaled cold outreach.',
-    pagesPerQuery: 4,
-    estimatedMaximum: 1000,
+    queryCount: 20,
+    pagesPerQuery: 6,
+    estimatedMaximum: 6000,
   },
   balanced: {
     id: 'balanced',
     label: 'Balanced',
     description: 'Build a large list while preserving meaningful client fit.',
-    pagesPerQuery: 2,
-    estimatedMaximum: 500,
+    queryCount: 12,
+    pagesPerQuery: 4,
+    estimatedMaximum: 2400,
   },
   precision: {
     id: 'precision',
     label: 'High precision',
     description: 'Prioritize a smaller pool for deeper personalization.',
-    pagesPerQuery: 1,
-    estimatedMaximum: 250,
+    queryCount: 6,
+    pagesPerQuery: 2,
+    estimatedMaximum: 600,
   },
 }
 

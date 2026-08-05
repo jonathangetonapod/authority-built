@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PodcastFinder from '@/pages/admin/PodcastFinder'
+import { DISCOVERY_STRATEGIES } from '@/lib/podcastResearch'
 import { listPodcastResearchWorkspaces } from '@/services/adminWorkspaces'
 import { addClientShortlistPodcasts } from '@/services/clientShortlist'
 import { getClients, getWorkspaceClients, getWorkspaceResearchContext } from '@/services/clients'
@@ -385,9 +386,12 @@ describe('PodcastFinder', () => {
     await waitFor(() => expect(runButton).toBeEnabled())
     fireEvent.click(runButton)
     await screen.findByText('SaaS Founder Show')
+    // The strategy decides how many distinct searches a run is built from, and
+    // the default is Balanced. It used to be five for every strategy.
     expect(mockedGenerateQueries).toHaveBeenCalledWith({
       workspaceId: myWorkspace.id,
       prospectDashboardId: prospectId,
+      queryCount: DISCOVERY_STRATEGIES.balanced.queryCount,
     })
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select SaaS Founder Show' }))

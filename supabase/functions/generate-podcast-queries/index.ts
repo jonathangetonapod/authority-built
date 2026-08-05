@@ -21,7 +21,22 @@ const FALLBACK_STOP_WORDS = new Set([
   'using', 'what', 'when', 'where', 'which', 'while', 'with', 'work', 'years', 'your', 'podcast', 'guest',
 ])
 
-function fallbackQueries(targetName: string | undefined, targetBio: string): string[] {
+/**
+ * How many searches a run is built from. Five was hard-coded, and five is the
+ * ceiling on how much of the index a run can reach: extra pages of the same
+ * query saturate quickly, whereas another query looks somewhere else entirely.
+ */
+const DEFAULT_QUERY_COUNT = 5
+const MIN_QUERY_COUNT = 3
+const MAX_QUERY_COUNT = 20
+
+function resolveQueryCount(value: unknown): number {
+  const requested = Number(value)
+  if (!Number.isFinite(requested)) return DEFAULT_QUERY_COUNT
+  return Math.min(MAX_QUERY_COUNT, Math.max(MIN_QUERY_COUNT, Math.trunc(requested)))
+}
+
+function fallbackQueries(targetName: string | undefined, targetBio: string, count = DEFAULT_QUERY_COUNT): string[] {
   const excluded = new Set((targetName || '').toLowerCase().match(/[a-z0-9]+/gu) || [])
   const frequencies = new Map<string, number>()
   for (const token of targetBio.toLowerCase().match(/[a-z][a-z0-9-]{2,}/gu) || []) {
@@ -34,13 +49,24 @@ function fallbackQueries(targetName: string | undefined, targetBio: string): str
     .map(([token]) => token)
   for (const fallback of defaults) if (!topics.includes(fallback)) topics.push(fallback)
   const [first, second, third, fourth, fifth] = topics.slice(0, 5)
-  return [
+  const seeds = [
     `"${first} ${second}"`,
     `"${first}" OR "${third}" OR "${fourth}"`,
     `"${first} * podcast" OR "${second} * stories"`,
     `"${third} leaders" OR "${fourth} growth"`,
     `"${second} * business" OR "${fifth} innovation"`,
   ]
+  // Beyond the fixed five, keep pairing further topics off the same ranked list
+  // so a larger request still reaches new language rather than repeating.
+  const extras: string[] = []
+  for (let index = 5; index < topics.length && seeds.length + extras.length < count; index += 1) {
+    const topic = topics[index]
+    const partner = topics[(index + 1) % topics.length]
+    extras.push(index % 2 === 0
+      ? `"${topic} * podcast" OR "${topic} interview"`
+      : `"${topic}" OR "${partner} ${topic}"`)
+  }
+  return [...seeds, ...extras].slice(0, count)
 }
 
 function fallbackReplacementQuery(
@@ -61,6 +87,7 @@ serve(async (req) => {
     const body = await req.json()
     let { clientName, clientBio, clientEmail, prospectName, prospectBio } = body
     const { oldQuery } = body
+    const queryCount = resolveQueryCount(body.queryCount)
     const scopedRequest = body.workspaceId !== undefined
       || body.clientId !== undefined
       || body.prospectDashboardId !== undefined
@@ -328,22 +355,25 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
       )
     }
 
-    // Generate 5 queries
-    console.log('🤖 [AI] Generating 5 strategic podcast search queries...')
+    // Generate the requested number of queries
+    console.log(`🤖 [AI] Generating ${queryCount} strategic podcast search queries...`)
     console.log(`   Using Claude Opus 4.5 with temperature 0.8`)
 
     const prompt = `You are an expert podcast researcher using Podscan.fm.
-Your goal: Generate 5 *broad, high-volume, but relevant* podcast search queries (each 3–7 words),
+Your goal: Generate ${queryCount} *broad, high-volume, but relevant* podcast search queries (each 3–7 words),
 designed to return the most possible relevant podcasts in Podscan.fm—using advanced search syntax.
 
 **Every query should be something likely to appear in the TITLE of a podcast, and should be
 relevant to the ${isProspectMode ? 'prospect' : 'client'}'s domain.**
 
 STRATEGIC MIX (IMPORTANT):
-1. ONE precise query (${isProspectMode ? 'prospect' : 'client'}'s exact niche + specific terms)
-2. TWO broad synonym queries (use OR to combine 3-5 related terms)
-3. ONE wildcard query (use * for variation: startup * podcast, business * stories)
-4. ONE adjacent category query (related but slightly different audience)
+Spread the ${queryCount} queries across these kinds, in roughly this proportion:
+1. Precise queries (${isProspectMode ? 'prospect' : 'client'}'s exact niche + specific terms) — about a fifth
+2. Broad synonym queries (use OR to combine 3-5 related terms) — about two fifths
+3. Wildcard queries (use * for variation: startup * podcast, business * stories) — about a fifth
+4. Adjacent category queries (related but slightly different audience) — about a fifth
+Every query must reach podcasts the others would miss. Near-duplicates waste a
+search: the whole point of asking for ${queryCount} is ${queryCount} different corners of the index.
 
 ADVANCED SEARCH SYNTAX RULES:
 - Use double quotes "like this" for exact phrases (e.g., "digital marketing", "business leadership")
@@ -375,7 +405,7 @@ Based on the following ${isProspectMode ? 'prospect' : 'client'} data:
 - Bio: ${targetBio}
 ${clientEmail ? `- Email: ${clientEmail}` : ''}
 
-Return exactly 5 queries as a JSON object with this exact format:
+Return exactly ${queryCount} queries as a JSON object with this exact format:
 {
   "queries": [
     "query 1 here",
@@ -401,7 +431,7 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
 
     if (!message) {
       return new Response(
-        JSON.stringify({ queries: fallbackQueries(targetName, targetBio), source: 'deterministic' }),
+        JSON.stringify({ queries: fallbackQueries(targetName, targetBio, queryCount), source: 'deterministic' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
@@ -409,7 +439,7 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
     const content = message.content[0]
     if (content.type !== 'text') {
       return new Response(
-        JSON.stringify({ queries: fallbackQueries(targetName, targetBio), source: 'deterministic' }),
+        JSON.stringify({ queries: fallbackQueries(targetName, targetBio, queryCount), source: 'deterministic' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
@@ -428,13 +458,25 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
       // First attempt: try parsing as-is
       const parsed = JSON.parse(jsonText)
 
-      if (!parsed.queries || !Array.isArray(parsed.queries) || parsed.queries.length !== 5) {
-        console.error('❌ [ERROR] Invalid response format: expected 5 queries')
-        throw new Error('Invalid response format: expected 5 queries')
+      /*
+       * Anything usable is used. Requiring an exact count threw away a whole
+       * run because a model returned four queries or six, which is the kind of
+       * strictness that makes a feature look broken for no gain — a short list
+       * is topped up from the deterministic fallback below.
+       */
+      if (!parsed.queries || !Array.isArray(parsed.queries) || parsed.queries.length === 0) {
+        console.error('❌ [ERROR] Invalid response format: no queries returned')
+        throw new Error('Invalid response format: no queries returned')
+      }
+      if (parsed.queries.length > queryCount) parsed.queries = parsed.queries.slice(0, queryCount)
+      if (parsed.queries.length < queryCount) {
+        const topUp = fallbackQueries(targetName, targetBio, queryCount)
+          .filter((candidate: string) => !parsed.queries.includes(candidate))
+        parsed.queries = [...parsed.queries, ...topUp].slice(0, queryCount)
       }
 
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-      console.log('✅ [SUCCESS] Generated 5 podcast search queries!')
+      console.log(`✅ [SUCCESS] Generated ${parsed.queries.length} podcast search queries!`)
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
       console.log('📋 [QUERIES]:')
       parsed.queries.forEach((q: string, i: number) => {
@@ -473,13 +515,13 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
         console.log('Extracted queries via split:', queries)
         console.log('Query count:', queries.length)
 
-        if (queries.length === 5) {
+        if (queries.length > 0) {
           return new Response(
             JSON.stringify({ queries }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
         } else {
-          console.error('Expected 5 queries but got:', queries.length)
+          console.error('Extraction produced no queries')
         }
       } else {
         console.error('Could not match array pattern in JSON text')
@@ -488,7 +530,7 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
       console.error('Manual extraction failed')
       console.error('Original text:', jsonText)
       return new Response(
-        JSON.stringify({ queries: fallbackQueries(targetName, targetBio), source: 'deterministic' }),
+        JSON.stringify({ queries: fallbackQueries(targetName, targetBio, queryCount), source: 'deterministic' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
