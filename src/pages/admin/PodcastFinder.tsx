@@ -288,6 +288,14 @@ export default function PodcastFinder({
    * state, so stopping keeps all of it.
    */
   const stopRequestedRef = useRef(false)
+  /*
+   * The set of already-shortlisted podcasts is read through a ref because a run
+   * outlives the render that started it: the research context can resolve after
+   * Run is pressed, refetch on window focus mid-run, or change because the
+   * operator added results to the shortlist while discovery continued. A stale
+   * copy counts known podcasts as new and stops the run short of the target.
+   */
+  const existingPodcastIdsRef = useRef<Set<string>>(new Set())
   const [progress, setProgress] = useState<DiscoveryProgress | null>(null)
   const [runScope, setRunScope] = useState<RunScope | null>(null)
   const [results, setResults] = useState<ResearchResult[]>([])
@@ -490,6 +498,10 @@ export default function PodcastFinder({
     ...addedPodcastIds,
   ].map((podcastId) => podcastId.toLowerCase())), [addedPodcastIds, researchContextQuery.data?.existing_podcast_ids])
   const currentShortlistCount = researchContextQuery.data?.current_shortlist_count ?? existingPodcastIds.size
+  // Kept current for the run loop, which reads the ref rather than this value.
+  useEffect(() => {
+    existingPodcastIdsRef.current = existingPodcastIds
+  }, [existingPodcastIds])
 
   const rows = useMemo(() => results.map((result) => {
     const outreach = calculateOutreachPriority(result.podcast)
@@ -744,7 +756,7 @@ export default function PodcastFinder({
     // when it has the number asked for, and how many searches that took is not
     // something anybody needs to watch.
     const countNew = (found: ResearchResult[]) => found
-      .filter((result) => !existingPodcastIds.has(result.podcast.podcast_id.toLowerCase()))
+      .filter((result) => !existingPodcastIdsRef.current.has(result.podcast.podcast_id.toLowerCase()))
       .length
 
     let collected: ResearchResult[] = []
@@ -788,6 +800,7 @@ export default function PodcastFinder({
        * rather than everything the first keyword could produce.
        */
       const spent = new Set<string>()
+      const queryFailures = new Map<string, number>()
       for (let page = 1; page <= MAX_PAGES_PER_QUERY && completed < targetCount && !stopRequestedRef.current; page += 1) {
         for (const query of normalizedQueries) {
           if (completed >= targetCount || stopRequestedRef.current) break
@@ -801,6 +814,7 @@ export default function PodcastFinder({
             let response: Awaited<ReturnType<typeof searchPodcastsWithMeta>> | null = null
             for (let attempt = 0; attempt < 2; attempt += 1) {
               try {
+                apiCalls += 1
                 response = await searchPodcastsWithMeta(buildSearchOptions(query, page), selectedWorkspace.id)
                 break
               } catch (error) {
@@ -816,22 +830,30 @@ export default function PodcastFinder({
                   message: `Podscan is busy. Retrying this page in ${retrySeconds} seconds…`,
                 })
                 await new Promise((resolve) => window.setTimeout(resolve, retrySeconds * 1000))
+                if (stopRequestedRef.current) throw error
               }
             }
             if (!response) throw new Error('Podscan did not return a search response.')
-            apiCalls += 1
             if (response.rateLimit) setRateLimit(response.rateLimit)
             const podcasts = response.data.podcasts || []
             rawResults += podcasts.length
             collected = mergeResearchResults(collected, podcasts, 'AI search', query)
             setResults(collected)
 
+            // NaN would make `page >= lastPage` false forever, so an unreadable
+            // value is treated as "this was the last page" rather than as licence
+            // to keep paging to the cap.
             const lastPage = Number.parseInt(response.data.pagination?.last_page || String(page), 10)
-            if (podcasts.length === 0 || page >= lastPage) spent.add(query)
+            if (podcasts.length === 0 || !Number.isFinite(lastPage) || page >= lastPage) spent.add(query)
           } catch (error) {
             errors += 1
             console.error('Podcast discovery page failed:', error)
-            spent.add(query)
+            // Retired only after a second failure: erroring once is not the same
+            // as running out of pages, and conflating them quietly shrinks the
+            // keyword set the run has left to work with.
+            const failures = (queryFailures.get(query) || 0) + 1
+            queryFailures.set(query, failures)
+            if (failures >= 2) spent.add(query)
           }
           completed = countNew(collected)
           setProgress({

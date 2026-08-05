@@ -1578,15 +1578,25 @@ serve(async (req) => {
       if (error) throw new HttpError(500, 'SHORTLIST_UPDATE_FAILED', 'The prospect shortlist could not be updated')
       if (!data) throw new HttpError(404, 'PODCAST_NOT_FOUND', 'Podcast is not on this prospect shortlist')
       const detail = await detailPayload(context.admin, workspaceId, dashboardId)
+      /*
+       * Curating the shortlist does not close the page either. Hiding one show
+       * on a dashboard sitting at the readiness floor used to drop it below the
+       * bar and unpublish it through the same RPC as an explicit unpublish —
+       * so an operator tidying a list killed a link they had already sent, with
+       * no dialog, no toast, and no banner afterwards to say why.
+       *
+       * Readiness is the gate on publishing, not a condition the page has to
+       * keep satisfying once live. It is marked for review instead.
+       */
       if (existing.published_at && !detail.dashboard.readiness.publishable) {
-        const { error: unpublishError } = await context.admin.rpc('set_workspace_prospect_publication_v1', {
-          p_workspace_id: workspaceId,
-          p_dashboard_id: dashboardId,
-          p_publish: false,
-          p_actor_user_id: context.user.id,
-          p_token_issued_at: context.tokenIssuedAt,
-        })
-        if (unpublishError) publicationError(unpublishError)
+        const { error: reviewError } = await context.admin
+          .from('prospect_dashboards')
+          .update({ pending_review_at: new Date().toISOString() })
+          .eq('id', dashboardId)
+          .eq('workspace_id', workspaceId)
+        if (reviewError) {
+          throw new HttpError(500, 'SHORTLIST_UPDATE_FAILED', 'The prospect review state could not be updated')
+        }
       }
       await writeAudit(context.admin, {
         workspaceId,

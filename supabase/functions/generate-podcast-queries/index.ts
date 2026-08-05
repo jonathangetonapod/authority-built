@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import Anthropic from 'npm:@anthropic-ai/sdk@0.32.1'
 import {
   HttpError,
+  parseJsonObject,
   requireAuthenticatedUser,
   requirePlatformAdminOrService,
   requireUuid,
@@ -31,12 +32,23 @@ const MIN_QUERY_COUNT = 3
 const MAX_QUERY_COUNT = 20
 
 function resolveQueryCount(value: unknown): number {
-  const requested = Number(value)
+  // Only a number means a number. Number(null) is 0 and Number('') is 0, and
+  // clamping those to the minimum turns "I did not ask" into "give me fewer".
+  const requested = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && value.trim() !== ''
+      ? Number(value)
+      : Number.NaN
   if (!Number.isFinite(requested)) return DEFAULT_QUERY_COUNT
   return Math.min(MAX_QUERY_COUNT, Math.max(MIN_QUERY_COUNT, Math.trunc(requested)))
 }
 
-function fallbackQueries(targetName: string | undefined, targetBio: string, count = DEFAULT_QUERY_COUNT): string[] {
+function fallbackQueries(
+  targetName: string | undefined,
+  targetBio: string,
+  count = DEFAULT_QUERY_COUNT,
+  avoid: string[] = [],
+): string[] {
   const excluded = new Set((targetName || '').toLowerCase().match(/[a-z0-9]+/gu) || [])
   const frequencies = new Map<string, number>()
   for (const token of targetBio.toLowerCase().match(/[a-z][a-z0-9-]{2,}/gu) || []) {
@@ -46,27 +58,40 @@ function fallbackQueries(targetName: string | undefined, targetBio: string, coun
   const defaults = ['business', 'leadership', 'growth', 'innovation', 'entrepreneurship']
   const topics = Array.from(frequencies.entries())
     .sort((left, right) => right[1] - left[1] || right[0].length - left[0].length || left[0].localeCompare(right[0]))
-    .map(([token]) => token)
+    .map(([token]) => token.replace(/-+$/u, ''))
+    .filter(Boolean)
   for (const fallback of defaults) if (!topics.includes(fallback)) topics.push(fallback)
-  const [first, second, third, fourth, fifth] = topics.slice(0, 5)
-  const seeds = [
-    `"${first} ${second}"`,
-    `"${first}" OR "${third}" OR "${fourth}"`,
-    `"${first} * podcast" OR "${second} * stories"`,
-    `"${third} leaders" OR "${fourth} growth"`,
-    `"${second} * business" OR "${fifth} innovation"`,
+
+  /*
+   * Pair every topic against a shifting partner through a rotating set of
+   * shapes, so the list grows to whatever was asked for. The old version tacked
+   * extras onto five fixed seeds and stopped at the end of the topic list, which
+   * meant a short bio returned five queries however many were requested — and
+   * nothing downstream could tell the difference.
+   */
+  const shapes: Array<(first: string, second: string) => string> = [
+    (first, second) => `"${first} ${second}"`,
+    (first, second) => `"${first}" OR "${second}"`,
+    (first, second) => `"${first} * podcast" OR "${second} * stories"`,
+    (first, second) => `"${first} leaders" OR "${second} growth"`,
+    (first, second) => `"${first} * business" OR "${second} innovation"`,
+    (first, second) => `"${first} interview" OR "${second} conversations"`,
   ]
-  // Beyond the fixed five, keep pairing further topics off the same ranked list
-  // so a larger request still reaches new language rather than repeating.
-  const extras: string[] = []
-  for (let index = 5; index < topics.length && seeds.length + extras.length < count; index += 1) {
-    const topic = topics[index]
-    const partner = topics[(index + 1) % topics.length]
-    extras.push(index % 2 === 0
-      ? `"${topic} * podcast" OR "${topic} interview"`
-      : `"${topic}" OR "${partner} ${topic}"`)
+  const avoidSet = new Set(avoid.map((entry) => entry.trim().toLowerCase()))
+  const queries: string[] = []
+  const seen = new Set<string>()
+  const maxAttempts = shapes.length * topics.length * 3
+  for (let attempt = 0; attempt < maxAttempts && queries.length < count; attempt += 1) {
+    const first = topics[attempt % topics.length]
+    const second = topics[(attempt + 1 + Math.floor(attempt / topics.length)) % topics.length]
+    if (!first || !second || first === second) continue
+    const query = shapes[attempt % shapes.length](first, second)
+    const key = query.toLowerCase()
+    if (seen.has(key) || avoidSet.has(key)) continue
+    seen.add(key)
+    queries.push(query)
   }
-  return [...seeds, ...extras].slice(0, count)
+  return queries
 }
 
 function fallbackReplacementQuery(
@@ -84,14 +109,34 @@ serve(async (req) => {
   }
 
   try {
-    const body = await req.json()
-    let { clientName, clientBio, clientEmail, prospectName, prospectBio } = body
-    const { oldQuery } = body
+    /*
+     * Size-capped rather than a bare req.json(). Bios and avoid lists are the
+     * caller-controlled text that reaches the model, credits are charged flat
+     * per call, and the platform key pays for any workspace without its own —
+     * so an unbounded body is a bill, not just a big request.
+     */
+    const body = await parseJsonObject(req, 32_768)
+    // parseJsonObject answers Record<string, unknown>, so the shape is asserted
+    // once here rather than at every use.
+    let { clientName, clientBio, clientEmail, prospectName, prospectBio } = body as {
+      clientName?: string
+      clientBio?: string
+      clientEmail?: string
+      prospectName?: string
+      prospectBio?: string
+    }
+    const oldQuery = typeof body.oldQuery === 'string' ? body.oldQuery : undefined
     const queryCount = resolveQueryCount(body.queryCount)
     // Searches a previous run already used. Repeating them returns the same
     // shows, so a second run on the same profile should look elsewhere.
+    // Bounded and flattened: this is the one caller-controlled string that
+    // reaches the prompt, and a newline in it would let an entry stop being a
+    // list item and start being an instruction.
     const avoidQueries: string[] = Array.isArray(body.avoidQueries)
-      ? body.avoidQueries.filter((entry: unknown) => typeof entry === 'string' && entry.trim()).slice(0, 40)
+      ? body.avoidQueries
+        .filter((entry: unknown): entry is string => typeof entry === 'string' && entry.trim() !== '')
+        .map((entry: string) => entry.replace(/\s+/gu, ' ').trim().slice(0, 200))
+        .slice(0, 40)
       : []
     const scopedRequest = body.workspaceId !== undefined
       || body.clientId !== undefined
@@ -232,7 +277,7 @@ serve(async (req) => {
     console.log(`   Mode: ${isProspectMode ? 'PROSPECT' : 'CLIENT'}`)
     console.log(`   Name: ${targetName?.substring(0, 50)}`)
     console.log(`   Bio length: ${targetBio?.length || 0} characters`)
-    console.log(`   ${oldQuery ? 'Regenerating' : 'Generating 5'} queries`)
+    console.log(`   ${oldQuery ? 'Regenerating' : `Generating ${queryCount}`} queries`)
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
 
     if (!targetBio || targetBio.trim().length === 0) {
@@ -416,11 +461,7 @@ ${clientEmail ? `- Email: ${clientEmail}` : ''}
 Return exactly ${queryCount} queries as a JSON object with this exact format:
 {
   "queries": [
-    "query 1 here",
-    "query 2 here",
-    "query 3 here",
-    "query 4 here",
-    "query 5 here"
+${Array.from({ length: queryCount }, (_unused, index) => `    "query ${index + 1} here"`).join(',\n')}
   ]
 }
 
@@ -428,7 +469,10 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
 
     const message = await anthropic.messages.create({
       model: 'claude-opus-4-5-20251101',
-      max_tokens: 500,
+      // Scaled with the request: twenty OR-chained queries do not fit in the
+      // 500 that five needed, and truncation fails silently all the way down to
+      // the deterministic fallback.
+      max_tokens: Math.min(4000, 400 + (queryCount * 80)),
       temperature: 0.8,
       messages: [{ role: 'user', content: prompt }],
     }).catch((error) => {
@@ -439,7 +483,7 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
 
     if (!message) {
       return new Response(
-        JSON.stringify({ queries: fallbackQueries(targetName, targetBio, queryCount), source: 'deterministic' }),
+        JSON.stringify({ queries: fallbackQueries(targetName, targetBio, queryCount, avoidQueries), source: 'deterministic' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
@@ -447,7 +491,7 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
     const content = message.content[0]
     if (content.type !== 'text') {
       return new Response(
-        JSON.stringify({ queries: fallbackQueries(targetName, targetBio, queryCount), source: 'deterministic' }),
+        JSON.stringify({ queries: fallbackQueries(targetName, targetBio, queryCount, avoidQueries), source: 'deterministic' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
@@ -472,14 +516,26 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
        * strictness that makes a feature look broken for no gain — a short list
        * is topped up from the deterministic fallback below.
        */
-      if (!parsed.queries || !Array.isArray(parsed.queries) || parsed.queries.length === 0) {
-        console.error('❌ [ERROR] Invalid response format: no queries returned')
-        throw new Error('Invalid response format: no queries returned')
+      /*
+       * Only usable strings survive. The old exact-count check incidentally
+       * rejected malformed shapes; relaxing it let numbers, objects, nulls and
+       * empty strings through to a caller that calls .trim() on each one.
+       */
+      const avoidSet = new Set(avoidQueries.map((entry) => entry.trim().toLowerCase()))
+      const usable: string[] = Array.isArray(parsed.queries)
+        ? parsed.queries
+          .filter((entry: unknown): entry is string => typeof entry === 'string' && entry.trim() !== '')
+          .map((entry: string) => entry.trim())
+          .filter((entry: string) => !avoidSet.has(entry.toLowerCase()))
+        : []
+      const deduped = Array.from(new Map(usable.map((entry) => [entry.toLowerCase(), entry])).values())
+      if (deduped.length === 0) {
+        console.error('❌ [ERROR] Invalid response format: no usable queries returned')
+        throw new Error('Invalid response format: no usable queries returned')
       }
-      if (parsed.queries.length > queryCount) parsed.queries = parsed.queries.slice(0, queryCount)
+      parsed.queries = deduped.slice(0, queryCount)
       if (parsed.queries.length < queryCount) {
-        const topUp = fallbackQueries(targetName, targetBio, queryCount)
-          .filter((candidate: string) => !parsed.queries.includes(candidate))
+        const topUp = fallbackQueries(targetName, targetBio, queryCount, [...avoidQueries, ...parsed.queries])
         parsed.queries = [...parsed.queries, ...topUp].slice(0, queryCount)
       }
 
@@ -523,9 +579,22 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
         console.log('Extracted queries via split:', queries)
         console.log('Query count:', queries.length)
 
-        if (queries.length > 0) {
+        const avoidSet = new Set(avoidQueries.map((entry) => entry.trim().toLowerCase()))
+        const usable = queries
+          .filter((entry: unknown): entry is string => typeof entry === 'string' && entry.trim() !== '')
+          .map((entry: string) => entry.trim())
+          .filter((entry: string) => !avoidSet.has(entry.toLowerCase()))
+        const recovered = Array.from(new Map(usable.map((entry) => [entry.toLowerCase(), entry])).values())
+          .slice(0, queryCount)
+        if (recovered.length > 0) {
+          // Recovery is not an excuse to ignore the count: top up like the
+          // parsed path does rather than returning one query for a request of
+          // twenty, and never return a bare empty string as a search.
+          const topped = recovered.length < queryCount
+            ? [...recovered, ...fallbackQueries(targetName, targetBio, queryCount, [...avoidQueries, ...recovered])].slice(0, queryCount)
+            : recovered
           return new Response(
-            JSON.stringify({ queries }),
+            JSON.stringify({ queries: topped }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
         } else {
@@ -538,7 +607,7 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
       console.error('Manual extraction failed')
       console.error('Original text:', jsonText)
       return new Response(
-        JSON.stringify({ queries: fallbackQueries(targetName, targetBio, queryCount), source: 'deterministic' }),
+        JSON.stringify({ queries: fallbackQueries(targetName, targetBio, queryCount, avoidQueries), source: 'deterministic' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }

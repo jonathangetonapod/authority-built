@@ -121,13 +121,20 @@ export function mergeResearchResults(
   source: string,
   matchedQuery?: string,
 ): ResearchResult[] {
-  const byId = new Map(existing.map((result) => [result.podcast.podcast_id, result]))
+  /*
+   * Keyed case-insensitively, like every podcast_id comparison in the finder.
+   * A run now merges two indexes — the shared catalog and Podscan — and the
+   * same show arriving with different casing counted twice, which both showed a
+   * duplicate row and let the run stop early believing it had hit its target.
+   */
+  const key = (podcastId: string) => podcastId.toLowerCase()
+  const byId = new Map(existing.map((result) => [key(result.podcast.podcast_id), result]))
 
   for (const podcast of podcasts) {
     if (!podcast.podcast_id) continue
-    const current = byId.get(podcast.podcast_id)
+    const current = byId.get(key(podcast.podcast_id))
     if (!current) {
-      byId.set(podcast.podcast_id, {
+      byId.set(key(podcast.podcast_id), {
         podcast,
         sources: [source],
         matchedQueries: matchedQuery ? [matchedQuery] : [],
@@ -136,7 +143,7 @@ export function mergeResearchResults(
       continue
     }
 
-    byId.set(podcast.podcast_id, {
+    byId.set(key(podcast.podcast_id), {
       ...current,
       podcast: mergePodcastData(current.podcast, podcast),
       sources: Array.from(new Set([...current.sources, source])),
