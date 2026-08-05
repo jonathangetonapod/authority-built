@@ -224,6 +224,11 @@ describe('WorkspaceProspectDashboards shortlist search and filters', () => {
       podcast_categories: [{ category_id: 'cat-health', category_name: 'Health' }],
       relevance_score: 8.7,
     }),
+    shortlistPodcast(100, {
+      podcast_name: 'Retired Founder Radio',
+      visibility: 'archived',
+      archived_at: '2026-08-02T00:00:00.000Z',
+    }),
   ]
 
   beforeEach(() => {
@@ -255,9 +260,11 @@ describe('WorkspaceProspectDashboards shortlist search and filters', () => {
     })
   })
 
+  const visibleCount = podcasts.filter((podcast) => podcast.visibility === 'visible').length
+
   async function openAllView() {
     renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: `All (${podcasts.length})` }))
+    fireEvent.click(await screen.findByRole('button', { name: `All (${visibleCount})` }))
   }
 
   it('finds one show in a shortlist too long to scroll', async () => {
@@ -268,7 +275,23 @@ describe('WorkspaceProspectDashboards shortlist search and filters', () => {
 
     expect(await screen.findByText('Private Practice Owners Club')).toBeInTheDocument()
     expect(screen.queryByText('Operations Show 1')).not.toBeInTheDocument()
-    expect(screen.getByText(/filtered from 31/i)).toBeInTheDocument()
+    expect(screen.getByText(/across the whole shortlist/i)).toBeInTheDocument()
+  })
+
+  /*
+   * The reported failure: on Featured, which is three shows out of two hundred,
+   * the search box was hidden and scoped to the open tab. Both made a search
+   * that plainly should work look broken.
+   */
+  it('offers search on the featured tab and looks through the whole shortlist', async () => {
+    renderPage()
+
+    const search = await screen.findByLabelText(/search this shortlist/i)
+    fireEvent.change(search, { target: { value: 'retired founder' } })
+
+    // Archived, and on a tab that never lists archived shows.
+    expect(await screen.findByText('Retired Founder Radio')).toBeInTheDocument()
+    expect(screen.getByText('Removed')).toBeInTheDocument()
   })
 
   it('searches the publisher and the reason, not only the title', async () => {

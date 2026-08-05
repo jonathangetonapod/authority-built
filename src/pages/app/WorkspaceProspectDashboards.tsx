@@ -566,6 +566,9 @@ function ShortlistRow({
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h4 className="font-semibold leading-tight">{podcast.podcast_name}</h4>
+                {/* Search spans the whole shortlist, so a result has to say when
+                    it is one the prospect cannot currently see. */}
+                {podcast.visibility === 'archived' && <Badge variant="outline" className="text-muted-foreground">Removed</Badge>}
                 {podcast.is_featured && <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100"><Star className="mr-1 h-3 w-3 fill-current" />Featured</Badge>}
                 {podcast.relevance_score !== null && <Badge variant="secondary">{Number(podcast.relevance_score).toFixed(1)} fit</Badge>}
               </div>
@@ -876,7 +879,8 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
   const visiblePodcasts = detail?.podcasts.filter((podcast) => podcast.visibility === 'visible') || []
   const removedPodcasts = detail?.podcasts.filter((podcast) => podcast.visibility === 'archived') || []
   const featuredPodcasts = visiblePodcasts.filter((podcast) => podcast.is_featured)
-  const shortlistBase = shortlistView === 'removed'
+  const allPodcasts = detail?.podcasts || []
+  const browseBase = shortlistView === 'removed'
     ? removedPodcasts
     : shortlistView === 'all'
       ? visiblePodcasts
@@ -884,19 +888,28 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
         ? featuredPodcasts
         : visiblePodcasts.slice(0, 5)
 
+  const shortlistQuery = shortlistSearch.trim().toLowerCase()
+  const shortlistFiltered = shortlistQuery !== '' || shortlistCategory !== 'all' || shortlistUnanalyzedOnly
+
   /*
-   * Two hundred shows is a list you scroll past, not one you read. The controls
-   * appear once there is enough to lose something in, and default to the
-   * curated order — display_order is what the prospect sees, so reordering the
-   * operator's view by default would quietly hide the shape of their own page.
+   * Searching looks through the whole shortlist, not the open tab. The tabs are
+   * browsing modes — Featured is three shows out of two hundred — so scoping a
+   * search to one of them means the answer is usually "nothing found" about a
+   * show that is definitely there, including anything sitting in Removed.
+   *
+   * The controls are offered on the same terms everywhere for the same reason:
+   * hiding them on a short tab of a long shortlist reads as search being broken.
    */
+  const shortlistBase = shortlistFiltered ? allPodcasts : browseBase
+  const showShortlistControls = allPodcasts.length > SHORTLIST_CONTROLS_THRESHOLD
+
   const shortlistCategories = useMemo(() => {
     const names = new Set<string>()
-    shortlistBase.forEach((podcast) => podcastCategoryNames(podcast).forEach((name) => names.add(name)))
+    allPodcasts.forEach((podcast) => podcastCategoryNames(podcast).forEach((name) => names.add(name)))
     return Array.from(names).sort((left, right) => left.localeCompare(right))
-  }, [shortlistBase])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.podcasts])
 
-  const shortlistQuery = shortlistSearch.trim().toLowerCase()
   const filteredPodcasts = useMemo(() => {
     const matches = shortlistBase.filter((podcast) => {
       if (shortlistCategory !== 'all' && !podcastCategoryNames(podcast).includes(shortlistCategory)) return false
@@ -905,10 +918,8 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
       return shortlistHaystack(podcast).includes(shortlistQuery)
     })
     return shortlistSort === 'curated' ? matches : [...matches].sort(compareShortlist(shortlistSort))
-  }, [shortlistBase, shortlistCategory, shortlistQuery, shortlistSort, shortlistUnanalyzedOnly])
-
-  const shortlistFiltered = shortlistQuery !== '' || shortlistCategory !== 'all' || shortlistUnanalyzedOnly
-  const showShortlistControls = shortlistBase.length > SHORTLIST_CONTROLS_THRESHOLD || shortlistFiltered
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.podcasts, shortlistView, shortlistCategory, shortlistQuery, shortlistSort, shortlistUnanalyzedOnly])
   const displayedPodcasts = filteredPodcasts.slice(0, shortlistLimit)
   const clearShortlistFilters = () => {
     setShortlistSearch('')
@@ -1277,7 +1288,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                             <span>
                               Showing {displayedPodcasts.length} of {filteredPodcasts.length}
-                              {shortlistFiltered && ` filtered from ${shortlistBase.length}`}
+                              {shortlistFiltered && ` across the whole shortlist (${allPodcasts.length} shows, removed included)`}
                             </span>
                             <Button
                               variant="ghost"
@@ -1303,7 +1314,8 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                           <div>
                             <p className="font-semibold">No shows match</p>
                             <p className="mt-1 text-sm text-muted-foreground">
-                              Nothing in this {shortlistBase.length}-show view matches what you typed.
+                              Nothing in this prospect&rsquo;s {allPodcasts.length} shows matches what you typed,
+                              removed ones included.
                             </p>
                           </div>
                           <Button variant="outline" size="sm" onClick={clearShortlistFilters}>Clear filters</Button>
