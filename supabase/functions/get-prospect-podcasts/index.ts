@@ -499,17 +499,27 @@ serve(async (req) => {
 
       const { data: dashboard, error: dashboardError } = await supabase
         .from('prospect_dashboards')
-        .select('id,spreadsheet_id,prospect_name,prospect_bio')
+        .select('id,spreadsheet_id,prospect_name,prospect_bio,content_ready,published_at')
         .eq('slug', slug)
         .eq('is_active', true)
-        .eq('content_ready', true)
-        .not('published_at', 'is', null)
         .maybeSingle()
 
       if (dashboardError || !dashboard) {
         return new Response(
           JSON.stringify({ error: 'Dashboard not found' }),
           { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Mid-edit is not missing, and the two public reads have to agree about
+      // that or the page would show "being updated" beside a failed shortlist.
+      if (dashboard.content_ready !== true || !dashboard.published_at) {
+        return new Response(
+          JSON.stringify({
+            error: 'This shortlist is being updated right now',
+            code: 'DASHBOARD_UPDATING',
+          }),
+          { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 

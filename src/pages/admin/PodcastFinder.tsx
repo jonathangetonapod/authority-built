@@ -967,7 +967,13 @@ export default function PodcastFinder({
       if (response.added === 0) {
         toast.info(`Nothing new to add for ${selectedClient.name}. These podcasts are already on the ${targetLabel} shortlist.`)
       } else if ('unpublished_for_review' in response && response.unpublished_for_review) {
-        toast.success(`Added ${response.added} podcast${response.added === 1 ? '' : 's'}. The live dashboard moved to Review so you can approve the changes.`)
+        // Names the consequence. "Moved to Review" reads as workflow; what
+        // actually happened is that the link already in somebody's inbox stopped
+        // showing the shortlist until it is published again.
+        toast.warning(
+          `Added ${response.added} podcast${response.added === 1 ? '' : 's'}. This ${targetLabel}'s public link is offline until you publish again.`,
+          { duration: 8000 },
+        )
       } else if (duplicatesSkipped > 0) {
         toast.success(`Added ${response.added} new podcasts and skipped ${duplicatesSkipped} already on the ${targetLabel} shortlist.`)
       } else {

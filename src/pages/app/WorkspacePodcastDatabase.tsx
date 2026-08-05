@@ -335,7 +335,7 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
         // Adding to a published dashboard takes it back to review rather than
         // changing what a prospect is looking at while they look at it.
         if ('unpublished_for_review' in result && result.unpublished_for_review) {
-          toast.info('The dashboard was unpublished so you can review it before sending again.')
+          toast.warning('The public link is offline until you publish this dashboard again.', { duration: 8000 })
         }
       } else {
         const client = clientsQuery.data?.find((candidate) => candidate.id === selectedClientId)

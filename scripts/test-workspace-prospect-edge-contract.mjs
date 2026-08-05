@@ -65,9 +65,34 @@ assert.match(migration, /REVOKE ALL ON FUNCTION public\.set_workspace_prospect_p
 assert.match(migration, /REVOKE ALL PRIVILEGES ON TABLE public\.prospect_dashboards FROM anon/u)
 assert.match(migration, /REVOKE ALL PRIVILEGES ON TABLE public\.prospect_dashboard_podcasts FROM anon/u)
 
-for (const edge of [publicDashboard, publicPodcasts, publicFeedback]) {
-  assert.match(edge, /\.eq\('content_ready', true\)[\s\S]*?\.not\('published_at', 'is', null\)/u, 'every public prospect action must require publication')
+// Writing feedback still refuses an unpublished dashboard in the query itself:
+// nobody is reading the page, so there is nothing to soften.
+assert.match(
+  publicFeedback,
+  /\.eq\('content_ready', true\)[\s\S]*?\.not\('published_at', 'is', null\)/u,
+  'prospect feedback must require publication',
+)
+
+// The two public reads fetch the row and then refuse it, so an edit in progress
+// can answer "being updated" instead of turning a link already in somebody's
+// inbox into a dead end. The guarantee is unchanged — nothing unpublished is
+// ever served — and on a workspace hostname the host check still comes first,
+// so another agency's dashboard does not exist either way.
+for (const edge of [publicDashboard, publicPodcasts]) {
+  assert.match(
+    edge,
+    /content_ready !== true \|\| !\w+\.published_at/u,
+    'public prospect reads must still refuse an unpublished dashboard',
+  )
+  assert.match(edge, /'DASHBOARD_UPDATING'/u, 'public prospect reads must answer with the updating code')
+  assert.match(edge, /409/u, 'the updating answer must not be a 404')
 }
+assert.match(
+  publicDashboard,
+  /requireServedByHost\([\s\S]*?DASHBOARD_UPDATING/u,
+  'the host check must run before the dashboard admits to being updated',
+)
+
 assert.match(publicPodcasts, /function getCanonicalShortlist[\s\S]*?\.from\('prospect_dashboard_podcasts'\)[\s\S]*?\.eq\('visibility', 'visible'\)/u)
 assert.doesNotMatch(publicPodcasts.match(/if \(cacheOnly && prospectDashboardId\)[\s\S]*?if \(!spreadsheetId\)/u)?.[0] || '', /\.from\('prospect_podcast_analyses'\)/u, 'the public cache path must not depend on normalized analyses')
 assert.match(publicPodcasts, /materializeCanonicalShortlist\(supabase, prospectDashboardId, orderedPodcasts\)/u)

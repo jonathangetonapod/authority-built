@@ -28,6 +28,7 @@ const DASHBOARD_FIELDS = [
   'cta_label',
   'cta_url',
   'is_active',
+  'content_ready',
   'show_pricing_section',
   'personalized_tagline',
   'media_kit_url',
@@ -53,6 +54,8 @@ type ProspectDashboardRow = Record<string, unknown> & {
   id: string
   workspace_id: string
   view_count: number | null
+  content_ready: boolean | null
+  published_at: string | null
 }
 
 function publicLogoUrl(supabaseUrl: string, path: unknown): string | null {
@@ -99,8 +102,6 @@ serve(async (req) => {
       .select(DASHBOARD_FIELDS)
       .eq('slug', slug)
       .eq('is_active', true)
-      .eq('content_ready', true)
-      .not('published_at', 'is', null)
       .maybeSingle()
 
     if (dashboardError) {
@@ -117,6 +118,23 @@ serve(async (req) => {
       'DASHBOARD_NOT_FOUND',
       'Dashboard not found',
     )
+
+    /*
+     * A dashboard that is mid-edit is not a missing one. Editing the profile or
+     * rebuilding the shortlist takes publication down, and until now that turned
+     * a link already sitting in somebody's inbox into a dead end. The row exists
+     * and the reader was sent here on purpose, so say "not right now" instead.
+     *
+     * Deliberately after the host check: on an agency's own hostname another
+     * agency's dashboard still does not exist, published or not.
+     */
+    if (dashboardRow.content_ready !== true || !dashboardRow.published_at) {
+      throw new HttpError(
+        409,
+        'DASHBOARD_UPDATING',
+        'This shortlist is being updated right now',
+      )
+    }
 
     const [
       { data: feedback, error: feedbackError },

@@ -177,11 +177,14 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const PUBLIC_READ_TIMEOUT_MS = 12_000
 
 class PublicReadError extends Error {
-  constructor(message: string, readonly status?: number) {
+  constructor(message: string, readonly status?: number, readonly code?: string) {
     super(message)
     this.name = 'PublicReadError'
   }
 }
+
+/** The dashboard exists and is being edited — not the same as a dead link. */
+const DASHBOARD_UPDATING = 'DASHBOARD_UPDATING'
 
 async function readPublicEndpoint<T>(endpoint: string, body: Record<string, unknown>): Promise<T> {
   const controller = new AbortController()
@@ -213,7 +216,10 @@ async function readPublicEndpoint<T>(endpoint: string, body: Record<string, unkn
       const message = payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string'
         ? payload.error
         : 'This page could not be loaded. Please try again.'
-      throw new PublicReadError(message, response.status)
+      const code = payload && typeof payload === 'object' && 'code' in payload && typeof payload.code === 'string'
+        ? payload.code
+        : undefined
+      throw new PublicReadError(message, response.status, code)
     }
 
     return payload as T
@@ -491,6 +497,8 @@ function ProspectViewContent() {
     : dashboardError
       ? 'This dashboard could not be loaded.'
       : null
+  const isUpdating = dashboardError instanceof PublicReadError
+    && dashboardError.code === DASHBOARD_UPDATING
 
   // Helper function to extract Loom video ID from URL
   const getLoomEmbedUrl = (url: string): string | null => {
@@ -743,6 +751,47 @@ function ProspectViewContent() {
               ))}
             </div>
           </div>
+        </section>
+      </main>
+    )
+  }
+
+  /*
+   * Being updated is its own state, not an error. Somebody was sent this link
+   * on purpose and the shortlist behind it still exists; the only true thing
+   * to say is that it is not ready this minute. The old screen said the
+   * dashboard could not be found, which reads as "you were sent a dead link".
+   */
+  if (isUpdating) {
+    return (
+      <main className="homepage-shell min-h-screen bg-transparent text-[#0d1b2a]">
+        <section className="paper-noise flex min-h-screen items-center justify-center px-4 py-16">
+          <Card className="w-full max-w-md border border-[#0d1b2a]/8 bg-white/84 shadow-[0_20px_42px_rgba(13,27,42,0.08)] backdrop-blur-sm">
+            <CardContent className="space-y-4 px-6 pb-8 pt-8 text-center">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#fff3e8]">
+                <RefreshCw className="h-8 w-8 text-[#b46a3c]" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="font-display text-2xl font-semibold tracking-[-0.04em] text-[#0d1b2a]">
+                  Your shortlist is being updated
+                </h2>
+                <p className="text-[#5d7188]">
+                  We are adding to it right now. Your link still works — check back in a few
+                  minutes, or reply to the email that brought you here and we will tell you the
+                  moment it is ready.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-full"
+                onClick={() => void refetchDashboard()}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Check again
+              </Button>
+            </CardContent>
+          </Card>
         </section>
       </main>
     )
