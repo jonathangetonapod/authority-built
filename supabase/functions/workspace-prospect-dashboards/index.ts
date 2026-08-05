@@ -113,6 +113,7 @@ const SHORTLIST_FIELDS = [
   'relevance_reason',
   'match_source',
   'archived_at',
+  'archived_by',
   'created_at',
   'updated_at',
 ].join(',')
@@ -1412,10 +1413,6 @@ serve(async (req) => {
           }
         }
 
-        // Mark the review before writing, for the same reason the old code
-        // unpublished first: a failure between the two must not leave additions
-        // that nobody has been told to look at.
-        if (isLive) await markPendingReview()
 
         const catalogMerge = await context.admin.rpc('merge_global_podcast_catalog_batch_v1', {
           p_workspace_id: workspaceId,
@@ -1488,6 +1485,15 @@ serve(async (req) => {
 
         // A dashboard nobody can read yet keeps the old behaviour: additions are
         // visible straight away and the lifecycle says it wants a look.
+        /*
+         * Flagged after the write, and only when rows actually landed. Marking
+         * first was inherited from when this unpublished the dashboard, where
+         * ordering mattered because the page had to close before unreviewed
+         * rows existed. Additions are written hidden now, so nothing can reach
+         * a prospect in the gap — and a failed or fully-duplicate add no longer
+         * leaves "changes to review" pointing at nothing.
+         */
+        if (addedPodcastIds.length > 0 && isLive) await markPendingReview()
         if (addedPodcastIds.length > 0 && !isLive) {
           const { error: reviewError } = await context.admin
             .from('prospect_dashboards')

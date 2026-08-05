@@ -568,7 +568,11 @@ function ShortlistRow({
                 <h4 className="font-semibold leading-tight">{podcast.podcast_name}</h4>
                 {/* Search spans the whole shortlist, so a result has to say when
                     it is one the prospect cannot currently see. */}
-                {podcast.visibility === 'archived' && <Badge variant="outline" className="text-muted-foreground">Removed</Badge>}
+                {podcast.visibility === 'archived' && (
+                  podcast.archived_by
+                    ? <Badge variant="outline" className="text-muted-foreground">Removed</Badge>
+                    : <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">New &middot; hidden</Badge>
+                )}
                 {podcast.is_featured && <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100"><Star className="mr-1 h-3 w-3 fill-current" />Featured</Badge>}
                 {podcast.relevance_score !== null && <Badge variant="secondary">{Number(podcast.relevance_score).toFixed(1)} fit</Badge>}
               </div>
@@ -626,7 +630,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
   const [shortlistSort, setShortlistSort] = useState<ShortlistSort>('curated')
   const [shortlistUnanalyzedOnly, setShortlistUnanalyzedOnly] = useState(false)
   const [shortlistLimit, setShortlistLimit] = useState(SHORTLIST_PAGE_SIZE)
-  const [shortlistView, setShortlistView] = useState<'featured' | 'all' | 'removed'>(requestedShortlistView)
+  const [shortlistView, setShortlistView] = useState<'featured' | 'all' | 'removed' | 'new'>(requestedShortlistView)
   const isPlatformWorkspace = platformWorkspaceId !== undefined
   const selectedWorkspaceId = (platformWorkspaceId || '').toLowerCase()
   const workspaceId = isPlatformWorkspace ? selectedWorkspaceId : workspace?.id || ''
@@ -879,14 +883,25 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
   const visiblePodcasts = detail?.podcasts.filter((podcast) => podcast.visibility === 'visible') || []
   const removedPodcasts = detail?.podcasts.filter((podcast) => podcast.visibility === 'archived') || []
   const featuredPodcasts = visiblePodcasts.filter((podcast) => podcast.is_featured)
+  /*
+   * Additions from the Finder land hidden so a prospect never sees an
+   * unreviewed one. Without somewhere to find them they were indistinguishable
+   * from shows removed months ago, and could stay hidden forever — which made
+   * the whole "added, pending review" state a place things went to be lost.
+   * Nobody removed these, so archived_by is null.
+   */
+  const pendingAdditions = removedPodcasts.filter((podcast) => !podcast.archived_by)
+  const removedByHand = removedPodcasts.filter((podcast) => podcast.archived_by)
   const allPodcasts = detail?.podcasts || []
-  const browseBase = shortlistView === 'removed'
-    ? removedPodcasts
-    : shortlistView === 'all'
-      ? visiblePodcasts
-      : featuredPodcasts.length > 0
-        ? featuredPodcasts
-        : visiblePodcasts.slice(0, 5)
+  const browseBase = shortlistView === 'new'
+    ? pendingAdditions
+    : shortlistView === 'removed'
+      ? removedByHand
+      : shortlistView === 'all'
+        ? visiblePodcasts
+        : featuredPodcasts.length > 0
+          ? featuredPodcasts
+          : visiblePodcasts.slice(0, 5)
 
   const shortlistQuery = shortlistSearch.trim().toLowerCase()
   const shortlistFiltered = shortlistQuery !== '' || shortlistCategory !== 'all' || shortlistUnanalyzedOnly
@@ -1154,18 +1169,25 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                             <Alert className="mt-4 border-amber-200 bg-amber-50">
                               <AlertTitle className="text-amber-900">Changes waiting for review</AlertTitle>
                               <AlertDescription className="text-amber-900/80">
-                                The dashboard is still live and unchanged for the prospect. Anything
-                                added since {formatDate(selected.pending_review_at)} is hidden under
-                                Removed until you show it and publish.
+                                The dashboard is still live and unchanged for the prospect.
+                                {pendingAdditions.length > 0
+                                  ? ` ${pendingAdditions.length} ${pendingAdditions.length === 1 ? 'show is' : 'shows are'} hidden until you show them.`
+                                  : ` Edited ${formatDate(selected.pending_review_at)}.`}
                                 {canManage && (
-                                  <Button
-                                    size="sm"
-                                    className="ml-0 mt-3 block"
-                                    disabled={mutating}
-                                    onClick={() => publicationMutation.mutate(true)}
-                                  >
-                                    <Send className="mr-2 h-4 w-4" />Publish updates
-                                  </Button>
+                                  <span className="mt-3 flex flex-wrap gap-2">
+                                    {pendingAdditions.length > 0 && (
+                                      <Button size="sm" variant="outline" onClick={() => setShortlistView('new')}>
+                                        Review {pendingAdditions.length} new
+                                      </Button>
+                                    )}
+                                    <Button
+                                      size="sm"
+                                      disabled={mutating}
+                                      onClick={() => publicationMutation.mutate(true)}
+                                    >
+                                      <Send className="mr-2 h-4 w-4" />Publish updates
+                                    </Button>
+                                  </span>
                                 )}
                               </AlertDescription>
                             </Alert>
@@ -1241,7 +1263,8 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                           <div className="flex shrink-0 rounded-lg border bg-muted/30 p-1">
                             <Button variant={shortlistView === 'featured' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShortlistView('featured')}>Featured ({featuredPodcasts.length})</Button>
                             <Button variant={shortlistView === 'all' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShortlistView('all')}>All ({visiblePodcasts.length})</Button>
-                            {removedPodcasts.length > 0 && <Button variant={shortlistView === 'removed' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShortlistView('removed')}>Removed ({removedPodcasts.length})</Button>}
+                            {pendingAdditions.length > 0 && <Button variant={shortlistView === 'new' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShortlistView('new')}>New ({pendingAdditions.length})</Button>}
+                            {removedByHand.length > 0 && <Button variant={shortlistView === 'removed' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShortlistView('removed')}>Removed ({removedByHand.length})</Button>}
                           </div>
                         )}
                       </div>
@@ -1323,8 +1346,8 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                       ) : displayedPodcasts.length === 0 ? (
                         <div className="flex min-h-52 flex-col items-center justify-center gap-4 rounded-xl border border-dashed p-6 text-center">
                           <div className="rounded-full bg-primary/10 p-4 text-primary"><Mic2 className="h-7 w-7" /></div>
-                          <div><p className="font-semibold">{shortlistView === 'removed' ? 'No removed podcasts' : 'No matches yet'}</p><p className="mt-1 max-w-md text-sm text-muted-foreground">{shortlistView === 'removed' ? 'Removed matches will appear here and can be restored.' : 'A focused profile lets Scout find and explain the strongest 8–12 opportunities.'}</p></div>
-                          {shortlistView !== 'removed' && canManage && <Button disabled={mutating || !selected.readiness.profile_ready} onClick={startBuild}>{building ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}Build shortlist</Button>}
+                          <div><p className="font-semibold">{shortlistView === 'new' ? 'Nothing waiting for review' : shortlistView === 'removed' ? 'No removed podcasts' : 'No matches yet'}</p><p className="mt-1 max-w-md text-sm text-muted-foreground">{shortlistView === 'new' ? 'Podcasts added from the Finder land here, hidden from the prospect, until you show them.' : shortlistView === 'removed' ? 'Removed matches will appear here and can be restored.' : 'A focused profile lets Scout find and explain the strongest 8–12 opportunities.'}</p></div>
+                          {!['removed', 'new'].includes(shortlistView) && canManage && <Button disabled={mutating || !selected.readiness.profile_ready} onClick={startBuild}>{building ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}Build shortlist</Button>}
                         </div>
                       ) : (
                         <div className="space-y-2">

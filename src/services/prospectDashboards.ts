@@ -95,6 +95,8 @@ export interface ProspectShortlistPodcast {
   relevance_reason: string | null
   match_source: 'legacy' | 'sheet' | 'manual' | 'semantic' | 'ai_ranked'
   archived_at: string | null
+  /** Null on a row hidden by an addition rather than removed by a person. */
+  archived_by: string | null
   created_at: string
   updated_at: string
 }

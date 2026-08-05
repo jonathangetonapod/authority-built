@@ -56,8 +56,16 @@ assert.match(studio, /if \(action === 'podcast-add'\)[\s\S]*?prospectShortlistPo
 assert.match(studio, /action: 'workspace\.prospect\.shortlist\.added'/u)
 assert.match(
   studio,
-  /const isLive = Boolean\(existing\.published_at\)[\s\S]*?if \(isLive\) await markPendingReview\(\)/u,
-  'Finder additions to a live prospect must be marked for review before they are written',
+  /if \(addedPodcastIds\.length > 0 && isLive\) await markPendingReview\(\)/u,
+  'a review is flagged only once additions have actually landed',
+)
+// The one call that may unpublish is the explicit publish/unpublish action.
+// Curating a shortlist used to reach the same RPC with a hard-coded false and
+// take a live page down as a side effect of hiding one show.
+assert.doesNotMatch(
+  studio,
+  /p_publish: false/u,
+  'no action may unpublish a prospect dashboard as a side effect',
 )
 assert.match(
   studio,

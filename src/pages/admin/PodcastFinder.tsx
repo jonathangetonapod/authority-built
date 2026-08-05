@@ -289,6 +289,13 @@ export default function PodcastFinder({
    */
   const stopRequestedRef = useRef(false)
   /*
+   * Neither search client takes a signal, and stop is only polled at loop
+   * boundaries — so one request that never resolves would hold the run open
+   * forever, with Stop inert and the spinner stuck. A losing race against a
+   * timer turns that into an ordinary failed page, which the loop already
+   * knows how to carry on from.
+   */
+  /*
    * The set of already-shortlisted podcasts is read through a ref because a run
    * outlives the render that started it: the research context can resolve after
    * Run is pressed, refetch on window focus mid-run, or change because the
@@ -663,6 +670,20 @@ export default function PodcastFinder({
    * as a search hit once mapped, so they merge into the same result set and are
    * tiered, scored and routed identically.
    */
+  const withTimeout = async <T,>(work: Promise<T>, seconds: number, label: string): Promise<T> => {
+    let timer = 0
+    try {
+      return await Promise.race([
+        work,
+        new Promise<never>((_resolve, reject) => {
+          timer = window.setTimeout(() => reject(new Error(`${label} did not respond in ${seconds}s`)), seconds * 1000)
+        }),
+      ])
+    } finally {
+      window.clearTimeout(timer)
+    }
+  }
+
   const catalogItemToPodcast = (item: WorkspacePodcastCatalogItem): PodcastData => ({
     podcast_id: item.podcast_id,
     podcast_name: item.podcast_name,
@@ -771,11 +792,15 @@ export default function PodcastFinder({
       for (const query of normalizedQueries) {
         if (stopRequestedRef.current) break
         try {
-          const catalogPage = await getWorkspacePodcastCatalog(selectedWorkspace.id, {
-            search: query.replace(/["*]/gu, ' ').replace(/\s+/gu, ' ').trim(),
-            activity: 'all',
-            pageSize: 100,
-          })
+          const catalogPage = await withTimeout(
+            getWorkspacePodcastCatalog(selectedWorkspace.id, {
+              search: query.replace(/["*]/gu, ' ').replace(/\s+/gu, ' ').trim(),
+              activity: 'all',
+              pageSize: 100,
+            }),
+            30,
+            'The podcast database',
+          )
           const catalogPodcasts = catalogPage.items.map(catalogItemToPodcast)
           rawResults += catalogPodcasts.length
           collected = mergeResearchResults(collected, catalogPodcasts, 'Podcast database', query)
@@ -815,7 +840,11 @@ export default function PodcastFinder({
             for (let attempt = 0; attempt < 2; attempt += 1) {
               try {
                 apiCalls += 1
-                response = await searchPodcastsWithMeta(buildSearchOptions(query, page), selectedWorkspace.id)
+                response = await withTimeout(
+                  searchPodcastsWithMeta(buildSearchOptions(query, page), selectedWorkspace.id),
+                  45,
+                  'Podscan',
+                )
                 break
               } catch (error) {
                 const requestError = error as Error & { status?: number; retryAfterSeconds?: number }

@@ -573,7 +573,10 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
 
         // Clean up: remove leading/trailing quotes and whitespace
         const queries = rawQueries.map(q =>
-          q.trim().replace(/^"/, '').replace(/"$/, '')
+          // Only the JSON string delimiters come off. Stripping a leading and
+          // trailing quote unconditionally mangled exactly what this path is
+          // for: "a" OR "b" became a" OR "b, which is invalid Podscan syntax.
+          q.trim().replace(/^"(.*)"$/su, '$1').replace(/\\"/gu, '"')
         )
 
         console.log('Extracted queries via split:', queries)

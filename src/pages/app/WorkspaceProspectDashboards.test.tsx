@@ -209,6 +209,7 @@ function shortlistPodcast(index: number, overrides: Partial<ProspectShortlistPod
     relevance_reason: 'Audience overlap.',
     match_source: 'ai_ranked',
     archived_at: null,
+    archived_by: null,
     created_at: '2026-07-21T00:00:00.000Z',
     updated_at: '2026-07-21T00:00:00.000Z',
     ...overrides,
@@ -228,6 +229,9 @@ describe('WorkspaceProspectDashboards shortlist search and filters', () => {
       podcast_name: 'Retired Founder Radio',
       visibility: 'archived',
       archived_at: '2026-08-02T00:00:00.000Z',
+      // Taken off the list by a person, which is what "Removed" means. A row
+      // with no archived_by is a Finder addition waiting to be reviewed.
+      archived_by: '55555555-5555-4555-8555-555555555555',
     }),
   ]
 
