@@ -1067,7 +1067,12 @@ function requireExpectedAvatarPath(
 ): string | null {
   if (value === null || value === undefined) return null;
   const path = requireString(value, "expected_avatar_path", { max: 320 });
-  // Confined to this workspace's folder, so no caller can name another's object.
+  // Confined to this workspace's folder. Note this does NOT confine it to the
+  // caller's own subfolder — objects live at workspace/user/uuid and only the
+  // workspace half is checked here. That is safe only because this value is
+  // never used to locate a row: set_membership_avatar_v1 finds the membership
+  // by the authenticated actor alone, and compares this path solely to detect a
+  // concurrent change. Do not start trusting it for anything else.
   if (!path.startsWith(`${workspaceId}/`)) {
     throw new HttpError(400, "INVALID_FIELD", "expected_avatar_path is invalid");
   }

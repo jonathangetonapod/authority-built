@@ -375,6 +375,24 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
     if (!isPlatformWorkspace) await refreshAccount({ quiet: true })
   }
 
+  /*
+   * The picture belongs to the viewer's own membership, and the account context
+   * is the only thing that carries it — the staff list DTO has no avatar field
+   * at all, so refreshSettings cannot see the change.
+   *
+   * refreshShellIdentity skips the account read on the platform route, which is
+   * right for workspace-level edits to somebody else's workspace and wrong for
+   * this one: the card only renders when the membership on screen is the
+   * viewer's. Leaving it stale meant the upload succeeded, the page went on
+   * showing the old picture, and the next change sent an expected path the row
+   * had already moved past — refused as "changed elsewhere" for a change this
+   * actor had just made, and only unstuck by reloading.
+   */
+  const refreshOwnMembership = async () => {
+    await refreshSettings()
+    await refreshAccount({ quiet: true })
+  }
+
   const logoMutation = useMutation({
     mutationFn: (file: File) => {
       if (!data || !canManageBranding) {
@@ -398,7 +416,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
   const avatarMutation = useMutation({
     mutationFn: (file: File) => uploadMemberAvatar(workspaceId, file, avatarPath),
     onSuccess: async () => {
-      await refreshShellIdentity()
+      await refreshOwnMembership()
       toast.success('Profile picture updated.')
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'The profile picture could not be uploaded.'),
@@ -410,7 +428,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
       return removeMemberAvatar(workspaceId, avatarPath)
     },
     onSuccess: async () => {
-      await refreshShellIdentity()
+      await refreshOwnMembership()
       toast.success('Profile picture removed.')
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'The profile picture could not be removed.'),

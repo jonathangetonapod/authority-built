@@ -634,6 +634,14 @@ describe('WorkspaceStaff', () => {
     fireEvent.change(within(profile).getByLabelText('Profile picture file'), { target: { files: [file] } })
 
     await waitFor(() => expect(mockedUploadAvatar).toHaveBeenCalledWith(workspaceId, file, null))
+    /*
+     * The account context is the only carrier of the viewer's own avatar — the
+     * staff DTO has no such field — and this route otherwise skips that read.
+     * Without it the page keeps the old path, and the next change sends an
+     * expected path the row has already moved past, refused as "changed
+     * elsewhere" for a change this actor just made.
+     */
+    await waitFor(() => expect(refreshAccount).toHaveBeenCalledTimes(1))
   })
 
   /*
