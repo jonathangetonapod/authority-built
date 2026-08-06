@@ -21,7 +21,7 @@ import {
   writeAudit,
   type WorkspaceFeatureAccess,
 } from '../_shared/workspaceAuth.ts'
-import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
+import { chargeCredits, logOperationCost, refundCredits } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 
 const METHODS = ['POST'] as const
@@ -152,34 +152,32 @@ async function mailboxUserIds(apiKey: string, domainNames: string[]): Promise<st
 }
 
 /**
- * Give back credits spent on an order the provider refused.
+ * Give back the exact debits taken for an order the provider refused.
  *
- * Granted rather than reversed: the ledger has no refund source, and a grant
- * with a deterministic key is idempotent, so a retried failure cannot hand out
- * the credits twice. A failure to refund must not mask the provider error that
- * caused it, so this never throws.
+ * Reversed rather than granted. The old version minted a permanent grant,
+ * which laundered soon-to-expire allowance credit into lifetime credit, and —
+ * worse — left the original debits standing as "charged" for idempotency, so
+ * a fail-then-retry replayed those debits free while keeping the grant: any
+ * provider outage plus one retry bought the order at net zero. Refunding the
+ * entries by id journals the movement as the refund it is, and the spend RPC
+ * now reopens a refunded key on retry, so the retry pays.
+ *
+ * A failure to refund must not mask the provider error that caused it, so
+ * this never throws.
  */
 async function refundMailboxCredits(
   authContext: AuthContext,
   workspaceId: string,
   orders: Array<{ domain: string }>,
-  creditsCharged: number,
+  chargedEntryIds: string[],
 ): Promise<void> {
-  if (creditsCharged < 1) return
-  const key = `mailbox-refund:${workspaceId}:${orders.map((order) => order.domain).sort().join(',')}`
-  const { error } = await authContext.admin.rpc('grant_workspace_credits_v1', {
-    p_workspace_id: workspaceId,
-    p_source: 'admin_grant',
-    p_amount: creditsCharged,
-    p_expires_at: null,
-    p_reference_kind: 'mailbox_order_refund',
-    p_reference_id: orders.map((order) => order.domain).sort().join(','),
-    p_actor_user_id: authContext.user.id,
-    p_idempotency_key: key,
-  })
-  if (error) {
-    console.error('[Mailbox Infra] Refund failed for a rejected order')
-    return
+  if (chargedEntryIds.length === 0) return
+  for (const entryId of chargedEntryIds) {
+    await refundCredits(authContext.admin, {
+      workspaceId,
+      entryId,
+      reason: 'mailbox order was not accepted by the provider',
+    })
   }
   await writeAudit(authContext.admin, {
     workspaceId,
@@ -187,7 +185,7 @@ async function refundMailboxCredits(
     action: 'workspace.mailbox_infra.refunded',
     entityType: 'mailbox_order',
     entityId: null,
-    metadata: { domains: orders.map((order) => order.domain), credits: creditsCharged },
+    metadata: { domains: orders.map((order) => order.domain), refunded_entries: chargedEntryIds.length },
   }).catch(() => undefined)
 }
 
@@ -341,29 +339,43 @@ serve(async (req) => {
       const mailboxCount = orders.reduce((total, order) => total + order.mailboxes.length, 0)
 
       // Charge credits before spending real money with the provider. Each
-      // domain and mailbox is idempotency-keyed so retries never double-charge.
+      // domain and mailbox is idempotency-keyed so retries never double-charge,
+      // and every entry id is kept so a refund can reverse the exact debits.
+      // A charge failing mid-list — the fourth mailbox hitting an empty
+      // balance — refunds the ones already taken before rethrowing, so an
+      // abandoned order strands nothing.
+      const chargedEntryIds: string[] = []
       let creditsCharged = 0
-      for (const order of orders) {
-        creditsCharged += (await chargeCredits(authContext.admin, {
-          workspaceId,
-          operationType: 'mailbox_domain_purchase',
-          referenceKind: 'mailbox_domain',
-          referenceId: order.domain,
-          actorUserId: authContext.user.id,
-          idempotencyKey: `mailbox-domain:${workspaceId}:${order.domain}`,
-          byoKeyUsed: usingWorkspaceKey,
-        })).charged
-        for (const mailbox of order.mailboxes) {
-          creditsCharged += (await chargeCredits(authContext.admin, {
+      try {
+        for (const order of orders) {
+          const domainCharge = await chargeCredits(authContext.admin, {
             workspaceId,
-            operationType: 'mailbox_monthly',
-            referenceKind: 'mailbox',
-            referenceId: `${mailbox.username}@${order.domain}`,
+            operationType: 'mailbox_domain_purchase',
+            referenceKind: 'mailbox_domain',
+            referenceId: order.domain,
             actorUserId: authContext.user.id,
-            idempotencyKey: `mailbox-monthly:${workspaceId}:${mailbox.username}@${order.domain}:first`,
+            idempotencyKey: `mailbox-domain:${workspaceId}:${order.domain}`,
             byoKeyUsed: usingWorkspaceKey,
-          })).charged
+          })
+          if (domainCharge.entryId) chargedEntryIds.push(domainCharge.entryId)
+          creditsCharged += domainCharge.charged
+          for (const mailbox of order.mailboxes) {
+            const mailboxCharge = await chargeCredits(authContext.admin, {
+              workspaceId,
+              operationType: 'mailbox_monthly',
+              referenceKind: 'mailbox',
+              referenceId: `${mailbox.username}@${order.domain}`,
+              actorUserId: authContext.user.id,
+              idempotencyKey: `mailbox-monthly:${workspaceId}:${mailbox.username}@${order.domain}:first`,
+              byoKeyUsed: usingWorkspaceKey,
+            })
+            if (mailboxCharge.entryId) chargedEntryIds.push(mailboxCharge.entryId)
+            creditsCharged += mailboxCharge.charged
+          }
         }
+      } catch (error) {
+        await refundMailboxCredits(authContext, workspaceId, orders, chargedEntryIds)
+        throw error
       }
 
       // Credits are spent before the provider is called, so an order the
@@ -388,11 +400,11 @@ serve(async (req) => {
           },
         })
       } catch (error) {
-        await refundMailboxCredits(authContext, workspaceId, orders, creditsCharged)
+        await refundMailboxCredits(authContext, workspaceId, orders, chargedEntryIds)
         throw error
       }
       if (!purchase.job_id) {
-        await refundMailboxCredits(authContext, workspaceId, orders, creditsCharged)
+        await refundMailboxCredits(authContext, workspaceId, orders, chargedEntryIds)
         throw new HttpError(502, 'WINNR_ERROR', 'The provider did not accept the order')
       }
 

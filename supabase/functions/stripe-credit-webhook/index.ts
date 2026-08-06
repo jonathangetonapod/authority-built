@@ -67,6 +67,12 @@ serve(async (req) => {
   const secret = Deno.env.get('STRIPE_CREDIT_WEBHOOK_SECRET')?.trim()
   if (!secret) return json(500, { error: 'SERVER_MISCONFIGURED' })
 
+  // Declared size first, so an oversized body is refused before it is read
+  // into memory — this endpoint is reachable without any signature.
+  const declaredLength = Number(req.headers.get('content-length') ?? '')
+  if (Number.isFinite(declaredLength) && declaredLength > 500_000) {
+    return json(400, { error: 'PAYLOAD_TOO_LARGE' })
+  }
   const payload = await req.text()
   if (payload.length > 500_000) return json(400, { error: 'PAYLOAD_TOO_LARGE' })
   const verified = await verifyStripeSignature(payload, req.headers.get('stripe-signature'), secret)
@@ -80,6 +86,13 @@ serve(async (req) => {
   try {
     event = JSON.parse(payload)
   } catch (_error) {
+    return json(400, { error: 'INVALID_PAYLOAD' })
+  }
+  // The event id is the replay protection. A payload without one used to fall
+  // back to a random key, which is no protection at all — Stripe always sends
+  // an id, so a signed payload missing one is malformed and gets refused, not
+  // accommodated.
+  if (typeof event.id !== 'string' || !event.id) {
     return json(400, { error: 'INVALID_PAYLOAD' })
   }
   // Two ways credits are bought, and they are different Stripe events. A
@@ -120,7 +133,7 @@ serve(async (req) => {
     p_reference_kind: event.type === AUTOMATIC ? 'stripe_auto_refill' : 'stripe_checkout',
     p_reference_id: typeof session.id === 'string' ? session.id : null,
     p_actor_user_id: null,
-    p_idempotency_key: `stripe:${event.id ?? crypto.randomUUID()}`,
+    p_idempotency_key: `stripe:${event.id}`,
   })
   if (error) {
     console.error('[Stripe Credit Webhook] Credit grant failed')

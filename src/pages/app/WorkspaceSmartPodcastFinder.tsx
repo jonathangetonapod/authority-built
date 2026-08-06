@@ -148,7 +148,7 @@ const ACTIVITY_OPTIONS = [
 
 const phaseSteps: Array<{ id: Exclude<ScanPhase, 'idle' | 'done'>; label: string }> = [
   { id: 'strategy', label: 'Building the search strategy from the client profile' },
-  { id: 'search', label: 'Searching the shared database and Podscan' },
+  { id: 'search', label: 'Searching the shared database and the live podcast index' },
   { id: 'score', label: 'Scoring every match against the client with AI' },
 ]
 

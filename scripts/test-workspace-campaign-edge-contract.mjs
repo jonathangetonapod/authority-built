@@ -1047,8 +1047,12 @@ assert.match(assignAction[0], /mailbox_assigned|mailbox_unassigned/u)
 
 // Winnr: credits come back when the provider refuses, orders move on without
 // somebody watching, and a failed warmup start is recorded rather than hidden.
+// The refund reverses the exact debits by entry id — a grant here laundered
+// expiring credit into permanent credit and let a fail-then-retry replay the
+// charges free. A mid-list charge failure refunds what was already taken.
 assert.match(mailboxInfra, /async function refundMailboxCredits\(/u)
-assert.match(mailboxInfra, /await refundMailboxCredits\(authContext, workspaceId, orders, creditsCharged\)\s*\n\s*throw error/u)
+assert.match(mailboxInfra, /await refundCredits\(authContext\.admin, \{\s*\n\s*workspaceId,\s*\n\s*entryId,/u)
+assert.match(mailboxInfra, /await refundMailboxCredits\(authContext, workspaceId, orders, chargedEntryIds\)\s*\n\s*throw error/u)
 assert.match(mailboxInfra, /async function advanceMailboxOrder\(/u)
 assert.match(mailboxInfra, /advanceMailboxOrder\(authContext, winnrKey\.apiKey, order\)\s*\n\s*\.catch/u)
 assert.match(mailboxInfra, /warmingError = 'Mailboxes were created but warmup could not be started/u)

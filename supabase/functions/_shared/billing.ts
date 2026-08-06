@@ -182,15 +182,28 @@ export async function refundCredits(
   admin: ReturnType<typeof createAdminClient>,
   input: { workspaceId: string; entryId: string | null; reason?: string },
 ): Promise<void> {
-  if (!enforcementEnabled() || !input.entryId) return
+  /*
+   * entryId alone decides. It is non-null exactly when a real debit was
+   * written, so gating on the enforcement flag as well meant flipping the
+   * flag off between a charge and its failure ate the refund: the debit stood
+   * for work that was never delivered.
+   */
+  if (!input.entryId) return
   try {
-    await admin.rpc('refund_workspace_credits_v1', {
+    const { error } = await admin.rpc('refund_workspace_credits_v1', {
       p_workspace_id: input.workspaceId,
       p_debit_entry_id: input.entryId,
       p_reason: input.reason ?? null,
     })
-  } catch (_error) {
-    // Deliberately swallowed. See above.
+    if (error) {
+      // The one observability this has: supabase-js reports failures as a
+      // return value, so without this line a failed refund vanished silently.
+      console.error(`[billing] refund of entry ${input.entryId} failed: ${error.message}`)
+    }
+  } catch (error) {
+    // Never rethrown — the operation's own failure is the one worth
+    // reporting — but never silent either.
+    console.error(`[billing] refund of entry ${input.entryId} threw: ${error instanceof Error ? error.message : 'unknown'}`)
   }
 }
 

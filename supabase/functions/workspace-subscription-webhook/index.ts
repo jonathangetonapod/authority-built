@@ -65,6 +65,12 @@ serve(async (req) => {
   const secret = Deno.env.get('STRIPE_SUBSCRIPTION_WEBHOOK_SECRET')?.trim()
   if (!secret) return json(500, { error: 'SERVER_MISCONFIGURED' })
 
+  // Declared size first, so an oversized body is refused before it is read
+  // into memory — this endpoint is reachable without any signature.
+  const declaredLength = Number(req.headers.get('content-length') ?? '')
+  if (Number.isFinite(declaredLength) && declaredLength > 500_000) {
+    return json(400, { error: 'PAYLOAD_TOO_LARGE' })
+  }
   const payload = await req.text()
   if (payload.length > 500_000) return json(400, { error: 'PAYLOAD_TOO_LARGE' })
   const verified = await verifyStripeSignature(payload, req.headers.get('stripe-signature'), secret)

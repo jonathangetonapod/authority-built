@@ -1552,8 +1552,10 @@ export default function PodcastFinder({
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">{isWorkspaceScoped ? '1.' : '2.'} How many podcasts do you want?</CardTitle>
             <CardDescription>
-              Discovery searches the shared database and Podscan for your keywords, and stops when it
-              has this many.
+              {/* The provider stays backstage: a client-facing agency screen
+                  should not name the data vendor. */}
+              Discovery searches the shared database and the live podcast index for your keywords,
+              and stops when it has this many.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

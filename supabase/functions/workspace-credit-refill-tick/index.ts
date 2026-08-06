@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
-import { createAdminClient, writeAudit } from '../_shared/workspaceAuth.ts'
+import { createAdminClient, secretsMatch, writeAudit } from '../_shared/workspaceAuth.ts'
 import { CREDIT_PACKS } from '../_shared/creditPacks.ts'
 
 /**
@@ -82,8 +82,11 @@ async function savedCardFor(customerId: string, key: string): Promise<string | n
 serve(async (req) => {
   if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' })
 
+  // Timing-safe like every other secret comparison in this codebase: this
+  // header authorizes charging saved cards off-session.
   const secret = Deno.env.get('REFILL_TICK_SECRET')?.trim()
-  if (!secret || req.headers.get('x-refill-secret') !== secret) {
+  const providedSecret = req.headers.get('x-refill-secret') ?? ''
+  if (!secret || !(await secretsMatch(providedSecret, secret))) {
     return json(401, { error: 'unauthorized' })
   }
   const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')?.trim()
@@ -95,7 +98,7 @@ serve(async (req) => {
   // them being present is enough to know this workspace asked for it.
   const { data: profiles, error } = await admin
     .from('workspace_billing_profiles')
-    .select('workspace_id, refill_threshold_credits, refill_pack_credits, stripe_customer_id, billing_status')
+    .select('workspace_id, refill_threshold_credits, refill_pack_credits, refill_monthly_cap_cents, stripe_customer_id, billing_status')
     .not('refill_threshold_credits', 'is', null)
     .not('stripe_customer_id', 'is', null)
     .limit(200)
@@ -104,6 +107,8 @@ serve(async (req) => {
   const today = new Date().toISOString().slice(0, 10)
   let charged = 0
   let skipped = 0
+  // Counted separately from skips: a ceiling doing its job is worth seeing.
+  let capReached = 0
   const failures: Array<{ workspace_id: string; reason: string }> = []
 
   for (const profile of (profiles ?? []) as Array<Record<string, unknown>>) {
@@ -126,6 +131,37 @@ serve(async (req) => {
     if (!pack) {
       failures.push({ workspace_id: workspaceId, reason: 'pack no longer sold' })
       continue
+    }
+
+    /*
+     * The monthly spending ceiling, enforced where the charging happens. The
+     * column existed with nothing reading it, which is worse than no cap: a
+     * schema that promises a control invites somebody to set it and believe
+     * it. Spend so far is reconstructed from the ledger — refill grants carry
+     * the auto-refill:{workspace}:{day} key — because the audit trail is
+     * best-effort by design and a charge whose audit write failed must still
+     * count against the ceiling. Each past refill is priced at its own pack
+     * (matched by credits granted), falling back to today's pack if the
+     * catalog moved underneath it.
+     */
+    const monthlyCapCents = Number(profile.refill_monthly_cap_cents)
+    if (Number.isFinite(monthlyCapCents) && monthlyCapCents >= 0) {
+      const monthPrefix = `auto-refill:${workspaceId}:${today.slice(0, 7)}-`
+      const { data: monthRefills } = await admin
+        .from('workspace_credit_ledger')
+        .select('amount')
+        .eq('workspace_id', workspaceId)
+        .eq('entry_type', 'grant')
+        .like('idempotency_key', `${monthPrefix}%`)
+      const spentCents = (monthRefills ?? []).reduce((sum: number, row: Record<string, unknown>) => {
+        const credited = Number(row.amount) || 0
+        const priced = Object.values(CREDIT_PACKS).find((entry) => entry.credits === credited)
+        return sum + (priced?.amount_cents ?? pack.amount_cents)
+      }, 0)
+      if (spentCents + pack.amount_cents > monthlyCapCents) {
+        capReached += 1
+        continue
+      }
     }
 
     const { data: lots } = await admin
@@ -218,5 +254,5 @@ serve(async (req) => {
 
   // The credits are not here yet: the webhook grants them when Stripe confirms
   // the money. Saying "charged" rather than "granted" keeps that distinction.
-  return json(200, { charged, skipped, failed: failures.length, failures: failures.slice(0, 10) })
+  return json(200, { charged, skipped, cap_reached: capReached, failed: failures.length, failures: failures.slice(0, 10) })
 })
