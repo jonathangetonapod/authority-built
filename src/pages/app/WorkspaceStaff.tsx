@@ -234,6 +234,23 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
   const onOwnPlatformWorkspace = !isPlatformWorkspace
     && isPlatformAdmin
     && Boolean(workspace?.is_default)
+  /*
+   * A picture belongs to a membership, so the question is not which route this
+   * is — it is whether the viewer holds a membership in the workspace on
+   * screen. Asking the route instead hid the card from a platform admin opening
+   * their own workspace from the platform side, which is the way the operator
+   * of this platform actually reaches it.
+   *
+   * The membership in context is always the viewer's own, so comparing its
+   * workspace to the one being edited answers it exactly: shown on your own
+   * settings, shown when an admin opens the workspace they belong to, absent in
+   * another agency's — where the row genuinely does not exist and the backend
+   * would answer, accurately and uselessly, "avatar member row is absent for
+   * this actor".
+   */
+  const viewerBelongsToWorkspaceOnScreen = Boolean(membership)
+    && validWorkspaceId
+    && (workspace?.id || '').toLowerCase() === workspaceId
   const canOrganizeSidebar = !isPlatformWorkspace
     && (membership?.role === 'owner' || onOwnPlatformWorkspace)
     && validWorkspaceId
@@ -662,15 +679,15 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                     * belongs to the person rather than to the workspace, and it
                     * is the one setting every member can change for themselves.
                     *
-                    * Absent from the platform view of somebody else's
-                    * workspace, and that is not a permission check: a picture
+                    * Absent when the viewer has no membership in the workspace
+                    * on screen, and that is not a permission check: a picture
                     * belongs to a membership, and a platform admin inspecting an
                     * agency has none there. Offering the control anyway produced
                     * a refusal that was perfectly accurate and read as a bug —
                     * "avatar member row is absent for this actor" — for a state
                     * that simply has no meaning here.
                     */}
-                  {!isPlatformWorkspace && (
+                  {viewerBelongsToWorkspaceOnScreen && (
                   <section id="your-profile" className="min-w-0 scroll-mt-28 space-y-4" aria-labelledby="your-profile-title">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">You</p>

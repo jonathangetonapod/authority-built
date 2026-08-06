@@ -609,6 +609,52 @@ describe('WorkspaceStaff', () => {
     expect(screen.getByLabelText('Workspace logo file')).toBeInTheDocument()
   })
 
+  /*
+   * The way the operator of this platform reaches their own agency: from the
+   * platform side, on the /app/workspaces/:id route. Gating on the route rather
+   * than on the membership took the card away from them here, which is the one
+   * place they would go to use it.
+   */
+  it('still offers the picture when the admin opens the workspace they belong to', async () => {
+    mockedUseAuth.mockReturnValue({
+      user: { id: userId, email: 'owner@example.com', user_metadata: { full_name: 'Workspace Owner' } },
+      workspace: { id: workspaceId, name: 'Acme Workspace', slug: 'acme-workspace', status: 'active', is_default: false },
+      membership: { id: ownerId, full_name: 'Workspace Owner', role: 'owner' },
+      isPlatformAdmin: true,
+      refreshAccount,
+      refreshSession,
+      signOut,
+    } as never)
+
+    renderPage(workspaceId)
+    await screen.findByText('Agency Admin')
+
+    const profile = screen.getByRole('region', { name: 'Profile picture' })
+    const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'me.png', { type: 'image/png' })
+    fireEvent.change(within(profile).getByLabelText('Profile picture file'), { target: { files: [file] } })
+
+    await waitFor(() => expect(mockedUploadAvatar).toHaveBeenCalledWith(workspaceId, file, null))
+  })
+
+  // No membership anywhere means no picture to set, and the workspace id the
+  // upload would carry is empty — the refusal would have been about that.
+  it('offers no picture to an admin who holds no membership at all', async () => {
+    mockedUseAuth.mockReturnValue({
+      user: { id: userId, email: 'platform@example.com' },
+      workspace: null,
+      membership: null,
+      isPlatformAdmin: true,
+      refreshAccount,
+      refreshSession,
+      signOut,
+    } as never)
+
+    renderPage(workspaceId)
+    await screen.findByText('Agency Admin')
+
+    expect(screen.queryByRole('region', { name: 'Profile picture' })).not.toBeInTheDocument()
+  })
+
   it('generates a one-time password and requires confirmation before closing it', async () => {
     const passwordMember: WorkspaceStaffMember = {
       ...admin,
