@@ -102,7 +102,21 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
   const config = moduleConfigs[module]
 
   const selectedWorkspaceQuery = useQuery({
-    queryKey: ['platform', user?.id || 'unknown', 'workspace', selectedWorkspaceId, module],
+    /*
+     * The trailing literal matters. This key ended in `module`, and the
+     * mailboxes query below ends in 'mailboxes' — so on the platform route with
+     * module === 'mailboxes' the two were byte-identical, React Query served
+     * them one cache entry, and whichever mounted first won. This one did, so
+     * the mailboxes request was never sent and the page read the admin
+     * workspace view as a mailbox payload: no `connected`, no `accounts`, and
+     * "Instantly is not connected" stated as fact about every tenant a platform
+     * admin opened, with no Refresh offered because that button only renders
+     * when connected.
+     *
+     * Naming what this query is, rather than only which module asked for it,
+     * makes the collision unrepresentable instead of one module name away.
+     */
+    queryKey: ['platform', user?.id || 'unknown', 'workspace', selectedWorkspaceId, module, 'selected-workspace'],
     queryFn: ({ signal }) => getAdminWorkspaceView(selectedWorkspaceId, signal),
     enabled: isSelectedWorkspace && validSelectedWorkspaceId,
     retry: false,

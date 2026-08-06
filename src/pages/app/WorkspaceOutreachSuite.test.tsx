@@ -259,6 +259,22 @@ describe('WorkspaceOutreachSuite', () => {
     expect(mockedMailboxes).toHaveBeenCalledWith(defaultWorkspaceId)
   })
 
+  /*
+   * The workspace lookup keyed on `module`, and this query ends in 'mailboxes',
+   * so on the platform route the two keys were identical and React Query gave
+   * them one cache entry. The lookup mounted first, so the mailboxes request was
+   * never sent and the admin workspace view was read as a mailbox payload —
+   * leaving "Instantly is not connected" asserted about every tenant a platform
+   * admin opened, with no Refresh button because that only renders when
+   * connected.
+   */
+  it('asks for the mailboxes of the workspace a platform admin is viewing', async () => {
+    renderPage('mailboxes', selectedWorkspaceId)
+
+    await waitFor(() => expect(mockedMailboxes).toHaveBeenCalledWith(selectedWorkspaceId))
+    expect(screen.queryByTestId('instantly-connection-state')).not.toBeInTheDocument()
+  })
+
   it('puts the mailboxes that cannot send at the top, and says why on the row', async () => {
     renderPage('mailboxes')
 
