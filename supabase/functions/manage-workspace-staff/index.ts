@@ -1102,6 +1102,33 @@ async function setMembershipAvatar(
     p_token_issued_at: input.tokenIssuedAt,
   });
   if (error) {
+    /*
+     * Mapped here rather than through rpcFailure, which reads messages meant
+     * for staff invites: "active workspace membership is required" matched its
+     * duplicate-invite branch and told a member setting their own picture that
+     * their email already had access. These refusals are this function's own
+     * words about this member, so they are safe to pass on — and saying which
+     * of five conditions refused is the difference between a fixable report and
+     * another round of guessing.
+     */
+    const message = (error as { message?: string }).message ?? "";
+    if (message.includes("stale")) {
+      throw new HttpError(
+        401,
+        "REAUTHENTICATION_REQUIRED",
+        "Sign in again with the newest account credentials",
+      );
+    }
+    if (message.includes("avatar changed")) {
+      throw new HttpError(
+        409,
+        "AVATAR_CHANGED",
+        "Your profile picture changed elsewhere. Refresh and try again",
+      );
+    }
+    if (message.startsWith("avatar ")) {
+      throw new HttpError(403, "AVATAR_ACCESS_REFUSED", message);
+    }
     rpcFailure(error, "AVATAR_UPDATE_FAILED", "The profile picture could not be updated");
   }
   return (data ?? {}) as Record<string, unknown>;
