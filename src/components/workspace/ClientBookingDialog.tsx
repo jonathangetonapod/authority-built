@@ -121,12 +121,22 @@ export const ClientBookingDialog = ({
   const [showMore, setShowMore] = useState(false)
   const [podcastQuery, setPodcastQuery] = useState('')
 
+  /*
+   * Existing means it has an id. The Command Center seeds this dialog with a
+   * booking-shaped object whose id is '' so the form opens prefilled, and
+   * branching on the object's truthiness treated that seed as a placement that
+   * already exists: it offered a Remove whose delete sent the empty id and
+   * 400'd, hid the shortlist autocomplete, and titled a first-time log as an
+   * edit with a "Save" button.
+   */
+  const isExisting = Boolean(booking?.id)
+
   // Picking a show the client already approved beats retyping its name, and
   // keeps the booking spelled the same as the shortlist row it came from.
   const shortlistQuery = useQuery({
     queryKey: ['client-shortlist', workspaceId, clientId],
     queryFn: () => getClientShortlist(workspaceId, clientId),
-    enabled: open && !booking,
+    enabled: open && !isExisting,
     retry: false,
     staleTime: 5 * 60_000,
   })
@@ -179,7 +189,7 @@ export const ClientBookingDialog = ({
       booking?.id,
     ),
     onSuccess: () => {
-      toast.success(booking ? 'Placement updated.' : `Logged for ${clientName}.`)
+      toast.success(isExisting ? 'Placement updated.' : `Logged for ${clientName}.`)
       onSaved()
       onOpenChange(false)
     },
@@ -209,7 +219,7 @@ export const ClientBookingDialog = ({
       <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {booking ? form.podcast_name || 'Edit placement' : `Log a podcast for ${clientName}`}
+            {isExisting ? form.podcast_name || 'Edit placement' : `Log a podcast for ${clientName}`}
           </DialogTitle>
           <DialogDescription>
             Dates you add appear on {clientName}’s calendar, so leave one blank until it is real.
@@ -384,7 +394,7 @@ export const ClientBookingDialog = ({
         </div>
 
         <DialogFooter className="gap-2 sm:justify-between">
-          {booking ? (
+          {isExisting ? (
             <Button
               type="button"
               variant={confirmingDelete ? 'destructive' : 'ghost'}
@@ -400,7 +410,7 @@ export const ClientBookingDialog = ({
             <Button type="button" variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button type="button" disabled={busy || !form.podcast_name.trim()} onClick={() => saveMutation.mutate()}>
               {saveMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {booking ? 'Save' : 'Log it'}
+              {isExisting ? 'Save' : 'Log it'}
             </Button>
           </div>
         </DialogFooter>

@@ -3145,11 +3145,16 @@ serve(async (req) => {
       );
       const linksByEmail = new Map<string, Array<Record<string, unknown>>>();
       for (const campaign of campaignRows) {
+        // The write path dedupes, but a legacy or externally-written row can
+        // hold the same address twice in different casings, and each duplicate
+        // became a second identical campaign badge on the mailbox row.
+        const seenEmails = new Set<string>();
         for (const sender of campaign.sender_accounts || []) {
           const email = typeof sender === "string"
             ? sender.trim().toLowerCase()
             : "";
-          if (!email) continue;
+          if (!email || seenEmails.has(email)) continue;
+          seenEmails.add(email);
           linksByEmail.set(email, [
             ...(linksByEmail.get(email) || []),
             {
@@ -4857,11 +4862,35 @@ serve(async (req) => {
     }
 
     const clientId = requireUuid(body.client_id, "client_id");
-    const client = await requireWorkspaceClient(
-      context.admin,
-      workspaceId,
-      clientId,
-    );
+    /*
+     * Unassigning a mailbox is the one client-scoped action that must survive
+     * the client being gone. Deleting a client leaves their campaign row — and
+     * the sender list on it — behind, and the mailboxes screen shows that
+     * mailbox pinned to "Unknown client" with a working-looking disconnect.
+     * Requiring the client row here turned that disconnect into
+     * CLIENT_NOT_FOUND forever; the campaign row it actually edits is still
+     * scoped by (workspace_id, client_id), so tenancy is unchanged.
+     */
+    const client =
+      action === "mailbox-assign" && body.assigned === false
+        ? null
+        : await requireWorkspaceClient(
+          context.admin,
+          workspaceId,
+          clientId,
+        );
+    // Narrows for every action that did not skip the gate. Unreachable on the
+    // unassign path, which never asks for the row.
+    const requireClientRow = (): WorkspaceClientRow => {
+      if (!client) {
+        throw new HttpError(
+          500,
+          "CLIENT_LOOKUP_FAILED",
+          "The campaign client could not be verified",
+        );
+      }
+      return client;
+    };
 
     if (action === "client-prompts-get") {
       requireOnlyKeys(body, ["action", "workspace_id", "client_id"]);
@@ -5434,7 +5463,8 @@ serve(async (req) => {
         metadata: {
           instantly_campaign_id: created.id,
           name: created.name,
-          client_name: client.name,
+          // Non-null on this action: only unassigning skips the client gate.
+          client_name: client?.name ?? null,
         },
       });
       return jsonResponse(req, METHODS, 200, {
@@ -6114,7 +6144,7 @@ serve(async (req) => {
           accountsFromSnapshot(connection?.accounts_snapshot),
         );
       }
-      let campaign = await ensureLocalCampaign(context, workspaceId, client, {
+      let campaign = await ensureLocalCampaign(context, workspaceId, requireClientRow(), {
         name: selectedProviderCampaign?.name.slice(0, 180) || name,
         timezone: selectedProviderCampaign?.timezone || timezone,
         dailyLimit: selectedProviderCampaign?.dailyLimit || limit,
@@ -6281,7 +6311,7 @@ serve(async (req) => {
       );
       const contactEmail = contactEmailInput(body.contact_email);
       const hostName = draftText(body.host_name, "host_name", 500);
-      const campaign = await ensureLocalCampaign(context, workspaceId, client);
+      const campaign = await ensureLocalCampaign(context, workspaceId, requireClientRow());
       const target = await requireCampaignTarget(
         context,
         campaign,
@@ -6379,7 +6409,7 @@ serve(async (req) => {
         "follow_up_2_body",
         20_000,
       );
-      const campaign = await ensureLocalCampaign(context, workspaceId, client);
+      const campaign = await ensureLocalCampaign(context, workspaceId, requireClientRow());
       const target = await requireCampaignTarget(
         context,
         campaign,
@@ -6497,7 +6527,7 @@ serve(async (req) => {
           "Connect Instantly before starting outreach",
         );
       }
-      const campaign = await ensureLocalCampaign(context, workspaceId, client);
+      const campaign = await ensureLocalCampaign(context, workspaceId, requireClientRow());
       const target = await requireCampaignTarget(
         context,
         campaign,
@@ -6506,7 +6536,7 @@ serve(async (req) => {
       await launchTarget(
         context,
         connection,
-        client,
+        requireClientRow(),
         campaign,
         target,
         sequence,

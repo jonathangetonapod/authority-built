@@ -140,7 +140,12 @@ export const MailboxesTable = ({
     onError: (mutationError) => toast.error(
       mutationError instanceof Error ? mutationError.message : 'The mailbox assignment could not be saved.',
     ),
-    onSettled: () => setPendingEmail(null),
+    // Cleared only for the row that settled: two rows can have writes in
+    // flight, and a global clear let row A's finish switch off row B's spinner
+    // while B was still saving.
+    onSettled: (_result, _mutationError, variables) => {
+      setPendingEmail((current) => (current === variables.email ? null : current))
+    },
   })
 
   const accounts = useMemo(() => {

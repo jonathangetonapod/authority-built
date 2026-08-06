@@ -61,7 +61,9 @@ assert.match(edge, /const linkRows = linksResult\.error \? \[\] : linksResult\.d
 // Only client-attributable replies reach the Master Inbox.
 assert.match(edge, /const mapped = providerCampaignId \? campaignByProviderId\.get\(providerCampaignId\) \?\? null : null;[\s\S]*?if \(!mapped\) return \[\];/u)
 // Actions that carry no client_id must run before the generic client parse.
-const genericParseIndex = edge.indexOf('const clientId = requireUuid(body.client_id, "client_id");\n    const client = await requireWorkspaceClient(')
+// Anchored on the unassign exemption's comment, which sits directly on the
+// generic parse: the parse line itself also appears inside earlier handlers.
+const genericParseIndex = edge.indexOf('Unassigning a mailbox is the one client-scoped action')
 assert.ok(genericParseIndex > 0, 'generic client_id parse must exist')
 for (const handler of ['if (action === "inbox-list")', 'if (action === "inbox-reply")', 'if (action === "inbox-draft")', 'if (action === "inbox-thread-state")']) {
   const handlerIndex = edge.indexOf(handler)
@@ -936,10 +938,13 @@ assert.match(persistDraft[0], /if \(!canManage\) return/u)
 // Switching threads inside the debounce window is a pending save for another
 // thread: flush it, never cancel it.
 assert.match(persistDraft[0], /if \(pending && pendingThreadKey !== threadKey\) pending\(\)/u)
-// A thread with no generated draft still has to accept a first hand-written
-// one; gating the cache patch on an existing draft dropped exactly those.
-assert.match(persistDraft[0], /item\.thread_key === threadKey && item\.state\b/u)
-assert.match(persistDraft[0], /draft: item\.state\.draft[\s\S]{0,160}based_on_email_id: null/u)
+// A thread with no state row at all still has to accept a hand-written draft:
+// gating the patch on item.state dropped exactly the reply that just arrived,
+// so switching threads and back emptied the textarea. The patch synthesizes a
+// fresh-row state instead, matching the server-side upsert.
+assert.match(persistDraft[0], /item\.thread_key === threadKey\s*\?/u)
+assert.match(persistDraft[0], /status: 'needs_reply' as const,[\s\S]{0,240}\.\.\.item\.state,/u)
+assert.match(persistDraft[0], /draft: item\.state\?\.draft[\s\S]{0,160}based_on_email_id: null/u)
 
 // A deep link resolves through the fallback rather than openThread, which is
 // where a saved draft is restored — so the one path built for returning to a
@@ -1030,7 +1035,9 @@ assert.ok(mailboxesAction, 'mailboxes action must exist')
 assert.match(mailboxesAction[0], /campaigns: linksByEmail\.get\(account\.email\.trim\(\)\.toLowerCase\(\)\) \?\? \[\]/u)
 
 // Same reason as above: sliced to the next action, not to a named neighbour.
-const assignAction = edge.match(/action === "mailbox-assign"[\s\S]*?\n {4}if \(action ===/u)
+// Anchored on the handler's own if-line: the action name also appears in the
+// generic client gate's unassign exemption above it.
+const assignAction = edge.match(/if \(action === "mailbox-assign"\) \{[\s\S]*?\n {4}if \(action ===/u)
 assert.ok(assignAction, 'mailbox-assign action must exist')
 assert.match(assignAction[0], /requireCampaignManager\(access\)/u)
 assert.match(assignAction[0], /verifySelectedAccounts\(/u)

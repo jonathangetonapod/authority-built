@@ -316,12 +316,27 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
             ? {
               ...current,
               threads: current.threads.map((item) => (
-                item.thread_key === threadKey && item.state
+                item.thread_key === threadKey
                   ? {
                     ...item,
+                    /*
+                     * Synthesized when the row has no state yet, because that
+                     * is exactly when losing the edit hurts most: a reply on
+                     * its first page load after arriving has state: null, and
+                     * skipping the patch meant switching threads and back
+                     * emptied the textarea. The server-side save below already
+                     * upserts the row either way — this makes the cache agree
+                     * with it. The defaults match a freshly created row.
+                     */
                     state: {
+                      status: 'needs_reply' as const,
+                      classification: null,
+                      nudges_sent: 0,
+                      nudges_paused: false,
+                      last_nudge_at: null,
+                      draft_stale: false,
                       ...item.state,
-                      draft: item.state.draft
+                      draft: item.state?.draft
                         ? { ...item.state.draft, body }
                         : { subject: '', body, nudges: [], based_on_email_id: null, generated_at: null },
                     },
@@ -545,9 +560,15 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
         : undefined,
     ),
     onSuccess: (draft, thread) => {
-      // Race guard: only stage the result if the thread it was drafted for is
-      // still the open conversation.
-      if (selectedThreadId !== thread.id) return
+      /*
+       * Race guard: only stage the result if the thread it was drafted for is
+       * still the open conversation. Compared against the rendered thread, not
+       * the selection id — a deep-linked conversation stays open through the
+       * ?thread= fallback with the id null (changing the client filter clears
+       * the id but not the link), and comparing the id there threw away a
+       * draft the operator had just paid for, silently, into a live textarea.
+       */
+      if (selectedThread?.id !== thread.id) return
       setDraftBody(draft.body)
       setDraftedForThread(thread.id)
       setDraftClassification(draft.classification)
