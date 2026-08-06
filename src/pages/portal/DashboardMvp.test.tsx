@@ -1,13 +1,17 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { toast } from 'sonner'
 import PortalDashboardMvp from '@/pages/portal/DashboardMvp'
 import { useClientPortal } from '@/contexts/ClientPortalContext'
-import { getPortalExperience, type PortalExperienceOverview } from '@/services/clientPortal'
+import { getPortalExperience, removePortalCalendarEvent, type PortalExperienceOverview } from '@/services/clientPortal'
 
 vi.mock('@/components/portal/PortalLayout', () => ({ PortalLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('@/contexts/ClientPortalContext', () => ({ useClientPortal: vi.fn() }))
 vi.mock('@/services/clientPortal', () => ({ getPortalExperience: vi.fn(), removePortalCalendarEvent: vi.fn() }))
+// Only `toast` is imported from sonner anywhere in this tree (DashboardMvp,
+// BookingDetailDialog), so mocking it lets the copy-failure path be asserted.
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const mockedUseClientPortal = vi.mocked(useClientPortal)
 const mockedGetExperience = vi.mocked(getPortalExperience)
@@ -85,6 +89,14 @@ function overview(): PortalExperienceOverview {
   }
 }
 
+// Local calendar date N days from now — the component parses dates as local
+// midnight, so building test dates from toISOString (UTC) can drift a day.
+function localDay(offsetDays: number): string {
+  const date = new Date(Date.now() + offsetDays * 86_400_000)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -101,6 +113,104 @@ describe('PortalDashboardMvp', () => {
       client: { id: clientId, name: 'Taylor Client', dashboard_slug: 'taylor-ab12cd34ef' },
     } as never)
     mockedGetExperience.mockResolvedValue(overview())
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /*
+   * The dialog component never unmounts, and its armed "Confirm remove" used
+   * to survive a dismissal — so opening a different event and tapping once
+   * deleted it with no confirmation. Armed state must die with the booking it
+   * was armed for.
+   */
+  it('disarms a pending remove when a different booking is opened', async () => {
+    const withOwnEvents = overview()
+    withOwnEvents.bookings.push(
+      { ...withOwnEvents.bookings[0], id: 'own-a', podcast_name: 'My Event A', status: 'booked', created_by_client: true },
+      { ...withOwnEvents.bookings[0], id: 'own-b', podcast_name: 'My Event B', status: 'booked', created_by_client: true },
+    )
+    mockedGetExperience.mockResolvedValue(withOwnEvents)
+
+    renderPage()
+    fireEvent.click((await screen.findAllByText('My Event A'))[0].closest('button') as HTMLElement)
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }))
+    expect(screen.getByRole('button', { name: 'Confirm remove' })).toBeInTheDocument()
+
+    // Dismiss without confirming, then open the other event.
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    fireEvent.click((await screen.findAllByText('My Event B'))[0].closest('button') as HTMLElement)
+
+    expect(await screen.findByRole('button', { name: 'Remove' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Confirm remove' })).not.toBeInTheDocument()
+  })
+
+  // Removal must leave the page telling the truth: the row disappears because
+  // the overview is re-read, exactly as the Calendar page already does.
+  it('re-reads the overview after removing a self-added event', async () => {
+    const withOwnEvent = overview()
+    withOwnEvent.bookings.push(
+      { ...withOwnEvent.bookings[0], id: 'own-a', podcast_name: 'My Event A', status: 'booked', created_by_client: true },
+    )
+    mockedGetExperience.mockResolvedValue(withOwnEvent)
+    vi.mocked(removePortalCalendarEvent).mockResolvedValue(undefined as never)
+
+    renderPage()
+    fireEvent.click((await screen.findAllByText('My Event A'))[0].closest('button') as HTMLElement)
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm remove' }))
+
+    await waitFor(() => expect(mockedGetExperience).toHaveBeenCalledTimes(2))
+  })
+
+  /*
+   * Nothing to summarize means no summary. Rendered unconditionally, the stat
+   * tiles asserted "0" of everything above the error card that said the
+   * numbers could not be loaded — a confidently wrong dashboard.
+   */
+  it('shows no zero-count tiles while the overview is unavailable', async () => {
+    mockedGetExperience.mockRejectedValue(new Error('Session expired'))
+
+    renderPage()
+
+    // The shared hook retries once with backoff before erroring.
+    expect(await screen.findByText(/could not load your placements/i, {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(screen.queryByText('Total placements')).not.toBeInTheDocument()
+    expect(screen.queryByText('Combined audience')).not.toBeInTheDocument()
+  })
+
+  // Entered ahead of its air date, an episode is awaiting release — not "Live"
+  // beside a date that has not happened.
+  it('treats a future-dated published episode as awaiting release', async () => {
+    const scheduled = overview()
+    scheduled.bookings[1] = { ...scheduled.bookings[1], publish_date: localDay(10) }
+    mockedGetExperience.mockResolvedValue(scheduled)
+
+    renderPage()
+
+    expect(await screen.findAllByText('Operator Weekly')).toHaveLength(2)
+    expect(screen.getByText('Upcoming episode releases')).toBeInTheDocument()
+    expect(screen.getByText('Goes live soon')).toBeInTheDocument()
+    expect(screen.queryByText('New episode live')).not.toBeInTheDocument()
+    expect(screen.queryByText('Live')).not.toBeInTheDocument()
+  })
+
+  /*
+   * In-app browsers open portal links without a clipboard API even over https,
+   * and the bare property access threw before any .then could catch it — a
+   * dead button with no feedback at all.
+   */
+  it('says copying is blocked instead of throwing where the clipboard API is missing', async () => {
+    const fresh = overview()
+    fresh.bookings[1] = { ...fresh.bookings[1], publish_date: localDay(-3) }
+    mockedGetExperience.mockResolvedValue(fresh)
+    Object.assign(navigator, { clipboard: undefined })
+
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy link' }))
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Copying is blocked'))
   })
 
   it('renders the review call-to-action with live counts and the journey stats', async () => {
@@ -208,6 +318,163 @@ describe('PortalDashboardMvp', () => {
     const placements = (await screen.findAllByText(/Founder Stories|Operator Weekly/))
       .map((node) => node.textContent)
     expect(placements.indexOf('Operator Weekly')).toBeLessThan(placements.lastIndexOf('Founder Stories'))
+  })
+
+  /*
+   * A conversation is not yet reach: when the only positive audience belongs
+   * to an unconfirmed show, the stat must disappear entirely — a "Combined
+   * audience: 0" tile would undersell the work, not report it.
+   */
+  it('omits the combined audience stat when no secured show carries an audience', async () => {
+    const data = overview()
+    data.bookings[0] = { ...data.bookings[0], audience_size: null }
+    data.bookings.push({
+      ...data.bookings[0],
+      id: 'b-convo',
+      podcast_name: 'Convo Only',
+      status: 'conversation_started',
+      scheduled_date: localDay(-5),
+      recording_date: null,
+      audience_size: 50_000,
+    })
+    mockedGetExperience.mockResolvedValue(data)
+
+    renderPage()
+
+    expect(await screen.findByText('Podcasts contacted')).toBeInTheDocument()
+    expect(screen.queryByText('Combined audience')).not.toBeInTheDocument()
+  })
+
+  // Some hosts announce before the episode link exists: the card still
+  // celebrates, but only Details is on offer — no Listen, no Copy link.
+  it('celebrates a fresh episode without a link yet, offering details only', async () => {
+    const data = overview()
+    data.bookings[1] = { ...data.bookings[1], publish_date: localDay(-2), episode_url: null }
+    mockedGetExperience.mockResolvedValue(data)
+
+    renderPage()
+
+    expect(await screen.findByText('New episode live')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Copy link' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /listen/i })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Details' }).length).toBeGreaterThan(0)
+  })
+
+  it('heroes the newest of two recently live episodes', async () => {
+    const data = overview()
+    data.bookings[1] = { ...data.bookings[1], publish_date: localDay(-10) }
+    data.bookings.push({
+      ...data.bookings[1],
+      id: 'b-newest',
+      podcast_name: 'Fresher Feed',
+      publish_date: localDay(-2),
+    })
+    mockedGetExperience.mockResolvedValue(data)
+
+    renderPage()
+
+    const heroLabel = await screen.findByText('New episode live')
+    expect(heroLabel.nextElementSibling).toHaveTextContent('Fresher Feed')
+  })
+
+  /*
+   * The news window, pinned at both edges. Publish dates parse as local
+   * midnight, so the window covers exactly 14 calendar dates: today and the
+   * previous 13 days. A date exactly 14 days back is out (its age is 14 days
+   * plus the time since midnight), and a future date is never news.
+   */
+  it('treats today as news, but not fourteen days ago or tomorrow', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-06T12:00:00'))
+
+    const renderWithPublishDate = (publishDate: string) => {
+      const data = overview()
+      data.bookings[1] = { ...data.bookings[1], publish_date: publishDate }
+      mockedGetExperience.mockResolvedValue(data)
+      return renderPage()
+    }
+
+    const today = renderWithPublishDate('2026-08-06')
+    expect(await screen.findByText('New episode live')).toBeInTheDocument()
+    today.unmount()
+
+    const fortnight = renderWithPublishDate('2026-07-23')
+    expect((await screen.findAllByText('Operator Weekly')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('New episode live')).not.toBeInTheDocument()
+    fortnight.unmount()
+
+    const tomorrow = renderWithPublishDate('2026-08-07')
+    expect((await screen.findAllByText('Operator Weekly')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('New episode live')).not.toBeInTheDocument()
+    tomorrow.unmount()
+  })
+
+  // The client hit Copy and nothing landed on the clipboard: say so. The
+  // rejection must be handled — an unhandled rejection here fails the run.
+  it('reports a copy failure as an error toast', async () => {
+    const data = overview()
+    data.bookings[1] = { ...data.bookings[1], publish_date: localDay(-3) }
+    mockedGetExperience.mockResolvedValue(data)
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'))
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy link' }))
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('The link could not be copied.'))
+    expect(toast.success).not.toHaveBeenCalled()
+  })
+
+  /*
+   * The full sort contract: live first and newest within a stage, a status
+   * this code has never heard of lands mid-list with the conversations (not
+   * on top), and cancelled sinks below everything.
+   */
+  it('sorts placements live-newest-first, unknown statuses mid-list, cancelled last', async () => {
+    const data = overview()
+    const base = data.bookings[0]
+    data.bookings = [
+      { ...base, id: 's1', podcast_name: 'Placement Cancelled', status: 'cancelled', scheduled_date: localDay(-60), recording_date: null, publish_date: null },
+      { ...base, id: 's2', podcast_name: 'Placement Mystery', status: 'shadow_banned', scheduled_date: localDay(-120), recording_date: null, publish_date: null },
+      { ...base, id: 's3', podcast_name: 'Placement Pub Old', status: 'published', scheduled_date: null, recording_date: null, publish_date: localDay(-200) },
+      { ...base, id: 's4', podcast_name: 'Placement Convo', status: 'conversation_started', scheduled_date: localDay(-90), recording_date: null, publish_date: null },
+      { ...base, id: 's5', podcast_name: 'Placement Pub New', status: 'published', scheduled_date: null, recording_date: null, publish_date: localDay(-100) },
+    ]
+    mockedGetExperience.mockResolvedValue(data)
+
+    renderPage()
+
+    await screen.findByText('Placement Pub New')
+    const names = screen.getAllByText(/^Placement /).map((node) => node.textContent)
+    expect(names).toEqual([
+      'Placement Pub New',
+      'Placement Pub Old',
+      'Placement Convo',
+      'Placement Mystery',
+      'Placement Cancelled',
+    ])
+  })
+
+  /*
+   * A booked show whose only date has slipped into the past: it fails the
+   * upcoming check and is not undated, so it leaves the upcoming panel and
+   * lives on in placements only. Pinned as intended — advertising a past
+   * date as "upcoming" or an existing date as "Date coming" would both lie.
+   */
+  it('drops a booked show whose only date has passed from the upcoming panel', async () => {
+    const data = overview()
+    data.bookings[0] = {
+      ...data.bookings[0],
+      podcast_name: 'Missed Date Show',
+      scheduled_date: localDay(-30),
+      recording_date: null,
+    }
+    mockedGetExperience.mockResolvedValue(data)
+
+    renderPage()
+
+    expect(await screen.findAllByText('Missed Date Show')).toHaveLength(1)
+    expect(screen.queryByText('Date coming')).not.toBeInTheDocument()
   })
 
   it('celebrates a fully reviewed shortlist instead of nagging', async () => {

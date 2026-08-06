@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { CalendarPlus, CheckCircle2, Circle, ExternalLink, Headphones, Loader2, Star, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -78,6 +78,15 @@ interface BookingDetailDialogProps {
 export function BookingDetailDialog({ booking, onOpenChange, onRemoved }: BookingDetailDialogProps) {
   const { client } = useClientPortal()
   const [confirmingRemove, setConfirmingRemove] = useState(false)
+  /*
+   * Disarmed whenever the booking on screen changes, including to nothing.
+   * The dialog component never unmounts, so an armed "Confirm remove" for one
+   * booking survived a dismissal and waited for the next booking opened — one
+   * tap, on a phone, deleted a different event with no confirmation at all.
+   */
+  useEffect(() => {
+    setConfirmingRemove(false)
+  }, [booking?.id])
   const removeMutation = useMutation({
     mutationFn: () => removePortalCalendarEvent(client!.id, booking!.id),
     onSuccess: () => {

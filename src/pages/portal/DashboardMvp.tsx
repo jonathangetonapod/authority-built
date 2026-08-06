@@ -146,8 +146,17 @@ export default function PortalDashboardMvp() {
     ))
     .sort((a, b) => String(a.recording_date || a.scheduled_date || '9999').localeCompare(String(b.recording_date || b.scheduled_date || '9999')))
     .slice(0, 4)
+  /*
+   * A published row whose date is still ahead is an episode awaiting release,
+   * whatever its status field says — entered ahead of air date, it appeared
+   * nowhere but the flat list, wearing a "Live" badge beside a future date.
+   * It belongs here with the recorded ones until the date arrives.
+   */
   const upcomingReleases = activeBookings
-    .filter((booking) => booking.status === 'recorded')
+    .filter((booking) => (
+      booking.status === 'recorded'
+      || (booking.status === 'published' && Boolean(booking.publish_date) && !isRecentlyLive(booking.publish_date) && isUpcoming(booking.publish_date))
+    ))
     .filter((booking) => !booking.publish_date || isUpcoming(booking.publish_date))
     .sort((a, b) => String(a.publish_date || '9999').localeCompare(String(b.publish_date || '9999')))
     .slice(0, 4)
@@ -291,6 +300,17 @@ export default function PortalDashboardMvp() {
                       size="sm"
                       variant="outline"
                       onClick={() => {
+                        /*
+                         * Guarded, because portal links get opened in in-app
+                         * browsers that lack the clipboard API even over
+                         * https — and the property access throws before any
+                         * .then could catch it, leaving the tap with no
+                         * feedback at all.
+                         */
+                        if (!navigator.clipboard?.writeText) {
+                          toast.error('Copying is blocked in this browser — open the episode with Listen and share from there.')
+                          return
+                        }
                         navigator.clipboard.writeText(latestLiveEpisodeUrl).then(
                           () => toast.success('Episode link copied — share it anywhere.'),
                           () => toast.error('The link could not be copied.'),
@@ -307,6 +327,11 @@ export default function PortalDashboardMvp() {
           </Card>
         )}
 
+        {/* Only once there is data to summarize. Rendered unconditionally,
+            these tiles asserted "0" of everything during loading and kept
+            asserting it after a failed fetch — a confidently wrong dashboard
+            above an error card that said the numbers could not be loaded. */}
+        {overview && (
         <div className={statsGridClass}>
           {journeyStats.map((stat) => (
             <Card key={stat.label}>
@@ -318,6 +343,7 @@ export default function PortalDashboardMvp() {
             </Card>
           ))}
         </div>
+        )}
 
         {(upcomingRecordings.length > 0 || upcomingReleases.length > 0) && (
           <div className="grid gap-4 lg:grid-cols-2">
@@ -330,15 +356,19 @@ export default function PortalDashboardMvp() {
                   <p className="text-sm text-muted-foreground">Nothing scheduled right now.</p>
                 ) : (
                   <ul className="divide-y">
+                    {/* Edge trimming lives on the li, aimed at the button:
+                        first:/last: on the button itself resolved against its
+                        own li — where it is always the only child — so every
+                        row lost its padding, not just the edges. */}
                     {upcomingRecordings.map((booking) => (
-                      <li key={booking.id}>
+                      <li key={booking.id} className="[&:first-child>button]:pt-0 [&:last-child>button]:pb-0">
                         {/* The job before a recording is prep, and prep lives in
                             the details — a row that only stated the date left
                             the useful part unreachable from here. */}
                         <button
                           type="button"
                           onClick={() => setDetailBooking(booking)}
-                          className="flex w-full items-center justify-between gap-3 py-2.5 text-left transition-colors first:pt-0 last:pb-0 hover:text-primary"
+                          className="flex w-full items-center justify-between gap-3 py-2.5 text-left transition-colors hover:text-primary"
                         >
                           <span className="min-w-0 truncate text-sm font-medium">{booking.podcast_name}</span>
                           <span className="shrink-0 text-sm text-muted-foreground">
@@ -361,11 +391,11 @@ export default function PortalDashboardMvp() {
                 ) : (
                   <ul className="divide-y">
                     {upcomingReleases.map((booking) => (
-                      <li key={booking.id}>
+                      <li key={booking.id} className="[&:first-child>button]:pt-0 [&:last-child>button]:pb-0">
                         <button
                           type="button"
                           onClick={() => setDetailBooking(booking)}
-                          className="flex w-full items-center justify-between gap-3 py-2.5 text-left transition-colors first:pt-0 last:pb-0 hover:text-primary"
+                          className="flex w-full items-center justify-between gap-3 py-2.5 text-left transition-colors hover:text-primary"
                         >
                           <span className="min-w-0 truncate text-sm font-medium">{booking.podcast_name}</span>
                           <span className="shrink-0 text-sm text-muted-foreground">
@@ -409,7 +439,15 @@ export default function PortalDashboardMvp() {
             ) : (
               <div className="divide-y">
                 {sortedBookings.map((booking) => {
-                  const status = bookingStatus(booking.status)
+                  // "Live" next to a future date contradicts itself; until the
+                  // date arrives the honest label is that it is coming.
+                  const goesLiveSoon = booking.status === 'published'
+                    && Boolean(booking.publish_date)
+                    && !isRecentlyLive(booking.publish_date)
+                    && isUpcoming(booking.publish_date)
+                  const status = goesLiveSoon
+                    ? { label: 'Goes live soon', className: 'bg-violet-50 text-violet-700 border-violet-200' }
+                    : bookingStatus(booking.status)
                   const podcastUrl = booking.podcast_url ? safeExternalUrl(booking.podcast_url) : null
                   const episodeUrl = booking.episode_url ? safeExternalUrl(booking.episode_url) : null
                   const audience = compactNumber(booking.audience_size)
@@ -521,7 +559,14 @@ export default function PortalDashboardMvp() {
           </CardContent>
         </Card>
       </div>
-      <BookingDetailDialog booking={detailBooking} onOpenChange={(open) => { if (!open) setDetailBooking(null) }} />
+      {/* onRemoved, as the Calendar page already does: without the refetch a
+          removed event stayed on screen for the staleTime window, reopenable
+          and offering a second "successful" delete of a row already gone. */}
+      <BookingDetailDialog
+        booking={detailBooking}
+        onOpenChange={(open) => { if (!open) setDetailBooking(null) }}
+        onRemoved={() => void overviewQuery.refetch()}
+      />
     </PortalLayout>
   )
 }
