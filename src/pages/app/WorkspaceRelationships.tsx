@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Clock3,
   Handshake,
+  Inbox,
   Loader2,
   Mail,
   MailX,
@@ -23,6 +24,7 @@ import {
   UserRoundPlus,
   Users,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { OutreachSuppressionsDialog } from '@/components/workspace/OutreachSuppressionsDialog'
 import {
   WorkspaceLayout,
@@ -433,6 +435,18 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
     || 'Host not identified',
   )
   const selectedState = detail?.derived?.state || openRow?.derived_state || 'none'
+  /*
+   * The reply happens in Master Inbox; this page only knows about it. The
+   * quiet band and the saved threads named the conversation and stopped one
+   * click short of the place a follow-up is actually written — the inbox
+   * already links here, and this is the way back.
+   */
+  const inboxThreadHref = (thread: { thread_key: string; client_id: string | null }): string => {
+    const params = new URLSearchParams()
+    if (thread.client_id) params.set('client', thread.client_id)
+    params.set('thread', thread.thread_key)
+    return `${baseHref}/master-inbox?${params.toString()}`
+  }
   const baseHref = isPlatformWorkspace
     ? selectedWorkspaceBaseHref(selectedWorkspaceId)
     : MY_WORKSPACE_BASE_HREF
@@ -728,6 +742,13 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
                               </div>
                             </div>
                           </div>
+                          {detail.threads[0] && (
+                            <Button asChild size="sm" variant="outline">
+                              <Link to={inboxThreadHref(detail.threads[0])}>
+                                <Inbox className="mr-2 h-4 w-4" />Reply in Master Inbox
+                              </Link>
+                            </Button>
+                          )}
                           {canManage && (
                             <Button type="button" size="sm" onClick={() => setActiveView('notes')}>
                               <NotebookPen className="mr-2 h-4 w-4" />Add note
@@ -998,7 +1019,12 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
                                           {(thread.from_email || thread.lead_email) ? ` · ${thread.from_email || thread.lead_email}` : ''}
                                         </p>
                                       </div>
-                                      <span className="shrink-0 text-xs text-muted-foreground">{formatDate(thread.latest_message_at)}</span>
+                                      <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                                        {formatDate(thread.latest_message_at)}
+                                        <Link to={inboxThreadHref(thread)} className="font-medium text-primary hover:underline">
+                                          Open in Master Inbox
+                                        </Link>
+                                      </span>
                                     </div>
                                     {thread.latest_message_body && (
                                       <details className="mt-2 text-sm">
