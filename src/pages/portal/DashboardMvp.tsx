@@ -232,6 +232,18 @@ export default function PortalDashboardMvp() {
           )}
         </div>
 
+        {/* A failed background refresh over data already on screen. One banner
+            saying exactly that, instead of live-looking panels contradicted by
+            a session-expired card halfway down the page. */}
+        {overviewQuery.isError && overview && (
+          <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-900">
+            <p>This page could not refresh — you are looking at earlier data. If this keeps happening, sign in again.</p>
+            <Button type="button" size="sm" variant="outline" onClick={() => void overviewQuery.refetch()}>
+              <RefreshCw className="mr-2 h-3.5 w-3.5" />Try again
+            </Button>
+          </div>
+        )}
+
         {client?.dashboard_slug && review && review.awaiting_count > 0 && (
           <Card className="border-primary/30 bg-primary/5">
             <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -417,11 +429,15 @@ export default function PortalDashboardMvp() {
             <CardDescription>Every show on your journey, from first conversation to published episode.</CardDescription>
           </CardHeader>
           <CardContent>
-            {overviewQuery.isLoading ? (
+            {/* The error card only when there is nothing better to show: a
+                background refresh failing after data loaded used to put "your
+                session may have expired" under panels still rendering the
+                stale data — the banner above owns that state now. */}
+            {overviewQuery.isLoading && !overview ? (
               <div className="flex min-h-40 items-center justify-center gap-2 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin" /> Loading your placements…
               </div>
-            ) : overviewQuery.error ? (
+            ) : overviewQuery.error && !overview ? (
               <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-center">
                 <p className="text-sm text-destructive">
                   We could not load your placements. Your session may have expired.

@@ -267,13 +267,27 @@ serve(async (req) => {
         .from('bookings')
         .select(PORTAL_BOOKING_FIELDS)
         .eq('client_id', clientId)
-        .order('scheduled_date', { ascending: false, nullsFirst: false })
+        /*
+         * Nulls first, deliberately: client-created release events carry no
+         * scheduled_date, and nulls-last put them at the back of the 500-row
+         * window — so past the cap, the client's own additions were the first
+         * rows silently dropped. Nulls-first sacrifices the oldest dated
+         * bookings instead, which is the right thing to lose.
+         */
+        .order('scheduled_date', { ascending: false, nullsFirst: true })
         .limit(500),
       admin
         .from('client_dashboard_podcasts')
-        .select('id,podcast_id,podcast_image_url,podcast_name,podcast_description,audience_size,itunes_rating,episode_count')
+        /*
+         * All rows, visibility included — split in code below. The review
+         * counts must see only visible rows, but the booking enrichment must
+         * not: archiving a shortlist row after its show was booked is routine
+         * cleanup, and filtering here stripped the booking's artwork,
+         * audience and rating — quietly shrinking the combined-audience
+         * number the dashboard shows the client.
+         */
+        .select('id,podcast_id,podcast_image_url,podcast_name,podcast_description,audience_size,itunes_rating,episode_count,visibility')
         .eq('client_id', clientId)
-        .eq('visibility', 'visible')
         .limit(2_000),
       admin
         .from('client_podcast_feedback')
@@ -322,7 +336,9 @@ serve(async (req) => {
     let approvedCount = 0
     let rejectedCount = 0
     let awaitingCount = 0
-    const visibleRows = (shortlistResult.data ?? []) as Array<Record<string, unknown>>
+    const shortlistRows = (shortlistResult.data ?? []) as Array<Record<string, unknown>>
+    // Review is about what the client can still act on: visible rows only.
+    const visibleRows = shortlistRows.filter((row) => row.visibility === 'visible')
     for (const row of visibleRows) {
       const status = typeof row.podcast_id === 'string' ? feedbackByPodcast.get(row.podcast_id) : undefined
       if (status === 'approved') approvedCount += 1
@@ -354,7 +370,9 @@ serve(async (req) => {
     // workspace resolves those, the client just sees the show as preparing.
     const imageByShortlistId = new Map<string, string>()
     const shortlistById = new Map<string, Record<string, unknown>>()
-    for (const row of visibleRows) {
+    // Enrichment reads every row, archived included: a booking keeps its
+    // artwork and audience whatever later housekeeping did to the shortlist.
+    for (const row of shortlistRows) {
       if (typeof row.id !== 'string') continue
       shortlistById.set(row.id, row)
       if (typeof row.podcast_image_url === 'string' && row.podcast_image_url) {

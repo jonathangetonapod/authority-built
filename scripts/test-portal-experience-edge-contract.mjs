@@ -40,8 +40,15 @@ for (const forbidden of [
 // The guest profile is only exposed once the workspace approved it.
 assert.match(edge, /pitchProfileResult\.data\?\.approved_at/u)
 
-// Review counts only consider shortlist podcasts visible to the client.
-assert.match(edge, /\.eq\('visibility', 'visible'\)/u)
+// Review counts only consider shortlist podcasts visible to the client — but
+// the filter moved into code, because the same rows also enrich bookings, and
+// filtering the query stripped artwork and audience from any booking whose
+// shortlist row was later archived.
+assert.match(edge, /const visibleRows = shortlistRows\.filter\(\(row\) => row\.visibility === 'visible'\)/u)
+assert.match(edge, /for \(const row of shortlistRows\) \{/u)
+// Client-created events carry no scheduled_date; nulls-first keeps them inside
+// the 500-row window instead of making them the first rows silently dropped.
+assert.match(edge, /nullsFirst: true/u)
 
 // Outreach activity: internal failures never reach the client, and only
 // aggregate engagement counts are exposed — never message content.

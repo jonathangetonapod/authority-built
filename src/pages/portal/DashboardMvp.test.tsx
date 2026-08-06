@@ -4,11 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { toast } from 'sonner'
 import PortalDashboardMvp from '@/pages/portal/DashboardMvp'
 import { useClientPortal } from '@/contexts/ClientPortalContext'
-import { getPortalExperience, removePortalCalendarEvent, type PortalExperienceOverview } from '@/services/clientPortal'
+import { getPortalExperience, removePortalCalendarEvent, setPortalNotifications, type PortalExperienceOverview } from '@/services/clientPortal'
 
 vi.mock('@/components/portal/PortalLayout', () => ({ PortalLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }))
 vi.mock('@/contexts/ClientPortalContext', () => ({ useClientPortal: vi.fn() }))
-vi.mock('@/services/clientPortal', () => ({ getPortalExperience: vi.fn(), removePortalCalendarEvent: vi.fn() }))
+vi.mock('@/services/clientPortal', () => ({ getPortalExperience: vi.fn(), removePortalCalendarEvent: vi.fn(), setPortalNotifications: vi.fn() }))
 // Only `toast` is imported from sonner anywhere in this tree (DashboardMvp,
 // BookingDetailDialog), so mocking it lets the copy-failure path be asserted.
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -211,6 +211,30 @@ describe('PortalDashboardMvp', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Copy link' }))
     expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Copying is blocked'))
+  })
+
+  /*
+   * A refresh failing over data already on screen is one state with one owner:
+   * the banner. It used to be two contradictory ones — live-looking panels
+   * above a card claiming the session may have expired.
+   */
+  it('says the page could not refresh instead of contradicting itself over stale data', async () => {
+    vi.mocked(setPortalNotifications).mockResolvedValue(true as never)
+    renderPage()
+    expect(await screen.findByText('Combined audience')).toBeInTheDocument()
+
+    // The next read fails — a revoked session mid-view — and the notifications
+    // toggle invalidates the overview, which is a real path to a background
+    // refetch over data already on screen.
+    mockedGetExperience.mockRejectedValue(new Error('revoked'))
+    fireEvent.click(screen.getByRole('switch', { name: 'Email updates' }))
+
+    expect(await screen.findByText(/could not refresh — you are looking at earlier data/i, {}, { timeout: 5000 }))
+      .toBeInTheDocument()
+    // The stale data stays on screen, owned by the banner — not by a
+    // session-expired card contradicting it below.
+    expect(screen.getByText('Combined audience')).toBeInTheDocument()
+    expect(screen.queryByText(/could not load your placements/i)).not.toBeInTheDocument()
   })
 
   it('renders the review call-to-action with live counts and the journey stats', async () => {
