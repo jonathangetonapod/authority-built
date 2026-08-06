@@ -37,3 +37,8 @@ __pycache__/
 video-generator/
 video-generator-setup.md
 .gstack/
+
+# Bundled Claude Code skills. Local tooling, not project source, and they carry
+# font binaries that have no business in an app repo. Project-specific config
+# under .claude/ is still tracked.
+.claude/skills/
