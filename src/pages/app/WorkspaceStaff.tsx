@@ -259,9 +259,18 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
       !isPlatformWorkspace
       || (Boolean(membership) && (workspace?.id || '').toLowerCase() === workspaceId)
     )
-  const canOrganizeSidebar = !isPlatformWorkspace
-    && (membership?.role === 'owner' || onOwnPlatformWorkspace)
-    && validWorkspaceId
+  /*
+   * Mirrors canOrganizeNavigation in the shell, which offers the same control
+   * on the same screens. The two used to disagree: the shell offered reordering
+   * while viewing a tenant and this page hid the section, so the sidebar had a
+   * button whose settings entry did not exist.
+   *
+   * The order is the viewer's own in every view — stored against their account
+   * and their own workspace — so it is a personalization rather than anything
+   * belonging to the workspace being viewed, and the copy below says so.
+   */
+  const canOrganizeSidebar = validWorkspaceId
+    && (isPlatformAdmin || (!isPlatformWorkspace && membership?.role === 'owner'))
   const canManageAiKeys = validWorkspaceId
     && (isPlatformWorkspace || membership?.role === 'owner' || onOwnPlatformWorkspace)
   /*
@@ -861,7 +870,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                                 <Badge variant="secondary" className="rounded-full text-[10px]">Owner preference</Badge>
                               </div>
                               <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-                                Drag pages into the order that works for you. Your preference is kept separate for this workspace and owner account on this browser.
+                                Drag pages into the order that works for you. The order is yours rather than the workspace's — it is kept against your own account and workspace on this browser, so it follows you into any workspace you open.
                               </p>
                             </div>
                           </div>

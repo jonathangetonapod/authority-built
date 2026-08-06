@@ -65,7 +65,7 @@ Workspace branding controls the agency name, logo, primary color, and accent col
 | Relationships | Available | Workspace host CRM built from real outreach, replies, bookings, and deliberately curated host context |
 | Mailboxes | Available | Sending-account health, warmup state, and per-client assignment; domain and mailbox costs are metered |
 | Guest Resources | Available | Workspace-authored resources for all clients or selected clients |
-| Settings | Available to owners/admins | Team access, credentials, client-facing brand, agency name, booking link, and sidebar order |
+| Settings | Available to owners/admins | Team access, credentials, client-facing brand, agency name, booking link, own profile picture, and own sidebar order |
 | Billing & credits | Available to owners/admins | Balance, plan, invoices, credit packs, and automatic top-ups |
 | Prospect Studio | Available | Workspace-scoped prospect dashboards, shortlist building, publication review, and prospect photos |
 | Podcast Database | Available | Shared-catalog browsing, per-show details, relationship history, and adding shows to either a client shortlist or a prospect dashboard |
@@ -389,6 +389,18 @@ Both paths carry both podcast finders at the same two addresses: the plain
 address is the one-click Smart Finder, `/advanced` is the prospect-aware one. A
 prospect must be handed to `/advanced`, because the Smart Finder reads `?client=`
 and nothing else and would drop the prospect id and open unscoped.
+
+Sidebar order is a **personalization, not a workspace setting**. It is stored
+against the viewer's own account and their own workspace in browser storage, so
+it follows the operator into every workspace they open and is never the viewed
+workspace's property. Both the shell control and the Settings section are
+therefore offered while viewing a tenant, and the two must be gated alike —
+`canOrganizeNavigation` in `WorkspaceLayout` and `canOrganizeSidebar` in
+`WorkspaceStaff`. They once disagreed, which left a reorder button in the sidebar
+whose settings entry did not exist. Removing the control instead would be worse
+than the inconsistency: `storedWorkspaceNavItems` falls back to the default order
+when reordering is disallowed, so an operator would silently lose an order they
+had set.
 
 The goal for these routes is that a viewed workspace shows what its own people
 see, so every link inside a module must be built from the platform `baseHref`

@@ -946,8 +946,17 @@ describe('WorkspaceStaff', () => {
     expect(within(settingsNavigation).queryByRole('link', { name: /^Credits/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Workspace credits' })).not.toBeInTheDocument()
     expect(screen.queryByText(/admin preview/i)).not.toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Sidebar navigation' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Organize sidebar' })).not.toBeInTheDocument()
+    /*
+     * Present here, which is the point of this test's name: an owner sees this
+     * section on their own settings, so hiding it from the platform view made
+     * the two disagree — and the shell offered the reorder control on this very
+     * screen, so the sidebar had a button whose settings entry did not exist.
+     * The order is the viewer's own in every view, never the viewed
+     * workspace's, and the card says so.
+     */
+    expect(screen.getByRole('heading', { name: 'Sidebar navigation', level: 2 })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Organize sidebar' })).toBeEnabled()
+    expect(screen.getByText(/the order is yours rather than the workspace's/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /invite user/i })).toBeEnabled()
     expect(screen.getByRole('button', { name: /make owner/i })).toBeEnabled()
     expect(screen.getByRole('button', { name: /^suspend$/i })).toBeEnabled()
