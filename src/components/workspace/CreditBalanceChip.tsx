@@ -29,8 +29,10 @@ interface CreditBalanceChipProps {
  * next research run happens was two navigations away from the work that spends
  * it. An owner had to already suspect a problem to find out they had one.
  *
- * Shares the billing query with the low-balance warning, so putting it in the
- * header costs no extra request.
+ * Shares the billing query with the low-balance warning where both are shown,
+ * so putting it in a tenant's header costs no extra request. In the platform
+ * view the warning is deliberately absent — topping up somebody else's balance
+ * happens on the platform screen — so there the chip owns the query alone.
  */
 export function CreditBalanceChip({ workspaceId, canViewBalance, billingHref }: CreditBalanceChipProps) {
   const overviewQuery = useQuery({

@@ -857,9 +857,6 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
    * item open different pages for an agency and for the operator viewing them.
    */
   const prospectFinderHref = `${workspaceBaseHref}/podcast-finder/advanced`
-  const finderHref = selected
-    ? `${prospectFinderHref}?prospect=${encodeURIComponent(selected.id)}`
-    : `${workspaceBaseHref}/podcast-finder`
 
   /*
    * A rebuild is the one edit that still has to close the page: it regenerates
@@ -1240,7 +1237,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                             <div className="mt-4 border-t pt-3">
                               <p className="mb-2 text-xs font-medium text-muted-foreground">More actions</p>
                               <div className="flex flex-wrap gap-2">
-                                <Button asChild variant="ghost" size="sm"><Link to={finderHref}><Search className="mr-2 h-4 w-4" />Find podcasts</Link></Button>
+                                <Button asChild variant="ghost" size="sm"><Link to={`${prospectFinderHref}?prospect=${encodeURIComponent(selected.id)}`}><Search className="mr-2 h-4 w-4" />Find podcasts</Link></Button>
                                 {selected.published_at && <Button variant="ghost" size="sm" disabled={mutating} onClick={() => publicationMutation.mutate(false)}><EyeOff className="mr-2 h-4 w-4" />Unpublish</Button>}
                               </div>
                             </div>

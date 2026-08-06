@@ -348,6 +348,16 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
   const navStorageOwner = user?.id || user?.email?.trim().toLowerCase() || 'current-user'
   const navStorageWorkspace = workspace?.id?.toLowerCase()
     || (isPlatformAdmin ? 'platform-owner' : 'unavailable-workspace')
+  /*
+   * A platform admin keeps this while viewing a tenant, and that is deliberate
+   * rather than an oversight. The order lives under navStorageWorkspace, which
+   * is the viewer's own workspace in every view, so the sidebar on screen is
+   * already their own ordering and reordering it edits the thing they are
+   * looking at. Taking the control away here would also make
+   * storedWorkspaceNavItems fall back to the default order, discarding an
+   * order they had set. The settings page has no matching section in that view,
+   * which is a gap in the settings page and not a reason to remove this.
+   */
   const canOrganizeNavigation = Boolean(user)
     && (isPlatformAdmin || (!platformWorkspace && membership?.role === 'owner'))
     && navStorageWorkspace !== 'unavailable-workspace'
