@@ -800,8 +800,12 @@ assert.match(masterInbox, /selectedThread\.interest_status \?\? leadDetail\?\.in
 // prefilter suppresses threads it processes; a request to stop on any other
 // thread had nowhere to go, so the inbox offers the action directly.
 assert.match(masterInbox, /const suppressMutation = useMutation\(\{[\s\S]*?addOutreachSuppression\(workspaceId, \{[\s\S]*?reason: 'opted_out'/u)
-// Archiving is best-effort: the suppression is the part that must not be lost.
-assert.match(masterInbox, /setWorkspaceInboxThreadStatus\(workspaceId, \{[\s\S]*?status: 'archived',\s+\}\)\.catch\(\(\) => undefined\)/u)
+// Archiving is best-effort — the suppression must not be lost to an archive
+// failure — but not silent: the dialog promises the archive, so a failed one is
+// reported as a warning rather than folded into the success toast. Skipped
+// entirely for unmapped threads, which have no per-client state to archive.
+assert.match(masterInbox, /const archived = clientId\s*\?[\s\S]*?status: 'archived',\s+\}\)\.then\(\(\) => true, \(\) => false\)\s*: true/u)
+assert.match(masterInbox, /toast\.warning\('Added to do not contact, but the conversation could not be archived/u)
 assert.match(masterInbox, /excluded from outreach for every client in this workspace/u)
 // An address already on the list is stated, not offered for suppressing again.
 assert.match(masterInbox, /selectedThread\.suppressed \?/u)
@@ -1020,7 +1024,10 @@ const mailboxesAction = edge.match(/action === "mailboxes"[\s\S]*?action === "ov
 assert.ok(mailboxesAction, 'mailboxes action must exist')
 // Who a mailbox sends for comes from campaign rows already held, not a second
 // record of ownership that could disagree with what actually sends.
-assert.match(mailboxesAction[0], /campaigns: linksByEmail\.get\(account\.email\) \?\? \[\]/u)
+// Normalized on lookup: the campaign side lowercases sender emails when the map
+// is built, and Instantly account emails keep their original casing, so a raw
+// get() showed an actively-sending mailbox as connected to nothing.
+assert.match(mailboxesAction[0], /campaigns: linksByEmail\.get\(account\.email\.trim\(\)\.toLowerCase\(\)\) \?\? \[\]/u)
 
 // Same reason as above: sliced to the next action, not to a named neighbour.
 const assignAction = edge.match(/action === "mailbox-assign"[\s\S]*?\n {4}if \(action ===/u)

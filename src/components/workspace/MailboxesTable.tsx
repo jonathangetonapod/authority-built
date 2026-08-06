@@ -96,6 +96,14 @@ interface MailboxesTableProps {
   onRetry: () => void
   canManage: boolean
   clients: WorkspaceClient[]
+  /**
+   * Whether the client list actually loaded. Without these, a failed load
+   * arrived as clients=[] and every row silently dropped its connect-to-client
+   * picker — indistinguishable from a workspace with no clients. The two
+   * sibling modules already surface this; Mailboxes was the odd one out.
+   */
+  clientsError: Error | null
+  onRetryClients: () => void
 }
 
 export const MailboxesTable = ({
@@ -106,6 +114,8 @@ export const MailboxesTable = ({
   onRetry,
   canManage,
   clients,
+  clientsError,
+  onRetryClients,
 }: MailboxesTableProps) => {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
@@ -165,7 +175,9 @@ export const MailboxesTable = ({
             {data?.provider_workspace_name
               ? `Live from ${data.provider_workspace_name}.`
               : 'Daily sends, warmup activity, and health for every mailbox.'}
-            {data?.last_synced_at && (
+            {/* Parse-checked: an unparseable timestamp rendered "Synced Invalid
+                Date." — better to say nothing than that. */}
+            {data?.last_synced_at && Number.isFinite(Date.parse(data.last_synced_at)) && (
               <span className="ml-1">
                 Synced {new Date(data.last_synced_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}.
               </span>
@@ -208,7 +220,7 @@ export const MailboxesTable = ({
           <Badge variant="outline" className="w-fit bg-background text-muted-foreground">
             {loading
               ? 'Loading mailboxes'
-              : error
+              : error || !data
                 ? 'Unavailable'
                 : connected
                   ? query || statusFilter !== 'all'
@@ -234,6 +246,19 @@ export const MailboxesTable = ({
           )}
         </div>
       )}
+
+      {/* Named rather than swallowed: without this a failed client load simply
+          removed every connect-to-client picker, exactly as a clientless
+          workspace would look. The table stays useful either way. */}
+      {clientsError && !loading && !error ? (
+        <div role="status" className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-5 py-3 text-xs leading-5 text-amber-900">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            Clients could not be loaded, so mailboxes cannot be connected to one right now: {clientsError.message}{' '}
+            <button type="button" className="font-semibold underline underline-offset-2" onClick={onRetryClients}>Try again</button>
+          </span>
+        </div>
+      ) : null}
 
       {data?.analytics_errors?.length ? (
         <div role="status" className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-5 py-3 text-xs leading-5 text-amber-900">
@@ -279,7 +304,23 @@ export const MailboxesTable = ({
                 </TableCell>
               </TableRow>
             )}
-            {!loading && !error && !connected && (
+            {/* No data at all is not "disconnected" — it is a request that
+                never ran or never answered, and claiming disconnection here
+                fabricated a fact about workspaces that were connected fine.
+                Only a payload that says connected: false may say it. */}
+            {!loading && !error && !data && (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={5} className="h-52 text-center">
+                  <div className="mx-auto max-w-md">
+                    <AlertCircle className="mx-auto h-6 w-6 text-amber-600" />
+                    <h2 className="mt-3 font-semibold">Mailbox data unavailable</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">The mailboxes for this workspace could not be read.</p>
+                    <Button type="button" variant="outline" size="sm" className="mt-4" onClick={onRetry}>Try again</Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            )}
+            {!loading && !error && data && !connected && (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={5} className="h-52 text-center">
                   <h2 className="font-semibold">
@@ -315,7 +356,12 @@ export const MailboxesTable = ({
               const sendProgress = account.daily_limit && account.sent_today !== null
                 ? Math.min((account.sent_today / account.daily_limit) * 100, 100)
                 : 0
-              const healthScore = account.health_score === null ? null : Math.round(account.health_score)
+              // Number check, not a null check: undefined slipped past `=== null`
+              // into Math.round and a missing score rendered as NaN% with the
+              // red dot, reading as a flagged mailbox instead of an unknown.
+              const healthScore = typeof account.health_score === 'number' && Number.isFinite(account.health_score)
+                ? Math.round(account.health_score)
+                : null
               const links = account.campaigns || []
               const assignedClientIds = new Set(links.map((link) => link.client_id))
               const unassignedClients = clients.filter((client) => !assignedClientIds.has(client.id))

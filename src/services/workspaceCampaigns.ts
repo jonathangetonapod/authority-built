@@ -259,10 +259,31 @@ export async function getWorkspaceCampaignOverview(workspaceId: string): Promise
 }
 
 export async function getWorkspaceMailboxes(workspaceId: string): Promise<WorkspaceMailboxesResponse> {
-  return await invokeWorkspaceCampaigns<WorkspaceMailboxesResponse>({
+  const data = await invokeWorkspaceCampaigns<WorkspaceMailboxesResponse>({
     action: 'mailboxes',
     workspace_id: workspaceId,
   }, 'Mailboxes could not be loaded.')
+  /*
+   * Refused rather than trusted, because a payload this page cannot read used
+   * to fall through as "Instantly is not connected" — a fabricated fact,
+   * reachable without any server bug: the functions client returns whatever a
+   * 2xx carried, as a string when it was not JSON. Only connected === false
+   * may say disconnected; everything else unreadable is an error the page
+   * shows as one, with a retry.
+   *
+   * The arrays are checked as arrays, not just for presence: the table calls
+   * .filter and .join on them, and a truthy non-array white-screened it.
+   */
+  if (
+    !data
+    || typeof data !== 'object'
+    || typeof data.connected !== 'boolean'
+    || !Array.isArray(data.accounts)
+    || !Array.isArray(data.analytics_errors)
+  ) {
+    throw new Error('The mailboxes response could not be read. Try again.')
+  }
+  return data
 }
 
 /**
@@ -1027,10 +1048,21 @@ export async function getWorkspaceInboxThreadMessages(
 export async function getWorkspaceInboxThreads(
   workspaceId: string,
 ): Promise<WorkspaceInboxThreadsResponse> {
-  return await invokeWorkspaceCampaigns<WorkspaceInboxThreadsResponse>({
+  const data = await invokeWorkspaceCampaigns<WorkspaceInboxThreadsResponse>({
     action: 'inbox-list',
     workspace_id: workspaceId,
   }, 'Inbox replies could not be loaded.')
+  // Same refusal as the mailboxes read: an unreadable payload must surface as
+  // an error, never fall through as "not connected".
+  if (
+    !data
+    || typeof data !== 'object'
+    || typeof data.connected !== 'boolean'
+    || !Array.isArray(data.threads)
+  ) {
+    throw new Error('The inbox response could not be read. Try again.')
+  }
+  return data
 }
 
 export interface WorkspaceInboxDraft {

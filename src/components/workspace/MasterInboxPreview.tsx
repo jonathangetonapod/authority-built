@@ -459,7 +459,9 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
   const leadDetailQuery = useQuery({
     queryKey: ['workspace-inbox-lead', workspaceId, selectedThread?.lead_id || 'none'],
     queryFn: () => getWorkspaceInboxLeadDetail(workspaceId, selectedThread!.lead_id!),
-    enabled: Boolean(workspaceId && selectedThread?.lead_id),
+    // canManage because the server allows only managers here: without it a
+    // member opening any thread with a lead fired a guaranteed, silent 403.
+    enabled: Boolean(workspaceId && selectedThread?.lead_id && canManage),
     retry: false,
     staleTime: 5 * 60_000,
   })
@@ -473,9 +475,11 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
   const leadSubtitle = [leadDetail?.job_title, leadDetail?.company_name].filter(Boolean).join(' · ')
   const leadWebsite = leadDetail?.website ? safeExternalUrl(leadDetail.website) : null
   const engagement = leadDetail
-    ? { opens: leadDetail.opens, replies: leadDetail.replies, clicks: leadDetail.clicks }
+    ? { opens: leadDetail.opens, replies: leadDetail.replies, clicks: leadDetail.clicks as number | null }
     : selectedThread?.lead_context
-      ? { opens: selectedThread.lead_context.opens, replies: selectedThread.lead_context.replies, clicks: 0 }
+      // Clicks unknown here, and unknown is not zero: the thread context does
+      // not carry them, and rendering 0 stated a fact nobody measured.
+      ? { opens: selectedThread.lead_context.opens, replies: selectedThread.lead_context.replies, clicks: null }
       : null
   const firstContactedAt = leadDetail?.first_contacted_at
     || selectedThread?.lead_context?.first_message_at
@@ -615,15 +619,32 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
         reason: 'opted_out',
         note: `Asked to stop in ${thread.subject ? `“${thread.subject.slice(0, 120)}”` : 'a reply'}`,
       })
-      await setWorkspaceInboxThreadStatus(workspaceId, {
-        thread_key: thread.thread_key,
-        client_id: thread.campaign?.client?.id ?? '',
-        status: 'archived',
-      }).catch(() => undefined)
+      /*
+       * The suppression above is the part that matters and has already
+       * succeeded; a failed archive must not roll the toast back to an error.
+       * But it must not be silent either — the dialog promised the
+       * conversation would be archived, and a swallowed failure left that
+       * promise broken with a success toast on top of it.
+       */
+      // Archiving is per client-mapped thread state; an unmapped thread has
+      // nothing to archive and must not turn that absence into a warning.
+      const clientId = thread.campaign?.client?.id
+      const archived = clientId
+        ? await setWorkspaceInboxThreadStatus(workspaceId, {
+          thread_key: thread.thread_key,
+          client_id: clientId,
+          status: 'archived',
+        }).then(() => true, () => false)
+        : true
+      return { archived }
     },
-    onSuccess: () => {
+    onSuccess: ({ archived }) => {
       setSuppressTarget(null)
-      toast.success('Added to do not contact. No client in this workspace will email that address again.')
+      if (archived) {
+        toast.success('Added to do not contact. No client in this workspace will email that address again.')
+      } else {
+        toast.warning('Added to do not contact, but the conversation could not be archived. It may reappear in the list.')
+      }
       void inboxQuery.refetch()
     },
     onError: (error) => {
@@ -1024,8 +1045,26 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                     reversal asks for a written reason.
                   </div>
                 ) : !selectedThread.campaign?.client ? (
-                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs leading-5 text-amber-900">
-                    <span className="font-semibold">No client match, no AI response.</span> This reply is not mapped to a client campaign, so drafting is disabled by policy.
+                  <div className="mt-4 space-y-3">
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs leading-5 text-amber-900">
+                      <span className="font-semibold">No client match, no AI response.</span> This reply is not mapped to a client campaign, so drafting is disabled by policy.
+                    </div>
+                    {/* Suppression needs only the address, so an opt-out on an
+                        unmapped thread is still actionable here. The banner
+                        above the list said "open each one to add the address"
+                        and this was the one kind of thread with nothing to
+                        press when you did. */}
+                    {selectedThread.opt_out_detected && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        disabled={!canManage || suppressMutation.isPending}
+                        onClick={() => setSuppressTarget(selectedThread)}
+                      >
+                        <Ban className="mr-1.5 h-3.5 w-3.5" />They asked to stop — add to do not contact
+                      </Button>
+                    )}
                   </div>
                 ) : (
                   <div className="mt-4 space-y-3">
@@ -1116,7 +1155,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                       <Button
                         type="button"
                         size="sm"
-                        disabled={sendMutation.isPending || !draftBody.trim() || !selectedThread.eaccount || sentThreadIds.has(selectedThread.id) || Boolean(selectedThread.state?.draft_stale && draftedForThread !== selectedThread.id)}
+                        disabled={!canManage || sendMutation.isPending || !draftBody.trim() || !selectedThread.eaccount || sentThreadIds.has(selectedThread.id) || Boolean(selectedThread.state?.draft_stale && draftedForThread !== selectedThread.id)}
                         onClick={() => sendMutation.mutate(selectedThread)}
                       >
                         {sendMutation.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-2 h-3.5 w-3.5" />}
@@ -1135,7 +1174,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                             size="sm"
                             variant="ghost"
                             className="h-7 text-xs text-muted-foreground"
-                            disabled={statusMutation.isPending || !selectedThread.campaign?.client}
+                            disabled={!canManage || statusMutation.isPending || !selectedThread.campaign?.client}
                             onClick={() => statusMutation.mutate({
                               thread: selectedThread,
                               nudges_paused: !selectedThread.state?.nudges_paused,
@@ -1166,15 +1205,15 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                     )}
                     <div className="flex flex-wrap items-center gap-2 border-t pt-3">
                       {threadStatus(selectedThread, sentThreadIds) === 'archived' ? (
-                        <Button type="button" size="sm" variant="outline" disabled={statusMutation.isPending} onClick={() => statusMutation.mutate({ thread: selectedThread, status: 'needs_reply' })}>
+                        <Button type="button" size="sm" variant="outline" disabled={!canManage || statusMutation.isPending} onClick={() => statusMutation.mutate({ thread: selectedThread, status: 'needs_reply' })}>
                           Reopen conversation
                         </Button>
                       ) : (
                         <>
-                          <Button type="button" size="sm" variant="outline" disabled={statusMutation.isPending} onClick={() => statusMutation.mutate({ thread: selectedThread, status: 'booked' })}>
+                          <Button type="button" size="sm" variant="outline" disabled={!canManage || statusMutation.isPending} onClick={() => statusMutation.mutate({ thread: selectedThread, status: 'booked' })}>
                             Mark booked
                           </Button>
-                          <Button type="button" size="sm" variant="ghost" className="text-muted-foreground" disabled={statusMutation.isPending} onClick={() => statusMutation.mutate({ thread: selectedThread, status: 'archived' })}>
+                          <Button type="button" size="sm" variant="ghost" className="text-muted-foreground" disabled={!canManage || statusMutation.isPending} onClick={() => statusMutation.mutate({ thread: selectedThread, status: 'archived' })}>
                             Archive conversation
                           </Button>
                           {selectedThread.suppressed ? (
@@ -1186,7 +1225,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                               type="button"
                               size="sm"
                               variant="destructive"
-                              disabled={suppressMutation.isPending}
+                              disabled={!canManage || suppressMutation.isPending}
                               onClick={() => setSuppressTarget(selectedThread)}
                             >
                               <Ban className="mr-1.5 h-3.5 w-3.5" />They asked to stop — add to do not contact
@@ -1197,7 +1236,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                               size="sm"
                               variant="ghost"
                               className="text-destructive hover:text-destructive"
-                              disabled={suppressMutation.isPending}
+                              disabled={!canManage || suppressMutation.isPending}
                               onClick={() => setSuppressTarget(selectedThread)}
                             >
                               <Ban className="mr-1.5 h-3.5 w-3.5" />Do not contact
@@ -1265,7 +1304,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                               size="sm"
                               variant={active ? 'default' : 'outline'}
                               className="h-7 px-2.5 text-xs"
-                              disabled={interestMutation.isPending}
+                              disabled={!canManage || interestMutation.isPending}
                               onClick={() => interestMutation.mutate({ thread: selectedThread, value: option.value })}
                             >
                               {option.label}
@@ -1304,7 +1343,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                       { label: 'Clicks', value: engagement.clicks },
                     ].map((stat) => (
                       <div key={stat.label} className="p-3">
-                        <p className="text-lg font-semibold tabular-nums">{stat.value}</p>
+                        <p className="text-lg font-semibold tabular-nums">{stat.value ?? '—'}</p>
                         <p className="text-[11px] text-muted-foreground">{stat.label}</p>
                       </div>
                     ))}
@@ -1462,7 +1501,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
           </p>
           <DialogFooter className="mt-5">
             <Button type="button" variant="outline" onClick={() => setSuppressTarget(null)} disabled={suppressMutation.isPending}>Cancel</Button>
-            <Button type="button" variant="destructive" onClick={() => suppressTarget && suppressMutation.mutate(suppressTarget)} disabled={suppressMutation.isPending}>
+            <Button type="button" variant="destructive" onClick={() => suppressTarget && suppressMutation.mutate(suppressTarget)} disabled={!canManage || suppressMutation.isPending}>
               {suppressMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Add to do not contact
             </Button>

@@ -1188,9 +1188,15 @@ function verifySelectedAccounts(
   accounts: InstantlyAccountSummary[],
 ): void {
   if (senderAccounts.length === 0) return;
-  const byEmail = new Map(accounts.map((account) => [account.email, account]));
+  // Case-normalized on both sides: the caller's emails are lowercased before
+  // they get here, while the provider snapshot keeps Instantly's casing, so a
+  // cased mailbox failed this check with a 409 about accounts that were
+  // sitting active on screen.
+  const byEmail = new Map(
+    accounts.map((account) => [account.email.trim().toLowerCase(), account]),
+  );
   const unavailable = senderAccounts.filter((email) =>
-    byEmail.get(email)?.status !== 1
+    byEmail.get(email.trim().toLowerCase())?.status !== 1
   );
   if (unavailable.length > 0) {
     throw new HttpError(
@@ -3210,7 +3216,13 @@ serve(async (req) => {
             // The one part of a sent email this app does not write.
             has_signature: account.has_signature,
             tags: account.tags,
-            campaigns: linksByEmail.get(account.email) ?? [],
+            // Normalized like the campaign side above, because Instantly's
+            // account emails arrive with their original casing — the reply
+            // path already lowercases the same snapshot for the same reason.
+            // Looked up raw, a cased mailbox showed "Not connected" while
+            // actively sending a client's campaign, and could not be
+            // reassigned either.
+            campaigns: linksByEmail.get(account.email.trim().toLowerCase()) ?? [],
           };
         }),
         last_synced_at: lastSyncedAt,

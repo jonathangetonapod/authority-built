@@ -238,7 +238,11 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
               <p className="truncate text-xs text-muted-foreground" title={config.description}>{workspaceLabel}</p>
             </div>
           </div>
-          {module === 'master-inbox' && !inboxConnectionQuery.isLoading && (
+          {/* A failed read says nothing about the connection. Without this
+              branch the badge asserted "not connected" over a panel that was
+              simultaneously saying replies could not be loaded — one of the two
+              was fabricated, and it was this one. */}
+          {module === 'master-inbox' && !inboxConnectionQuery.isLoading && !inboxConnectionQuery.isError && (
             inboxConnectionQuery.data?.connected
               ? (
                 <div data-testid="instantly-connection-state" className="flex w-fit shrink-0 items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
@@ -291,6 +295,11 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
               onRetry={() => void mailboxesQuery.refetch()}
               canManage={canManage}
               clients={campaignClients}
+              clientsError={campaignClientsError}
+              onRetryClients={() => {
+                if (isSelectedWorkspace) void selectedWorkspaceQuery.refetch()
+                else void tenantClientsQuery.refetch()
+              }}
             />
           </>
         )}
