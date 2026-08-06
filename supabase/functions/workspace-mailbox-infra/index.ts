@@ -357,7 +357,9 @@ serve(async (req) => {
             idempotencyKey: `mailbox-domain:${workspaceId}:${order.domain}`,
             byoKeyUsed: usingWorkspaceKey,
           })
-          if (domainCharge.entryId) chargedEntryIds.push(domainCharge.entryId)
+          // Fresh debits only: a replay names an earlier attempt's paid
+          // charge, and refunding it would claw back delivered work.
+          if (domainCharge.entryId && !domainCharge.replayed) chargedEntryIds.push(domainCharge.entryId)
           creditsCharged += domainCharge.charged
           for (const mailbox of order.mailboxes) {
             const mailboxCharge = await chargeCredits(authContext.admin, {
@@ -369,7 +371,7 @@ serve(async (req) => {
               idempotencyKey: `mailbox-monthly:${workspaceId}:${mailbox.username}@${order.domain}:first`,
               byoKeyUsed: usingWorkspaceKey,
             })
-            if (mailboxCharge.entryId) chargedEntryIds.push(mailboxCharge.entryId)
+            if (mailboxCharge.entryId && !mailboxCharge.replayed) chargedEntryIds.push(mailboxCharge.entryId)
             creditsCharged += mailboxCharge.charged
           }
         }

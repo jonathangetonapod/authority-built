@@ -790,6 +790,7 @@ async function buildProspect(
   const anthropicKey = await resolveAiKey(context.admin, workspaceId, 'anthropic')
   const openaiKey = await resolveAiKey(context.admin, workspaceId, 'openai')
   const byoKeyUsed = anthropicKey?.source === 'workspace'
+  let buildDelivered = false
   const buildCharge = await chargeCredits(context.admin, {
     workspaceId,
     operationType: 'dashboard_build',
@@ -1004,7 +1005,7 @@ async function buildProspect(
         model: rankingSource === 'ai_ranked' ? 'claude-haiku-4-5-20251001' : null,
       },
     })
-    return await detailPayload(context.admin, workspaceId, dashboardId)
+    buildDelivered = true
   } catch (error) {
     const message = buildFailureMessage(error)
     console.error(`Workspace prospect build failed: ${message}`)
@@ -1025,14 +1026,23 @@ async function buildProspect(
      * goes back with it — a failed build used to eat its credits, and a retry
      * outside the 2-minute window charged again on top.
      */
-    await refundCredits(context.admin, {
-      workspaceId,
-      entryId: buildCharge.entryId,
-      reason: 'prospect dashboard build failed',
-    })
+    if (!buildCharge.replayed && !buildDelivered) {
+      await refundCredits(context.admin, {
+        workspaceId,
+        entryId: buildCharge.entryId,
+        reason: 'prospect dashboard build failed',
+      })
+    }
     if (error instanceof HttpError) throw error
     throw new HttpError(502, 'BUILD_FAILED', message)
   }
+  /*
+   * Outside the failure boundary on purpose. By here the shortlist is saved,
+   * the dashboard is in review, and the audit is written — the build was
+   * delivered. A transient failure on this read used to fall into the catch,
+   * overwrite 'review' with 'failed', and refund a build the client received.
+   */
+  return await detailPayload(context.admin, workspaceId, dashboardId)
 }
 
 function publicationError(error: { code?: string; message?: string }): never {

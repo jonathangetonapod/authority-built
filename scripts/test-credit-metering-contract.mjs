@@ -17,7 +17,10 @@ const migration = readFileSync('supabase/migrations/20260726000300_metering_and_
 
 // Enforcement is opt-in and BYO-key operations are never charged.
 assert.match(billing, /CREDIT_ENFORCEMENT_ENABLED/u)
-assert.match(billing, /if \(!enforcementEnabled\(\) \|\| input\.byoKeyUsed\) return \{ charged: 0, entryId: null \}/u)
+assert.match(billing, /if \(!enforcementEnabled\(\) \|\| input\.byoKeyUsed\) return \{ charged: 0, entryId: null, replayed: false \}/u)
+// A replay names an earlier debit, possibly for delivered work; refund-on-failure
+// callers must see the difference or a failed retry claws back a paid success.
+assert.match(billing, /replayed: result\?\.idempotent === true/u)
 assert.match(billing, /INSUFFICIENT_CREDITS/u)
 assert.match(billing, /HttpError\(402/u)
 
@@ -90,7 +93,7 @@ assert.match(creditFixes, /cron\.schedule\(\s*'workspace-credit-expiry'/u)
 
 // Charging happens before the provider call, so a caller has to be able to
 // name the debit it needs to give back.
-assert.match(billing, /Promise<\{ charged: number; entryId: string \| null \}>/u)
+assert.match(billing, /Promise<\{ charged: number; entryId: string \| null; replayed: boolean \}>/u)
 assert.match(billing, /export async function refundCredits/u)
 // A failed refund must not replace the caller's real error with a billing one.
 assert.match(billing, /export async function refundCredits[\s\S]*?catch \(_error\)/u)

@@ -197,7 +197,7 @@ serve(async (req) => {
         referenceId: action,
         actorUserId: context.user.id,
       })
-      if (lookupCharge.entryId) {
+      if (lookupCharge.entryId && !lookupCharge.replayed) {
         chargedForRefund = { workspaceId, entryId: lookupCharge.entryId }
         refundAdmin = context.admin
       }

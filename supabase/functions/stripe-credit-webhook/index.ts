@@ -133,7 +133,18 @@ serve(async (req) => {
     p_reference_kind: event.type === AUTOMATIC ? 'stripe_auto_refill' : 'stripe_checkout',
     p_reference_id: typeof session.id === 'string' ? session.id : null,
     p_actor_user_id: null,
-    p_idempotency_key: `stripe:${event.id}`,
+    /*
+     * Auto-refills grant under the tick's own key. The tick's one-per-day
+     * pre-check and the monthly spending cap both look for auto-refill:… rows
+     * in the ledger; keyed on the Stripe event id, no such row ever existed,
+     * so the daily check was dead code and the cap summed zero — a capped
+     * workspace could be charged its pack price every single day. The key
+     * still deduplicates event retries: every redelivery of this payment
+     * carries the same metadata.
+     */
+    p_idempotency_key: event.type === AUTOMATIC && typeof metadata.refill_key === 'string' && metadata.refill_key.startsWith('auto-refill:')
+      ? metadata.refill_key
+      : `stripe:${event.id}`,
   })
   if (error) {
     console.error('[Stripe Credit Webhook] Credit grant failed')

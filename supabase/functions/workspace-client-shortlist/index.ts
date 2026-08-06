@@ -3246,11 +3246,15 @@ serve(async (req) => {
          * after this refund charges normally and the ledger reads as what
          * happened: one paid pitch, or zero.
          */
-        await refundCredits(authContext.admin, {
-          workspaceId,
-          entryId: pitchCharge.entryId,
-          reason: 'pitch generation failed after the charge',
-        })
+        // Fresh charges only: a replay names the earlier attempt's debit,
+        // and that attempt may have delivered its pitch.
+        if (!pitchCharge.replayed) {
+          await refundCredits(authContext.admin, {
+            workspaceId,
+            entryId: pitchCharge.entryId,
+            reason: 'pitch generation failed after the charge',
+          })
+        }
         if (error instanceof HttpError) throw error
         console.error('[Client Shortlist] Pitch generation failed')
         throw new HttpError(503, 'PITCH_FAILED', 'The pitch could not be written. Try again shortly')

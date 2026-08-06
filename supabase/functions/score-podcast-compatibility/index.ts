@@ -230,7 +230,7 @@ serve(async (req) => {
         actorUserId: meteringActorUserId,
         byoKeyUsed: metering.byoKeyUsed,
       })
-      if (scoringCharge.entryId) {
+      if (scoringCharge.entryId && !scoringCharge.replayed) {
         chargedForRefund = { workspaceId: metering.workspaceId, entryId: scoringCharge.entryId }
         refundAdmin = metering.admin
       }

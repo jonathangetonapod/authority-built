@@ -139,8 +139,8 @@ export async function chargeCredits(
     idempotencyKey?: string
     byoKeyUsed?: boolean
   },
-): Promise<{ charged: number; entryId: string | null }> {
-  if (!enforcementEnabled() || input.byoKeyUsed) return { charged: 0, entryId: null }
+): Promise<{ charged: number; entryId: string | null; replayed: boolean }> {
+  if (!enforcementEnabled() || input.byoKeyUsed) return { charged: 0, entryId: null, replayed: false }
 
   await ensureMonthlyAllowance(admin, input.workspaceId)
 
@@ -159,10 +159,17 @@ export async function chargeCredits(
     }
     throw new HttpError(503, 'BILLING_UNAVAILABLE', 'Billing is temporarily unavailable')
   }
-  const result = data as { charged?: number; entry_id?: string } | null
+  const result = data as { charged?: number; entry_id?: string; idempotent?: boolean } | null
   return {
     charged: typeof result?.charged === 'number' ? result.charged : 0,
     entryId: typeof result?.entry_id === 'string' ? result.entry_id : null,
+    /*
+     * A replay names an EARLIER debit — possibly for work already delivered.
+     * Callers that refund on failure must refund only fresh charges: a retry
+     * that replays and then fails must not claw back the first attempt's paid
+     * work.
+     */
+    replayed: result?.idempotent === true,
   }
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, CreditCard, ExternalLink, Loader2, ShieldCheck } from 'lucide-react'
 import { Link, Navigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -85,18 +85,33 @@ const CREDIT_ARRIVAL_TIMEOUT_MS = 60_000
 
 const WorkspaceBilling = () => {
   const { canManageWorkspaceStaff, isPlatformAdmin, user, workspace } = useAuth()
+  const queryClient = useQueryClient()
   const workspaceId = workspace?.id || ''
   const [searchParams, setSearchParams] = useSearchParams()
   const [checkoutPack, setCheckoutPack] = useState<string | null>(null)
   const [openingPlan, setOpeningPlan] = useState(false)
   const [awaitingCredits, setAwaitingCredits] = useState(false)
   const [balanceBeforeCheckout, setBalanceBeforeCheckout] = useState<number | null>(null)
+  const [checkoutStartedAt, setCheckoutStartedAt] = useState<number | null>(null)
 
   useEffect(() => {
     const outcome = searchParams.get('checkout')
     const planOutcome = searchParams.get('plan')
     if (!outcome && !planOutcome) return
     if (outcome === 'success') {
+      try {
+        const marker = JSON.parse(window.sessionStorage.getItem('billing-checkout-marker-v1') ?? 'null') as
+          | { startedAt?: number; balanceBefore?: number | null }
+          | null
+        window.sessionStorage.removeItem('billing-checkout-marker-v1')
+        if (marker && typeof marker.startedAt === 'number') {
+          setCheckoutStartedAt(marker.startedAt)
+          if (typeof marker.balanceBefore === 'number') setBalanceBeforeCheckout(marker.balanceBefore)
+        }
+      } catch {
+        // No marker: the grant heuristic below still works, minus the
+        // protection against confirming from an older purchase.
+      }
       toast.success('Payment received — your credits will appear within a minute.')
       // Credits are granted by the Stripe webhook, not by the redirect. If the
       // webhook is not wired up the payment still succeeds and the balance
@@ -137,6 +152,21 @@ const WorkspaceBilling = () => {
     if (checkoutPack) return
     setCheckoutPack(pack)
     try {
+      /*
+       * Stamped BEFORE the redirect, which is the only moment the page can
+       * still see the world as it was: the balance to compare against, and
+       * the instant this checkout began so an OLDER purchase's grant cannot
+       * confirm this one. Captured after returning, both were already wrong —
+       * the webhook usually beats the redirect.
+       */
+      try {
+        window.sessionStorage.setItem('billing-checkout-marker-v1', JSON.stringify({
+          startedAt: Date.now(),
+          balanceBefore: overview?.balance ?? null,
+        }))
+      } catch {
+        // Storage unavailable: arrival falls back to the grant heuristic.
+      }
       const url = await createWorkspaceCreditCheckout(workspaceId, pack)
       window.location.assign(url)
     } catch (error) {
@@ -169,25 +199,39 @@ const WorkspaceBilling = () => {
     && (entry.reference_kind === 'stripe_checkout' || entry.reference_kind === 'stripe_auto_refill')
     && Number.isFinite(Date.parse(entry.created_at))
     && Date.now() - Date.parse(entry.created_at) < 5 * 60_000
+    /*
+     * Newer than THIS checkout began (with a minute of clock skew), when the
+     * start time is known. Without this, buying twice within five minutes let
+     * the first purchase's grant confirm the second instantly — reporting the
+     * exact webhook failure this banner exists to catch as a success.
+     */
+    && (checkoutStartedAt === null || Date.parse(entry.created_at) >= checkoutStartedAt - 60_000)
   ))
   useEffect(() => {
-    if (!awaitingCredits || balance === null) return
-    if (recentPurchaseAt || (balanceBeforeCheckout !== null && balance > balanceBeforeCheckout)) {
+    if (!awaitingCredits) return
+    if (balance !== null && (recentPurchaseAt || (balanceBeforeCheckout !== null && balance > balanceBeforeCheckout))) {
       setAwaitingCredits(false)
       setBalanceBeforeCheckout(null)
+      setCheckoutStartedAt(null)
       toast.success('Credits added to your balance.')
+      // The header chip and the low-balance warning read a different key with
+      // a two-minute staleTime: the same screen must not warn about an empty
+      // balance under a toast saying the credits arrived.
+      void queryClient.invalidateQueries({ queryKey: ['workspace-billing-overview', workspaceId] })
       return
     }
-    if (balanceBeforeCheckout === null) {
+    if (balance !== null && balanceBeforeCheckout === null) {
       setBalanceBeforeCheckout(balance)
-      return
     }
+    // Armed even while the balance is unreadable, so a failing overview fetch
+    // cannot leave the page polling every four seconds forever.
     const timer = window.setTimeout(() => {
       setAwaitingCredits(false)
       setBalanceBeforeCheckout(null)
+      setCheckoutStartedAt(null)
     }, CREDIT_ARRIVAL_TIMEOUT_MS)
     return () => window.clearTimeout(timer)
-  }, [awaitingCredits, balance, balanceBeforeCheckout, recentPurchaseAt])
+  }, [awaitingCredits, balance, balanceBeforeCheckout, recentPurchaseAt, checkoutStartedAt, queryClient, workspaceId])
 
   if (!canManageWorkspaceStaff && !isPlatformAdmin) return <Navigate to="/app/clients" replace />
 

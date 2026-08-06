@@ -316,6 +316,11 @@ describe('PodcastFinder', () => {
 
     await screen.findByText(/How many podcasts do you want/)
     expect(screen.queryByText('Foreign Scope Show')).not.toBeInTheDocument()
+    // Not rendered AND not destroyed: the stored run must still be there when
+    // its own scope comes back. Clearing on any foreign mount deleted a
+    // half-hour run the moment the finder opened for a different client.
+    const surviving = JSON.parse(window.sessionStorage.getItem('podcast-finder-run-v1') ?? 'null')
+    expect(surviving?.results?.[0]?.podcast?.podcast_name).toBe('Foreign Scope Show')
   })
 
   it('restores a workspace-scoped client query without loading clients from another workspace', async () => {

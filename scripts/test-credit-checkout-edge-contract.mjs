@@ -54,7 +54,12 @@ assert.match(webhook, /const paidValue = event\.type === AUTOMATIC \? 'succeeded
 // drift from this one, and credits would exist for money that never arrived.
 assert.match(webhook, /p_reference_kind: event\.type === AUTOMATIC \? 'stripe_auto_refill' : 'stripe_checkout'/u)
 assert.match(webhook, /p_source: 'purchase'/u)
-assert.match(webhook, /p_idempotency_key: `stripe:\$\{event\.id/u)
+// Auto-refills grant under the tick's own auto-refill:… key so the tick's
+// daily pre-check and monthly cap can see past refills in the ledger; keyed on
+// the Stripe event id they were invisible, the daily check was dead code, and
+// the cap summed zero. Checkout purchases keep the event-id key, and event
+// retries still deduplicate either way — redeliveries carry the same metadata.
+assert.match(webhook, /event\.type === AUTOMATIC && typeof metadata\.refill_key === 'string' && metadata\.refill_key\.startsWith\('auto-refill:'\)\s*\n\s*\? metadata\.refill_key\s*\n\s*: `stripe:\$\{event\.id\}`/u)
 
 const config = readFileSync('supabase/config.toml', 'utf8')
 const billingPage = readFileSync('src/pages/app/WorkspaceBilling.tsx', 'utf8')

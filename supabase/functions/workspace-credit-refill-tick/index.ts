@@ -216,6 +216,11 @@ serve(async (req) => {
       'metadata[workspace_id]': workspaceId,
       'metadata[credits]': String(pack.credits),
       'metadata[auto_refill]': 'true',
+      // The webhook grants under this exact key, which is what makes the
+      // daily pre-check and the monthly cap above actually see past refills:
+      // both query the ledger for auto-refill:… keys, and grants keyed on the
+      // Stripe event id were invisible to them.
+      'metadata[refill_key]': refillKey,
     })
     const result = await stripePost('payment_intents', form, stripeKey, refillKey)
     if (!result.ok) {

@@ -126,6 +126,12 @@ interface RunScope {
   id: string
   workspaceId: string
   clientId: string
+  /**
+   * What clientId names. A prospect run restored as a client run called the
+   * client endpoints with a prospect id and rendered a dead page; absent on
+   * older stored runs, which read as 'client'.
+   */
+  targetKind?: 'client' | 'prospect'
   targetCount: number
   startedAt: string
   completedAt?: string
@@ -178,7 +184,13 @@ function readStoredRun(): StoredRun | null {
     const value = window.sessionStorage.getItem(RUN_STORAGE_KEY)
     if (!value) return null
     const parsed = JSON.parse(value) as StoredRun
-    if (!parsed?.runScope?.id || !Array.isArray(parsed.results)) return null
+    if (
+      !parsed?.runScope?.id
+      || typeof parsed.runScope.workspaceId !== 'string'
+      || typeof parsed.runScope.clientId !== 'string'
+      || !Array.isArray(parsed.results)
+      || parsed.results.some((result) => !result?.podcast?.podcast_id)
+    ) return null
     return parsed
   } catch {
     return null
@@ -192,19 +204,16 @@ function writeStoredRun(run: StoredRun): void {
   try {
     persist(run)
   } catch {
-    // Quota. Descriptions are the bulk and the review table survives without
-    // their tails; losing a run entirely is worse than trimming them.
+    // Quota. Descriptions are the bulk; they are DROPPED, not trimmed,
+    // because a restored run feeds add-to-shortlist and scoring — a trimmed
+    // description would be written into the database and onto published
+    // dashboards as if it were the real one. Absent is honest; mangled is not.
     try {
       persist({
         ...run,
         results: run.results.map((result) => ({
           ...result,
-          podcast: {
-            ...result.podcast,
-            podcast_description: result.podcast.podcast_description
-              ? `${result.podcast.podcast_description.slice(0, 300)}…`
-              : result.podcast.podcast_description,
-          },
+          podcast: { ...result.podcast, podcast_description: null },
         })),
       })
     } catch {
@@ -393,6 +402,12 @@ export default function PodcastFinder({
         : (storedScope.clientId || '')
     if (stored.runScope.workspaceId.toLowerCase() !== initialWorkspaceId.toLowerCase()) return null
     if (stored.runScope.clientId.toLowerCase() !== initialClientId.toLowerCase()) return null
+    // The kind must match how THIS mount understands that id. A prospect run
+    // only restores when the prospect arrived by URL; a picker-chosen prospect
+    // cannot be rebound after a refresh, so its run stays on disk instead of
+    // restoring broken.
+    const mountKind = initialProspectId !== undefined ? 'prospect' : 'client'
+    if ((stored.runScope.targetKind ?? 'client') !== mountKind) return null
     return stored
     // Mount-time only: the stored run is a snapshot, not a subscription.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -603,8 +618,19 @@ export default function PodcastFinder({
    * is still on screen afterwards. An empty result set clears the store — a
    * reset scope or a fresh run should not resurrect the previous one.
    */
+  /*
+   * Owned means this mount restored the stored run or started one itself.
+   * Clearing unconditionally deleted OTHER targets' runs on mount — open the
+   * finder for client B and client A's half-hour run was gone before anything
+   * happened — which is the opposite of what the storage exists for.
+   */
+  const runStorageOwnedRef = useRef(Boolean(restoredRun))
+  useEffect(() => {
+    if (runScope) runStorageOwnedRef.current = true
+  }, [runScope])
   useEffect(() => {
     if (!runScope || results.length === 0) {
+      if (!runStorageOwnedRef.current) return
       try {
         window.sessionStorage.removeItem(RUN_STORAGE_KEY)
       } catch {
@@ -944,6 +970,7 @@ export default function PodcastFinder({
       id: crypto.randomUUID(),
       workspaceId: selectedWorkspace.id,
       clientId: selectedClient.id,
+      targetKind: isProspectBound ? 'prospect' : 'client',
       targetCount,
       startedAt,
       rawResults: 0,

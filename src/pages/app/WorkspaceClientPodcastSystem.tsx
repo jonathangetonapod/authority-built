@@ -1,3 +1,4 @@
+import { toast } from 'sonner'
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -1002,8 +1003,23 @@ const WorkspaceClientPodcastSystem = ({ platformWorkspaceId }: WorkspaceClientPo
     if (!system || !requestedClientId || selectedRollup) return
     const next = new URLSearchParams(searchParams)
     next.delete('client')
+    // The podcast param rides on the client: with no resolvable client it can
+    // never open anything, and it used to linger in the address doing nothing.
+    next.delete('podcast')
     setSearchParams(next, { replace: true })
   }, [requestedClientId, searchParams, selectedRollup, setSearchParams, system])
+
+  // A deep link naming a show this client's list does not carry — an inbound
+  // "View placement" for a show never shortlisted here — must not sit silently
+  // in the address while the page looks like nothing happened.
+  useEffect(() => {
+    if (!system || !requestedPodcastId || !requestedClientId || linkedItem) return
+    if (!selectedRollup) return
+    toast.info('That show is not on this client’s list, so there is no placement to open.')
+    const next = new URLSearchParams(searchParams)
+    next.delete('podcast')
+    setSearchParams(next, { replace: true })
+  }, [linkedItem, requestedClientId, requestedPodcastId, searchParams, selectedRollup, setSearchParams, system])
 
   if (!validWorkspaceId) {
     return <WorkspaceLayout platformWorkspace={platformWorkspace}><Card><CardHeader><CardTitle>Workspace unavailable</CardTitle><CardDescription>Your account does not have an active workspace.</CardDescription></CardHeader></Card></WorkspaceLayout>

@@ -680,27 +680,47 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
    * bulk archive can actually act on — mapped, and not already archived — and
    * runs sequentially so one refusal names itself without hiding the rest.
    */
-  const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(new Set())
+  /*
+   * Keyed by thread_key, not the row id: the id is the latest message, and a
+   * new reply changes it — a selection keyed on it went stale on any refetch
+   * and "Archive selected" archived nothing while reporting success.
+   */
+  const [bulkSelectedKeys, setBulkSelectedKeys] = useState<Set<string>>(new Set())
   const [bulkArchiving, setBulkArchiving] = useState(false)
-  const toggleBulkSelected = (threadId: string) => {
-    setBulkSelectedIds((current) => {
+  const toggleBulkSelected = (threadKey: string) => {
+    setBulkSelectedKeys((current) => {
       const next = new Set(current)
-      if (next.has(threadId)) next.delete(threadId)
-      else next.add(threadId)
+      if (next.has(threadKey)) next.delete(threadKey)
+      else next.add(threadKey)
       return next
     })
   }
+  // Pruned to what a bulk archive can still act on, every time the list moves:
+  // a conversation archived elsewhere, or gone from the reply window, leaves
+  // the selection instead of inflating its count.
+  useEffect(() => {
+    setBulkSelectedKeys((current) => {
+      if (current.size === 0) return current
+      const archivable = new Set(
+        threads
+          .filter((thread) => thread.thread_key && thread.campaign?.client && threadStatus(thread, sentThreadIds) !== 'archived')
+          .map((thread) => thread.thread_key as string),
+      )
+      const next = new Set([...current].filter((key) => archivable.has(key)))
+      return next.size === current.size ? current : next
+    })
+  }, [threads, sentThreadIds])
   const bulkArchive = async () => {
-    if (bulkArchiving || bulkSelectedIds.size === 0) return
+    if (bulkArchiving || bulkSelectedKeys.size === 0) return
     setBulkArchiving(true)
     let archived = 0
     let failed = 0
-    for (const threadId of bulkSelectedIds) {
-      const thread = threads.find((item) => item.id === threadId)
-      if (!thread?.campaign?.client) continue
+    for (const threadKey of bulkSelectedKeys) {
+      const thread = threads.find((item) => item.thread_key === threadKey)
+      if (!thread?.campaign?.client || !thread.thread_key) continue
       try {
         await setWorkspaceInboxThreadStatus(workspaceId, {
-          thread_key: thread.thread_key || thread.id,
+          thread_key: thread.thread_key,
           client_id: thread.campaign.client.id,
           status: 'archived',
         })
@@ -711,9 +731,10 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
       }
     }
     setBulkArchiving(false)
-    setBulkSelectedIds(new Set())
-    if (failed === 0) toast.success(archived === 1 ? 'Archived 1 conversation.' : `Archived ${archived} conversations.`)
-    else toast.warning(`Archived ${archived}; ${failed} could not be archived.`)
+    setBulkSelectedKeys(new Set())
+    if (failed > 0) toast.warning(`Archived ${archived}; ${failed} could not be archived.`)
+    else if (archived === 0) toast.warning('Nothing was archived — the selection no longer matched the list.')
+    else toast.success(archived === 1 ? 'Archived 1 conversation.' : `Archived ${archived} conversations.`)
     void inboxQuery.refetch()
   }
 
@@ -774,8 +795,11 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
     if (clientId === 'all-clients') next.delete('client')
     else next.set('client', clientId)
     setSearchParams(next, { replace: true })
-    // Switching clients closes the previous client's open conversation.
+    // Switching clients closes the previous client's open conversation, and
+    // drops any bulk selection made against it: archiving rows the operator
+    // can no longer see is the wrong kind of surprise.
     setSelectedThreadId(null)
+    setBulkSelectedKeys(new Set())
     setDraftBody('')
     setDraftedForThread(null)
     setDraftClassification(null)
@@ -941,13 +965,13 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
               </p>
             </div>
           )}
-          {bulkSelectedIds.size > 0 && (
+          {canManage && bulkSelectedKeys.size > 0 && (
             <div className="flex items-center justify-between gap-2 border-b bg-muted/30 px-4 py-2">
               <span className="text-xs text-muted-foreground">
-                {bulkSelectedIds.size === 1 ? '1 conversation selected' : `${bulkSelectedIds.size} conversations selected`}
+                {bulkSelectedKeys.size === 1 ? '1 conversation selected' : `${bulkSelectedKeys.size} conversations selected`}
               </span>
               <div className="flex items-center gap-2">
-                <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" disabled={bulkArchiving} onClick={() => setBulkSelectedIds(new Set())}>
+                <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" disabled={bulkArchiving} onClick={() => setBulkSelectedKeys(new Set())}>
                   Clear
                 </Button>
                 <Button type="button" size="sm" variant="outline" className="h-7 text-xs" disabled={bulkArchiving} onClick={() => void bulkArchive()}>
@@ -975,15 +999,17 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
             <ul className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto" aria-label="Inbox conversations">
               {visibleThreads.map((thread) => (
                 <li key={thread.id} className="relative">
-                  {canManage && thread.campaign?.client && threadStatus(thread, sentThreadIds) !== 'archived' && (
+                  {/* Left edge, not right: the interested dot owns the top-right
+                      corner and the first checkbox placement painted over it. */}
+                  {canManage && thread.thread_key && thread.campaign?.client && threadStatus(thread, sentThreadIds) !== 'archived' && (
                     <input
                       type="checkbox"
                       aria-label={`Select conversation with ${thread.from_email || thread.lead_email || 'unknown sender'}`}
-                      checked={bulkSelectedIds.has(thread.id)}
+                      checked={bulkSelectedKeys.has(thread.thread_key)}
                       disabled={bulkArchiving}
-                      onChange={() => toggleBulkSelected(thread.id)}
+                      onChange={() => toggleBulkSelected(thread.thread_key as string)}
                       onClick={(event) => event.stopPropagation()}
-                      className="absolute right-3 top-3 z-10 h-3.5 w-3.5 accent-primary"
+                      className="absolute left-3 top-3.5 z-10 h-3.5 w-3.5 accent-primary"
                     />
                   )}
                   <button
@@ -991,6 +1017,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                     onClick={() => openThread(thread.id)}
                     className={cn(
                       'w-full px-4 py-3 text-left transition-colors hover:bg-muted/40',
+                      canManage && thread.thread_key && thread.campaign?.client && threadStatus(thread, sentThreadIds) !== 'archived' && 'pl-9',
                       selectedThread?.id === thread.id && 'bg-muted/50',
                     )}
                   >
@@ -1066,7 +1093,11 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                   back. The reply's placement — stage, dates, prep — lived one
                   unaided navigation away, and the thread already knows the
                   client and, once captured, the show. */}
-              {selectedThread?.relationship?.podcast_id && selectedThread.campaign?.client && (
+              {/* Only for a show the Command Center can actually resolve: a
+                  captured-but-unidentified relationship gets a manual-<uuid>
+                  id that matches nothing, and offering the link anyway
+                  stranded the operator on an unfiltered page. */}
+              {selectedThread?.relationship?.podcast_id && !selectedThread.relationship.podcast_id.startsWith('manual-') && selectedThread.campaign?.client && (
                 <Button asChild size="sm" variant="outline">
                   <Link to={`${baseHref}/client-podcast-system?client=${encodeURIComponent(selectedThread.campaign.client.id)}&podcast=${encodeURIComponent(selectedThread.relationship.podcast_id)}`}>
                     <CalendarCheck2 className="mr-2 h-3.5 w-3.5" />View placement
@@ -1526,6 +1557,16 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
               />
             ) : (
             <div className="w-full max-w-4xl p-5 text-center lg:p-8">
+              {/* A deep link whose conversation has scrolled out of the reply
+                  window used to land here with no explanation at all — the
+                  relationship book keeps threads forever, the provider window
+                  does not, and silence read as a broken link. */}
+              {requestedThreadKey && !linkedThread && !inboxQuery.isLoading && (
+                <div role="status" className="mx-auto mb-6 max-w-xl rounded-lg border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-900">
+                  That saved conversation is older than the reply window, so it cannot be opened here.
+                  Its saved messages remain on the relationship record.
+                </div>
+              )}
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                 <MessageSquare className="h-7 w-7" />
               </div>

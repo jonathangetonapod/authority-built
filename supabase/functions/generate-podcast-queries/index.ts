@@ -188,7 +188,7 @@ serve(async (req) => {
         actorUserId: context.user.id,
         byoKeyUsed,
       })
-      if (queryCharge.entryId) {
+      if (queryCharge.entryId && !queryCharge.replayed) {
         chargedForRefund = { workspaceId, entryId: queryCharge.entryId }
         refundAdmin = context.admin
       }
