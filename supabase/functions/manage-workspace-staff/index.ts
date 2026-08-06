@@ -2903,7 +2903,7 @@ serve(async (req) => {
       monthStart.setUTCDate(1);
       monthStart.setUTCHours(0, 0, 0, 0);
 
-      const [profileResult, lotsResult, ledgerResult, spentResult, usageResult, pricesResult] = await Promise.all([
+      const [profileResult, lotsResult, ledgerResult, spentResult, usageResult, pricesResult, cardProofResult] = await Promise.all([
         admin.from("workspace_billing_profiles")
           .select("plan_key, billing_status, base_price_cents, per_client_price_cents, included_active_clients, monthly_credit_allowance, stripe_subscription_id, stripe_customer_id, cancel_at_period_end, current_period_end, refill_threshold_credits, refill_pack_credits")
           .eq("workspace_id", workspaceId)
@@ -2922,9 +2922,9 @@ serve(async (req) => {
         // the amount charged at the time, and a mid-month price change made the
         // total on the page disagree with the balance underneath it.
         admin.from("workspace_credit_ledger")
-          .select("amount")
+          .select("amount, entry_type")
           .eq("workspace_id", workspaceId)
-          .lt("amount", 0)
+          .in("entry_type", ["debit", "refund"])
           .gte("created_at", monthStart.toISOString())
           .limit(10000),
         admin.from("workspace_operation_costs")
@@ -2936,8 +2936,23 @@ serve(async (req) => {
           .select("operation_type, credit_cost, effective_from")
           .lte("effective_from", new Date().toISOString())
           .order("effective_from", { ascending: false }),
+        // Proof a card was actually saved: the checkout marks the payment for
+        // off-session reuse, so the webhook's grant — keyed stripe:… — exists
+        // exactly when a charge completed with a card Stripe kept.
+        admin.from("workspace_credit_ledger")
+          .select("id")
+          .eq("workspace_id", workspaceId)
+          .like("idempotency_key", "stripe:%")
+          .limit(1)
+          .maybeSingle(),
       ]);
-      if (lotsResult.error || ledgerResult.error || usageResult.error || pricesResult.error) {
+      // All six reads, not four: a failed profile read used to serve the
+      // fallback identity — trial plan, default allowance, no saved card — as
+      // if it were real, and a failed spent read served "used this month: 0".
+      if (
+        profileResult.error || lotsResult.error || ledgerResult.error
+        || spentResult.error || usageResult.error || pricesResult.error
+      ) {
         throw new HttpError(503, "BILLING_UNAVAILABLE", "Billing data is temporarily unavailable");
       }
 
@@ -2972,8 +2987,17 @@ serve(async (req) => {
           included_active_clients: profileResult.data?.included_active_clients ?? 1,
           monthly_credit_allowance: profileResult.data?.monthly_credit_allowance ?? 100,
           enforcement_enabled: Deno.env.get("CREDIT_ENFORCEMENT_ENABLED")?.trim() === "true",
-          credits_spent_this_month: (spentResult.data ?? [])
-            .reduce((sum, row) => sum + Math.abs(Number(row.amount) || 0), 0),
+          // Debits net of refunds. Summing every negative row counted an
+          // admin removing mistaken credits, and an allowance lapsing, as the
+          // workspace "using" credits — an adjustment could flip the usage bar
+          // red without one operation running. Clamped: a refund of last
+          // month's debit is not negative usage this month.
+          credits_spent_this_month: Math.max(0, (spentResult.data ?? [])
+            .reduce((sum, row) => (
+              row.entry_type === "debit"
+                ? sum + Math.abs(Number(row.amount) || 0)
+                : sum - Math.abs(Number(row.amount) || 0)
+            ), 0)),
           // Whether there is a subscription to manage, not which one. The id
           // itself is a Stripe identifier and the browser has no use for it.
           has_subscription: typeof profileResult.data?.stripe_subscription_id === "string"
@@ -2988,11 +3012,15 @@ serve(async (req) => {
           // period ends, so the status alone cannot show that it is ending.
           refill_threshold_credits: profileResult.data?.refill_threshold_credits ?? null,
           refill_pack_credits: profileResult.data?.refill_pack_credits ?? null,
-          // Whether there is anything to charge. Offering automatic top-ups to
-          // a workspace that has never saved a card is offering a promise the
-          // provider will refuse.
+          // Whether there is anything to charge. A Stripe customer row is
+          // created the moment a checkout session opens — before any payment —
+          // so "has a customer" was true for anyone who clicked Buy and then
+          // cancelled, and auto top-ups were offered with nothing saved to
+          // charge. A completed purchase is the event that saves a card, and
+          // the webhook grant is its receipt.
           has_saved_card: typeof profileResult.data?.stripe_customer_id === "string"
-            && profileResult.data.stripe_customer_id.length > 0,
+            && profileResult.data.stripe_customer_id.length > 0
+            && Boolean(cardProofResult.data),
           cancel_at_period_end: profileResult.data?.cancel_at_period_end === true,
           current_period_end: profileResult.data?.current_period_end ?? null,
           balance,
@@ -3142,9 +3170,11 @@ serve(async (req) => {
         admin.from("workspace_credit_lots")
           .select("workspace_id, remaining, expires_at")
           .gt("remaining", 0),
+        // Debits net of refunds, the same arithmetic the per-workspace
+        // overview uses — the two screens used to disagree by construction.
         admin.from("workspace_credit_ledger")
           .select("workspace_id, amount, entry_type")
-          .eq("entry_type", "debit")
+          .in("entry_type", ["debit", "refund"])
           .gte("created_at", monthStart.toISOString()),
       ]);
       if (workspacesResult.error) {
@@ -3164,7 +3194,11 @@ serve(async (req) => {
       const spend = new Map<string, number>();
       for (const row of (spendResult.data ?? []) as Array<Record<string, unknown>>) {
         const id = String(row.workspace_id);
-        spend.set(id, (spend.get(id) ?? 0) + Math.abs(Number(row.amount) || 0));
+        const magnitude = Math.abs(Number(row.amount) || 0);
+        spend.set(id, (spend.get(id) ?? 0) + (row.entry_type === "debit" ? magnitude : -magnitude));
+      }
+      for (const [id, value] of spend) {
+        if (value < 0) spend.set(id, 0);
       }
       const profiles = new Map<string, Record<string, unknown>>();
       for (const row of (profilesResult.data ?? []) as Array<Record<string, unknown>>) {

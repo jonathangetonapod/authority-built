@@ -38,6 +38,20 @@ describe('WorkspaceCreditAdjustment', () => {
     }))
   })
 
+  // parseInt read "1e3" as 1 and "12abc" as 12 — an admin typing a thousand
+  // removed one, with a success toast. Digits only, like the grant form.
+  it('refuses an amount that is not plainly a whole number', async () => {
+    renderCard()
+    await screen.findByLabelText('Credits to remove')
+
+    for (const garbage of ['1e3', '12abc', '10.9']) {
+      fireEvent.change(screen.getByLabelText('Credits to remove'), { target: { value: garbage } })
+      fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'typo test' } })
+      expect(screen.getByRole('button', { name: /Remove credits/i })).toBeDisabled()
+    }
+    expect(adjustWorkspaceCredits).not.toHaveBeenCalled()
+  })
+
   it('will not remove credits without a reason', async () => {
     renderCard()
     await screen.findByLabelText('Credits to remove')

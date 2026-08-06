@@ -41,14 +41,30 @@ export function WorkspaceMonthlyAllowance({ workspaceId, workspaceName }: Worksp
     if (typeof current === 'number') setDraft(String(current))
   }, [current])
 
-  const parsed = Number.parseInt(draft.trim(), 10)
+  /*
+   * Digits only, like the grant form beside this one. parseInt accepted
+   * "12abc" as 12 and "1e3" as 1 — an admin typing a thousand saved one, with
+   * a success toast.
+   */
+  const parsed = /^\d+$/u.test(draft.trim()) ? Number.parseInt(draft.trim(), 10) : Number.NaN
   const valid = Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= 1_000_000
   const dirty = valid && parsed !== current
 
   const saveMutation = useMutation({
     mutationFn: () => setWorkspaceMonthlyAllowance(workspaceId, parsed),
     onSuccess: async (saved) => {
-      await queryClient.invalidateQueries({ queryKey })
+      /*
+       * Every surface that shows this workspace's money, not just this
+       * card's own query. The four surfaces key four different families, and
+       * invalidating only one's own let the cards on a single screen
+       * contradict each other — a grant the adjustment card could not see,
+       * a removal the grant preview ignored, a portfolio that never moved.
+       */
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['workspace-billing-overview', workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['workspace-credit-grants', workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['billing-portfolio'] }),
+      ])
       toast.success(`${workspaceName || 'This workspace'} will be granted ${saved} credits a month.`)
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'The monthly allowance could not be saved.'),

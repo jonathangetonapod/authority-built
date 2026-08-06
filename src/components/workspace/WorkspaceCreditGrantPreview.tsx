@@ -110,7 +110,18 @@ export function WorkspaceCreditGrantPreview({
         note: trimmedNote,
         balanceAfter: result.balance ?? (knownBalance === null ? null : knownBalance + result.granted),
       }, ...current])
-      void queryClient.invalidateQueries({ queryKey: overviewQueryKey })
+      /*
+       * Every surface that shows this workspace's money, not just this
+       * card's own query. The four surfaces key four different families, and
+       * invalidating only one's own let the cards on a single screen
+       * contradict each other — a grant the adjustment card could not see,
+       * a removal the grant preview ignored, a portfolio that never moved.
+       */
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['workspace-billing-overview', workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['workspace-credit-grants', workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['billing-portfolio'] }),
+      ])
       setAmount('100')
       setReason('')
       setNote('')

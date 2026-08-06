@@ -46,7 +46,26 @@ const BILLING_STATUS: Record<string, { label: string; className: string }> = {
   past_due: { label: 'Payment overdue', className: 'border-red-300 bg-red-50 text-red-900' },
   comped: { label: 'Complimentary', className: 'border-violet-300 bg-violet-50 text-violet-900' },
   suspended: { label: 'Suspended', className: 'border-red-300 bg-red-50 text-red-900' },
+  // The platform screens know all of these; a cancelled workspace used to get
+  // no badge and no alert here, its only hint the button reading
+  // "Choose a plan".
+  paused: { label: 'Paused', className: 'border-amber-300 bg-amber-50 text-amber-900' },
+  canceled: { label: 'Cancelled', className: 'border-red-300 bg-red-50 text-red-900' },
+  cancelled: { label: 'Cancelled', className: 'border-red-300 bg-red-50 text-red-900' },
+  unpaid: { label: 'Payment failed', className: 'border-red-300 bg-red-50 text-red-900' },
+  incomplete: { label: 'Payment incomplete', className: 'border-amber-300 bg-amber-50 text-amber-900' },
 }
+
+// An unknown status is stated as itself rather than hidden: silence about a
+// billing state is how trouble stays unnoticed until a feature refuses.
+const billingStatusBadge = (status: string): { label: string; className: string } =>
+  BILLING_STATUS[status] ?? { label: status.replace(/_/gu, ' '), className: 'border-border bg-muted text-muted-foreground' }
+
+// Whole dollars stay whole; a $49.50 plan must not round to "$50/month" here
+// while the subscription card says $49.50 for the same plan.
+const formatPrice = (cents: number): string => (
+  cents % 100 === 0 ? `$${(cents / 100).toFixed(0)}` : `$${(cents / 100).toFixed(2)}`
+)
 
 const CREDIT_PACKS = [
   { key: 'starter' as const, credits: 100, price: 29, note: 'Top-up' },
@@ -137,21 +156,38 @@ const WorkspaceBilling = () => {
   const overview = overviewQuery.data
 
   const balance = overview?.balance ?? null
+  /*
+   * The webhook usually beats the redirect, so the "before" balance captured
+   * on a fresh page load already includes the credits — comparing against it
+   * could never detect the arrival, and the banner spent its full minute
+   * telling a paid-up operator to contact support rather than pay again. A
+   * purchase grant in the last few minutes of the ledger is the arrival
+   * itself, whichever side of the redirect it landed on.
+   */
+  const recentPurchaseAt = (overview?.recent_activity ?? []).find((entry) => (
+    entry.entry_type === 'grant'
+    && (entry.reference_kind === 'stripe_checkout' || entry.reference_kind === 'stripe_auto_refill')
+    && Number.isFinite(Date.parse(entry.created_at))
+    && Date.now() - Date.parse(entry.created_at) < 5 * 60_000
+  ))
   useEffect(() => {
     if (!awaitingCredits || balance === null) return
-    if (balanceBeforeCheckout === null) {
-      setBalanceBeforeCheckout(balance)
-      return
-    }
-    if (balance > balanceBeforeCheckout) {
+    if (recentPurchaseAt || (balanceBeforeCheckout !== null && balance > balanceBeforeCheckout)) {
       setAwaitingCredits(false)
       setBalanceBeforeCheckout(null)
       toast.success('Credits added to your balance.')
       return
     }
-    const timer = window.setTimeout(() => setAwaitingCredits(false), CREDIT_ARRIVAL_TIMEOUT_MS)
+    if (balanceBeforeCheckout === null) {
+      setBalanceBeforeCheckout(balance)
+      return
+    }
+    const timer = window.setTimeout(() => {
+      setAwaitingCredits(false)
+      setBalanceBeforeCheckout(null)
+    }, CREDIT_ARRIVAL_TIMEOUT_MS)
     return () => window.clearTimeout(timer)
-  }, [awaitingCredits, balance, balanceBeforeCheckout])
+  }, [awaitingCredits, balance, balanceBeforeCheckout, recentPurchaseAt])
 
   if (!canManageWorkspaceStaff && !isPlatformAdmin) return <Navigate to="/app/clients" replace />
 
@@ -173,7 +209,7 @@ const WorkspaceBilling = () => {
   const creditsSpent = overview?.credits_spent_this_month ?? estimatedSpend
   const allowance = overview?.monthly_credit_allowance ?? 0
   const spentPercent = allowance > 0 ? Math.min(100, Math.round((creditsSpent / allowance) * 100)) : 0
-  const status = overview ? BILLING_STATUS[overview.billing_status] : undefined
+  const status = overview ? billingStatusBadge(overview.billing_status) : undefined
   // Purchases are hidden until credits are actually being spent. Selling a pack
   // while the page says the balance will not move is asking for money for
   // something the product has just admitted it is not doing yet.
@@ -229,8 +265,8 @@ const WorkspaceBilling = () => {
                       {status && <Badge variant="outline" className={status.className}>{status.label}</Badge>}
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      ${(overview.base_price_cents / 100).toFixed(0)}/month
-                      {overview.per_client_price_cents > 0 && <> · ${(overview.per_client_price_cents / 100).toFixed(0)}/month per active client beyond the first {overview.included_active_clients ?? 1}</>}
+                      {formatPrice(overview.base_price_cents)}/month
+                      {overview.per_client_price_cents > 0 && <> · {formatPrice(overview.per_client_price_cents)}/month per active client beyond the first {overview.included_active_clients ?? 1}</>}
                     </p>
                     <p className="text-sm text-muted-foreground">
                       Includes {allowance.toLocaleString()} credits each month.
@@ -355,7 +391,7 @@ const WorkspaceBilling = () => {
               {/* Beside buying a pack by hand, because it is the same decision
                   made once instead of every time. */}
               {canBuyCredits && (
-                <AutoRefillCard workspaceId={workspaceId} overview={overview} />
+                <AutoRefillCard workspaceId={workspaceId} overview={overview} onSaved={() => void overviewQuery.refetch()} />
               )}
 
               {canBuyCredits && (

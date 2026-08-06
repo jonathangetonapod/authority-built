@@ -36,7 +36,12 @@ export function WorkspaceCreditAdjustment({ workspaceId, workspaceName }: Worksp
   const [amountDraft, setAmountDraft] = useState('')
   const [reason, setReason] = useState('')
 
-  const amount = Number.parseInt(amountDraft.trim(), 10)
+  /*
+   * Digits only, like the grant form beside this one. parseInt accepted
+   * "12abc" as 12 and "1e3" as 1 — an admin typing a thousand saved one, with
+   * a success toast.
+   */
+  const amount = /^\d+$/u.test(amountDraft.trim()) ? Number.parseInt(amountDraft.trim(), 10) : Number.NaN
   const amountValid = Number.isSafeInteger(amount) && amount >= 1 && amount <= 10_000
   const overBalance = amountValid && typeof balance === 'number' && amount > balance
   const ready = amountValid && !overBalance && reason.trim().length > 0
@@ -44,7 +49,18 @@ export function WorkspaceCreditAdjustment({ workspaceId, workspaceName }: Worksp
   const adjustMutation = useMutation({
     mutationFn: () => adjustWorkspaceCredits(workspaceId, { amount, reason: reason.trim() }),
     onSuccess: async (result) => {
-      await queryClient.invalidateQueries({ queryKey })
+      /*
+       * Every surface that shows this workspace's money, not just this
+       * card's own query. The four surfaces key four different families, and
+       * invalidating only one's own let the cards on a single screen
+       * contradict each other — a grant the adjustment card could not see,
+       * a removal the grant preview ignored, a portfolio that never moved.
+       */
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['workspace-billing-overview', workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['workspace-credit-grants', workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['billing-portfolio'] }),
+      ])
       setAmountDraft('')
       setReason('')
       toast.success(`Removed ${result.removed} credits. Balance is now ${result.balance ?? 'updated'}.`)

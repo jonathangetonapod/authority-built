@@ -13,6 +13,7 @@ import { setWorkspaceAutoRefill, type WorkspaceBillingOverview } from '@/service
 interface AutoRefillCardProps {
   workspaceId: string
   overview: WorkspaceBillingOverview | undefined
+  onSaved?: () => void
 }
 
 // The packs the checkout sells. An automatic top-up buys one of these, at the
@@ -33,7 +34,7 @@ const THRESHOLDS = [10, 25, 50, 100, 200]
  * has only ever paid as a guest is told what to do rather than shown a switch
  * that would fail.
  */
-export function AutoRefillCard({ workspaceId, overview }: AutoRefillCardProps) {
+export function AutoRefillCard({ workspaceId, overview, onSaved }: AutoRefillCardProps) {
   const queryClient = useQueryClient()
   const configured = typeof overview?.refill_threshold_credits === 'number'
   const [enabled, setEnabled] = useState(configured)
@@ -57,6 +58,13 @@ export function AutoRefillCard({ workspaceId, overview }: AutoRefillCardProps) {
     ),
     onSuccess: async (saved) => {
       await queryClient.invalidateQueries({ queryKey: ['workspace-billing-overview', workspaceId] })
+      /*
+       * The page that renders this card holds its own query under a different
+       * key, and the overview prop comes from there — without telling it to
+       * re-read, the card kept computing dirty against pre-save state, the
+       * Save button stayed armed, and a second click re-sent the same save.
+       */
+      onSaved?.()
       toast.success(saved.threshold === null
         ? 'Automatic top-ups switched off.'
         : `We will buy ${saved.pack} credits when you drop below ${saved.threshold}.`)
