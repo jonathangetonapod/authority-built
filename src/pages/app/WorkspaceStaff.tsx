@@ -661,7 +661,16 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                     * First, because it is the only thing on this page that
                     * belongs to the person rather than to the workspace, and it
                     * is the one setting every member can change for themselves.
+                    *
+                    * Absent from the platform view of somebody else's
+                    * workspace, and that is not a permission check: a picture
+                    * belongs to a membership, and a platform admin inspecting an
+                    * agency has none there. Offering the control anyway produced
+                    * a refusal that was perfectly accurate and read as a bug —
+                    * "avatar member row is absent for this actor" — for a state
+                    * that simply has no meaning here.
                     */}
+                  {!isPlatformWorkspace && (
                   <section id="your-profile" className="min-w-0 scroll-mt-28 space-y-4" aria-labelledby="your-profile-title">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">You</p>
@@ -727,6 +736,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                       </CardContent>
                     </Card>
                   </section>
+                  )}
 
                   <section id="workspace-general" className="min-w-0 scroll-mt-28 space-y-4" aria-labelledby="workspace-general-title">
                     <div>
