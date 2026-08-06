@@ -340,6 +340,18 @@ Two consequences worth knowing before changing this area:
   staff list DTO has no avatar field. Anything that changes a picture must
   refresh the account, on every route, or the page keeps the old path and the
   next change is refused as a conflict the actor caused themselves.
+- The avatar actions are the one part of `manage-workspace-staff` with **no**
+  `requireWorkspaceFeatureAccess` gate, because setting your own picture is not
+  staff management. `set_membership_avatar_v1` is therefore the entire
+  authorization boundary, which is why it re-reads the actor's address from
+  `auth.users` and checks membership status, both revocation epochs and the
+  workspace's own status itself.
+- Its unlinked-by-email branch looks like dead code and is not. It can never
+  match an active row — the `workspace_memberships` live-user CHECK guarantees
+  active rows carry a `user_id` — so it never reaches the update. It exists so
+  that someone holding only an invited or provisioning row is told their real
+  state rather than told no row exists, which would be false and would send
+  anyone debugging it hunting for a row that is sitting right there.
 
 ## Route map
 
