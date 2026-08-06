@@ -874,7 +874,7 @@ export default function PodcastFinder({
         setProgress({
           completed,
           total: targetCount,
-          message: `${completed.toLocaleString()} from the shared database. Searching Podscan…`,
+          message: `${completed.toLocaleString()} from the shared database. Searching the live podcast index…`,
         })
       }
 
@@ -902,7 +902,7 @@ export default function PodcastFinder({
                 response = await withTimeout(
                   searchPodcastsWithMeta(buildSearchOptions(query, page), selectedWorkspace.id),
                   45,
-                  'Podscan',
+                  'The live podcast index',
                 )
                 break
               } catch (error) {
@@ -915,7 +915,7 @@ export default function PodcastFinder({
                 setProgress({
                   completed,
                   total: targetCount,
-                  message: `Podscan is busy. Retrying this page in ${retrySeconds} seconds…`,
+                  message: `The podcast index is busy. Retrying this page in ${retrySeconds} seconds…`,
                 })
                 await new Promise((resolve) => window.setTimeout(resolve, retrySeconds * 1000))
                 // Distinguishable from a real failure: rethrowing the throttle
@@ -924,7 +924,7 @@ export default function PodcastFinder({
                 if (stopRequestedRef.current) throw new Error('DISCOVERY_STOPPED')
               }
             }
-            if (!response) throw new Error('Podscan did not return a search response.')
+            if (!response) throw new Error('The podcast index did not return a search response.')
             if (response.rateLimit) setRateLimit(response.rateLimit)
             const podcasts = response.data.podcasts || []
             rawResults += podcasts.length
@@ -1174,8 +1174,8 @@ export default function PodcastFinder({
     setEnrichingId(podcastId)
     try {
       const podcast = await getPodcastById(podcastId, selectedWorkspace?.id)
-      setResults((current) => mergeResearchResults(current, [podcast], 'Podscan profile'))
-      toast.success('Full Podscan profile loaded.')
+      setResults((current) => mergeResearchResults(current, [podcast], 'Live index profile'))
+      toast.success('Full podcast profile loaded.')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Podcast profile could not be loaded.')
     } finally {
