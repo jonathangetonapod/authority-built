@@ -55,6 +55,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/contexts/AuthContext'
+import { getWorkspaceBillingOverview } from '@/services/workspaceStaff'
 import { safeExternalUrl } from '@/lib/externalUrl'
 import {
   calculateOutreachPriority,
@@ -153,6 +154,65 @@ function readStoredScope(): StoredScope {
   }
 }
 
+/*
+ * A finished run outlives the page. Everything below the scope — results,
+ * scores, tier overrides, selections — lived only in component state, so a
+ * refresh, a back-swipe, or the platform wrapper remounting threw away a run
+ * that took minutes and spent real credits. The run is kept per tab beside the
+ * scope, and restored when the page comes back to the same workspace and
+ * target.
+ */
+const RUN_STORAGE_KEY = 'podcast-finder-run-v1'
+
+interface StoredRun {
+  runScope: RunScope
+  results: ResearchResult[]
+  tierOverrides: Record<string, Exclude<ResearchTier, 'excluded'>>
+  excludedIds: string[]
+  selectedIds: string[]
+  addedPodcastIds: string[]
+}
+
+function readStoredRun(): StoredRun | null {
+  try {
+    const value = window.sessionStorage.getItem(RUN_STORAGE_KEY)
+    if (!value) return null
+    const parsed = JSON.parse(value) as StoredRun
+    if (!parsed?.runScope?.id || !Array.isArray(parsed.results)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function writeStoredRun(run: StoredRun): void {
+  const persist = (candidate: StoredRun) => {
+    window.sessionStorage.setItem(RUN_STORAGE_KEY, JSON.stringify(candidate))
+  }
+  try {
+    persist(run)
+  } catch {
+    // Quota. Descriptions are the bulk and the review table survives without
+    // their tails; losing a run entirely is worse than trimming them.
+    try {
+      persist({
+        ...run,
+        results: run.results.map((result) => ({
+          ...result,
+          podcast: {
+            ...result.podcast,
+            podcast_description: result.podcast.podcast_description
+              ? `${result.podcast.podcast_description.slice(0, 300)}…`
+              : result.podcast.podcast_description,
+          },
+        })),
+      })
+    } catch {
+      window.sessionStorage.removeItem(RUN_STORAGE_KEY)
+    }
+  }
+}
+
 function compactNumber(value: number | undefined): string {
   if (value === undefined || !Number.isFinite(value)) return '—'
   return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
@@ -246,8 +306,11 @@ export default function PodcastFinder({
   platformWorkspaceId,
   workspaceScoped = false,
 }: PodcastFinderProps = {}) {
-  const { user, workspace } = useAuth()
+  const { isPlatformAdmin, membership, user, workspace } = useAuth()
   const queryClient = useQueryClient()
+  // Managers only, matching the server's own rule for billing-overview; a
+  // member sees the finder without the price list rather than a 403.
+  const canSeeCosts = isPlatformAdmin || membership?.role === 'owner' || membership?.role === 'admin'
   const storedScope = useMemo(readStoredScope, [])
   const isClientBound = fixedClientId !== undefined
   /*
@@ -313,20 +376,41 @@ export default function PodcastFinder({
    */
   const existingPodcastIdsRef = useRef<Set<string>>(new Set())
   const [progress, setProgress] = useState<DiscoveryProgress | null>(null)
-  const [runScope, setRunScope] = useState<RunScope | null>(null)
-  const [results, setResults] = useState<ResearchResult[]>([])
+  /*
+   * The stored run is only offered back to the scope it belongs to: the same
+   * workspace and the same client or prospect this mount resolves to. A run
+   * for somebody else stays on disk untouched — starting a new run overwrites
+   * it anyway — rather than leaking one target's list under another's name.
+   */
+  const restoredRun = useMemo(() => {
+    const stored = readStoredRun()
+    if (!stored) return null
+    const initialWorkspaceId = isWorkspaceScoped ? fixedWorkspaceId : (storedScope.workspaceId || '')
+    const initialClientId = isTargetBound
+      ? fixedTargetId
+      : isClientSelectable
+        ? (requestedClientId || storedScopedClientId)
+        : (storedScope.clientId || '')
+    if (stored.runScope.workspaceId.toLowerCase() !== initialWorkspaceId.toLowerCase()) return null
+    if (stored.runScope.clientId.toLowerCase() !== initialClientId.toLowerCase()) return null
+    return stored
+    // Mount-time only: the stored run is a snapshot, not a subscription.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const [runScope, setRunScope] = useState<RunScope | null>(restoredRun?.runScope ?? null)
+  const [results, setResults] = useState<ResearchResult[]>(restoredRun?.results ?? [])
   const [rateLimit, setRateLimit] = useState<PodscanRateLimit | null>(null)
   const [isScoring, setIsScoring] = useState(false)
   const [scoringProgress, setScoringProgress] = useState<DiscoveryProgress | null>(null)
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [tierOverrides, setTierOverrides] = useState<Record<string, Exclude<ResearchTier, 'excluded'>>>({})
-  const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set())
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(restoredRun?.selectedIds ?? []))
+  const [tierOverrides, setTierOverrides] = useState<Record<string, Exclude<ResearchTier, 'excluded'>>>(restoredRun?.tierOverrides ?? {})
+  const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set(restoredRun?.excludedIds ?? []))
   const [activeTab, setActiveTab] = useState<ResultTab>('all')
   const [resultSearch, setResultSearch] = useState('')
   const [resultSort, setResultSort] = useState<ResultSort>('priority')
   const [contactableOnly, setContactableOnly] = useState(false)
   const [hideExisting, setHideExisting] = useState(true)
-  const [addedPodcastIds, setAddedPodcastIds] = useState<Set<string>>(new Set())
+  const [addedPodcastIds, setAddedPodcastIds] = useState<Set<string>>(new Set(restoredRun?.addedPodcastIds ?? []))
   const [resultPage, setResultPage] = useState(1)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [enrichingId, setEnrichingId] = useState<string | null>(null)
@@ -341,6 +425,23 @@ export default function PodcastFinder({
   const [chartCategory, setChartCategory] = useState('')
   const [isLoadingChartOptions, setIsLoadingChartOptions] = useState(false)
   const [isAddingChartResults, setIsAddingChartResults] = useState(false)
+
+  /*
+   * What a run costs, before it runs. The platform's own rule is that spend is
+   * visible before the invoice, and this page spends on three meters without
+   * ever saying so. Shares the billing-overview cache the header chip uses.
+   */
+  const costsQuery = useQuery({
+    queryKey: ['workspace-billing-overview', workspaceId],
+    queryFn: () => getWorkspaceBillingOverview(workspaceId),
+    enabled: canSeeCosts && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(workspaceId),
+    retry: false,
+    staleTime: 120_000,
+  })
+  const meterPrices = costsQuery.data?.enforcement_enabled ? costsQuery.data.prices : null
+  const priceOf = (operation: string): number | null => (
+    meterPrices && typeof meterPrices[operation] === 'number' ? meterPrices[operation] : null
+  )
 
   const workspacesQuery = useQuery({
     queryKey: ['podcast-research', user?.id || 'unknown', 'workspaces'],
@@ -495,6 +596,34 @@ export default function PodcastFinder({
       // The selected scope remains usable in memory when browser storage is unavailable.
     }
   }, [workspaceId, clientId, isTargetBound, targetCount])
+
+  /*
+   * The run itself, debounced: every merge during discovery and every review
+   * decision lands here, so whatever completed before a refresh or a remount
+   * is still on screen afterwards. An empty result set clears the store — a
+   * reset scope or a fresh run should not resurrect the previous one.
+   */
+  useEffect(() => {
+    if (!runScope || results.length === 0) {
+      try {
+        window.sessionStorage.removeItem(RUN_STORAGE_KEY)
+      } catch {
+        // Storage unavailable: nothing stored, nothing to clear.
+      }
+      return
+    }
+    const timer = window.setTimeout(() => {
+      writeStoredRun({
+        runScope,
+        results,
+        tierOverrides,
+        excludedIds: Array.from(excludedIds),
+        selectedIds: Array.from(selectedIds),
+        addedPodcastIds: Array.from(addedPodcastIds),
+      })
+    }, 500)
+    return () => window.clearTimeout(timer)
+  }, [runScope, results, tierOverrides, excludedIds, selectedIds, addedPodcastIds])
 
   useEffect(() => {
     setResultPage(1)
@@ -1583,6 +1712,14 @@ export default function PodcastFinder({
               About {queryCountForTarget(targetCount)} keyword searches, stopping early once it has
               {' '}{targetCount}. Podcasts already on this {targetLabel}&rsquo;s list do not count toward it.
             </p>
+            {priceOf('podscan_lookup') !== null && (
+              <p className="text-xs text-muted-foreground">
+                Credits: {priceOf('podscan_lookup')} per page of index results
+                {priceOf('query_generation') !== null && <> · {priceOf('query_generation')} for a generated strategy</>}
+                {priceOf('compatibility_scoring') !== null && <> · {priceOf('compatibility_scoring')} for relevance scoring</>}
+                . A failed call is refunded.
+              </p>
+            )}
 
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1.5">
@@ -1782,7 +1919,14 @@ export default function PodcastFinder({
                     {qualifiedCount.toLocaleString()} new outreach-ready · {existingResultCount.toLocaleString()} from {targetLabel} history hidden ·{' '}
                     {Math.max(0, (runScope?.rawResults || results.length) - results.length).toLocaleString()} within-run duplicates removed
                   </span>
-                  {runScope?.completedAt && <span>Run completed {formatDate(runScope.completedAt)} · {runScope.apiCalls} Podscan calls</span>}
+                  {runScope?.completedAt && (
+                    <span>
+                      Run completed {formatDate(runScope.completedAt)} · {runScope.apiCalls} index calls
+                      {priceOf('podscan_lookup') !== null && runScope.apiCalls > 0 && (
+                        <> · about {runScope.apiCalls * (priceOf('podscan_lookup') ?? 0)} credits in searches</>
+                      )}
+                    </span>
+                  )}
                 </div>
               </CardContent>
             </Card>

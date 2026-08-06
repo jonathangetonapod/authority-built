@@ -8,7 +8,7 @@ import {
   requireUuid,
   requireWorkspaceFeatureAccess,
 } from '../_shared/workspaceAuth.ts'
-import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
+import { chargeCredits, logOperationCost, refundCredits } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 
 const corsHeaders = {
@@ -104,6 +104,12 @@ function fallbackReplacementQuery(
 }
 
 serve(async (req) => {
+  // Set when a real debit lands, so the outer catch can give it back: a
+  // failure after the charge is work the workspace paid for and never got.
+  // The deterministic-fallback path returns before the catch and keeps its
+  // charge, because a fallback strategy is still a delivered strategy.
+  let chargedForRefund: { workspaceId: string; entryId: string } | null = null
+  let refundAdmin: Parameters<typeof refundCredits>[0] | null = null
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -173,7 +179,7 @@ serve(async (req) => {
         referenceId: String(hasProspect ? body.prospectDashboardId : body.clientId),
         byoKeyUsed,
       }
-      await chargeCredits(context.admin, {
+      const queryCharge = await chargeCredits(context.admin, {
         workspaceId,
         operationType: 'query_generation',
         referenceKind: metering.referenceKind,
@@ -182,6 +188,10 @@ serve(async (req) => {
         actorUserId: context.user.id,
         byoKeyUsed,
       })
+      if (queryCharge.entryId) {
+        chargedForRefund = { workspaceId, entryId: queryCharge.entryId }
+        refundAdmin = context.admin
+      }
 
       if (hasProspect) {
         const prospectDashboardId = requireUuid(body.prospectDashboardId, 'prospectDashboardId')
@@ -616,6 +626,13 @@ CRITICAL: Your response must be ONLY valid JSON. No markdown, no code blocks, no
     }
   } catch (error) {
     console.error('Error:', error)
+    if (chargedForRefund && refundAdmin) {
+      await refundCredits(refundAdmin, {
+        workspaceId: chargedForRefund.workspaceId,
+        entryId: chargedForRefund.entryId,
+        reason: 'query generation failed after the charge',
+      })
+    }
     return new Response(
       JSON.stringify({
         error: (error instanceof Error ? error.message : String(error)) || 'Internal server error',

@@ -40,6 +40,7 @@ vi.mock('@/services/clients', () => ({
   getWorkspaceClients: vi.fn(),
   getWorkspaceResearchContext: vi.fn(),
 }))
+vi.mock('@/services/workspaceStaff', () => ({ getWorkspaceBillingOverview: vi.fn() }))
 vi.mock('@/services/queryGeneration', () => ({ generatePodcastQueries: vi.fn() }))
 vi.mock('@/services/workspacePodcastCatalog', () => ({ getWorkspacePodcastCatalog: vi.fn() }))
 vi.mock('@/services/compatibilityScoring', () => ({ scoreCompatibilityBatch: vi.fn() }))
@@ -239,6 +240,82 @@ describe('PodcastFinder', () => {
     }))
     expect(screen.getByText(/lead magnets stay in prospect studio/i)).toBeInTheDocument()
     expect(screen.queryByText(/new prospect/i)).not.toBeInTheDocument()
+  })
+
+  /*
+   * A run that took minutes and spent credits lived only in component state,
+   * so a refresh or the platform wrapper remounting threw it away. It is kept
+   * per tab now, and comes back when the page returns to the same scope.
+   */
+  it('restores a finished run for the same scope after a reload', async () => {
+    const clientId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    window.sessionStorage.setItem('podcast-finder-client-scope-v3', JSON.stringify({
+      workspaceId: myWorkspace.id,
+      clientId,
+    }))
+    window.sessionStorage.setItem('podcast-finder-run-v1', JSON.stringify({
+      runScope: {
+        id: 'run-1',
+        workspaceId: myWorkspace.id,
+        clientId,
+        targetCount: 25,
+        startedAt: '2026-08-06T12:00:00.000Z',
+        completedAt: '2026-08-06T12:04:00.000Z',
+        rawResults: 1,
+        apiCalls: 3,
+        errors: 0,
+      },
+      results: [{
+        podcast: { podcast_id: 'pod-restored', podcast_name: 'Restored Discovery Show', podcast_url: 'https://example.com/restored' },
+        sources: ['Podcast database'],
+        matchedQueries: ['operations'],
+        relevanceScore: 82,
+      }],
+      tierOverrides: {},
+      excludedIds: [],
+      selectedIds: [],
+      addedPodcastIds: [],
+    }))
+
+    renderPage()
+
+    expect(await screen.findByText('Restored Discovery Show')).toBeInTheDocument()
+  })
+
+  // Somebody else's run must not surface under this scope: same tab, but the
+  // operator has since pointed the finder at a different client.
+  it('leaves a stored run alone when the scope no longer matches it', async () => {
+    window.sessionStorage.setItem('podcast-finder-client-scope-v3', JSON.stringify({
+      workspaceId: myWorkspace.id,
+      clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    }))
+    window.sessionStorage.setItem('podcast-finder-run-v1', JSON.stringify({
+      runScope: {
+        id: 'run-2',
+        workspaceId: agencyWorkspace.id,
+        clientId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        targetCount: 25,
+        startedAt: '2026-08-06T12:00:00.000Z',
+        rawResults: 1,
+        apiCalls: 1,
+        errors: 0,
+      },
+      results: [{
+        podcast: { podcast_id: 'pod-foreign', podcast_name: 'Foreign Scope Show', podcast_url: null },
+        sources: ['Podcast database'],
+        matchedQueries: [],
+        relevanceScore: null,
+      }],
+      tierOverrides: {},
+      excludedIds: [],
+      selectedIds: [],
+      addedPodcastIds: [],
+    }))
+
+    renderPage()
+
+    await screen.findByText(/How many podcasts do you want/)
+    expect(screen.queryByText('Foreign Scope Show')).not.toBeInTheDocument()
   })
 
   it('restores a workspace-scoped client query without loading clients from another workspace', async () => {
