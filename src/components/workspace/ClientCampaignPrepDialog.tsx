@@ -108,6 +108,18 @@ interface ClientCampaignPrepDialogProps {
   clientBio?: string | null
   viewerRole?: 'owner' | 'admin' | 'member' | 'platform_admin'
   campaignHref: string
+  /**
+   * Workspace-scoped, like every other destination here. Hardcoding /app/…
+   * sent a platform admin to their own CRM while the warning beside the link
+   * was about the viewed workspace's history with that host.
+   */
+  relationshipsHref: string
+  /**
+   * Not workspace-scoped: a platform admin tops a tenant up from the platform
+   * screen. The button sits next to one that spends the viewed workspace's
+   * credit, so pointing it at the viewer's own balance was the wrong ledger.
+   */
+  billingHref: string
   podcast: ClientShortlistPodcast | null
   onArchive: () => void
   onPrepared?: () => void
@@ -259,6 +271,8 @@ export function ClientCampaignPrepDialog({
   clientBio,
   viewerRole,
   campaignHref,
+  relationshipsHref,
+  billingHref,
   podcast,
   onArchive,
   onPrepared,
@@ -1614,7 +1628,7 @@ export function ClientCampaignPrepDialog({
                               </label>
                             )}
                             <Button asChild variant="link" size="sm" className="mt-2 h-auto px-0 text-amber-950">
-                              <Link to="/app/relationships">Open the relationship CRM<ExternalLink className="ml-1.5 h-3.5 w-3.5" /></Link>
+                              <Link to={relationshipsHref}>Open the relationship CRM<ExternalLink className="ml-1.5 h-3.5 w-3.5" /></Link>
                             </Button>
                           </div>
                         </div>
@@ -1895,7 +1909,7 @@ export function ClientCampaignPrepDialog({
                                 <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-violet-700" />
                                 <div><p className="text-sm font-semibold text-violet-950">Robust lookup · 1 credit on first global success</p><p className="mt-1 max-w-2xl text-xs leading-5 text-violet-900/75">We check the global contact network first. Only a true global miss starts host identification and verification; no verified direct email means no credit is charged.</p></div>
                               </div>
-                              <div className="flex shrink-0 flex-wrap gap-2"><Button asChild variant="outline" size="sm" className="border-violet-200 bg-background text-violet-900 hover:bg-violet-100"><Link to="/app/settings/billing" target="_blank" rel="noreferrer"><Coins className="mr-2 h-3.5 w-3.5" />Buy credits in Billing<ExternalLink className="ml-2 h-3.5 w-3.5" /></Link></Button><Button type="button" size="sm" disabled={!relationshipCanProceed} onClick={beginEmailSearchPreview}><Search className="mr-2 h-3.5 w-3.5" />Start direct email search</Button></div>
+                              <div className="flex shrink-0 flex-wrap gap-2"><Button asChild variant="outline" size="sm" className="border-violet-200 bg-background text-violet-900 hover:bg-violet-100"><Link to={billingHref} target="_blank" rel="noreferrer"><Coins className="mr-2 h-3.5 w-3.5" />Buy credits in Billing<ExternalLink className="ml-2 h-3.5 w-3.5" /></Link></Button><Button type="button" size="sm" disabled={!relationshipCanProceed} onClick={beginEmailSearchPreview}><Search className="mr-2 h-3.5 w-3.5" />Start direct email search</Button></div>
                             </div>
                             <p className="mt-3 border-t border-violet-200/70 pt-3 text-[11px] font-medium leading-5 text-violet-800">Once successfully unlocked in the Database, this podcast never costs another direct-email credit. Billing opens in a new tab so this pitch stays here.</p>
                           </div>

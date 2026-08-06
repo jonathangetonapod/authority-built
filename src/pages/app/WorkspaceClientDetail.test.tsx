@@ -44,7 +44,18 @@ vi.mock('@/components/workspace/ClientSdrPromptsCard', () => ({
   ClientSdrPromptsCard: () => <div>Client reply instructions</div>,
 }))
 vi.mock('@/components/workspace/ClientShortlistEditor', () => ({
-  ClientShortlistEditor: () => <section id="client-podcast-list">Client podcast editor</section>,
+  // Surfaces the two hrefs the pitch-prep dialog navigates to, so the page's
+  // wiring of them is assertable without driving the dialog itself.
+  ClientShortlistEditor: ({ relationshipsHref, billingHref }: {
+    relationshipsHref: string
+    billingHref: string
+  }) => (
+    <section id="client-podcast-list">
+      Client podcast editor
+      <a href={relationshipsHref}>prep relationships</a>
+      <a href={billingHref}>prep billing</a>
+    </section>
+  ),
 }))
 
 const mockedUseAuth = vi.mocked(useAuth)
@@ -194,6 +205,25 @@ function renderPage(path = `/app/clients/${clientId}`) {
   )
 }
 
+function renderPlatformPage() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter
+        initialEntries={[`/app/workspaces/${workspaceId}/clients/${clientId}?tab=approval`]}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <Routes>
+          <Route
+            path="/app/workspaces/:workspaceId/clients/:clientId"
+            element={<WorkspaceClientDetail platformWorkspaceId={workspaceId} />}
+          />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+}
+
 describe('WorkspaceClientDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -223,6 +253,32 @@ describe('WorkspaceClientDetail', () => {
       ai_sdr_profile_updated_at: '2026-07-24T00:00:00.000Z',
       ai_sdr_readiness: detail.client.ai_sdr_readiness,
     })
+  })
+
+  /*
+   * Both links live beside pitch prep: one explains the viewed workspace's
+   * history with a host, the other buys the credit the button next to it
+   * spends. Hardcoded to /app/… they pointed at the viewer's own CRM and the
+   * viewer's own ledger while the work in front of them was somebody else's.
+   */
+  it('keeps the pitch-prep CRM link inside the workspace being viewed', async () => {
+    renderPlatformPage()
+
+    expect(await screen.findByRole('link', { name: 'prep relationships' }))
+      .toHaveAttribute('href', `/app/workspaces/${workspaceId}/relationships`)
+    // Billing is not workspace-scoped: a platform admin tops a tenant up from
+    // the platform screen, the same split the header credit chip makes.
+    expect(screen.getByRole('link', { name: 'prep billing' }))
+      .toHaveAttribute('href', '/app/platform/billing')
+  })
+
+  it('sends a workspace of its own people to their own CRM and billing', async () => {
+    renderPage(`/app/clients/${clientId}?tab=approval`)
+
+    expect(await screen.findByRole('link', { name: 'prep relationships' }))
+      .toHaveAttribute('href', '/app/relationships')
+    expect(screen.getByRole('link', { name: 'prep billing' }))
+      .toHaveAttribute('href', '/app/settings/billing')
   })
 
   it('rebuilds the legacy client command center inside the workspace shell', async () => {

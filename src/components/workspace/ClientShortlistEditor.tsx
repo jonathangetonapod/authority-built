@@ -79,6 +79,8 @@ interface ClientShortlistEditorProps {
   databaseHref: string
   finderHref: string
   campaignHref: string
+  relationshipsHref: string
+  billingHref: string
   onChanged?: () => void
 }
 
@@ -162,6 +164,8 @@ export function ClientShortlistEditor({
   databaseHref,
   finderHref,
   campaignHref,
+  relationshipsHref,
+  billingHref,
   onChanged,
 }: ClientShortlistEditorProps) {
   const queryClient = useQueryClient()
@@ -621,6 +625,8 @@ export function ClientShortlistEditor({
         clientBio={clientBio}
         viewerRole={viewerRole}
         campaignHref={campaignHref}
+        relationshipsHref={relationshipsHref}
+        billingHref={billingHref}
         podcast={activeCampaignPrepPodcast}
         onArchive={() => {
           if (!activeCampaignPrepPodcast) return

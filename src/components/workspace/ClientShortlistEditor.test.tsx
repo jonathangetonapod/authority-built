@@ -114,6 +114,8 @@ function renderEditor(viewerRole: 'owner' | 'admin' | 'member' | 'platform_admin
           databaseHref={`/app/podcast-database?client=${clientId}`}
           finderHref={`/app/podcast-finder?client=${clientId}`}
           campaignHref={`/app/client-campaigns/${clientId}`}
+          relationshipsHref="/app/relationships"
+          billingHref="/app/settings/billing"
         />
       </MemoryRouter>
     </QueryClientProvider>,

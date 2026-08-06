@@ -193,6 +193,19 @@ Platform administration lives at `/app/platform/billing`: a portfolio of every
 workspace worst-first, plan pricing, one-off grants, adjustments, the monthly
 allowance, and each workspace's subscription status.
 
+**The balance follows the work.** The header chip shows the balance of the
+workspace on screen, including to a platform admin viewing a tenant — supporting
+an agency means knowing whether they are about to run out. Reading and acting are
+separate: the chip leads a member to their own `/app/settings/billing`, and a
+platform admin to `/app/platform/billing`, because acting on somebody else's
+credit happens there. The low-balance warning banner stays tenant-only; it is a
+prompt to top up, and the top-up is not on that screen. Anything else in the
+shell that reads tenant data must take the *viewed* workspace id explicitly —
+`workspace` and `membership` in `AuthContext` are always the viewer's own — and
+must scope its query key by workspace, because the query client is a singleton
+cleared only when the signed-in user changes, not when a platform admin switches
+which tenant they are looking at.
+
 ## Custom domains
 
 A workspace can serve its clients on its own hostname, so dashboards, the
@@ -299,6 +312,35 @@ Important boundaries:
 
 See [`docs/subagency-saas-architecture.md`](docs/subagency-saas-architecture.md) for the full tenancy model.
 
+### Member profile pictures
+
+Every active member owns their own picture, shown beside their name at the foot
+of the sidebar with initials standing in until they set one. It is stored **per
+membership, not per user**: the same person can belong to two workspaces, and the
+face they present to their own agency is not necessarily the one they present to
+another.
+
+It is not a manager action. `set_membership_avatar_v1` takes no member id at all
+— it locates the row by the authenticated actor, which is the only arrangement in
+which a caller cannot nominate somebody else's membership — so the picture is
+settable on any workspace the actor is an active member of, including the default
+one. Objects live at `member-avatars/workspace/user/uuid.ext`, and
+`memberAvatarUrl` refuses to build a URL for a path whose two folders are not the
+viewer's own, so a row pointing at another member's file renders nothing rather
+than their photograph.
+
+Two consequences worth knowing before changing this area:
+
+- The card is absent wherever the viewer holds no membership in the workspace on
+  screen — a platform admin inspecting another agency has none there, and a
+  picture without a membership has nowhere to live. That is not a permission
+  check, and offering the control anyway produces a refusal that is accurate and
+  reads as a bug.
+- `account-context` is the only carrier of a member's own `avatar_path`; the
+  staff list DTO has no avatar field. Anything that changes a picture must
+  refresh the account, on every route, or the page keeps the old path and the
+  next change is refused as a conflict the actor caused themselves.
+
 ## Route map
 
 ### Workspace users
@@ -341,6 +383,15 @@ The same modules are reused under:
 ```
 
 The workspace switcher preserves the current module when possible. Client-bound detail routes return to the target workspace's module-level chooser rather than carrying a client ID across workspaces.
+
+The goal for these routes is that a viewed workspace shows what its own people
+see, so every link inside a module must be built from the platform `baseHref`
+rather than a literal `/app/…`. A hardcoded path silently moves the operator into
+their *own* workspace mid-task — which is how the pitch-prep dialog once
+explained a tenant's history with a host and then opened the viewer's CRM, and
+offered to buy credits on the viewer's ledger next to a button that spends the
+tenant's. The exception is anything that is genuinely not workspace-scoped, such
+as billing, which routes a platform admin to `/app/platform/billing` instead.
 
 Legacy `/app/outreach-platform`, `/app/unibox`, `/admin/outreach-platform`, and `/admin/leads` entry points redirect to the canonical outreach-suite routes.
 

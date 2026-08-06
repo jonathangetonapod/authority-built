@@ -443,6 +443,11 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const podcastSystemHref = `${baseHref}/client-podcast-system?client=${encodeURIComponent(client.id)}`
   const campaignHref = `${baseHref}/client-campaigns/${encodeURIComponent(client.id)}`
   const masterInboxHref = `${baseHref}/master-inbox?client=${encodeURIComponent(client.id)}`
+  // The CRM is workspace-scoped, so it follows baseHref like every other
+  // destination here. Billing is not: a platform admin acts on a tenant's
+  // credit from the platform screen, the same split the header chip makes.
+  const relationshipsHref = `${baseHref}/relationships`
+  const billingHref = isPlatformWorkspace ? '/app/platform/billing' : '/app/settings/billing'
   const sdrProfile = normalizeClientSdrProfile(client.ai_sdr_profile)
   const sdrReadiness = clientSdrProfileReadiness(sdrProfile)
   const sdrDraftReadiness = clientSdrProfileReadiness(sdrDraft)
@@ -1147,6 +1152,8 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                 databaseHref={databaseHref}
                 finderHref={finderHref}
                 campaignHref={campaignHref}
+                relationshipsHref={relationshipsHref}
+                billingHref={billingHref}
                 onChanged={() => void detailQuery.refetch()}
               />
             )}
