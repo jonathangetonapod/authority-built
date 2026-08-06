@@ -220,6 +220,13 @@ const SortableWorkspaceNavItem = ({
 }
 
 export interface PlatformWorkspaceConfig {
+  /**
+   * The workspace being viewed, which is not the one in AuthContext — that is
+   * always the viewer's own. Required rather than optional so a new platform
+   * surface cannot quietly render a shell that reads the wrong workspace's
+   * numbers.
+   */
+  workspaceId: string
   workspaceName: string
   logoUrl?: string | null
   baseHref: string
@@ -628,12 +635,22 @@ export const WorkspaceLayout = ({ children, platformWorkspace }: WorkspaceLayout
             <p className="truncate text-xs text-muted-foreground">Workspace dashboard</p>
           </div>
           <div className="ml-auto flex min-w-0 items-center justify-end gap-2">
-            {/* Next to the workspace it belongs to, and not shown to a platform
-                admin viewing a tenant: it is not their balance. */}
-            {!platformWorkspace && workspace?.id && (
+            {/* Next to the workspace it belongs to. A platform admin viewing a
+                tenant sees it too — supporting an agency means knowing whether
+                they are about to run out — but it leads to the platform billing
+                screen, because acting on somebody else's balance happens there
+                and not on their own billing page. */}
+            {platformWorkspace ? (
+              <CreditBalanceChip
+                workspaceId={platformWorkspace.workspaceId}
+                canViewBalance={isPlatformAdmin}
+                billingHref="/app/platform/billing"
+              />
+            ) : workspace?.id && (
               <CreditBalanceChip
                 workspaceId={workspace.id}
-                canManageBilling={membership?.role === 'owner' || membership?.role === 'admin'}
+                canViewBalance={membership?.role === 'owner' || membership?.role === 'admin'}
+                billingHref="/app/settings/billing"
               />
             )}
             {isPlatformAdmin && (

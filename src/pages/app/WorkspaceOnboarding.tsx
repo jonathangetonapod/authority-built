@@ -580,6 +580,7 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
   const workspaceBaseHref = isPlatformWorkspace ? selectedWorkspaceBaseHref(selectedWorkspaceId) : '/app'
   const platformWorkspace = isPlatformWorkspace
     ? {
+        workspaceId: selectedWorkspaceId,
         workspaceName: effectiveWorkspace?.name || 'Client workspace',
         logoUrl: workspaceLogoUrl(effectiveWorkspace?.id, effectiveWorkspace?.logo_path, effectiveWorkspace?.logo_updated_at),
         baseHref: workspaceBaseHref,

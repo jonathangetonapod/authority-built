@@ -149,6 +149,7 @@ const WorkspaceOutreachSuite = ({ module, platformWorkspaceId }: WorkspaceOutrea
   )
   const platformWorkspace: PlatformWorkspaceConfig | undefined = isSelectedWorkspace
     ? {
+        workspaceId: selectedWorkspaceId,
         workspaceName: effectiveWorkspace?.name || 'Client workspace',
         logoUrl: workspaceLogoUrl(
           effectiveWorkspace?.id,

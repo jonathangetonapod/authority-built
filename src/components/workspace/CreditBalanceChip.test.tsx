@@ -9,10 +9,10 @@ vi.mock('@/services/workspaceStaff', () => ({ getWorkspaceBillingOverview: vi.fn
 
 const workspaceId = '11111111-1111-4111-8111-111111111111'
 
-const renderChip = (canManageBilling = true) => render(
+const renderChip = (canViewBalance = true, billingHref = '/app/settings/billing') => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <CreditBalanceChip workspaceId={workspaceId} canManageBilling={canManageBilling} />
+      <CreditBalanceChip workspaceId={workspaceId} canViewBalance={canViewBalance} billingHref={billingHref} />
     </MemoryRouter>
   </QueryClientProvider>,
 )
@@ -57,10 +57,23 @@ describe('CreditBalanceChip', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })
 
-  it('does not show a balance to someone who cannot open billing', async () => {
+  it('does not show a balance to someone who may not read it', async () => {
     renderChip(false)
 
     await waitFor(() => expect(getWorkspaceBillingOverview).not.toHaveBeenCalled())
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  /*
+   * A platform admin supporting an agency reads the number but acts on it from
+   * the platform screen, so reading and acting are separate: the balance shows,
+   * and it does not lead to the agency's own billing page.
+   */
+  it('sends the number where the reader can act on it', async () => {
+    vi.mocked(getWorkspaceBillingOverview).mockResolvedValue(overview({}) as never)
+    renderChip(true, '/app/platform/billing')
+
+    const link = await screen.findByRole('link', { name: /850 credits remaining/i })
+    expect(link).toHaveAttribute('href', '/app/platform/billing')
   })
 })

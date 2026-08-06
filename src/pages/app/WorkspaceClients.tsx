@@ -185,6 +185,7 @@ const WorkspaceClients = ({ platformWorkspaceId, mode = 'manage' }: WorkspaceCli
 
   const platformWorkspace = isPlatformWorkspace
     ? {
+        workspaceId: selectedWorkspaceId,
         workspaceName: effectiveWorkspace?.name || 'Client workspace',
         logoUrl: workspaceLogoUrl(
           effectiveWorkspace?.id,

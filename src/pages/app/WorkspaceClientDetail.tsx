@@ -386,6 +386,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const effectiveWorkspace = detail?.workspace
   const platformWorkspace: PlatformWorkspaceConfig | undefined = isPlatformWorkspace
     ? {
+        workspaceId,
         workspaceName: effectiveWorkspace?.name || 'Client workspace',
         logoUrl: workspaceLogoUrl(
           effectiveWorkspace?.id,

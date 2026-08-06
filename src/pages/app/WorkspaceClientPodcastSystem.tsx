@@ -977,7 +977,7 @@ const WorkspaceClientPodcastSystem = ({ platformWorkspaceId }: WorkspaceClientPo
     || null
 
   const platformWorkspace: PlatformWorkspaceConfig | undefined = isPlatformWorkspace
-    ? { workspaceName: system?.workspace.name || 'Client workspace', logoUrl: null, baseHref }
+    ? { workspaceId, workspaceName: system?.workspace.name || 'Client workspace', logoUrl: null, baseHref }
     : undefined
 
   const chooseClient = (clientId: string) => {

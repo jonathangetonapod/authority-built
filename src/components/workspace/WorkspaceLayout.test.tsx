@@ -8,15 +8,21 @@ import {
   WorkspaceLayout,
   type PlatformWorkspaceConfig,
 } from '@/components/workspace/WorkspaceLayout'
+import { getWorkspaceBillingOverview } from '@/services/workspaceStaff'
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('@/components/admin/WorkspaceSwitcher', () => ({
   WorkspaceSwitcher: () => <div>Workspace switcher</div>,
 }))
+vi.mock('@/services/workspaceStaff', () => ({ getWorkspaceBillingOverview: vi.fn() }))
 
 const mockedUseAuth = vi.mocked(useAuth)
+const mockedBillingOverview = vi.mocked(getWorkspaceBillingOverview)
 const signOut = vi.fn()
 const workspaceId = '11111111-1111-4111-8111-111111111111'
+// Somebody else's workspace, so a balance read against the viewer's own would
+// be visible as the wrong id rather than passing by coincidence.
+const viewedWorkspaceId = '22222222-2222-4222-8222-222222222222'
 const expectedNavigation = [
   'Onboarding',
   'Podcast Finder',
@@ -203,6 +209,40 @@ describe('WorkspaceLayout', () => {
     expect(within(navigation).queryByRole('button', { name: 'Reorder sidebar pages' })).not.toBeInTheDocument()
   })
 
+  /*
+   * Supporting an agency means knowing whether they are about to run out. The
+   * balance was hidden here on the grounds that it is not the admin's to act on
+   * — true of acting, not of knowing — so the number now shows and leads to the
+   * platform billing screen rather than the agency's own.
+   */
+  it('reads the viewed workspace balance and sends it to the platform screen', async () => {
+    mockedUseAuth.mockReturnValue({
+      user: { email: 'platform@example.com' },
+      workspace: { id: workspaceId, name: 'Acme Workspace' },
+      membership: null,
+      isPlatformAdmin: true,
+      signOut,
+    } as never)
+    mockedBillingOverview.mockResolvedValue({
+      enforcement_enabled: true,
+      monthly_credit_allowance: 100,
+      balance: 850,
+    } as never)
+
+    renderLayout({
+      workspaceId: viewedWorkspaceId,
+      workspaceName: 'Selected Workspace',
+      logoUrl: null,
+      baseHref: `/app/workspaces/${viewedWorkspaceId}`,
+    })
+
+    const chip = await screen.findByRole('link', { name: /850 credits remaining/i })
+    expect(chip).toHaveAttribute('href', '/app/platform/billing')
+    // Theirs, not the admin's own.
+    expect(mockedBillingOverview).toHaveBeenCalledWith(viewedWorkspaceId)
+    expect(mockedBillingOverview).not.toHaveBeenCalledWith(workspaceId)
+  })
+
   it('renders a selected workspace as a native platform-owner context', () => {
     mockedUseAuth.mockReturnValue({
       user: { email: 'owner@example.com' },
@@ -212,6 +252,7 @@ describe('WorkspaceLayout', () => {
       signOut,
     } as never)
     const platformWorkspace: PlatformWorkspaceConfig = {
+      workspaceId,
       workspaceName: 'Selected Workspace',
       logoUrl: 'https://cdn.example/selected-workspace.png',
       baseHref: `/app/workspaces/${workspaceId}`,

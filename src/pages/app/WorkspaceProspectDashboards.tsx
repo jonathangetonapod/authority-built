@@ -835,6 +835,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
   const workspaceSummary = listQuery.data?.workspace
   const platformWorkspace = isPlatformWorkspace
     ? {
+        workspaceId: selectedWorkspaceId,
         workspaceName: workspaceSummary?.name || 'Client workspace',
         logoUrl: workspaceLogoUrl(workspaceSummary?.id, workspaceSummary?.logo_path, workspaceSummary?.logo_updated_at),
         baseHref: selectedWorkspaceBaseHref(selectedWorkspaceId),

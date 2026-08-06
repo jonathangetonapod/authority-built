@@ -7,8 +7,19 @@ import { getWorkspaceBillingOverview } from '@/services/workspaceStaff'
 
 interface CreditBalanceChipProps {
   workspaceId: string
-  /** Only a manager can act on it, and only they can open the billing page. */
-  canManageBilling: boolean
+  /**
+   * Who may read the number. A manager of this workspace, and a platform admin
+   * looking at a tenant — the backend allows owner, admin and platform_admin on
+   * billing-overview, and this is the client half of that same rule.
+   *
+   * Reading and acting were one flag while only managers ever saw the chip. A
+   * platform admin supporting an agency needs the number without inheriting the
+   * agency's billing screen, so the two are now separate: this decides whether
+   * the request happens, billingHref decides where it leads.
+   */
+  canViewBalance: boolean
+  /** Where the number leads — a platform admin acts from the platform screen. */
+  billingHref: string
 }
 
 /**
@@ -21,11 +32,11 @@ interface CreditBalanceChipProps {
  * Shares the billing query with the low-balance warning, so putting it in the
  * header costs no extra request.
  */
-export function CreditBalanceChip({ workspaceId, canManageBilling }: CreditBalanceChipProps) {
+export function CreditBalanceChip({ workspaceId, canViewBalance, billingHref }: CreditBalanceChipProps) {
   const overviewQuery = useQuery({
     queryKey: ['workspace-billing-overview', workspaceId],
     queryFn: () => getWorkspaceBillingOverview(workspaceId),
-    enabled: Boolean(workspaceId) && canManageBilling,
+    enabled: Boolean(workspaceId) && canViewBalance,
     retry: false,
     staleTime: 120_000,
   })
@@ -41,7 +52,7 @@ export function CreditBalanceChip({ workspaceId, canManageBilling }: CreditBalan
 
   return (
     <Link
-      to="/app/settings/billing"
+      to={billingHref}
       aria-label={`${overview.balance.toLocaleString()} credits remaining — open billing`}
       className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${tone}`}
     >

@@ -588,6 +588,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
 
   const platformWorkspace = isPlatformWorkspace
     ? {
+        workspaceId,
         workspaceName: data?.workspace.name || 'Client workspace',
         logoUrl,
         baseHref: selectedWorkspaceBaseHref(workspaceId),

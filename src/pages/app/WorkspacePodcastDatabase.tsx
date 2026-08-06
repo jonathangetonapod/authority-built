@@ -375,6 +375,7 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
 
   const platformWorkspace: PlatformWorkspaceConfig | undefined = isPlatformWorkspace
     ? {
+        workspaceId,
         workspaceName: catalog?.workspace.name || 'Client workspace',
         logoUrl: null,
         baseHref,

@@ -439,6 +439,7 @@ const WorkspaceRelationships = ({ platformWorkspaceId }: WorkspaceRelationshipsP
   const selectedWorkspace = selectedWorkspaceQuery.data?.workspace
   const platformWorkspace: PlatformWorkspaceConfig | undefined = isPlatformWorkspace
     ? {
+        workspaceId,
         workspaceName: selectedWorkspace?.name || 'Client workspace',
         logoUrl: workspaceLogoUrl(
           selectedWorkspace?.id,
