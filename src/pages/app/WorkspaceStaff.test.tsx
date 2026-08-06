@@ -11,7 +11,9 @@ import {
   mutateWorkspaceStaff,
   resetWorkspaceStaffTemporaryPassword,
   retryWorkspaceStaffTemporaryPassword,
+  removeMemberAvatar,
   removeWorkspaceLogo,
+  uploadMemberAvatar,
   updateWorkspaceBookingLink,
   updateWorkspaceClientBranding,
   updateWorkspaceLogo,
@@ -46,7 +48,9 @@ vi.mock('@/services/workspaceStaff', () => ({
   mutateWorkspaceStaff: vi.fn(),
   resetWorkspaceStaffTemporaryPassword: vi.fn(),
   retryWorkspaceStaffTemporaryPassword: vi.fn(),
+  removeMemberAvatar: vi.fn(),
   removeWorkspaceLogo: vi.fn(),
+  uploadMemberAvatar: vi.fn(),
   updateWorkspaceBookingLink: vi.fn().mockResolvedValue(undefined),
   updateWorkspaceClientBranding: vi.fn(),
   updateWorkspaceLogo: vi.fn(),
@@ -61,7 +65,9 @@ const mockedList = vi.mocked(listWorkspaceStaff)
 const mockedMutate = vi.mocked(mutateWorkspaceStaff)
 const mockedResetPassword = vi.mocked(resetWorkspaceStaffTemporaryPassword)
 const mockedRetryPassword = vi.mocked(retryWorkspaceStaffTemporaryPassword)
+const mockedRemoveAvatar = vi.mocked(removeMemberAvatar)
 const mockedRemoveLogo = vi.mocked(removeWorkspaceLogo)
+const mockedUploadAvatar = vi.mocked(uploadMemberAvatar)
 const mockedUpdateClientBrand = vi.mocked(updateWorkspaceClientBranding)
 const mockedUpdateLogo = vi.mocked(updateWorkspaceLogo)
 const mockedUpdateWorkspaceName = vi.mocked(updateWorkspaceName)
@@ -239,6 +245,11 @@ describe('WorkspaceStaff', () => {
       logo_updated_at: '2026-07-22T01:00:00.000Z',
     })
     mockedRemoveLogo.mockResolvedValue({ id: workspaceId, logo_path: null, logo_updated_at: null })
+    mockedUploadAvatar.mockResolvedValue({
+      avatar_path: `${workspaceId}/${userId}/77777777-7777-4777-8777-777777777777.png`,
+      avatar_updated_at: '2026-08-05T20:00:00.000Z',
+    })
+    mockedRemoveAvatar.mockResolvedValue({ avatar_path: null, avatar_updated_at: null })
     mockedUpdateClientBrand.mockResolvedValue({
       id: workspaceId,
       client_brand_name: 'Northstar Advisory',
@@ -517,6 +528,85 @@ describe('WorkspaceStaff', () => {
     await waitFor(() => expect(mockedRemoveLogo).toHaveBeenCalledWith(workspaceId, logoPath))
     await waitFor(() => expect(refreshAccount).toHaveBeenCalledTimes(1))
     expect(toastSuccess).toHaveBeenCalledWith('Workspace logo removed.')
+  })
+
+  it('lets a member upload their own picture and refreshes the shell that draws it', async () => {
+    renderPage()
+    await screen.findByText('Agency Admin')
+
+    const profile = screen.getByRole('region', { name: 'Profile picture' })
+    expect(within(profile).getByRole('button', { name: /upload picture/i })).toBeEnabled()
+    // Nothing to remove until there is one.
+    expect(within(profile).queryByRole('button', { name: /^Remove$/ })).not.toBeInTheDocument()
+
+    const file = new File(
+      [new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
+      'me.png',
+      { type: 'image/png' },
+    )
+    fireEvent.change(screen.getByLabelText('Profile picture file'), { target: { files: [file] } })
+
+    // No member id: the row is located by the authenticated actor, so a caller
+    // cannot nominate somebody else's membership.
+    await waitFor(() => expect(mockedUploadAvatar).toHaveBeenCalledWith(workspaceId, file, null))
+    await waitFor(() => expect(refreshAccount).toHaveBeenCalledTimes(1))
+    expect(toastSuccess).toHaveBeenCalledWith('Profile picture updated.')
+  })
+
+  it('removes the picture it currently has, naming the object it expects to clear', async () => {
+    const avatarPath = `${workspaceId}/${userId}/77777777-7777-4777-8777-777777777777.png`
+    mockedUseAuth.mockReturnValue({
+      user: { id: userId, email: 'owner@example.com', user_metadata: { full_name: 'Workspace Owner' } },
+      workspace: { id: workspaceId, name: 'Acme Workspace', slug: 'acme-workspace', status: 'active', is_default: false },
+      membership: {
+        id: ownerId,
+        full_name: 'Workspace Owner',
+        role: 'owner',
+        avatar_path: avatarPath,
+        avatar_updated_at: '2026-08-05T20:00:00.000Z',
+      },
+      refreshAccount,
+      refreshSession,
+      signOut,
+    } as never)
+
+    renderPage()
+    await screen.findByText('Agency Admin')
+
+    const profile = screen.getByRole('region', { name: 'Profile picture' })
+    expect(within(profile).getByRole('button', { name: /replace picture/i })).toBeEnabled()
+    fireEvent.click(within(profile).getByRole('button', { name: /^Remove$/ }))
+
+    await waitFor(() => expect(mockedRemoveAvatar).toHaveBeenCalledWith(workspaceId, avatarPath))
+    await waitFor(() => expect(refreshAccount).toHaveBeenCalledTimes(1))
+    expect(toastSuccess).toHaveBeenCalledWith('Profile picture removed.')
+  })
+
+  /*
+   * A platform admin inspecting an agency holds no membership there, and a
+   * picture belongs to a membership. The control used to be offered anyway,
+   * and the backend answered it accurately — "avatar member row is absent for
+   * this actor" — which read as a bug for a state that has no meaning here.
+   */
+  it('offers no picture on the platform view of a workspace the admin is not a member of', async () => {
+    mockedUseAuth.mockReturnValue({
+      user: { id: userId, email: 'platform@example.com' },
+      workspace: null,
+      membership: null,
+      isPlatformAdmin: true,
+      refreshAccount,
+      refreshSession,
+      signOut,
+    } as never)
+
+    renderPage(workspaceId)
+    await screen.findByText('Agency Admin')
+
+    expect(screen.queryByRole('region', { name: 'Profile picture' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Profile picture file')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /upload picture/i })).not.toBeInTheDocument()
+    // The workspace's own branding is still theirs to manage from this view.
+    expect(screen.getByLabelText('Workspace logo file')).toBeInTheDocument()
   })
 
   it('generates a one-time password and requires confirmation before closing it', async () => {
