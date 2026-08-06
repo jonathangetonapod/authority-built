@@ -358,4 +358,184 @@ describe('WorkspaceLayout', () => {
 
     expect(screen.queryByRole('link', { name: 'Billing administration' })).not.toBeInTheDocument()
   })
+
+  // Reading the balance is a manager's business inside an agency: a member has
+  // no billing page to be sent to, so there is nothing to ask the server for.
+  it('asks for no balance at all on behalf of a workspace member', async () => {
+    mockedUseAuth.mockReturnValue({
+      user: { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', email: 'member@example.com' },
+      workspace: { id: workspaceId, name: 'Acme Workspace' },
+      membership: { full_name: 'Agency Member', role: 'member' },
+      isPlatformAdmin: false,
+      signOut,
+    } as never)
+    mockedBillingOverview.mockResolvedValue({
+      enforcement_enabled: true,
+      monthly_credit_allowance: 100,
+      balance: 850,
+    } as never)
+
+    renderLayout()
+
+    await waitFor(() => expect(screen.getByText('Module content')).toBeInTheDocument())
+    expect(mockedBillingOverview).not.toHaveBeenCalled()
+    expect(screen.queryByRole('link', { name: /credits remaining/i })).not.toBeInTheDocument()
+  })
+
+  /*
+   * A platform shell renders the chip for the platform admin, so the flag that
+   * decides whether the request happens has to be the one that says so — not a
+   * constant that happens to be true wherever platform surfaces are reachable.
+   */
+  it('asks for no balance on a platform shell rendered for someone who is not a platform admin', async () => {
+    renderLayout({
+      workspaceId: viewedWorkspaceId,
+      workspaceName: 'Selected Workspace',
+      logoUrl: null,
+      baseHref: `/app/workspaces/${viewedWorkspaceId}`,
+    })
+
+    await waitFor(() => expect(screen.getByText('Module content')).toBeInTheDocument())
+    expect(mockedBillingOverview).not.toHaveBeenCalled()
+    expect(screen.queryByRole('link', { name: /credits remaining/i })).not.toBeInTheDocument()
+  })
+
+  // A balance is a number about nothing while nothing is being charged, on
+  // either side of the shell.
+  it('shows no chip in a tenant shell while enforcement is off', async () => {
+    mockedBillingOverview.mockResolvedValue({
+      enforcement_enabled: false,
+      monthly_credit_allowance: 100,
+      balance: 850,
+    } as never)
+
+    renderLayout()
+
+    await waitFor(() => expect(mockedBillingOverview).toHaveBeenCalledWith(workspaceId))
+    expect(screen.queryByRole('link', { name: /credits remaining/i })).not.toBeInTheDocument()
+  })
+
+  it('shows no chip in a platform shell while enforcement is off', async () => {
+    mockedUseAuth.mockReturnValue({
+      user: { email: 'platform@example.com' },
+      workspace: { id: workspaceId, name: 'Acme Workspace' },
+      membership: null,
+      isPlatformAdmin: true,
+      signOut,
+    } as never)
+    mockedBillingOverview.mockResolvedValue({
+      enforcement_enabled: false,
+      monthly_credit_allowance: 100,
+      balance: 850,
+    } as never)
+
+    renderLayout({
+      workspaceId: viewedWorkspaceId,
+      workspaceName: 'Selected Workspace',
+      logoUrl: null,
+      baseHref: `/app/workspaces/${viewedWorkspaceId}`,
+    })
+
+    await waitFor(() => expect(mockedBillingOverview).toHaveBeenCalledWith(viewedWorkspaceId))
+    expect(screen.queryByRole('link', { name: /credits remaining/i })).not.toBeInTheDocument()
+  })
+
+  /*
+   * The split is deliberate and worth pinning. The chip is knowing; the banner
+   * is a prompt to top up, and topping somebody else's workspace up happens on
+   * the platform screen, so the banner stays out of a platform shell even when
+   * the tenant is nearly out.
+   */
+  it('shows a nearly-empty tenant both the chip and the top-up banner', async () => {
+    mockedBillingOverview.mockResolvedValue({
+      enforcement_enabled: true,
+      monthly_credit_allowance: 100,
+      balance: 4,
+    } as never)
+
+    renderLayout()
+
+    await screen.findByRole('link', { name: /4 credits remaining/i })
+    expect(await screen.findByRole('link', { name: /top up/i })).toHaveAttribute(
+      'href',
+      '/app/settings/billing',
+    )
+    expect(screen.getByText(/4 credits left/i)).toBeInTheDocument()
+  })
+
+  it('gives a platform admin the number without the top-up banner', async () => {
+    mockedUseAuth.mockReturnValue({
+      user: { email: 'platform@example.com' },
+      workspace: { id: workspaceId, name: 'Acme Workspace' },
+      membership: null,
+      isPlatformAdmin: true,
+      signOut,
+    } as never)
+    mockedBillingOverview.mockResolvedValue({
+      enforcement_enabled: true,
+      monthly_credit_allowance: 100,
+      balance: 4,
+    } as never)
+
+    renderLayout({
+      workspaceId: viewedWorkspaceId,
+      workspaceName: 'Selected Workspace',
+      logoUrl: null,
+      baseHref: `/app/workspaces/${viewedWorkspaceId}`,
+    })
+
+    // The number is theirs to know, and it reads as a problem.
+    const chip = await screen.findByRole('link', { name: /4 credits remaining/i })
+    expect(chip.className).toMatch(/destructive/)
+    expect(screen.queryByRole('link', { name: /top up/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/credits left/i)).not.toBeInTheDocument()
+  })
+
+  /*
+   * A platform admin moves between tenants inside the same shell. The number in
+   * the header has to move with them: one agency's credits shown under another
+   * agency's name is worse than no number at all.
+   */
+  it('moves the balance with the workspace being viewed', async () => {
+    mockedUseAuth.mockReturnValue({
+      user: { email: 'platform@example.com' },
+      workspace: { id: workspaceId, name: 'Acme Workspace' },
+      membership: null,
+      isPlatformAdmin: true,
+      signOut,
+    } as never)
+    mockedBillingOverview.mockImplementation(((id: string) => Promise.resolve({
+      enforcement_enabled: true,
+      monthly_credit_allowance: 100,
+      balance: id === viewedWorkspaceId ? 850 : 12,
+    })) as never)
+
+    const secondWorkspaceId = '33333333-3333-4333-8333-333333333333'
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const shellFor = (id: string) => (
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[`/app/workspaces/${id}/clients`]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <WorkspaceLayout
+            platformWorkspace={{
+              workspaceId: id,
+              workspaceName: 'Selected Workspace',
+              logoUrl: null,
+              baseHref: `/app/workspaces/${id}`,
+            }}
+          >
+            <div>Module content</div>
+          </WorkspaceLayout>
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+
+    const { rerender } = render(shellFor(viewedWorkspaceId))
+    await screen.findByRole('link', { name: /850 credits remaining/i })
+
+    rerender(shellFor(secondWorkspaceId))
+    await screen.findByRole('link', { name: /12 credits remaining/i })
+    expect(screen.queryByText('850')).not.toBeInTheDocument()
+    expect(mockedBillingOverview).toHaveBeenCalledWith(secondWorkspaceId)
+    expect(mockedBillingOverview).not.toHaveBeenCalledWith(workspaceId)
+  })
 })

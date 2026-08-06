@@ -542,7 +542,7 @@ const WorkspaceSmartPodcastFinder = ({ platformWorkspaceId }: WorkspaceSmartPodc
             </p>
           </div>
           <Button asChild variant="ghost" size="sm" className="w-fit text-muted-foreground">
-            <Link to={`/app/podcast-finder/advanced${clientId ? `?client=${encodeURIComponent(clientId)}` : ''}`}>
+            <Link to={`${baseHref}/podcast-finder/advanced${clientId ? `?client=${encodeURIComponent(clientId)}` : ''}`}>
               Advanced finder
               <ArrowRight className="ml-2 h-3.5 w-3.5" />
             </Link>
@@ -806,7 +806,7 @@ const WorkspaceSmartPodcastFinder = ({ platformWorkspaceId }: WorkspaceSmartPodc
             {selectedClient && !contextQuery.isLoading && !clientBio && (
               <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">
                 {selectedClient.name} has no profile bio yet, so the AI has nothing to match against.{' '}
-                <Link className="font-semibold underline underline-offset-2" to={`/app/clients/${selectedClient.id}`}>
+                <Link className="font-semibold underline underline-offset-2" to={`${baseHref}/clients/${selectedClient.id}`}>
                   Add their profile first
                 </Link>.
               </p>
@@ -861,7 +861,7 @@ const WorkspaceSmartPodcastFinder = ({ platformWorkspaceId }: WorkspaceSmartPodc
                   Add top {pendingTop.length}
                 </Button>
                 <Button asChild size="sm" variant="outline">
-                  <Link to={`/app/clients/${clientId}`}>Open client list</Link>
+                  <Link to={`${baseHref}/clients/${clientId}`}>Open client list</Link>
                 </Button>
               </div>
             </CardHeader>

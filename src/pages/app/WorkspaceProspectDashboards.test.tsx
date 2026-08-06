@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import WorkspaceProspectDashboards from '@/pages/app/WorkspaceProspectDashboards'
@@ -184,6 +184,51 @@ describe('WorkspaceProspectDashboards finder link', () => {
       `/app/workspaces/${platformWorkspaceId}/podcast-finder/advanced?prospect=${prospectId}`,
     )
     await waitFor(() => expect(mockedList).toHaveBeenCalledWith(platformWorkspaceId))
+  })
+
+  /*
+   * Two finder addresses live on this page at once: the sidebar opens the
+   * module at its plain address, which is the one-click Smart Finder, while the
+   * prospect action has to reach the advanced one. Both paths now carry both,
+   * so the pair must look the same on the platform path as on the tenant path —
+   * neither collapsed onto the other, and neither pointing at /app while the
+   * operator is looking at somebody else's workspace.
+   */
+  it('keeps the module at its plain address while the prospect goes to /advanced, on both paths', async () => {
+    renderPage()
+
+    const tenantNav = await screen.findAllByRole('link', { name: 'Podcast Finder' })
+    expect(tenantNav.length).toBeGreaterThan(0)
+    for (const link of tenantNav) expect(link).toHaveAttribute('href', '/app/podcast-finder')
+    expect(await screen.findByRole('link', { name: /find podcasts/i }))
+      .toHaveAttribute('href', `/app/podcast-finder/advanced?prospect=${prospectId}`)
+
+    cleanup()
+
+    mockedList.mockResolvedValue({
+      workspace: { ...workspaceSummary, id: platformWorkspaceId },
+      viewer_role: 'platform_admin',
+      can_manage: true,
+      dashboards: [{ ...prospect, workspace_id: platformWorkspaceId }],
+    })
+    mockedDetail.mockResolvedValue({
+      workspace: { ...workspaceSummary, id: platformWorkspaceId },
+      viewer_role: 'platform_admin',
+      can_manage: true,
+      dashboard: { ...prospect, workspace_id: platformWorkspaceId },
+      podcasts: [],
+    })
+    renderPage({ platformWorkspaceId })
+
+    const platformNav = await screen.findAllByRole('link', { name: 'Podcast Finder' })
+    expect(platformNav.length).toBeGreaterThan(0)
+    for (const link of platformNav) {
+      expect(link).toHaveAttribute('href', `/app/workspaces/${platformWorkspaceId}/podcast-finder`)
+    }
+    expect(await screen.findByRole('link', { name: /find podcasts/i })).toHaveAttribute(
+      'href',
+      `/app/workspaces/${platformWorkspaceId}/podcast-finder/advanced?prospect=${prospectId}`,
+    )
   })
 })
 

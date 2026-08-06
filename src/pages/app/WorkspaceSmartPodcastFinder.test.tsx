@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import WorkspaceSmartPodcastFinder from '@/pages/app/WorkspaceSmartPodcastFinder'
@@ -36,6 +36,16 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.f
 
 const workspaceId = '11111111-1111-4111-8111-111111111111'
 const clientId = '22222222-2222-4222-8222-222222222222'
+// Deliberately not the workspace in AuthContext above: in the platform view the
+// viewer's own workspace is never the one on screen.
+const viewedWorkspaceId = '99999999-9999-4999-8999-999999999999'
+
+function mockViewedWorkspace() {
+  vi.mocked(getAdminWorkspaceView).mockResolvedValue({
+    workspace: { id: viewedWorkspaceId, name: 'Viewed Workspace', logo_path: null, logo_updated_at: null },
+    clients: [],
+  } as never)
+}
 
 function podcast(id: string, name: string) {
   return {
@@ -146,11 +156,7 @@ describe('WorkspaceSmartPodcastFinder', () => {
    * AuthContext, which is always the viewer's own.
    */
   it('reads the viewed workspace when a platform admin opens it, not their own', async () => {
-    const viewedWorkspaceId = '99999999-9999-4999-8999-999999999999'
-    vi.mocked(getAdminWorkspaceView).mockResolvedValue({
-      workspace: { id: viewedWorkspaceId, name: 'Viewed Workspace', logo_path: null, logo_updated_at: null },
-      clients: [],
-    } as never)
+    mockViewedWorkspace()
 
     renderFinder(
       `/app/workspaces/${viewedWorkspaceId}/podcast-finder?client=${clientId}`,
@@ -159,6 +165,132 @@ describe('WorkspaceSmartPodcastFinder', () => {
 
     await waitFor(() => expect(vi.mocked(getWorkspaceClients)).toHaveBeenCalledWith(viewedWorkspaceId))
     expect(vi.mocked(getWorkspaceClients)).not.toHaveBeenCalledWith(workspaceId)
+  })
+
+  /*
+   * The client list is only half of what the page reads. The research context
+   * carries the bio the AI matches against and the ids already on the client's
+   * list, so asking the viewer's own workspace for it would either fail or
+   * answer about a different agency's client. And ?client= is how every other
+   * module hands a client to this one, so the platform view has to honour it
+   * too or the operator arrives at an empty chooser.
+   */
+  it('reads the research context from the viewed workspace, and still honours ?client=', async () => {
+    mockViewedWorkspace()
+
+    renderFinder(
+      `/app/workspaces/${viewedWorkspaceId}/podcast-finder?client=${clientId}`,
+      viewedWorkspaceId,
+    )
+
+    // The client arrived from the URL: the scan button already names them.
+    expect(await screen.findByRole('button', { name: 'Scan podcasts for Taylor Client' })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(vi.mocked(getWorkspaceResearchContext)).toHaveBeenCalledWith(viewedWorkspaceId, clientId))
+    expect(vi.mocked(getWorkspaceResearchContext)).not.toHaveBeenCalledWith(workspaceId, clientId)
+  })
+
+  /*
+   * Scanning spends the viewed workspace's Podscan quota and AI credits and
+   * writes rows onto its client's list. A workspace id taken from AuthContext
+   * anywhere along that path would bill one agency for another's scan and file
+   * the results in the wrong tenant.
+   */
+  it('scans and files the results against the viewed workspace, not the viewer’s', async () => {
+    mockViewedWorkspace()
+
+    renderFinder(
+      `/app/workspaces/${viewedWorkspaceId}/podcast-finder?client=${clientId}`,
+      viewedWorkspaceId,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan podcasts for Taylor Client' }))
+    expect(await screen.findByText('Ranked by fit for Taylor Client')).toBeInTheDocument()
+
+    expect(vi.mocked(searchClientPodcastCatalog)).toHaveBeenCalledWith(viewedWorkspaceId, clientId, expect.any(String))
+    expect(vi.mocked(generatePodcastQueries)).toHaveBeenCalledWith({ workspaceId: viewedWorkspaceId, clientId })
+    expect(vi.mocked(searchPodcastsWithMeta)).toHaveBeenCalledWith(expect.any(Object), viewedWorkspaceId)
+    expect(vi.mocked(scoreCompatibilityBatch).mock.calls[0][5]).toEqual({ workspaceId: viewedWorkspaceId, clientId })
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Add top/ }))
+    await waitFor(() => expect(vi.mocked(addClientShortlistPodcasts)).toHaveBeenCalled())
+    expect(vi.mocked(addClientShortlistPodcasts).mock.calls[0][0]).toBe(viewedWorkspaceId)
+    expect(vi.mocked(addClientShortlistPodcasts)).not.toHaveBeenCalledWith(workspaceId, expect.anything(), expect.anything())
+  })
+
+  /*
+   * A link written as a literal /app/… moves a platform admin out of the
+   * workspace they were looking at and into their own, silently. Both of the
+   * page's body links have to follow the viewed workspace's baseHref.
+   */
+  it('offers to add the first client inside the workspace on screen', async () => {
+    mockViewedWorkspace()
+    vi.mocked(getWorkspaceClients).mockResolvedValue([])
+
+    renderFinder(`/app/workspaces/${viewedWorkspaceId}/podcast-finder`, viewedWorkspaceId)
+
+    expect(await screen.findByRole('link', { name: 'Add your first client' }))
+      .toHaveAttribute('href', `/app/workspaces/${viewedWorkspaceId}/clients`)
+
+    cleanup()
+    renderFinder('/app/podcast-finder')
+
+    expect(await screen.findByRole('link', { name: 'Add your first client' }))
+      .toHaveAttribute('href', '/app/clients')
+  })
+
+  it('sends a fruitless scan on to the advanced finder inside the workspace on screen', async () => {
+    mockViewedWorkspace()
+    // Nothing new: the catalog is silent and Podscan only returns a show that
+    // is already on the client's list, which is what opens the empty state.
+    vi.mocked(searchClientPodcastCatalog).mockResolvedValue([] as never)
+    vi.mocked(searchPodcastsWithMeta).mockResolvedValue({
+      data: { podcasts: [podcast('pd-existing', 'Already Listed')], pagination: { last_page: '1' } },
+      rateLimit: {},
+    } as never)
+
+    renderFinder(
+      `/app/workspaces/${viewedWorkspaceId}/podcast-finder?client=${clientId}`,
+      viewedWorkspaceId,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan podcasts for Taylor Client' }))
+
+    expect(await screen.findByRole('link', { name: 'advanced finder' }))
+      .toHaveAttribute('href', `/app/workspaces/${viewedWorkspaceId}/podcast-finder/advanced`)
+
+    cleanup()
+    renderFinder()
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan podcasts for Taylor Client' }))
+
+    expect(await screen.findByRole('link', { name: 'advanced finder' }))
+      .toHaveAttribute('href', '/app/podcast-finder/advanced')
+  })
+
+  /*
+   * The header button is always on screen and is the ordinary way to reach the
+   * advanced finder, which makes it the worst of these to leave hardcoded: it
+   * sent the operator to their own workspace's advanced finder, rebranded and
+   * scoped to a client id belonging to the agency they had just left. It was
+   * missed when the two body links were fixed, because it builds its path in a
+   * template literal rather than a plain string.
+   */
+  it('keeps the header advanced-finder button inside the workspace on screen', async () => {
+    mockViewedWorkspace()
+    renderFinder(
+      `/app/workspaces/${viewedWorkspaceId}/podcast-finder?client=${clientId}`,
+      viewedWorkspaceId,
+    )
+
+    const platformLink = await screen.findByRole('link', { name: /advanced finder/i })
+    expect(platformLink).toHaveAttribute(
+      'href',
+      `/app/workspaces/${viewedWorkspaceId}/podcast-finder/advanced?client=${clientId}`,
+    )
+
+    cleanup()
+
+    renderFinder(`/app/podcast-finder?client=${clientId}`)
+    expect(await screen.findByRole('link', { name: /advanced finder/i }))
+      .toHaveAttribute('href', `/app/podcast-finder/advanced?client=${clientId}`)
   })
 
   it('scans, ranks by AI fit, and never rescored podcasts already on the list', async () => {

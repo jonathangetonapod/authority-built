@@ -645,6 +645,127 @@ describe('WorkspaceStaff', () => {
   })
 
   /*
+   * The same gap the upload had, on the other button. Removing is a change to
+   * the same row, carried by the same account context, and refreshShellIdentity
+   * skips that read on this route — so a removal left the page holding the path
+   * of an object that is gone, and the next upload declared it as the expected
+   * path the row had already moved past.
+   */
+  it('refreshes the account when the picture is removed from the platform route', async () => {
+    const avatarPath = `${workspaceId}/${userId}/77777777-7777-4777-8777-777777777777.png`
+    mockedUseAuth.mockReturnValue({
+      user: { id: userId, email: 'owner@example.com', user_metadata: { full_name: 'Workspace Owner' } },
+      workspace: { id: workspaceId, name: 'Acme Workspace', slug: 'acme-workspace', status: 'active', is_default: false },
+      membership: {
+        id: ownerId,
+        full_name: 'Workspace Owner',
+        role: 'owner',
+        avatar_path: avatarPath,
+        avatar_updated_at: '2026-08-05T20:00:00.000Z',
+      },
+      isPlatformAdmin: true,
+      refreshAccount,
+      refreshSession,
+      signOut,
+    } as never)
+
+    renderPage(workspaceId)
+    await screen.findByText('Agency Admin')
+
+    const profile = screen.getByRole('region', { name: 'Profile picture' })
+    fireEvent.click(within(profile).getByRole('button', { name: /^Remove$/ }))
+
+    await waitFor(() => expect(mockedRemoveAvatar).toHaveBeenCalledWith(workspaceId, avatarPath))
+    await waitFor(() => expect(refreshAccount).toHaveBeenCalledTimes(1))
+    expect(refreshAccount).toHaveBeenCalledWith({ quiet: true })
+    expect(toastSuccess).toHaveBeenCalledWith('Profile picture removed.')
+  })
+
+  /*
+   * The optimistic-concurrency argument, which only has a value to carry once
+   * there is a second upload. Sending null there would declare "this row has no
+   * picture" against a row that has one — the check the server makes to refuse a
+   * change that raced another device.
+   */
+  it('declares the picture it is replacing, not an empty slot, on a second upload', async () => {
+    const avatarPath = `${workspaceId}/${userId}/77777777-7777-4777-8777-777777777777.png`
+    mockedUseAuth.mockReturnValue({
+      user: { id: userId, email: 'owner@example.com', user_metadata: { full_name: 'Workspace Owner' } },
+      workspace: { id: workspaceId, name: 'Acme Workspace', slug: 'acme-workspace', status: 'active', is_default: false },
+      membership: {
+        id: ownerId,
+        full_name: 'Workspace Owner',
+        role: 'owner',
+        avatar_path: avatarPath,
+        avatar_updated_at: '2026-08-05T20:00:00.000Z',
+      },
+      refreshAccount,
+      refreshSession,
+      signOut,
+    } as never)
+
+    renderPage()
+    await screen.findByText('Agency Admin')
+
+    const file = new File(
+      [new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
+      'replacement.png',
+      { type: 'image/png' },
+    )
+    fireEvent.change(screen.getByLabelText('Profile picture file'), { target: { files: [file] } })
+
+    await waitFor(() => expect(mockedUploadAvatar).toHaveBeenCalledWith(workspaceId, file, avatarPath))
+    expect(toastSuccess).toHaveBeenCalledWith('Profile picture updated.')
+  })
+
+  /*
+   * The refusal this whole area exists to make legible — "changed elsewhere" —
+   * is only useful if the words reach the person. A generic fallback would tell
+   * them the upload failed and not that the row moved.
+   */
+  it('says why the server refused a picture, and claims nothing it did not do', async () => {
+    mockedUploadAvatar.mockRejectedValueOnce(
+      new Error('Your profile picture changed elsewhere. Refresh and try again.'),
+    )
+    renderPage()
+    await screen.findByText('Agency Admin')
+
+    const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'me.png', { type: 'image/png' })
+    fireEvent.change(screen.getByLabelText('Profile picture file'), { target: { files: [file] } })
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(
+      'Your profile picture changed elsewhere. Refresh and try again.',
+    ))
+    expect(toastSuccess).not.toHaveBeenCalledWith('Profile picture updated.')
+    // Nothing changed, so there is nothing to re-read — and re-reading here
+    // would make the failure look like a save that half-happened.
+    expect(refreshAccount).not.toHaveBeenCalled()
+  })
+
+  /*
+   * Platform admin is not the question: a picture belongs to a membership, and
+   * this admin's membership is in their own agency, not the one on screen.
+   * Holding a membership somewhere must not offer the card everywhere.
+   */
+  it('offers no picture on another agency when the admin belongs to a different workspace', async () => {
+    mockedUseAuth.mockReturnValue({
+      user: { id: userId, email: 'platform@example.com' },
+      workspace: { id: otherWorkspaceId, name: 'Own Workspace', slug: 'own-workspace', status: 'active', is_default: false },
+      membership: { id: ownerId, full_name: 'Platform Owner', role: 'owner' },
+      isPlatformAdmin: true,
+      refreshAccount,
+      refreshSession,
+      signOut,
+    } as never)
+
+    renderPage(workspaceId)
+    await screen.findByText('Agency Admin')
+
+    expect(screen.queryByRole('region', { name: 'Profile picture' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Profile picture file')).not.toBeInTheDocument()
+  })
+
+  /*
    * A platform admin keeps access without a tenant membership, so membership
    * can be null on a page whose workspace is perfectly real. On your own
    * settings the workspace on screen is the one you are signed in to, and

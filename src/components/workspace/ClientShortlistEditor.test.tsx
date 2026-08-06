@@ -100,7 +100,12 @@ function podcast(overrides: Partial<ClientShortlistPodcast> = {}): ClientShortli
   }
 }
 
-function renderEditor(viewerRole: 'owner' | 'admin' | 'member' | 'platform_admin' = 'owner') {
+function renderEditor(
+  viewerRole: 'owner' | 'admin' | 'member' | 'platform_admin' = 'owner',
+  // Defaulted to what a tenant's own people get, so the pass-through can be
+  // asserted with addresses that are nobody's hardcoded fallback.
+  hrefs: { relationshipsHref?: string; billingHref?: string } = {},
+) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={queryClient}>
@@ -114,8 +119,8 @@ function renderEditor(viewerRole: 'owner' | 'admin' | 'member' | 'platform_admin
           databaseHref={`/app/podcast-database?client=${clientId}`}
           finderHref={`/app/podcast-finder?client=${clientId}`}
           campaignHref={`/app/client-campaigns/${clientId}`}
-          relationshipsHref="/app/relationships"
-          billingHref="/app/settings/billing"
+          relationshipsHref={hrefs.relationshipsHref ?? '/app/relationships'}
+          billingHref={hrefs.billingHref ?? '/app/settings/billing'}
         />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -302,6 +307,51 @@ describe('ClientShortlistEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View details for Founder Stories' }))
     expect(screen.getByRole('heading', { name: 'Outreach history' })).toBeInTheDocument()
     expect(screen.getByText(/prepare a re-pitch/i)).toBeInTheDocument()
+  })
+
+  /*
+   * The page decides these two addresses; the editor only carries them to the
+   * dialog. Asserting them at their tenant defaults cannot tell a thread from a
+   * hardcoded /app/… path, so both are given values no fallback would produce.
+   */
+  it('carries both prep addresses from the page through to the dialog rather than assuming them', async () => {
+    vi.mocked(getClientShortlist).mockResolvedValueOnce({
+      client: { id: clientId, name: 'Taylor Client' },
+      podcasts: [podcast({
+        prior_outreach_at: '2026-07-10T00:00:00.000Z',
+        agency_relationship: {
+          podcast_id: 'podcast-one',
+          state: 'pitched',
+          touch_count: 1,
+          last_contacted_at: '2026-07-10T00:00:00.000Z',
+          last_client_name: 'Earlier Client',
+          booked_client_name: null,
+          booked_at: null,
+          booked_episode_url: null,
+          replied_client_name: null,
+          contact_email: 'host@founderstories.fm',
+          same_contact_other_show: false,
+          manual_stage: null,
+          summary: 'The first angle focused on founder operations.',
+        },
+      })],
+    })
+    renderEditor('platform_admin', {
+      relationshipsHref: `/app/workspaces/${workspaceId}/relationships`,
+      billingHref: '/app/platform/billing',
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Write Re-pitch for Founder Stories' }))
+
+    // The warning beside this link is about the viewed workspace's history with
+    // the host, so the CRM it opens has to be that workspace's.
+    expect(await screen.findByRole('link', { name: 'Open the relationship CRM' }))
+      .toHaveAttribute('href', `/app/workspaces/${workspaceId}/relationships`)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try waterfall enrichment' }))
+    // Next to the button that spends the viewed workspace's credit.
+    expect(screen.getByRole('link', { name: 'Buy credits in Billing' }))
+      .toHaveAttribute('href', '/app/platform/billing')
   })
 
   it('does not allow a do-not-contact relationship to be overridden from pitch preparation', async () => {
