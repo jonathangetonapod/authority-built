@@ -468,7 +468,16 @@ serve(async (req) => {
 
     if (clientIds.length === 0) {
       return jsonResponse(req, METHODS, 200, {
-        workspace: { id: access.workspace.id, name: access.workspace.name },
+        workspace: {
+          id: access.workspace.id,
+          name: access.workspace.name,
+          // The shell brands itself from this, and this page was the only one
+          // not sending it, so a platform admin walking into the command center
+          // watched the tenant's logo drop to initials and come back on the
+          // next page. Already loaded by the access check; only ever omitted.
+          logo_path: access.workspace.logo_path ?? null,
+          logo_updated_at: access.workspace.logo_updated_at ?? null,
+        },
         viewer_role: access.role,
         can_manage: canManage,
         generated_at: new Date().toISOString(),
@@ -829,7 +838,12 @@ serve(async (req) => {
     )).length
 
     return jsonResponse(req, METHODS, 200, {
-      workspace: { id: access.workspace.id, name: access.workspace.name },
+      workspace: {
+        id: access.workspace.id,
+        name: access.workspace.name,
+        logo_path: access.workspace.logo_path ?? null,
+        logo_updated_at: access.workspace.logo_updated_at ?? null,
+      },
       viewer_role: access.role,
       can_manage: canManage,
       generated_at: new Date().toISOString(),

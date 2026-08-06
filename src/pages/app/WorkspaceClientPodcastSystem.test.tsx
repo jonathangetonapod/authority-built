@@ -16,7 +16,19 @@ vi.mock('@/lib/supabase', () => ({ supabase: { functions: { invoke: vi.fn() } } 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('@/services/clientPodcastSystem', () => ({ getWorkspaceClientPodcastSystem: vi.fn() }))
 vi.mock('@/components/workspace/WorkspaceLayout', () => ({
-  WorkspaceLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  // Surfaces the branding the shell would draw, so the platform view's logo is
+  // assertable without rendering the real sidebar.
+  WorkspaceLayout: ({ children, platformWorkspace }: {
+    children: React.ReactNode
+    platformWorkspace?: { logoUrl?: string | null; workspaceName?: string }
+  }) => (
+    <div>
+      {platformWorkspace && (
+        <img src={platformWorkspace.logoUrl || ''} alt={`${platformWorkspace.workspaceName} shell logo`} />
+      )}
+      {children}
+    </div>
+  ),
 }))
 
 const mockedUseAuth = vi.mocked(useAuth)
@@ -135,7 +147,12 @@ const published: ClientPodcastSystemItem = {
 }
 
 const response: ClientPodcastSystemResponse = {
-  workspace: { id: workspaceId, name: 'Acme Workspace' },
+  workspace: {
+    id: workspaceId,
+    name: 'Acme Workspace',
+    logo_path: `${workspaceId}/66666666-6666-4666-8666-666666666666.png`,
+    logo_updated_at: '2026-07-25T11:00:00.000Z',
+  },
   viewer_role: 'owner',
   can_manage: true,
   generated_at: '2026-07-25T12:00:00.000Z',
@@ -213,12 +230,12 @@ const response: ClientPodcastSystemResponse = {
   items: [awaitingReview, ready, published],
 }
 
-function renderPage(path = '/app/client-podcast-system') {
+function renderPage(path = '/app/client-podcast-system', platformWorkspaceId?: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <WorkspaceClientPodcastSystem />
+        <WorkspaceClientPodcastSystem platformWorkspaceId={platformWorkspaceId} />
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -229,11 +246,46 @@ describe('WorkspaceClientPodcastSystem', () => {
     vi.clearAllMocks()
     mockedUseAuth.mockReturnValue({
       user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', email: 'owner@example.com' },
-      workspace: { id: workspaceId, name: 'Acme Workspace' },
+      workspace: {
+    id: workspaceId,
+    name: 'Acme Workspace',
+    logo_path: `${workspaceId}/66666666-6666-4666-8666-666666666666.png`,
+    logo_updated_at: '2026-07-25T11:00:00.000Z',
+  },
       membership: { role: 'owner', full_name: 'Workspace Owner' },
       isPlatformAdmin: false,
     } as never)
     mockedGetSystem.mockResolvedValue(response)
+  })
+
+  /*
+   * This was the one page that sent the shell no logo, so an operator walking
+   * Clients → Client Command Center watched the tenant's mark drop to initials
+   * and return on the next page. Nothing about the logo was wrong; the payload
+   * simply never carried it.
+   */
+  it('brands the shell with the viewed workspace logo like every neighbouring page', async () => {
+    renderPage(`/app/workspaces/${workspaceId}/client-podcast-system`, workspaceId)
+
+    const logo = await screen.findByRole('img', { name: 'Acme Workspace shell logo' })
+    expect(logo).toHaveAttribute(
+      'src',
+      expect.stringContaining(`${workspaceId}/66666666-6666-4666-8666-666666666666.png`),
+    )
+  })
+
+  // The bundle and the function ship separately, so a page can be talking to a
+  // function deployed before this field existed. No logo, not a broken one.
+  it('draws no logo rather than a broken one when the payload predates the field', async () => {
+    mockedGetSystem.mockResolvedValue({
+      ...response,
+      workspace: { id: workspaceId, name: 'Acme Workspace' },
+    } as never)
+
+    renderPage(`/app/workspaces/${workspaceId}/client-podcast-system`, workspaceId)
+
+    const logo = await screen.findByRole('img', { name: 'Acme Workspace shell logo' })
+    expect(logo).toHaveAttribute('src', '')
   })
 
   it('keeps a long client bio from pushing the whole workspace off screen', async () => {
@@ -338,7 +390,12 @@ describe('WorkspaceClientPodcastSystem', () => {
   it('keeps raw contact emails out of the member-safe lifecycle response', async () => {
     mockedUseAuth.mockReturnValue({
       user: { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', email: 'member@example.com' },
-      workspace: { id: workspaceId, name: 'Acme Workspace' },
+      workspace: {
+    id: workspaceId,
+    name: 'Acme Workspace',
+    logo_path: `${workspaceId}/66666666-6666-4666-8666-666666666666.png`,
+    logo_updated_at: '2026-07-25T11:00:00.000Z',
+  },
       membership: { role: 'member', full_name: 'Workspace Member' },
       isPlatformAdmin: false,
     } as never)

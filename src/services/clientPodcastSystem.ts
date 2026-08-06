@@ -140,7 +140,13 @@ export interface ClientPodcastSystemItem {
 }
 
 export interface ClientPodcastSystemResponse {
-  workspace: { id: string; name: string }
+  workspace: {
+    id: string
+    name: string
+    /** Brands the shell, exactly as every other workspace-scoped payload does. */
+    logo_path: string | null
+    logo_updated_at: string | null
+  }
   viewer_role: 'owner' | 'admin' | 'member' | 'platform_admin'
   can_manage: boolean
   generated_at: string
@@ -182,5 +188,21 @@ export async function getWorkspaceClientPodcastSystem(
   ) {
     throw new Error('The Client Command Center response did not match the workspace address.')
   }
-  return response
+  /*
+   * Normalized rather than trusted, because the browser bundle and the edge
+   * function ship separately: a page built after this change can be talking to
+   * a function deployed before it, and the type would otherwise promise two
+   * fields that are simply absent. Missing reads as no logo, which is what the
+   * shell drew before either existed.
+   */
+  return {
+    ...response,
+    workspace: {
+      ...response.workspace,
+      logo_path: typeof response.workspace.logo_path === 'string' ? response.workspace.logo_path : null,
+      logo_updated_at: typeof response.workspace.logo_updated_at === 'string'
+        ? response.workspace.logo_updated_at
+        : null,
+    },
+  }
 }

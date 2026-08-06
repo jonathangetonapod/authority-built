@@ -45,6 +45,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ClientBookingDialog } from '@/components/workspace/ClientBookingDialog'
 import { safeExternalUrl } from '@/lib/externalUrl'
 import { MY_WORKSPACE_BASE_HREF, selectedWorkspaceBaseHref } from '@/lib/workspaceRoutes'
+import { workspaceLogoUrl } from '@/lib/workspaceLogo'
 import {
   getWorkspaceClientPodcastSystem,
   type ClientPodcastLifecycleOutcome,
@@ -977,7 +978,16 @@ const WorkspaceClientPodcastSystem = ({ platformWorkspaceId }: WorkspaceClientPo
     || null
 
   const platformWorkspace: PlatformWorkspaceConfig | undefined = isPlatformWorkspace
-    ? { workspaceId, workspaceName: system?.workspace.name || 'Client workspace', logoUrl: null, baseHref }
+    ? {
+        workspaceId,
+        workspaceName: system?.workspace.name || 'Client workspace',
+        logoUrl: workspaceLogoUrl(
+          system?.workspace.id,
+          system?.workspace.logo_path,
+          system?.workspace.logo_updated_at,
+        ),
+        baseHref,
+      }
     : undefined
 
   const chooseClient = (clientId: string) => {
