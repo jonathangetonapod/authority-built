@@ -247,10 +247,18 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
    * another agency's — where the row genuinely does not exist and the backend
    * would answer, accurately and uselessly, "avatar member row is absent for
    * this actor".
+   *
+   * On your own settings the workspace on screen is by definition the one you
+   * are signed in to, so a valid id is the whole test. Requiring a membership
+   * object as well took the card off that page for a platform admin whose
+   * account-context carries none — they keep access without a tenant
+   * membership — which is a page where it had always rendered.
    */
-  const viewerBelongsToWorkspaceOnScreen = Boolean(membership)
-    && validWorkspaceId
-    && (workspace?.id || '').toLowerCase() === workspaceId
+  const viewerBelongsToWorkspaceOnScreen = validWorkspaceId
+    && (
+      !isPlatformWorkspace
+      || (Boolean(membership) && (workspace?.id || '').toLowerCase() === workspaceId)
+    )
   const canOrganizeSidebar = !isPlatformWorkspace
     && (membership?.role === 'owner' || onOwnPlatformWorkspace)
     && validWorkspaceId

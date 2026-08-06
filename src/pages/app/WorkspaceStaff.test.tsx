@@ -636,6 +636,30 @@ describe('WorkspaceStaff', () => {
     await waitFor(() => expect(mockedUploadAvatar).toHaveBeenCalledWith(workspaceId, file, null))
   })
 
+  /*
+   * A platform admin keeps access without a tenant membership, so membership
+   * can be null on a page whose workspace is perfectly real. On your own
+   * settings the workspace on screen is the one you are signed in to, and
+   * requiring the membership object as well took the card off a page where it
+   * had always rendered.
+   */
+  it('offers the picture on your own settings even when context carries no membership', async () => {
+    mockedUseAuth.mockReturnValue({
+      user: { id: userId, email: 'platform@example.com' },
+      workspace: { id: workspaceId, name: 'Acme Workspace', slug: 'acme-workspace', status: 'active', is_default: true },
+      membership: null,
+      isPlatformAdmin: true,
+      refreshAccount,
+      refreshSession,
+      signOut,
+    } as never)
+
+    renderPage()
+    await screen.findByText('Agency Admin')
+
+    expect(screen.getByRole('region', { name: 'Profile picture' })).toBeInTheDocument()
+  })
+
   // No membership anywhere means no picture to set, and the workspace id the
   // upload would carry is empty — the refusal would have been about that.
   it('offers no picture to an admin who holds no membership at all', async () => {
