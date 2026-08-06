@@ -617,6 +617,60 @@ describe('WorkspaceOutreachSuite', () => {
     expect(screen.getByText('They replied')).toBeInTheDocument()
   })
 
+  /*
+   * Archiving was one thread at a time — a click per handled conversation.
+   * Selection archives every chosen mapped thread and re-reads the list once.
+   */
+  it('archives a selection of conversations in one action', async () => {
+    const clientId = '22222222-2222-4222-8222-222222222222'
+    const thread = (id: string, subject: string) => ({
+      id: `message-${id}`,
+      thread_id: `thread-${id}`,
+      message_id: `provider-${id}`,
+      eaccount: 'sdr@example.com',
+      subject,
+      from_email: `${id}@example.com`,
+      to_email: 'sdr@example.com',
+      body_text: 'Reply body',
+      received_at: '2026-07-21T12:00:00.000Z',
+      is_unread: false,
+      // Interested, so the rows sit in the default scope the panel opens on.
+      interested: true,
+      interest_status: 1,
+      suppressed: false,
+      opt_out_detected: false,
+      lead_email: `${id}@example.com`,
+      campaign: {
+        campaign_id: 'campaign-one',
+        campaign_name: 'Taylor outreach',
+        client: { id: clientId, name: 'Taylor Client' },
+      },
+      lead_context: null,
+      thread_key: `thread-${id}`,
+      relationship: null,
+    })
+    vi.mocked(getWorkspaceInboxThreads).mockResolvedValue({
+      connected: true,
+      threads: [thread('alpha', 'Re: first'), thread('beta', 'Re: second')],
+    } as never)
+
+    renderPage('master-inbox')
+    await screen.findByText('Re: first')
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /alpha@example.com/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /beta@example.com/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Archive selected/i }))
+
+    await waitFor(() => expect(setWorkspaceInboxThreadStatus).toHaveBeenCalledWith(
+      defaultWorkspaceId,
+      expect.objectContaining({ thread_key: 'thread-alpha', status: 'archived' }),
+    ))
+    expect(setWorkspaceInboxThreadStatus).toHaveBeenCalledWith(
+      defaultWorkspaceId,
+      expect.objectContaining({ thread_key: 'thread-beta', status: 'archived' }),
+    )
+  })
+
   it('says when the reply list is only a window onto a longer inbox', async () => {
     vi.mocked(getWorkspaceInboxThreads).mockResolvedValue({
       connected: true,

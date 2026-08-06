@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   AlertCircle,
+  Archive,
   ArrowRight,
   Ban,
   Bot,
@@ -673,6 +674,49 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
       toast.error(error instanceof Error ? error.message : 'The address could not be suppressed.')
     },
   })
+  /*
+   * Bulk triage. Archiving was one thread at a time, which on a Monday means
+   * a click per handled conversation. Selection is offered only on threads a
+   * bulk archive can actually act on — mapped, and not already archived — and
+   * runs sequentially so one refusal names itself without hiding the rest.
+   */
+  const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkArchiving, setBulkArchiving] = useState(false)
+  const toggleBulkSelected = (threadId: string) => {
+    setBulkSelectedIds((current) => {
+      const next = new Set(current)
+      if (next.has(threadId)) next.delete(threadId)
+      else next.add(threadId)
+      return next
+    })
+  }
+  const bulkArchive = async () => {
+    if (bulkArchiving || bulkSelectedIds.size === 0) return
+    setBulkArchiving(true)
+    let archived = 0
+    let failed = 0
+    for (const threadId of bulkSelectedIds) {
+      const thread = threads.find((item) => item.id === threadId)
+      if (!thread?.campaign?.client) continue
+      try {
+        await setWorkspaceInboxThreadStatus(workspaceId, {
+          thread_key: thread.thread_key || thread.id,
+          client_id: thread.campaign.client.id,
+          status: 'archived',
+        })
+        archived += 1
+      } catch (error) {
+        failed += 1
+        console.error('Bulk archive failed for a thread:', error)
+      }
+    }
+    setBulkArchiving(false)
+    setBulkSelectedIds(new Set())
+    if (failed === 0) toast.success(archived === 1 ? 'Archived 1 conversation.' : `Archived ${archived} conversations.`)
+    else toast.warning(`Archived ${archived}; ${failed} could not be archived.`)
+    void inboxQuery.refetch()
+  }
+
   const statusMutation = useMutation({
     mutationFn: (input: { thread: WorkspaceInboxThread; status?: 'needs_reply' | 'booked' | 'archived'; nudges_paused?: boolean }) =>
       setWorkspaceInboxThreadStatus(workspaceId, {
@@ -897,6 +941,22 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
               </p>
             </div>
           )}
+          {bulkSelectedIds.size > 0 && (
+            <div className="flex items-center justify-between gap-2 border-b bg-muted/30 px-4 py-2">
+              <span className="text-xs text-muted-foreground">
+                {bulkSelectedIds.size === 1 ? '1 conversation selected' : `${bulkSelectedIds.size} conversations selected`}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" disabled={bulkArchiving} onClick={() => setBulkSelectedIds(new Set())}>
+                  Clear
+                </Button>
+                <Button type="button" size="sm" variant="outline" className="h-7 text-xs" disabled={bulkArchiving} onClick={() => void bulkArchive()}>
+                  {bulkArchiving ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <Archive className="mr-1.5 h-3 w-3" />}
+                  Archive selected
+                </Button>
+              </div>
+            </div>
+          )}
           {inboxQuery.isLoading ? (
             <div className="flex flex-1 items-center justify-center gap-2 py-10 text-xs text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />Loading replies…
@@ -914,7 +974,18 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
           ) : (
             <ul className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto" aria-label="Inbox conversations">
               {visibleThreads.map((thread) => (
-                <li key={thread.id}>
+                <li key={thread.id} className="relative">
+                  {canManage && thread.campaign?.client && threadStatus(thread, sentThreadIds) !== 'archived' && (
+                    <input
+                      type="checkbox"
+                      aria-label={`Select conversation with ${thread.from_email || thread.lead_email || 'unknown sender'}`}
+                      checked={bulkSelectedIds.has(thread.id)}
+                      disabled={bulkArchiving}
+                      onChange={() => toggleBulkSelected(thread.id)}
+                      onClick={(event) => event.stopPropagation()}
+                      className="absolute right-3 top-3 z-10 h-3.5 w-3.5 accent-primary"
+                    />
+                  )}
                   <button
                     type="button"
                     onClick={() => openThread(thread.id)}
@@ -989,6 +1060,17 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                     ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
                     : <BookUser className="mr-2 h-3.5 w-3.5" />}
                   {selectedThread.relationship ? 'Update relationship' : 'Save to relationships'}
+                </Button>
+              )}
+              {/* The Command Center links into this inbox; this is the way
+                  back. The reply's placement — stage, dates, prep — lived one
+                  unaided navigation away, and the thread already knows the
+                  client and, once captured, the show. */}
+              {selectedThread?.relationship?.podcast_id && selectedThread.campaign?.client && (
+                <Button asChild size="sm" variant="outline">
+                  <Link to={`${baseHref}/client-podcast-system?client=${encodeURIComponent(selectedThread.campaign.client.id)}&podcast=${encodeURIComponent(selectedThread.relationship.podcast_id)}`}>
+                    <CalendarCheck2 className="mr-2 h-3.5 w-3.5" />View placement
+                  </Link>
                 </Button>
               )}
               <Badge variant="outline" className="text-muted-foreground">{selectedThread ? (selectedThread.campaign?.client?.name || 'Unmapped reply') : selectedClient?.name || 'No conversation selected'}</Badge>
@@ -1127,7 +1209,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                         type="button"
                         size="sm"
                         variant="outline"
-                        disabled={draftMutation.isPending || Boolean(threadClient && !threadClient.ai_sdr_profile_ready)}
+                        disabled={!canManage || draftMutation.isPending || Boolean(threadClient && !threadClient.ai_sdr_profile_ready)}
                         title={threadClient && !threadClient.ai_sdr_profile_ready
                           ? 'Complete the AI SDR profile to draft with AI — manual replies work now'
                           : undefined}

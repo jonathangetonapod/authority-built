@@ -4195,6 +4195,10 @@ serve(async (req) => {
 
     if (action === "inbox-draft") {
       requireOnlyKeys(body, ["action", "workspace_id", "client_id", "subject", "message", "thread_key", "email_id", "force", "lead_email"]);
+      // The one inbox write that spends model tokens, and it was the one with
+      // no manager gate: a member whose Send is refused could still burn AI
+      // spend drafting replies they can never send.
+      requireCampaignManager(access);
       const clientId = requireUuid(body.client_id, "client_id");
       const subject = requireString(body.subject ?? "(no subject)", "subject", { max: 300 });
       const message = requireString(body.message, "message", { max: 8_000 });
