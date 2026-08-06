@@ -155,7 +155,13 @@ describe('WorkspaceProspectDashboards finder link', () => {
     expect(link).toHaveAttribute('href', `/app/podcast-finder/advanced?prospect=${prospectId}`)
   })
 
-  it('keeps the platform address, where the plain finder is already prospect-aware', async () => {
+  /*
+   * This used to assert the plain platform address, because that path had no
+   * Smart Finder and its plain address resolved to the advanced one. Both paths
+   * now carry both finders at the same two addresses, so the prospect goes to
+   * /advanced here for exactly the reason it does on the tenant path.
+   */
+  it('sends a prospect to the advanced finder on the platform path too', async () => {
     mockedList.mockResolvedValue({
       workspace: { ...workspaceSummary, id: platformWorkspaceId },
       viewer_role: 'platform_admin',
@@ -175,7 +181,7 @@ describe('WorkspaceProspectDashboards finder link', () => {
     const link = await screen.findByRole('link', { name: /find podcasts/i })
     expect(link).toHaveAttribute(
       'href',
-      `/app/workspaces/${platformWorkspaceId}/podcast-finder?prospect=${prospectId}`,
+      `/app/workspaces/${platformWorkspaceId}/podcast-finder/advanced?prospect=${prospectId}`,
     )
     await waitFor(() => expect(mockedList).toHaveBeenCalledWith(platformWorkspaceId))
   })

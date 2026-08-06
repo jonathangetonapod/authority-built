@@ -25,8 +25,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { normalizePodscanQuery } from '@/lib/podcastResearch'
-import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
+import { WorkspaceLayout, type PlatformWorkspaceConfig } from '@/components/workspace/WorkspaceLayout'
 import { useAuth } from '@/contexts/AuthContext'
+import { getAdminWorkspaceView } from '@/services/adminWorkspaces'
+import { workspaceLogoUrl } from '@/lib/workspaceLogo'
+import { selectedWorkspaceBaseHref } from '@/lib/workspaceRoutes'
 import { getWorkspaceClients, getWorkspaceResearchContext } from '@/services/clients'
 import { generatePodcastQueries } from '@/services/queryGeneration'
 import { searchPodcastsWithMeta, type PodcastData } from '@/services/podscan'
@@ -193,11 +196,46 @@ function scoreBadgeClass(score: number | null): string {
   return 'border-border bg-muted text-muted-foreground'
 }
 
-const WorkspaceSmartPodcastFinder = () => {
-  const { workspace } = useAuth()
+interface WorkspaceSmartPodcastFinderProps {
+  /**
+   * Set when a platform admin is viewing a tenant. The Smart Finder used to be
+   * unreachable in that view — the platform address resolved to the advanced
+   * finder instead — so the same sidebar item opened a different page depending
+   * on who clicked it.
+   */
+  platformWorkspaceId?: string
+}
+
+const WorkspaceSmartPodcastFinder = ({ platformWorkspaceId }: WorkspaceSmartPodcastFinderProps) => {
+  const { user, workspace } = useAuth()
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
-  const workspaceId = (workspace?.id || '').toLowerCase()
+  const isPlatformWorkspace = platformWorkspaceId !== undefined
+  const workspaceId = (isPlatformWorkspace ? platformWorkspaceId : workspace?.id || '').toLowerCase()
+  const baseHref = isPlatformWorkspace ? selectedWorkspaceBaseHref(workspaceId) : '/app'
+
+  // The shell names and brands the workspace on screen, which in the platform
+  // view is not the one in AuthContext.
+  const selectedWorkspaceQuery = useQuery({
+    queryKey: ['platform', user?.id || 'unknown', 'workspace', workspaceId, 'smart-finder'],
+    queryFn: ({ signal }) => getAdminWorkspaceView(workspaceId, signal),
+    enabled: isPlatformWorkspace && Boolean(workspaceId),
+    retry: false,
+    gcTime: 0,
+  })
+  const selectedWorkspace = selectedWorkspaceQuery.data?.workspace
+  const platformWorkspace: PlatformWorkspaceConfig | undefined = isPlatformWorkspace
+    ? {
+        workspaceId,
+        workspaceName: selectedWorkspace?.name || 'Client workspace',
+        logoUrl: workspaceLogoUrl(
+          selectedWorkspace?.id,
+          selectedWorkspace?.logo_path,
+          selectedWorkspace?.logo_updated_at,
+        ),
+        baseHref,
+      }
+    : undefined
   const [clientId, setClientId] = useState((searchParams.get('client') || '').toLowerCase())
 
   const clientsQuery = useQuery({
@@ -494,7 +532,7 @@ const WorkspaceSmartPodcastFinder = () => {
   const currentStepIndex = phaseSteps.findIndex((step) => step.id === phase)
 
   return (
-    <WorkspaceLayout>
+    <WorkspaceLayout platformWorkspace={platformWorkspace}>
       <div className="mx-auto w-full max-w-4xl space-y-6">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -776,7 +814,7 @@ const WorkspaceSmartPodcastFinder = () => {
             {activeClients.length === 0 && !clientsQuery.isLoading && (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Users className="h-4 w-4" />
-                No active clients yet. <Link className="font-medium underline underline-offset-2" to="/app/clients">Add your first client</Link>.
+                No active clients yet. <Link className="font-medium underline underline-offset-2" to={`${baseHref}/clients`}>Add your first client</Link>.
               </p>
             )}
           </CardContent>
@@ -891,7 +929,7 @@ const WorkspaceSmartPodcastFinder = () => {
               <RefreshCw className="h-5 w-5 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
                 Nothing new this time — every podcast found is already on the list. Try again after updating the client profile,
-                or use the <Link className="font-medium underline underline-offset-2" to="/app/podcast-finder/advanced">advanced finder</Link> for a wider net.
+                or use the <Link className="font-medium underline underline-offset-2" to={`${baseHref}/podcast-finder/advanced`}>advanced finder</Link> for a wider net.
               </p>
             </CardContent>
           </Card>

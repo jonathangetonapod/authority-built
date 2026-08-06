@@ -846,14 +846,17 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
     : '/app'
   /*
    * A prospect has to be handed to the finder that knows what a prospect is.
-   * /app/podcast-finder is the one-click Smart Finder, and it reads ?client=
-   * and nothing else, so a prospect id arriving there was dropped and the page
-   * opened unscoped. The prospect-aware finder sits at /advanced on the tenant
-   * path; on the platform path the plain address already resolves to it.
+   * The plain address is the one-click Smart Finder, and it reads ?client= and
+   * nothing else, so a prospect id arriving there is dropped and the page opens
+   * unscoped. The prospect-aware finder is the advanced one.
+   *
+   * This used to branch: the platform path had no Smart Finder, so its plain
+   * address resolved to the advanced finder and pointing at /advanced would
+   * have 404'd. Both paths now carry both finders at the same two addresses,
+   * so the branch is gone — and with it the thing that made the same sidebar
+   * item open different pages for an agency and for the operator viewing them.
    */
-  const prospectFinderHref = isPlatformWorkspace
-    ? `${workspaceBaseHref}/podcast-finder`
-    : `${workspaceBaseHref}/podcast-finder/advanced`
+  const prospectFinderHref = `${workspaceBaseHref}/podcast-finder/advanced`
   const finderHref = selected
     ? `${prospectFinderHref}?prospect=${encodeURIComponent(selected.id)}`
     : `${workspaceBaseHref}/podcast-finder`

@@ -371,6 +371,7 @@ The same modules are reused under:
 /app/workspaces/:workspaceId/overview
 /app/workspaces/:workspaceId/onboarding
 /app/workspaces/:workspaceId/podcast-finder
+/app/workspaces/:workspaceId/podcast-finder/advanced
 /app/workspaces/:workspaceId/clients
 /app/workspaces/:workspaceId/clients/:clientId
 /app/workspaces/:workspaceId/client-campaigns
@@ -383,6 +384,11 @@ The same modules are reused under:
 ```
 
 The workspace switcher preserves the current module when possible. Client-bound detail routes return to the target workspace's module-level chooser rather than carrying a client ID across workspaces.
+
+Both paths carry both podcast finders at the same two addresses: the plain
+address is the one-click Smart Finder, `/advanced` is the prospect-aware one. A
+prospect must be handed to `/advanced`, because the Smart Finder reads `?client=`
+and nothing else and would drop the prospect id and open unscoped.
 
 The goal for these routes is that a viewed workspace shows what its own people
 see, so every link inside a module must be built from the platform `baseHref`

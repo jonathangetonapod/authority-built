@@ -66,6 +66,7 @@ const AdminWorkspaceClientDetail = lazyRoute(() => import("./pages/admin/AdminWo
 const AdminWorkspaceOnboarding = lazyRoute(() => import("./pages/admin/AdminWorkspaceOnboarding"));
 const AdminWorkspaceStaff = lazyRoute(() => import("./pages/admin/AdminWorkspaceStaff"));
 const AdminWorkspacePodcastFinderHome = lazyRoute(() => import("./pages/admin/AdminWorkspacePodcastFinderHome"));
+const AdminWorkspaceSmartPodcastFinder = lazyRoute(() => import("./pages/admin/AdminWorkspaceSmartPodcastFinder"));
 const AdminWorkspacePodcastFinder = lazyRoute(() => import("./pages/admin/AdminWorkspacePodcastFinder"));
 const AdminWorkspacePodcastDatabase = lazyRoute(() => import("./pages/admin/AdminWorkspacePodcastDatabase"));
 const AdminWorkspaceClientPodcastSystem = lazyRoute(() => import("./pages/admin/AdminWorkspaceClientPodcastSystem"));
@@ -316,6 +317,14 @@ const App = () => (
             />
             <Route
               path="/app/workspaces/:workspaceId/podcast-finder"
+              element={
+                <PlatformAdminRoute>
+                  <AdminWorkspaceSmartPodcastFinder />
+                </PlatformAdminRoute>
+              }
+            />
+            <Route
+              path="/app/workspaces/:workspaceId/podcast-finder/advanced"
               element={
                 <PlatformAdminRoute>
                   <AdminWorkspacePodcastFinderHome />

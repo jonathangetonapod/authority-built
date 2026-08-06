@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import WorkspaceSmartPodcastFinder from '@/pages/app/WorkspaceSmartPodcastFinder'
 import { getWorkspaceClients, getWorkspaceResearchContext } from '@/services/clients'
+import { getAdminWorkspaceView } from '@/services/adminWorkspaces'
 import { generatePodcastQueries } from '@/services/queryGeneration'
 import { searchPodcastsWithMeta } from '@/services/podscan'
 import { scoreCompatibilityBatch } from '@/services/compatibilityScoring'
@@ -26,6 +27,7 @@ vi.mock('@/services/clients', () => ({
   getWorkspaceClients: vi.fn(),
   getWorkspaceResearchContext: vi.fn(),
 }))
+vi.mock('@/services/adminWorkspaces', () => ({ getAdminWorkspaceView: vi.fn() }))
 vi.mock('@/services/queryGeneration', () => ({ generatePodcastQueries: vi.fn() }))
 vi.mock('@/services/podscan', () => ({ searchPodcastsWithMeta: vi.fn() }))
 vi.mock('@/services/compatibilityScoring', () => ({ scoreCompatibilityBatch: vi.fn() }))
@@ -48,12 +50,15 @@ function podcast(id: string, name: string) {
   }
 }
 
-function renderFinder(initialEntry = `/app/podcast-finder?client=${clientId}`) {
+function renderFinder(
+  initialEntry = `/app/podcast-finder?client=${clientId}`,
+  platformWorkspaceId?: string,
+) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <WorkspaceSmartPodcastFinder />
+        <WorkspaceSmartPodcastFinder platformWorkspaceId={platformWorkspaceId} />
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -131,6 +136,29 @@ describe('WorkspaceSmartPodcastFinder', () => {
         existing_visibility: null,
       },
     ] as never)
+  })
+
+  /*
+   * The Smart Finder had no platform view at all — the platform address for
+   * this module resolved to the advanced finder — so an agency's own people and
+   * the operator viewing them got different pages from the same sidebar item.
+   * Reachable now, and scoped to the workspace on screen rather than the one in
+   * AuthContext, which is always the viewer's own.
+   */
+  it('reads the viewed workspace when a platform admin opens it, not their own', async () => {
+    const viewedWorkspaceId = '99999999-9999-4999-8999-999999999999'
+    vi.mocked(getAdminWorkspaceView).mockResolvedValue({
+      workspace: { id: viewedWorkspaceId, name: 'Viewed Workspace', logo_path: null, logo_updated_at: null },
+      clients: [],
+    } as never)
+
+    renderFinder(
+      `/app/workspaces/${viewedWorkspaceId}/podcast-finder?client=${clientId}`,
+      viewedWorkspaceId,
+    )
+
+    await waitFor(() => expect(vi.mocked(getWorkspaceClients)).toHaveBeenCalledWith(viewedWorkspaceId))
+    expect(vi.mocked(getWorkspaceClients)).not.toHaveBeenCalledWith(workspaceId)
   })
 
   it('scans, ranks by AI fit, and never rescored podcasts already on the list', async () => {
