@@ -1090,7 +1090,16 @@ const WorkspaceClientPodcastSystem = ({ platformWorkspaceId }: WorkspaceClientPo
               id: placementItem.booking.id,
               client_id: placementItem.client.id,
               podcast_id: placementItem.podcast.podscan_id ?? null,
-              shortlist_podcast_id: placementItem.podcast.id ?? null,
+              /*
+               * The shortlist row, not the catalog show. item.id is the
+               * client_dashboard_podcasts row; item.podcast.id is the global
+               * podcasts row, and bookings_shortlist_podcast_fk points at the
+               * former by (client_id, shortlist_podcast_id). Sending the
+               * catalog id meant every placement logged from this page failed
+               * the constraint and came back "The placement could not be
+               * saved" — the whole action, not an edge case.
+               */
+              shortlist_podcast_id: placementItem.id,
               podcast_name: placementItem.podcast.name,
               podcast_url: placementItem.podcast.url ?? null,
               host_name: placementItem.booking.host_name,
@@ -1110,7 +1119,16 @@ const WorkspaceClientPodcastSystem = ({ platformWorkspaceId }: WorkspaceClientPo
               id: '',
               client_id: placementItem.client.id,
               podcast_id: placementItem.podcast.podscan_id ?? null,
-              shortlist_podcast_id: placementItem.podcast.id ?? null,
+              /*
+               * The shortlist row, not the catalog show. item.id is the
+               * client_dashboard_podcasts row; item.podcast.id is the global
+               * podcasts row, and bookings_shortlist_podcast_fk points at the
+               * former by (client_id, shortlist_podcast_id). Sending the
+               * catalog id meant every placement logged from this page failed
+               * the constraint and came back "The placement could not be
+               * saved" — the whole action, not an edge case.
+               */
+              shortlist_podcast_id: placementItem.id,
               podcast_name: placementItem.podcast.name,
               podcast_url: placementItem.podcast.url ?? null,
               host_name: null,

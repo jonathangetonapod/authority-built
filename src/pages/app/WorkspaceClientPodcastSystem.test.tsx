@@ -15,6 +15,16 @@ import {
 vi.mock('@/lib/supabase', () => ({ supabase: { functions: { invoke: vi.fn() } } }))
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('@/services/clientPodcastSystem', () => ({ getWorkspaceClientPodcastSystem: vi.fn() }))
+/*
+ * Surfaces the booking seed rather than driving the real dialog, because the
+ * defect this pins is entirely in which id the page hands over.
+ */
+vi.mock('@/components/workspace/ClientBookingDialog', () => ({
+  ClientBookingDialog: ({ open, booking }: {
+    open: boolean
+    booking?: { shortlist_podcast_id: string | null } | null
+  }) => (open ? <div>seeded shortlist row {booking?.shortlist_podcast_id ?? 'none'}</div> : null),
+}))
 vi.mock('@/components/workspace/WorkspaceLayout', () => ({
   // Surfaces the branding the shell would draw, so the platform view's logo is
   // assertable without rendering the real sidebar.
@@ -301,6 +311,28 @@ describe('WorkspaceClientPodcastSystem', () => {
     expect(positioning.className).toContain('line-clamp-3')
     fireEvent.click(screen.getByRole('button', { name: 'Show more' }))
     expect(screen.getByText(bio.trim()).className).not.toContain('line-clamp-3')
+  })
+
+  /*
+   * bookings_shortlist_podcast_fk points at client_dashboard_podcasts by
+   * (client_id, shortlist_podcast_id). The page was seeding the dialog with
+   * item.podcast.id — the global catalog row — so the insert failed the
+   * constraint and every placement logged from this page came back "The
+   * placement could not be saved". Not an edge case: the whole action.
+   */
+  it('hands the booking dialog the shortlist row, not the catalog show', async () => {
+    mockedGetSystem.mockResolvedValue({
+      ...response,
+      items: [{ ...ready, booking: null }],
+    } as never)
+
+    renderPage(`/app/client-podcast-system?client=${clientId}&podcast=${ready.podcast.podscan_id}`)
+
+    fireEvent.click(await screen.findByRole('button', { name: /log placement/i }))
+
+    expect(await screen.findByText(`seeded shortlist row ${ready.id}`)).toBeInTheDocument()
+    // The id the constraint rejects.
+    expect(screen.queryByText(`seeded shortlist row ${ready.podcast.id}`)).not.toBeInTheDocument()
   })
 
   it('opens the host conversation from a placement instead of the whole inbox', async () => {
