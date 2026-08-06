@@ -18,7 +18,7 @@ import {
   type AuthContext,
   type WorkspaceFeatureAccess,
 } from '../_shared/workspaceAuth.ts'
-import { chargeCredits, logOperationCost, retryWindowKey } from '../_shared/billing.ts'
+import { chargeCredits, logOperationCost, refundCredits, retryWindowKey } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 
 const METHODS = ['POST'] as const
@@ -790,7 +790,7 @@ async function buildProspect(
   const anthropicKey = await resolveAiKey(context.admin, workspaceId, 'anthropic')
   const openaiKey = await resolveAiKey(context.admin, workspaceId, 'openai')
   const byoKeyUsed = anthropicKey?.source === 'workspace'
-  await chargeCredits(context.admin, {
+  const buildCharge = await chargeCredits(context.admin, {
     workspaceId,
     operationType: 'dashboard_build',
     referenceKind: 'prospect_dashboard',
@@ -1019,6 +1019,17 @@ async function buildProspect(
       })
       .eq('id', dashboardId)
       .eq('workspace_id', workspaceId)
+    /*
+     * This catch is the whole failure boundary: the dashboard is marked
+     * failed, nothing was delivered, and the operator will retry. The charge
+     * goes back with it — a failed build used to eat its credits, and a retry
+     * outside the 2-minute window charged again on top.
+     */
+    await refundCredits(context.admin, {
+      workspaceId,
+      entryId: buildCharge.entryId,
+      reason: 'prospect dashboard build failed',
+    })
     if (error instanceof HttpError) throw error
     throw new HttpError(502, 'BUILD_FAILED', message)
   }

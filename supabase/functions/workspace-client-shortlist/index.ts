@@ -18,7 +18,7 @@ import {
   type WorkspaceFeatureAccess,
 } from '../_shared/workspaceAuth.ts'
 import { generatePodcastSearchEmbedding } from '../_shared/podcastSearch.ts'
-import { chargeCredits, logOperationCost } from '../_shared/billing.ts'
+import { chargeCredits, logOperationCost, refundCredits } from '../_shared/billing.ts'
 import { resolveAiKey } from '../_shared/workspaceAiKeys.ts'
 import {
   ensureEpisodesCaptured,
@@ -2069,6 +2069,13 @@ serve(async (req) => {
           // costs the credit it already paid rather than another one — without
           // this, making the run resumable would have made it billable per
           // attempt.
+          //
+          // Deliberately NOT refunded on failure, unlike the other metered
+          // operations: a failed attempt keeps its stage progress and resumes
+          // free under this same key, so the credit is prepayment for a run
+          // that can still be finished, not payment for nothing. Refunding
+          // would also make the resume re-charge, because a refunded key opens
+          // a new generation in the spend RPC.
           idempotencyKey: `research:${shortlistPodcastId}:${startedAt}`,
         })
 
@@ -3077,7 +3084,7 @@ serve(async (req) => {
           throw new HttpError(409, 'PITCH_BLOCKED', describeMissingRequirements(promptId, missing))
         }
       }
-      await chargeCredits(authContext.admin, {
+      const pitchCharge = await chargeCredits(authContext.admin, {
         workspaceId,
         operationType: 'query_generation',
         referenceKind: 'pitch_generate',
@@ -3231,6 +3238,19 @@ serve(async (req) => {
           },
         })
       } catch (error) {
+        /*
+         * No pitch was saved, so the charge goes back. The permanent key used
+         * to make this self-healing only for whoever retried the same angle —
+         * the replay was free — while a failed pitch nobody retried stayed
+         * paid forever. With refund generations in the spend RPC, the retry
+         * after this refund charges normally and the ledger reads as what
+         * happened: one paid pitch, or zero.
+         */
+        await refundCredits(authContext.admin, {
+          workspaceId,
+          entryId: pitchCharge.entryId,
+          reason: 'pitch generation failed after the charge',
+        })
         if (error instanceof HttpError) throw error
         console.error('[Client Shortlist] Pitch generation failed')
         throw new HttpError(503, 'PITCH_FAILED', 'The pitch could not be written. Try again shortly')
