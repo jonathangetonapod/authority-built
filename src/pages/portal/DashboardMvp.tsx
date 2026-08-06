@@ -70,9 +70,34 @@ const isUpcoming = (value: string | null): boolean => {
   return !Number.isNaN(date.getTime()) && date.getTime() >= Date.now()
 }
 
+// Live within the window where it is still news: published, and recently.
+const RECENTLY_LIVE_DAYS = 14
+const isRecentlyLive = (value: string | null): boolean => {
+  if (!value) return false
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return false
+  const age = Date.now() - date.getTime()
+  return age >= 0 && age <= RECENTLY_LIVE_DAYS * 24 * 60 * 60 * 1000
+}
+
+/*
+ * Live first, then the pipeline in the order it resolves, cancelled last. The
+ * server returns scheduled_date descending, which buries a published episode
+ * whose scheduled date is months old under conversations that started
+ * yesterday — the opposite of how a client scans this list.
+ */
+const STATUS_ORDER: Record<string, number> = {
+  published: 0,
+  recorded: 1,
+  booked: 2,
+  in_progress: 3,
+  conversation_started: 4,
+  cancelled: 5,
+}
+
 interface JourneyStat {
   label: string
-  value: number
+  value: string
   icon: typeof Send
 }
 
@@ -99,12 +124,27 @@ export default function PortalDashboardMvp() {
 
   const overview = overviewQuery.data ?? null
   const bookings = overview?.bookings ?? []
+  const sortedBookings = [...bookings].sort((a, b) => {
+    const rank = (STATUS_ORDER[a.status] ?? 4) - (STATUS_ORDER[b.status] ?? 4)
+    if (rank !== 0) return rank
+    // Newest movement first within a stage; date-less rows sink.
+    return String(bookingDate(b) || '0000').localeCompare(String(bookingDate(a) || '0000'))
+  })
   const activeBookings = bookings.filter((booking) => booking.status !== 'cancelled')
   const published = activeBookings.filter((booking) => booking.status === 'published')
+  /*
+   * A confirmed booking without a date yet is the most reassuring thing this
+   * panel can show, and requiring an upcoming date dropped exactly those rows.
+   * Confirmed-but-undated shows sit after the dated ones as "Date coming";
+   * unconfirmed conversations still need a real upcoming date to appear.
+   */
   const upcomingRecordings = activeBookings
     .filter((booking) => ['conversation_started', 'in_progress', 'booked'].includes(booking.status))
-    .filter((booking) => isUpcoming(booking.recording_date || booking.scheduled_date))
-    .sort((a, b) => String(a.recording_date || a.scheduled_date).localeCompare(String(b.recording_date || b.scheduled_date)))
+    .filter((booking) => (
+      isUpcoming(booking.recording_date || booking.scheduled_date)
+      || (booking.status === 'booked' && !booking.recording_date && !booking.scheduled_date)
+    ))
+    .sort((a, b) => String(a.recording_date || a.scheduled_date || '9999').localeCompare(String(b.recording_date || b.scheduled_date || '9999')))
     .slice(0, 4)
   const upcomingReleases = activeBookings
     .filter((booking) => booking.status === 'recorded')
@@ -119,18 +159,48 @@ export default function PortalDashboardMvp() {
   const pitchProfile = overview?.pitch_profile ?? null
   const mediaKitUrl = overview?.profile.media_kit_url ? safeExternalUrl(overview.profile.media_kit_url) : null
 
-  const journeyStats: JourneyStat[] = outreach
-    ? [
-      { label: 'Podcasts contacted', value: outreach.podcasts_contacted, icon: Send },
-      { label: 'Replies', value: outreach.replies, icon: MessageSquare },
-      { label: 'Booked shows', value: activeBookings.filter((booking) => !['conversation_started', 'in_progress'].includes(booking.status)).length, icon: Mic2 },
-      { label: 'Published episodes', value: published.length, icon: Radio },
-    ]
-    : [
-      { label: 'Total placements', value: activeBookings.length, icon: Mic2 },
-      { label: 'Upcoming / in progress', value: activeBookings.length - published.length, icon: CalendarDays },
-      { label: 'Published episodes', value: published.length, icon: Radio },
-    ]
+  /*
+   * The value story, not just the activity story. The counts say how busy the
+   * team has been; the combined audience of the shows actually secured says
+   * what it was worth, and it is the number a client repeats to other people.
+   * Confirmed shows only — a conversation is not yet reach.
+   */
+  const securedBookings = activeBookings.filter((booking) => !['conversation_started', 'in_progress'].includes(booking.status))
+  const combinedAudience = compactNumber(
+    securedBookings.reduce((total, booking) => total + (
+      typeof booking.audience_size === 'number' && Number.isFinite(booking.audience_size) && booking.audience_size > 0
+        ? booking.audience_size
+        : 0
+    ), 0),
+  )
+
+  const latestLive = published
+    .filter((booking) => isRecentlyLive(booking.publish_date))
+    .sort((a, b) => String(b.publish_date).localeCompare(String(a.publish_date)))[0] ?? null
+  const latestLiveEpisodeUrl = latestLive?.episode_url ? safeExternalUrl(latestLive.episode_url) : null
+
+  const journeyStats: JourneyStat[] = [
+    ...(outreach
+      ? [
+        { label: 'Podcasts contacted', value: String(outreach.podcasts_contacted), icon: Send },
+        { label: 'Replies', value: String(outreach.replies), icon: MessageSquare },
+        { label: 'Booked shows', value: String(securedBookings.length), icon: Mic2 },
+        { label: 'Published episodes', value: String(published.length), icon: Radio },
+      ]
+      : [
+        { label: 'Total placements', value: String(activeBookings.length), icon: Mic2 },
+        { label: 'Upcoming / in progress', value: String(activeBookings.length - published.length), icon: CalendarDays },
+        { label: 'Published episodes', value: String(published.length), icon: Radio },
+      ]),
+    ...(combinedAudience
+      ? [{ label: 'Combined audience', value: combinedAudience, icon: Headphones }]
+      : []),
+  ]
+  const statsGridClass = {
+    3: 'grid gap-4 sm:grid-cols-3',
+    4: 'grid gap-4 sm:grid-cols-2 lg:grid-cols-4',
+    5: 'grid gap-4 sm:grid-cols-2 lg:grid-cols-5',
+  }[journeyStats.length] ?? 'grid gap-4 sm:grid-cols-2 lg:grid-cols-4'
 
   return (
     <PortalLayout>
@@ -188,7 +258,56 @@ export default function PortalDashboardMvp() {
           </div>
         )}
 
-        <div className={journeyStats.length === 4 ? 'grid gap-4 sm:grid-cols-2 lg:grid-cols-4' : 'grid gap-4 sm:grid-cols-3'}>
+        {/* The moment this whole service works toward, while it is still news.
+            Quiet on purpose: artwork, the fact, and the two things a client
+            actually does with a live episode — listen to it and send it on. */}
+        {latestLive && (
+          <Card className="border-emerald-200/70 bg-emerald-50/40">
+            <CardContent className="flex flex-wrap items-center gap-4 p-5">
+              {latestLive.podcast_image_url ? (
+                <img src={latestLive.podcast_image_url} alt="" loading="lazy" className="h-16 w-16 shrink-0 rounded-xl border object-cover" />
+              ) : (
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border bg-background">
+                  <Radio className="h-6 w-6 text-emerald-700" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">New episode live</p>
+                <p className="mt-0.5 truncate text-lg font-semibold">{latestLive.podcast_name}</p>
+                <p className="text-sm text-muted-foreground">
+                  {[latestLive.host_name ? `Hosted by ${latestLive.host_name}` : null, displayDate(latestLive.publish_date)].filter(Boolean).join(' · ')}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                {latestLiveEpisodeUrl && (
+                  <>
+                    <Button asChild size="sm">
+                      <a href={latestLiveEpisodeUrl} target="_blank" rel="noreferrer">
+                        <Headphones className="mr-2 h-4 w-4" />Listen
+                      </a>
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        navigator.clipboard.writeText(latestLiveEpisodeUrl).then(
+                          () => toast.success('Episode link copied — share it anywhere.'),
+                          () => toast.error('The link could not be copied.'),
+                        )
+                      }}
+                    >
+                      Copy link
+                    </Button>
+                  </>
+                )}
+                <Button variant="ghost" size="sm" onClick={() => setDetailBooking(latestLive)}>Details</Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        <div className={statsGridClass}>
           {journeyStats.map((stat) => (
             <Card key={stat.label}>
               <CardHeader className="pb-2">
@@ -212,11 +331,20 @@ export default function PortalDashboardMvp() {
                 ) : (
                   <ul className="divide-y">
                     {upcomingRecordings.map((booking) => (
-                      <li key={booking.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-                        <span className="min-w-0 truncate text-sm font-medium">{booking.podcast_name}</span>
-                        <span className="shrink-0 text-sm text-muted-foreground">
-                          {displayDate(booking.recording_date || booking.scheduled_date) ?? 'Date coming'}
-                        </span>
+                      <li key={booking.id}>
+                        {/* The job before a recording is prep, and prep lives in
+                            the details — a row that only stated the date left
+                            the useful part unreachable from here. */}
+                        <button
+                          type="button"
+                          onClick={() => setDetailBooking(booking)}
+                          className="flex w-full items-center justify-between gap-3 py-2.5 text-left transition-colors first:pt-0 last:pb-0 hover:text-primary"
+                        >
+                          <span className="min-w-0 truncate text-sm font-medium">{booking.podcast_name}</span>
+                          <span className="shrink-0 text-sm text-muted-foreground">
+                            {displayDate(booking.recording_date || booking.scheduled_date) ?? 'Date coming'}
+                          </span>
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -233,11 +361,17 @@ export default function PortalDashboardMvp() {
                 ) : (
                   <ul className="divide-y">
                     {upcomingReleases.map((booking) => (
-                      <li key={booking.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-                        <span className="min-w-0 truncate text-sm font-medium">{booking.podcast_name}</span>
-                        <span className="shrink-0 text-sm text-muted-foreground">
-                          {displayDate(booking.publish_date) ?? 'Release date coming'}
-                        </span>
+                      <li key={booking.id}>
+                        <button
+                          type="button"
+                          onClick={() => setDetailBooking(booking)}
+                          className="flex w-full items-center justify-between gap-3 py-2.5 text-left transition-colors first:pt-0 last:pb-0 hover:text-primary"
+                        >
+                          <span className="min-w-0 truncate text-sm font-medium">{booking.podcast_name}</span>
+                          <span className="shrink-0 text-sm text-muted-foreground">
+                            {displayDate(booking.publish_date) ?? 'Release date coming'}
+                          </span>
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -274,7 +408,7 @@ export default function PortalDashboardMvp() {
               </div>
             ) : (
               <div className="divide-y">
-                {bookings.map((booking) => {
+                {sortedBookings.map((booking) => {
                   const status = bookingStatus(booking.status)
                   const podcastUrl = booking.podcast_url ? safeExternalUrl(booking.podcast_url) : null
                   const episodeUrl = booking.episode_url ? safeExternalUrl(booking.episode_url) : null
