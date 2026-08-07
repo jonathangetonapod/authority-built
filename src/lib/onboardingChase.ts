@@ -25,6 +25,12 @@ export interface OnboardingChaseInput {
   changes_requested_at: string | null
   capability_expires_at: string
   archived_at: string | null
+  /**
+   * Outcome of the last invitation/change-request email, when known. The list
+   * used to say "Sent" from invited_at — a timestamp stamped whether or not
+   * the email left — so a failed send chased as "never opened".
+   */
+  delivery?: { status: string; last_error: string | null } | null
 }
 
 export interface OnboardingChaseState {
@@ -40,7 +46,10 @@ export interface OnboardingChaseState {
 function wholeDaysBetween(from: string, to: number): number | null {
   const parsed = Date.parse(from)
   if (!Number.isFinite(parsed)) return null
-  return Math.floor((to - parsed) / DAY_MS)
+  // Rounded, not floored: a spring-forward makes ten calendar days measure
+  // 10x24h minus an hour, and floor turned that into "9 days ago" — with
+  // every chase threshold firing a day late.
+  return Math.round((to - parsed) / DAY_MS)
 }
 
 function dayLabel(days: number): string {
@@ -94,6 +103,21 @@ export function onboardingChaseState(
       }
     }
   } else {
+    // An email that never left outranks a client who never clicked. Without
+    // this, a failed or skipped send waited out the unopened window and then
+    // blamed the client for ignoring an invitation nobody received.
+    if (!instance.viewed_at && instance.delivery
+      && (instance.delivery.status === 'failed' || instance.delivery.status === 'skipped')) {
+      return {
+        ageDays,
+        expiresInDays,
+        needsChasing: true,
+        reason: instance.delivery.status === 'failed'
+          ? 'The invitation email failed to send — share the link yourself'
+          : 'The invitation email was never sent — share the link yourself',
+      }
+    }
+
     if (!instance.viewed_at && ageDays >= UNOPENED_CHASE_DAYS) {
       return {
         ageDays,
@@ -122,7 +146,9 @@ export function onboardingChaseState(
       ageDays,
       expiresInDays,
       needsChasing: true,
-      reason: `The link expires in ${dayLabel(expiresInDays)}`,
+      reason: expiresInDays <= 0
+        ? 'The link expires today'
+        : `The link expires in ${dayLabel(expiresInDays)}`,
     }
   }
 

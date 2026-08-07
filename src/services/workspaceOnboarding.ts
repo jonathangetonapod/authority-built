@@ -74,6 +74,13 @@ export interface OnboardingTemplate {
   description: string
   status: 'draft' | 'published' | 'archived'
   definition: OnboardingDefinition
+  /**
+   * The frozen definition of published_version — what a new instance will
+   * actually snapshot. `definition` above is the mutable draft; rendering it
+   * as "what the client receives" showed unpublished edits nobody would get.
+   */
+  published_definition: OnboardingDefinition | null
+  has_unpublished_changes: boolean
   reminder_days: number[]
   published_version: number
   is_default: boolean
@@ -126,6 +133,19 @@ export interface OnboardingInstanceSummary {
   draft_lock_version: number
   open_comment_count: number
   profile_status: 'pending' | 'generated' | 'failed' | 'edited' | 'approved' | null
+  /**
+   * Outcome of the most recent invitation or change-request email, read from
+   * the delivery record the send actually wrote. Null when no send has been
+   * attempted or the record is unavailable. invited_at alone cannot answer
+   * "did the email leave" — it is stamped either way.
+   */
+  delivery?: {
+    kind: string
+    status: 'sent' | 'failed' | 'skipped' | 'pending' | string
+    last_error: string | null
+    attempted_at: string | null
+    sent_at: string | null
+  } | null
   experience_title?: string
   experience_body?: string
   experience_completion_message?: string
@@ -280,6 +300,8 @@ function templateValue(value: unknown, workspaceId: string): OnboardingTemplate 
     id: uuid(source.id),
     workspace_id: workspaceId,
     definition: definitionValue(source.definition),
+    published_definition: source.published_definition ? definitionValue(source.published_definition) : null,
+    has_unpublished_changes: source.has_unpublished_changes === true,
     reminder_days: Array.isArray(source.reminder_days) ? source.reminder_days.map(numberValue) : [],
   }
 }
@@ -304,6 +326,21 @@ function summaryValue(value: unknown, workspaceId: string): OnboardingInstanceSu
     client_id: uuid(source.client_id),
     template_id: uuid(source.template_id),
     template_version_id: uuid(source.template_version_id),
+    delivery: source.delivery && typeof source.delivery === 'object'
+      ? {
+        kind: String((source.delivery as Record<string, unknown>).kind ?? ''),
+        status: String((source.delivery as Record<string, unknown>).status ?? ''),
+        last_error: typeof (source.delivery as Record<string, unknown>).last_error === 'string'
+          ? String((source.delivery as Record<string, unknown>).last_error)
+          : null,
+        attempted_at: typeof (source.delivery as Record<string, unknown>).attempted_at === 'string'
+          ? String((source.delivery as Record<string, unknown>).attempted_at)
+          : null,
+        sent_at: typeof (source.delivery as Record<string, unknown>).sent_at === 'string'
+          ? String((source.delivery as Record<string, unknown>).sent_at)
+          : null,
+      }
+      : null,
   }
 }
 
@@ -607,8 +644,15 @@ function clientViewValue(value: unknown): ClientOnboardingView {
   }
 }
 
-export async function getClientOnboarding(token: string): Promise<ClientOnboardingView> {
-  const data = record(await clientInvoke<unknown>({ action: 'get', token }, 'This onboarding could not be loaded.'))
+export async function getClientOnboarding(token: string, staffPreview = false): Promise<ClientOnboardingView> {
+  // staffPreview keeps the load from stamping viewed_at — the team reads that
+  // timestamp as client activity, and an operator checking the form before
+  // sharing the link should not spend it.
+  const data = record(await clientInvoke<unknown>({
+    action: 'get',
+    token,
+    ...(staffPreview ? { staff_preview: true } : {}),
+  }, 'This onboarding could not be loaded.'))
   return clientViewValue(data.onboarding)
 }
 

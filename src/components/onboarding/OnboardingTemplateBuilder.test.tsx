@@ -62,6 +62,8 @@ const template: OnboardingTemplate = {
   },
   reminder_days: [3, 7, 12],
   published_version: 1,
+  published_definition: null,
+  has_unpublished_changes: false,
   is_default: true,
   created_at: '2026-07-22T00:00:00.000Z',
   updated_at: '2026-07-22T00:00:00.000Z',

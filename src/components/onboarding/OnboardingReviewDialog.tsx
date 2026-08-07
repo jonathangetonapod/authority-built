@@ -68,9 +68,17 @@ const OnboardingReviewDialog = ({ open, detail, canManage, busy, onOpenChange, o
 
   const questions = detail.definition.sections.flatMap((section) => section.questions)
   const answeredCount = questions.filter((question) => !emptyAnswer(detail.answers[question.id])).length
-  const submittedLabel = detail.submitted_at
+  /*
+   * The answers shown are always the client's live draft, and the draft is
+   * only the same thing as "what was submitted" while the status says so.
+   * After request_changes the client edits that draft in place while
+   * submitted_at keeps the OLD submission's time — labelling half-finished
+   * edits "Submitted answers · <stale date>" invited reviewing them as final.
+   */
+  const showingSubmission = detail.status === 'submitted' || detail.status === 'approved'
+  const submittedLabel = showingSubmission && detail.submitted_at
     ? new Date(detail.submitted_at).toLocaleString()
-    : 'Not submitted yet'
+    : null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -82,17 +90,20 @@ const OnboardingReviewDialog = ({ open, detail, canManage, busy, onOpenChange, o
             <Badge variant="outline">Revision {detail.current_revision}</Badge>
           </div>
           <DialogDescription>
-            {detail.template_name} v{detail.template_version} · Submitted {submittedLabel}
+            {detail.template_name} v{detail.template_version}
+            {submittedLabel ? ` · Submitted ${submittedLabel}` : ' · Not yet resubmitted'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold">Submitted answers</h2>
+            <h2 className="text-xl font-semibold">{showingSubmission ? 'Submitted answers' : 'Current draft'}</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {reviewing
                 ? 'Write a note under each answer you want redone. Only the answers you note are sent back.'
-                : 'The client’s completed form, shown exactly as submitted.'}
+                : showingSubmission
+                  ? 'The client’s completed form, shown exactly as submitted.'
+                  : 'What the client has typed so far. They have not resubmitted — these answers may be mid-edit.'}
             </p>
           </div>
           <Badge variant="secondary">{answeredCount} of {questions.length} answered</Badge>

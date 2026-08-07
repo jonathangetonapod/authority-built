@@ -23,8 +23,15 @@ approved pitch profiles.
 
 An invitation is pinned to an immutable published template version. Its public
 state moves through `invited`, `in_progress`, `submitted`,
-`changes_requested`, and `approved`; expired and revoked links are terminal.
-The default expiry is 14 days and the hard maximum is 90 days.
+`changes_requested`, and `approved`. Revoked is terminal, and revocation also
+destroys the stored capability verifier, so the revoked URL can never resolve
+again. Expired is not terminal and is never stored — it is computed from the
+link's expiry, and Extend or Rotate resurrects the intake with its draft
+intact. Revoking is refused while answers sit `submitted`: approval and
+change requests both require that status, so revoking there would strand a
+completed intake permanently. Approve or request changes first.
+The default expiry is 14 days and the hard maximum is 90 days; extending an
+already long-lived link clamps to the 90-day ceiling instead of refusing.
 The activity table records the first successful client form view separately
 from the first saved edit and submission. Metadata-only link unfurls do not
 count as client views.
@@ -36,15 +43,26 @@ questions, and the client can submit another immutable revision in response.
 Requesting changes can send a workspace-branded email when Resend is configured
 and always returns the current secure link for manual delivery. The product
 does not schedule or send reminder emails; the agency owns follow-up and can
-resend the link from its own mailbox.
+resend the link from its own mailbox. "Needs chasing" in the list is computed
+in the browser from timestamps — nothing runs server-side. The outcome of each
+invitation or change-request send (`sent`, `failed`, `skipped`) is recorded
+and surfaced on the list: a failed or unconfigured send shows in the activity
+column and in the chase reason instead of masquerading as "Sent". A failed
+send is never retried automatically. Staff previewing the client form from
+the invitation dialog do not stamp the first-view timestamp; only a plain
+open of the shared link counts as client activity.
 
-Submitting creates a pending AI pitch-profile draft. AI output is never
-published automatically: an owner or admin must review, edit, and approve it.
-Approval copies only configured question mappings into the client record and
-stores the approved podcast pitch profile separately. If a mapped email change
-would invoke the existing portal credential/session revocation lifecycle, the
-email mapping is skipped and audited; portal access and artifacts remain
-untouched.
+The shipped review flow is answers-only: a reviewer approves the submitted
+answers or requests changes. AI pitch-profile drafting is deliberately not
+part of it — submission records the profile draft as `failed` without calling
+a model, because no shipped screen reviews, edits, or approves a profile.
+(The profile approval RPCs and service functions still exist server-side for
+a future flow.) Answers approval copies only configured question mappings
+into the client record. If a mapped email change would invoke the existing
+portal credential/session revocation lifecycle, the email mapping is skipped
+and audited; portal access and artifacts remain untouched. Note that approval
+overwrites mapped client fields (including `bio`) with the submitted answers;
+polish the client record after approving, not before.
 
 ## Templates and files
 
@@ -105,7 +123,10 @@ Set these as server-only Supabase Edge Function secrets:
 2. Apply `20260722000400_workspace_branding.sql` if it is not already present,
    then apply `20260722000500_workspace_onboarding.sql` and
    `20260722000600_workspace_onboarding_white_label.sql`, followed by
-   `20260723000100_workspace_onboarding_activity.sql`, in order.
+   `20260723000100_workspace_onboarding_activity.sql`,
+   `20260723000200_workspace_onboarding_answer_approval.sql`,
+   `20260723000300_default_workspace_onboarding_parity.sql`, and
+   `20260807000100_onboarding_revoke_kills_credential.sql`, in order.
 3. Run the database verifier and the rollback-only onboarding behavior suite
    in an authorized local or staging environment.
 4. Configure the server secrets above.

@@ -286,6 +286,75 @@ serve(async (req) => {
       if (workspace.id !== workspaceId || !Array.isArray(result.instances) || !Array.isArray(result.templates)) {
         throw new HttpError(500, 'INVALID_ONBOARDING_RESPONSE', 'The onboarding response did not match the workspace')
       }
+      /*
+       * Delivery truth for every listed instance, from the notifications
+       * table nothing else reads. The list said "Sent <date>" from
+       * invited_at, which is stamped whether or not the email left — and
+       * with sending down, "ignored it" versus "never got it" is THE
+       * operational question, answerable all along from last_error in a
+       * table with zero readers. Latest invitation/change-request row per
+       * instance, attached as delivery.
+       */
+      const instanceRows = result.instances as Array<Record<string, unknown>>
+      const instanceIds = instanceRows
+        .map((instance) => instance.id)
+        .filter((id): id is string => typeof id === 'string')
+      if (instanceIds.length > 0) {
+        const { data: notificationRows } = await admin
+          .from('workspace_onboarding_notifications')
+          .select('instance_id, kind, status, last_error, attempted_at, sent_at, created_at')
+          .eq('workspace_id', workspaceId)
+          .in('instance_id', instanceIds)
+          .in('kind', ['invitation', 'change_request'])
+          .order('created_at', { ascending: false })
+        const deliveryByInstance = new Map<string, Record<string, unknown>>()
+        for (const row of (notificationRows ?? []) as Array<Record<string, unknown>>) {
+          const instanceId = String(row.instance_id)
+          if (deliveryByInstance.has(instanceId)) continue
+          deliveryByInstance.set(instanceId, {
+            kind: row.kind,
+            status: row.status,
+            last_error: typeof row.last_error === 'string' ? row.last_error.slice(0, 300) : null,
+            attempted_at: row.attempted_at ?? null,
+            sent_at: row.sent_at ?? null,
+          })
+        }
+        for (const instance of instanceRows) {
+          instance.delivery = deliveryByInstance.get(String(instance.id)) ?? null
+        }
+      }
+      /*
+       * Each template's PUBLISHED definition, alongside the draft the RPC
+       * returns. Instances snapshot the published version, but every list and
+       * preview rendered the mutable draft — so "the questions stay pinned to
+       * this published template version" sat beside a preview of unpublished
+       * edits the client would never receive. The published definition is
+       * what Start onboarding must show, and the draft/published comparison
+       * is what lets the UI say "unpublished changes" instead of implying
+       * they are the same.
+       */
+      const templateRows = result.templates as Array<Record<string, unknown>>
+      const versionKeys = templateRows
+        .filter((template) => typeof template.id === 'string' && Number.isInteger(template.published_version))
+        .map((template) => ({ id: template.id as string, version: template.published_version as number }))
+      if (versionKeys.length > 0) {
+        const { data: versions } = await admin
+          .from('workspace_onboarding_template_versions')
+          .select('template_id, version, definition')
+          .eq('workspace_id', workspaceId)
+          .in('template_id', versionKeys.map((key) => key.id))
+        const publishedByTemplate = new Map(
+          ((versions ?? []) as Array<Record<string, unknown>>)
+            .filter((row) => versionKeys.some((key) => key.id === row.template_id && key.version === row.version))
+            .map((row) => [row.template_id as string, row.definition]),
+        )
+        for (const template of templateRows) {
+          const published = publishedByTemplate.get(template.id as string) ?? null
+          template.published_definition = published
+          template.has_unpublished_changes = published !== null
+            && JSON.stringify(published) !== JSON.stringify(template.definition)
+        }
+      }
       return jsonResponse(req, METHODS, 200, result)
     }
 
@@ -664,9 +733,22 @@ serve(async (req) => {
       if (detailResult.error) rpcError(detailResult.error)
       const detail = ensureWorkspaceResponse(detailResult.data, workspaceId)
       const currentExpiry = new Date(responseString(detail.capability_expires_at, 'capability expiry', 64)).valueOf()
-      const nextExpiry = new Date(currentExpiry + extensionDays * 86_400_000)
-      if (!Number.isFinite(currentExpiry) || nextExpiry.valueOf() > Date.now() + 90 * 86_400_000) {
-        throw new HttpError(400, 'INVALID_FIELD', 'The extended expiry cannot be more than 90 days from now')
+      if (!Number.isFinite(currentExpiry)) {
+        throw new HttpError(400, 'INVALID_FIELD', 'The current expiry could not be read')
+      }
+      /*
+       * Clamped to the 90-day ceiling rather than refused. The UI offers one
+       * fixed 14-day extension; near the cap that request used to fail with a
+       * generic error, when a 3-day extension would have succeeded — the
+       * manager had no smaller lever and no explanation. Granting what the
+       * ceiling allows is what they meant; only a link already at the ceiling
+       * has nothing to grant.
+       */
+      const ceiling = Date.now() + 90 * 86_400_000
+      const requested = currentExpiry + extensionDays * 86_400_000
+      const nextExpiry = new Date(Math.min(requested, ceiling))
+      if (nextExpiry.valueOf() <= currentExpiry) {
+        throw new HttpError(400, 'INVALID_FIELD', 'This link is already at the 90-day maximum and cannot be extended further')
       }
       payload.capability_expires_at = nextExpiry.toISOString()
       const generation = integerValue(detail.capability_generation, 'capability generation', 1, 2_147_483_646)
@@ -674,6 +756,29 @@ serve(async (req) => {
       link = onboardingUrl(capability.token, linkOrigin)
     } else if (action === 'revoke' || action === 'archive') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'instance_id'])
+      /*
+       * Submitted answers must be resolved, not orphaned. Revoking a
+       * submitted onboarding was allowed and irreversible — approval and
+       * request-changes both require status 'submitted', rotate refuses
+       * 'revoked', so one tidy-up click stranded a completed intake with no
+       * path to ever approve it. Approve or request changes first; archive
+       * remains for abandoning the record deliberately.
+       */
+      if (action === 'revoke') {
+        const { data: statusRow } = await admin
+          .from('workspace_onboarding_instances')
+          .select('status')
+          .eq('id', instanceId)
+          .eq('workspace_id', workspaceId)
+          .maybeSingle()
+        if (statusRow?.status === 'submitted') {
+          throw new HttpError(
+            409,
+            'ONBOARDING_SUBMITTED',
+            'This onboarding has submitted answers. Approve them or request changes first — revoking would strand the submission with no way to ever approve it.',
+          )
+        }
+      }
     } else if (action === 'purge') {
       requireOnlyKeys(body, ['action', 'workspace_id', 'instance_id', 'confirmation'])
       if (body.confirmation !== 'PURGE') {
@@ -756,12 +861,16 @@ serve(async (req) => {
       })
     }
     if (action === 'rotate' && link) {
-      const delivery = { status: 'skipped' as const, providerMessageId: null, error: null }
-      await recordDelivery(admin, instanceId, delivery)
+      /*
+       * Rotate accepted a send_email flag it never honored, then recorded a
+       * 'skipped' delivery over the invitation row — overwriting the
+       * failed/last_error evidence from the real send attempt. Rotate does
+       * not send email; it also no longer pretends to, and it leaves the
+       * delivery record telling the truth about the send that did happen.
+       */
       return jsonResponse(req, METHODS, 200, {
         instance,
         onboarding_url: link,
-        delivery: { status: delivery.status },
       })
     }
     return jsonResponse(req, METHODS, 200, {

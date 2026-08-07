@@ -278,8 +278,31 @@ serve(async (req) => {
     if (req.method !== 'POST') {
       throw new HttpError(405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed')
     }
+    /*
+     * Declared length first: this endpoint is unauthenticated and accepts the
+     * largest bodies in the codebase, and the token that authorizes the work
+     * travels INSIDE the body — so the one check that can run before the
+     * buffer fills is the declared size. A chunked request with no length is
+     * refused outright rather than trusted to be small.
+     */
+    const declaredLength = Number(req.headers.get('content-length') ?? '')
+    if (!Number.isFinite(declaredLength)) {
+      throw new HttpError(411, 'LENGTH_REQUIRED', 'Requests must declare a Content-Length')
+    }
+    if (declaredLength > MAX_BODY_BYTES) {
+      throw new HttpError(413, 'PAYLOAD_TOO_LARGE', 'The request body is too large')
+    }
     const body = await parseJsonObject(req, MAX_BODY_BYTES)
     const action = typeof body.action === 'string' ? body.action : ''
+    /*
+     * Reject unknown actions before any capability or database work. The
+     * unknown-action error used to live at the bottom of the ladder, after a
+     * signature verification, the initial get RPC, and the host resolution
+     * had all run for a request that was never going to do anything.
+     */
+    if (!['metadata', 'get', 'save', 'submit', 'upload', 'delete_upload'].includes(action)) {
+      throw new HttpError(400, 'INVALID_ACTION', 'Unknown onboarding action')
+    }
     const token = body.token
     const capability = await verifyOnboardingCapability(token, capabilitySecret())
     const admin = createAdminClient()
@@ -324,15 +347,25 @@ serve(async (req) => {
     const initialView = await presentClientView(admin, capability.instanceId, initial.data)
 
     if (action === 'get') {
-      requireOnlyKeys(body, ['action', 'token', 'hostname'])
+      requireOnlyKeys(body, ['action', 'token', 'hostname', 'staff_preview'])
       if (!['expired', 'revoked', 'approved', 'submitted'].includes(String(initialView.status))) {
         validateOnboardingDefinition(initialView.definition)
       }
-      const viewed = await admin.rpc('mark_workspace_onboarding_viewed_v1', {
-        p_instance_id: capability.instanceId,
-        p_capability_hash: capability.verifierHash,
-      })
-      if (viewed.error) clientRpcError(viewed.error)
+      /*
+       * viewed_at is first-view-wins and the team reads it as CLIENT
+       * activity — "opened, never finished" versus "never got it". A staff
+       * member checking the form before pasting the link into their own
+       * mailbox used to burn that signal permanently. The preview flag skips
+       * the stamp; a client passing it could only suppress their own viewed
+       * marker, which costs them nothing and us only a chase hint.
+       */
+      if (body.staff_preview !== true) {
+        const viewed = await admin.rpc('mark_workspace_onboarding_viewed_v1', {
+          p_instance_id: capability.instanceId,
+          p_capability_hash: capability.verifierHash,
+        })
+        if (viewed.error) clientRpcError(viewed.error)
+      }
       return jsonResponse(req, METHODS, 200, { onboarding: initialView })
     }
 
@@ -380,52 +413,31 @@ serve(async (req) => {
       if (error) clientRpcError(error)
       const submitted = await presentClientView(admin, capability.instanceId, data)
       const revision = integerValue(submitted.current_revision, 'current_revision', 1, 10_000)
-      let aiStatus: 'generated' | 'failed' = 'failed'
-      try {
-        // The client's submission is never blocked by workspace billing:
-        // profile generation on submit is log-only, honoring BYO keys.
-        const { data: instanceRow } = await admin
-          .from('workspace_onboarding_instances')
-          .select('workspace_id, client_id')
-          .eq('id', capability.instanceId)
-          .maybeSingle()
-        const submitWorkspaceId = typeof instanceRow?.workspace_id === 'string' ? instanceRow.workspace_id : null
-        const anthropicKey = await resolveAiKey(admin, submitWorkspaceId, 'anthropic')
-        const { profile, usage } = await generatePitchProfile(definition, answers, anthropicKey?.apiKey)
-        if (submitWorkspaceId) {
-          await logOperationCost(admin, {
-            workspaceId: submitWorkspaceId,
-            operationType: 'pitch_profile',
-            usage: { anthropicInputTokens: usage.inputTokens, anthropicOutputTokens: usage.outputTokens },
-            usedByoKey: anthropicKey?.source === 'workspace',
-            clientId: typeof instanceRow?.client_id === 'string' ? instanceRow.client_id : null,
-            referenceKind: 'onboarding_instance',
-            referenceId: capability.instanceId,
-          })
-        }
-        const stored = await admin.rpc('set_workspace_onboarding_ai_profile_v1', {
-          p_instance_id: capability.instanceId,
-          p_revision: revision,
-          p_status: 'generated',
-          p_content: profile,
-          p_error: null,
-        })
-        aiStatus = !stored.error && stored.data === true ? 'generated' : 'failed'
-      } catch {
-        aiStatus = 'failed'
-      }
-      if (aiStatus === 'failed') {
-        await admin.rpc('set_workspace_onboarding_ai_profile_v1', {
-          p_instance_id: capability.instanceId,
-          p_revision: revision,
-          p_status: 'failed',
-          p_content: {},
-          p_error: 'AI draft unavailable. Staff can retry or write it manually.',
-        })
-      }
+      /*
+       * The AI pitch-profile draft is NOT generated here any more, and the
+       * reason is written down so nobody quietly turns it back on: the
+       * current-generation review flow deliberately excludes pitch profiles
+       * (the review dialog's tests pin that omission as intentional), the
+       * only actions that would publish a draft — approve, update_profile,
+       * retry_ai — are wired to no UI, and the portal simply omits the card
+       * when no profile exists. So every submission was paying for an
+       * Anthropic call whose output nothing could review, approve, or show.
+       * The draft record is marked skipped, honestly, instead. Reinstating
+       * generation means first building the review-and-approve surface that
+       * consumes it — generatePitchProfile and the RPCs are all still here.
+       */
+      await admin.rpc('set_workspace_onboarding_ai_profile_v1', {
+        p_instance_id: capability.instanceId,
+        p_revision: revision,
+        p_status: 'failed',
+        p_content: {},
+        p_error: 'AI profile drafting is not part of the current review flow.',
+      })
       return jsonResponse(req, METHODS, 200, {
         onboarding: submitted,
-        ai_status: aiStatus,
+        // Kept in the response shape for existing callers; always 'failed'
+        // while drafting is out of the review flow (see the comment above).
+        ai_status: 'failed',
       })
     }
 
@@ -523,6 +535,19 @@ serve(async (req) => {
 
     throw new HttpError(400, 'INVALID_ACTION', 'Unknown onboarding action')
   } catch (error) {
+    /*
+     * Error responses need the tenant's own origin in their CORS headers, and
+     * the early failures above (405, 411, 413, malformed JSON, bad token) can
+     * all fire on a cold isolate before anything has loaded the workspace
+     * origin cache — the browser's cached preflight means the POST may be the
+     * isolate's first request. Without the warm, the error itself becomes an
+     * unreadable opaque network failure on custom domains.
+     */
+    try {
+      await ensureWorkspaceOriginAllowed(createAdminClient(), req)
+    } catch {
+      // The response below must go out even when the warm-up read fails.
+    }
     return errorResponse(req, METHODS, error)
   }
 })

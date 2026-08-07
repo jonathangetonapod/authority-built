@@ -82,6 +82,9 @@ const ClientBrandHead = ({ view, logoUnavailable }: { view: ClientOnboardingView
 
 const ClientOnboarding = () => {
   const { token = '' } = useParams()
+  // Staff opening the link to check it before sharing must not stamp
+  // viewed_at — the team reads that as the client's first open.
+  const staffPreview = new URLSearchParams(window.location.search).get('preview') === 'staff'
   const queryClient = useQueryClient()
   const onboardingQueryKey = useMemo(() => {
     const capabilityScope = token.match(CAPABILITY_SCOPE_PATTERN)
@@ -135,7 +138,7 @@ const ClientOnboarding = () => {
 
   const onboardingQuery = useQuery({
     queryKey: onboardingQueryKey,
-    queryFn: () => getClientOnboarding(token),
+    queryFn: () => getClientOnboarding(token, staffPreview),
     enabled: Boolean(token),
     retry: false,
     gcTime: 0,
@@ -176,6 +179,15 @@ const ClientOnboarding = () => {
     },
   })
 
+  /*
+   * A save that failed must not be retried unchanged. The autosave effect
+   * used to fire again the moment the failed mutation settled — same
+   * answers, same stale lock_version — every 1.2 seconds, forever: an
+   * expired link, a revoked instance, or a second tab's conflict turned into
+   * an unauthenticated request drumbeat that could never succeed. Typing
+   * again re-arms it, because new input is the one thing that changes the
+   * outcome; conflicts and closures get their own walls below.
+   */
   const submitMutation = useMutation({
     mutationFn: async () => {
       if (!view?.definition || view.lock_version === undefined) throw new Error('Your onboarding is not ready to submit.')
@@ -250,6 +262,7 @@ const ClientOnboarding = () => {
   useEffect(() => {
     if (
       !dirty
+      || saveState === 'error'
       || saveMutation.isPending
       || submitMutation.isPending
       || uploadMutation.isPending
@@ -262,7 +275,7 @@ const ClientOnboarding = () => {
       savedEditVersion: editVersion.current,
     }), 1200)
     return () => window.clearTimeout(timeout)
-  }, [answers, currentSection, deleteUploadMutation.isPending, dirty, saveMutation, submitMutation.isPending, uploadMutation.isPending, view?.definition, view?.lock_version])
+  }, [answers, currentSection, deleteUploadMutation.isPending, dirty, saveMutation, saveState, submitMutation.isPending, uploadMutation.isPending, view?.definition, view?.lock_version])
 
   useEffect(() => {
     if (!dirty) return
@@ -300,11 +313,17 @@ const ClientOnboarding = () => {
     const next = Math.min(currentSection + 1, view.definition.sections.length - 1)
     setValidationError(null)
     try {
-      const saved = await saveMutation.mutateAsync({
+      /*
+       * No setAnswers from the server echo here: it reflects what was sent
+       * BEFORE the round trip, and overwriting with it silently discarded
+       * anything typed while the save was in flight. cacheSavedDraft (via
+       * onSuccess) already reconciles with the editVersion guard, exactly as
+       * the autosave path does.
+       */
+      await saveMutation.mutateAsync({
         nextSection: next,
         savedEditVersion: editVersion.current,
       })
-      setAnswers(saved.answers)
     } catch {
       return
     }
@@ -404,7 +423,18 @@ const ClientOnboarding = () => {
             <div className="flex flex-col-reverse gap-3 border-t pt-6 sm:flex-row sm:items-center sm:justify-between">
               <Button variant="outline" disabled={currentSection === 0 || saveMutation.isPending || uploadMutation.isPending || deleteUploadMutation.isPending || submitMutation.isPending} onClick={() => { editVersion.current += 1; setCurrentSection((value) => Math.max(0, value - 1)); setDirty(true); window.scrollTo({ top: 0, behavior: 'smooth' }) }}><ArrowLeft className="mr-2 h-4 w-4" />Previous</Button>
               <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
-                <span aria-live="polite" className={`inline-flex items-center justify-center gap-1.5 text-xs ${saveState === 'error' ? 'text-red-600' : 'text-slate-500'}`}>{saveMutation.isPending || saveState === 'saving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : saveState === 'saved' ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Save className="h-3.5 w-3.5" />}{saveMutation.isPending || saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'All changes saved' : saveState === 'error' ? 'Save failed — try again' : dirty ? 'Saving shortly…' : 'All changes saved'}</span>
+                <span aria-live="polite" className={`inline-flex items-center justify-center gap-1.5 text-xs ${saveState === 'error' ? 'text-red-600' : 'text-slate-500'}`}>{saveMutation.isPending || saveState === 'saving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : saveState === 'saved' ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Save className="h-3.5 w-3.5" />}{saveMutation.isPending || saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'All changes saved' : saveState === 'error' ? 'Save failed' : dirty ? 'Saving shortly…' : 'All changes saved'}</span>
+                {/* The two ways out of a failed save, offered where the failure
+                    is announced. Retry re-sends as-is; refresh re-reads the
+                    form — which is the only fix when another tab moved it or
+                    the link closed, and used to require knowing to reload the
+                    browser through a warning about unsaved changes. */}
+                {saveState === 'error' && (
+                  <span className="inline-flex items-center gap-2 text-xs">
+                    <button type="button" className="font-medium text-primary underline underline-offset-2" onClick={() => { setSaveState('idle') }}>Try again</button>
+                    <button type="button" className="font-medium text-primary underline underline-offset-2" onClick={() => { setSaveState('idle'); setDirty(false); void onboardingQuery.refetch() }}>Refresh the form</button>
+                  </span>
+                )}
                 {currentSection < view.definition.sections.length - 1 ? <Button disabled={saveMutation.isPending || uploadMutation.isPending || deleteUploadMutation.isPending || submitMutation.isPending} onClick={() => void goNext()}>Save & continue<ArrowRight className="ml-2 h-4 w-4" /></Button> : <Button disabled={saveMutation.isPending || uploadMutation.isPending || deleteUploadMutation.isPending || submitMutation.isPending} onClick={() => submitMutation.mutate()}>{submitMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}Submit for review</Button>}
               </div>
             </div>

@@ -158,7 +158,12 @@ function OnboardingActivity({ instance }: { instance: OnboardingInstanceSummary 
       <div className="space-y-0.5 text-xs text-muted-foreground">
         {recordedEvents.length > 0 ? recordedEvents.map(({ label, value }) => (
           <p key={label}><span className="font-medium text-foreground/75">{label}</span>{' '}<time dateTime={value}>{activityDate(value)}</time></p>
-        )) : (
+        )) : instance.delivery && (instance.delivery.status === 'failed' || instance.delivery.status === 'skipped') ? (
+          <p className="font-medium text-red-700" title={instance.delivery.last_error ?? undefined}>
+            {instance.delivery.status === 'failed' ? 'Email failed' : 'Email not sent'}{' '}
+            <time dateTime={instance.invited_at}>{activityDate(instance.invited_at)}</time>
+          </p>
+        ) : (
           <p>Sent <time dateTime={instance.invited_at}>{activityDate(instance.invited_at)}</time></p>
         )}
       </div>
@@ -174,7 +179,11 @@ function OnboardingAge({ instance }: { instance: OnboardingInstanceSummary }) {
   const settled = ['approved', 'expired', 'revoked'].includes(instance.status) || Boolean(instance.archived_at)
   return (
     <div className="min-w-32 space-y-1 text-xs text-muted-foreground">
-      <p>{state.ageDays === 0 ? 'Sent today' : `Sent ${state.ageDays} day${state.ageDays === 1 ? '' : 's'} ago`}</p>
+      <p>{(() => {
+        // "Sent" is a lie when the delivery record says the email never left.
+        const verb = !instance.viewed_at && (instance.delivery?.status === 'failed' || instance.delivery?.status === 'skipped') ? 'Created' : 'Sent'
+        return state.ageDays === 0 ? `${verb} today` : `${verb} ${state.ageDays} day${state.ageDays === 1 ? '' : 's'} ago`
+      })()}</p>
       {!settled && state.expiresInDays !== null && (
         <p className={state.expiresInDays <= EXPIRING_SOON_DAYS ? 'font-medium text-amber-700' : undefined}>
           {state.expiresInDays < 0
@@ -213,6 +222,11 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
   const [startForm, setStartForm] = useState<StartForm>(blankStartForm)
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null)
   const [invitation, setInvitation] = useState<OnboardingInvitationResult | null>(null)
+  // Whether the operator ticked "Email this invitation" for the invitation on
+  // screen. delivery.status 'skipped' alone cannot distinguish "didn't ask"
+  // from "asked and sending is unconfigured" — and only the second deserves a
+  // warning.
+  const [invitationEmailRequested, setInvitationEmailRequested] = useState(false)
   const [builderOpen, setBuilderOpen] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<OnboardingTemplate | null>(null)
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null)
@@ -300,9 +314,10 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
 
   const startMutation = useMutation({
     mutationFn: (input: StartOnboardingInput) => startWorkspaceOnboarding(workspaceId, input),
-    onSuccess: async (result) => {
+    onSuccess: async (result, variables) => {
       await refresh()
       setStartOpen(false)
+      setInvitationEmailRequested(Boolean(variables.send_email))
       setInvitation(result)
       toast.success(result.delivery.status === 'sent' ? 'Onboarding invitation sent.' : 'Onboarding link created.')
     },
@@ -702,7 +717,7 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
                                 {!['approved', 'revoked', 'submitted', 'expired'].includes(instance.status) && <DropdownMenuItem disabled={linkMutation.isPending} onClick={() => linkMutation.mutate({ action: 'get_link', instance })}><ExternalLink className="mr-2 h-4 w-4" />Open or copy current link</DropdownMenuItem>}
                                 {!['approved', 'revoked', 'submitted'].includes(instance.status) && <DropdownMenuItem disabled={linkMutation.isPending} onClick={() => linkMutation.mutate({ action: 'rotate', instance })}>Rotate secure link</DropdownMenuItem>}
                                 {!['submitted', 'approved', 'revoked'].includes(instance.status) && <DropdownMenuItem disabled={linkMutation.isPending} onClick={() => linkMutation.mutate({ action: 'extend', instance })}>Extend 14 days</DropdownMenuItem>}
-                                {!['approved', 'revoked'].includes(instance.status) && <DropdownMenuItem className="text-destructive" onClick={() => setConfirmation({ action: 'revoke', instance })}>Revoke link</DropdownMenuItem>}
+                                {!['approved', 'revoked', 'submitted'].includes(instance.status) && <DropdownMenuItem className="text-destructive" onClick={() => setConfirmation({ action: 'revoke', instance })}>Revoke link</DropdownMenuItem>}
                                 <DropdownMenuSeparator />
                                 {!instance.archived_at && <DropdownMenuItem onClick={() => setConfirmation({ action: 'archive', instance })}><Archive className="mr-2 h-4 w-4" />Archive</DropdownMenuItem>}
                                 {instance.archived_at && <DropdownMenuItem className="text-destructive" onClick={() => setConfirmation({ action: 'purge', instance })}>Permanently purge onboarding PII</DropdownMenuItem>}
@@ -722,7 +737,7 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
                 <div className="grid gap-4 lg:grid-cols-2">{data.templates.map((template) => (
                   <Card key={template.id} className={template.status === 'archived' ? 'opacity-60' : undefined}>
                     <CardHeader><div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><CardTitle>{template.name}</CardTitle>{template.is_default && <Badge>Default</Badge>}<Badge variant="outline" className="capitalize">{template.status}</Badge></div><CardDescription className="mt-2">{template.description || 'No internal description'}</CardDescription></div></div></CardHeader>
-                    <CardContent><div className="mb-4 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground"><span>{template.definition.sections.length} sections</span><span>{template.definition.sections.reduce((total, section) => total + section.questions.length, 0)} questions</span><span>Version {template.published_version || 'draft'}</span></div>{template.status !== 'archived' && <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => { setEditingTemplate(template); setBuilderOpen(true) }}>Edit builder</Button><Button size="sm" variant="outline" onClick={() => templateActionMutation.mutate({ action: 'duplicate', template })}><Copy className="mr-2 h-4 w-4" />Duplicate</Button>{template.status === 'published' && !template.is_default && <Button size="sm" variant="outline" onClick={() => templateActionMutation.mutate({ action: 'default', template })}>Make default</Button>}<Button size="sm" variant="ghost" className="text-destructive" onClick={() => templateActionMutation.mutate({ action: 'archive', template })}>Archive</Button></div>}</CardContent>
+                    <CardContent><div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground"><span>{(template.published_definition ?? template.definition).sections.length} sections</span><span>{(template.published_definition ?? template.definition).sections.reduce((total, section) => total + section.questions.length, 0)} questions</span><span>Version {template.published_version || 'draft'}</span>{template.has_unpublished_changes && <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">Unpublished changes</Badge>}</div>{template.status !== 'archived' && <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => { setEditingTemplate(template); setBuilderOpen(true) }}>Edit builder</Button><Button size="sm" variant="outline" onClick={() => templateActionMutation.mutate({ action: 'duplicate', template })}><Copy className="mr-2 h-4 w-4" />Duplicate</Button>{template.status === 'published' && !template.is_default && <Button size="sm" variant="outline" onClick={() => templateActionMutation.mutate({ action: 'default', template })}>Make default</Button>}<Button size="sm" variant="ghost" className="text-destructive" onClick={() => templateActionMutation.mutate({ action: 'archive', template })}>Archive</Button></div>}</CardContent>
                   </Card>
                 ))}</div>
               </TabsContent>}
@@ -787,7 +802,7 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
                 <ClientOnboardingPreview
                   key={selectedStartTemplate.id}
                   definition={{
-                    ...selectedStartTemplate.definition,
+                    ...(selectedStartTemplate.published_definition ?? selectedStartTemplate.definition),
                     intro_title: startForm.experience_title,
                     intro_body: startForm.experience_body,
                     completion_message: startForm.experience_completion_message,
@@ -820,8 +835,13 @@ const WorkspaceOnboarding = ({ platformWorkspaceId }: Props) => {
               The invitation email could not be delivered — share the link below manually.
             </p>
           )}
+          {invitation && invitation.delivery.status === 'skipped' && invitationEmailRequested && (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="alert">
+              Email sending is not available right now, so no invitation was emailed — share the link below yourself.
+            </p>
+          )}
           {invitation && <div className="space-y-4"><div className="overflow-hidden rounded-2xl border bg-muted/20"><div className="h-1.5 bg-gradient-to-r from-primary via-violet-500 to-fuchsia-400" /><div className="p-5"><div className="flex items-start gap-3"><div className="rounded-xl bg-primary/10 p-2.5 text-primary"><Share2 className="h-5 w-5" /></div><div><p className="font-semibold">Ready for {invitation.instance.recipient_name}</p><p className="mt-1 text-sm leading-6 text-muted-foreground">When shared in Messages, the link can display your agency name and logo as a polished preview.</p></div></div></div></div><div className="space-y-2"><Label htmlFor="onboarding-link">Private onboarding link</Label><Input id="onboarding-link" readOnly value={invitation.onboarding_url} onFocus={(event) => event.currentTarget.select()} /><div className="grid gap-2 sm:grid-cols-2"><Button onClick={() => void shareLink(invitation.onboarding_url)}><Share2 className="mr-2 h-4 w-4" />Share link</Button><Button variant="outline" onClick={() => void copyLink(invitation.onboarding_url)}><Copy className="mr-2 h-4 w-4" />Copy link</Button></div></div><p className="text-xs text-muted-foreground">Anyone with this link can complete this client’s intake until it expires or is revoked. Send it only to the intended contact.</p></div>}
-          <DialogFooter>{invitation && <Button variant="outline" asChild><a href={invitation.onboarding_url} target="_blank" rel="noreferrer"><ExternalLink className="mr-2 h-4 w-4" />Open client form</a></Button>}<Button onClick={() => setInvitation(null)}>Done</Button></DialogFooter>
+          <DialogFooter>{invitation && <Button variant="outline" asChild><a href={`${invitation.onboarding_url}${invitation.onboarding_url.includes('?') ? '&' : '?'}preview=staff`} target="_blank" rel="noreferrer"><ExternalLink className="mr-2 h-4 w-4" />Open client form</a></Button>}<Button onClick={() => setInvitation(null)}>Done</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

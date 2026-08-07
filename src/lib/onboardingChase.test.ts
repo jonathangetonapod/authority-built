@@ -66,6 +66,52 @@ describe('onboardingChaseState', () => {
     expect(state.reason).toBe('The link expires in 2 days')
   })
 
+  it('says the link expires today instead of "in today"', () => {
+    // Under a day left floors to zero, and zero used to interpolate into
+    // "The link expires in today".
+    const state = onboardingChaseState(instance({
+      capability_expires_at: new Date(NOW + 6 * 3_600_000).toISOString(),
+    }), NOW)
+    expect(state.needsChasing).toBe(true)
+    expect(state.reason).toBe('The link expires today')
+  })
+
+  it('counts calendar days across a lost DST hour', () => {
+    // Ten calendar days across spring-forward measure an hour short of
+    // 10 x 24h; floor called that nine days and every threshold fired late.
+    const state = onboardingChaseState(instance({
+      invited_at: new Date(NOW - (10 * 86_400_000 - 3_600_000)).toISOString(),
+    }), NOW)
+    expect(state.ageDays).toBe(10)
+    expect(state.reason).toBe('Sent 10 days ago and never opened')
+  })
+
+  it('blames the mail, not the client, when the invitation never left', () => {
+    // A failed send used to wait out the unopened window and then read
+    // "Sent 3 days ago and never opened" for an email nobody received.
+    const state = onboardingChaseState(instance({
+      delivery: { status: 'failed', last_error: 'domain not verified' },
+    }), NOW)
+    expect(state.needsChasing).toBe(true)
+    expect(state.reason).toBe('The invitation email failed to send — share the link yourself')
+  })
+
+  it('says a skipped send out loud instead of waiting for a click that cannot come', () => {
+    const state = onboardingChaseState(instance({
+      delivery: { status: 'skipped', last_error: null },
+    }), NOW)
+    expect(state.reason).toBe('The invitation email was never sent — share the link yourself')
+  })
+
+  it('drops the delivery warning once the client has demonstrably opened the form', () => {
+    // Viewed means the link reached them some other way; the send outcome is moot.
+    const state = onboardingChaseState(instance({
+      viewed_at: daysAgo(1),
+      delivery: { status: 'failed', last_error: null },
+    }), NOW)
+    expect(state.needsChasing).toBe(false)
+  })
+
   it('says a live onboarding whose link already died', () => {
     // The status is still invited because nothing sweeps it; the client gets an
     // error rather than a form, and nobody is told.
