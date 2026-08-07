@@ -816,6 +816,12 @@ export interface WorkspaceInboxThread {
   } | null
   thread_key?: string
   relationship?: { podcast_id: string } | null
+  /**
+   * Synthesized from the server-owned review queue: the staged package's
+   * reply has scrolled out of the shared provider window, so body_text is
+   * empty and the conversation must be read via the full thread view.
+   */
+  window_aged_out?: boolean
   state?: {
     status: WorkspaceInboxThreadStatus
     classification: WorkspaceInboxReplyClassification | null

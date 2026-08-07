@@ -1043,7 +1043,9 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                       {thread.interested && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-label="Interested" />}
                     </div>
                     <p className="mt-0.5 truncate text-xs text-foreground/90">{thread.subject || '(no subject)'}</p>
-                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{thread.body_text}</p>
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                      {thread.window_aged_out ? 'Staged for review — the reply is older than the inbox window' : thread.body_text}
+                    </p>
                     <div className="mt-1.5 flex items-center gap-1.5">
                       {thread.campaign?.client
                         ? <Badge variant="secondary" className="px-1.5 py-0 text-[10px] font-medium">{thread.campaign.client.name}</Badge>
@@ -1137,7 +1139,15 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                     )}
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">From {selectedThread.from_email || selectedThread.lead_email}</p>
-                  <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{selectedThread.body_text || 'No text content.'}</p>
+                  {selectedThread.window_aged_out ? (
+                    <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                      This reply has scrolled out of the inbox window, but its staged package is kept
+                      here so it cannot be lost. Open the conversation below to read what the host
+                      wrote before sending.
+                    </p>
+                  ) : (
+                    <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{selectedThread.body_text || 'No text content.'}</p>
+                  )}
                 </div>
 
                 {/* The list reads received mail only, so without this an

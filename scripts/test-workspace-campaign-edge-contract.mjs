@@ -639,6 +639,16 @@ assert.match(edge, /action === "client-prompts-set"[\s\S]*?requireIntegrationOwn
 assert.match(edge, /action === "client-prompts-reset"[\s\S]*?requireIntegrationOwner\(access\)/u)
 assert.match(sdrShared, /from\('client_ai_sdr_prompts'\)[\s\S]*?\.eq\('client_id', clientId\)/u)
 assert.match(sdrShared, /clientPrompt[\s\S]*?workspacePrompt[\s\S]*?replyDefault\.content/u)
+// Server-owned review recovery (2026-08-07): staged packages must survive the
+// provider window. The list synthesizes any review-status state row whose
+// thread is no longer in the window, flags it aged-out, and anchors its id to
+// the inbound message the draft answers so a reply still lands on the right
+// turn of the thread.
+assert.match(edge, /const visibleThreadKeys = new Set\(dedupedThreads\.map/u)
+assert.match(edge, /row\.status === "review"\s*\n\s*&& !row\.suppressed_at/u)
+assert.match(edge, /window_aged_out: true/u)
+assert.match(edge, /draftRecord\.based_on_email_id\s*\n?\s*: `state:\$\{threadKey\}`/u)
+
 // Re-anchored 2026-08-07: the interested-only skip now advances the cursor
 // explicitly — skips must be marked handled or the cursor eats them (the
 // deep-dive's lost-replies bug). The interested-only gate itself is unchanged.

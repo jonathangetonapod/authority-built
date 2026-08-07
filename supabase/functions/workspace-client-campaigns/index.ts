@@ -3824,7 +3824,7 @@ serve(async (req) => {
           .limit(5_000),
         context.admin
           .from("workspace_inbox_thread_state")
-          .select("thread_key, client_id, lead_email, podcast_id, status, classification, draft, nudges_sent, nudges_paused, last_nudge_at, last_nudge_error, suppressed_at, auto_send_eligible_at, auto_sent_at, auto_send_error")
+          .select("thread_key, client_id, lead_email, podcast_id, status, classification, draft, nudges_sent, nudges_paused, last_nudge_at, last_nudge_error, suppressed_at, auto_send_eligible_at, auto_sent_at, auto_send_error, updated_at")
           .eq("workspace_id", workspaceId)
           .limit(5_000),
         context.admin
@@ -4165,9 +4165,126 @@ serve(async (req) => {
           console.error("[Client Campaigns] Reply relationship capture failed", relationshipStateError.message);
         }
       }
+      /*
+       * Server-owned review recovery. The list above is only as wide as a
+       * 300-email provider window shared with every campaign in the Instantly
+       * org — but the review queue is OUR state: each staged package was
+       * classified and billed, and one whose reply scrolled out of the window
+       * became unreviewable and uncounted, invisible to the very screen that
+       * exists to review it. Any review-status row not already represented is
+       * synthesized into the list from the database, flagged aged-out so the
+       * UI can say the original reply text has to be read from the full
+       * conversation. Its id is the inbound message the draft answers, which
+       * is exactly what a reply must anchor to; the send-time gates
+       * (thread-advanced, suppression, send-once) still protect it.
+       */
+      const visibleThreadKeys = new Set(dedupedThreads.map((thread) => thread.thread_key || thread.id));
+      const hiddenReviewRows = ((stateRows.error ? [] : stateRows.data ?? []) as Array<Record<string, unknown>>)
+        .filter((row) =>
+          typeof row.thread_key === "string"
+          && row.status === "review"
+          && !row.suppressed_at
+          && typeof row.client_id === "string"
+          && !visibleThreadKeys.has(row.thread_key));
+      let agedOutThreads: Array<Record<string, unknown>> = [];
+      if (hiddenReviewRows.length > 0) {
+        const clientIds = [...new Set(hiddenReviewRows.map((row) => String(row.client_id)))];
+        const { data: clientRows } = await context.admin
+          .from("clients")
+          .select("id, name")
+          .eq("workspace_id", workspaceId)
+          .in("id", clientIds);
+        const clientNameById = new Map(
+          ((clientRows ?? []) as Array<Record<string, unknown>>)
+            .map((row) => [String(row.id), typeof row.name === "string" ? row.name : ""]),
+        );
+        agedOutThreads = hiddenReviewRows.flatMap((row) => {
+          const clientId = String(row.client_id);
+          const clientName = clientNameById.get(clientId);
+          // A client this workspace cannot name is a row that must not render.
+          if (clientName === undefined) return [];
+          const threadKey = String(row.thread_key);
+          const leadEmail = typeof row.lead_email === "string" ? row.lead_email.trim().toLowerCase() : "";
+          const draftRecord = row.draft && typeof row.draft === "object" && !Array.isArray(row.draft)
+            ? row.draft as Record<string, unknown>
+            : null;
+          const target = leadEmail ? targetByClientEmail.get(`${clientId}:${leadEmail}`) ?? null : null;
+          return [{
+            id: typeof draftRecord?.based_on_email_id === "string"
+              ? draftRecord.based_on_email_id
+              : `state:${threadKey}`,
+            thread_id: threadKey,
+            message_id: null,
+            eaccount: null,
+            subject: typeof draftRecord?.subject === "string" ? draftRecord.subject.slice(0, 300) : "(staged reply)",
+            from_email: leadEmail,
+            to_email: "",
+            body_text: "",
+            received_at: typeof row.updated_at === "string" ? row.updated_at : null,
+            is_unread: false,
+            // Staged packages exist because the reply was flagged interested;
+            // an operator's own later decision still wins.
+            interested: interestByLeadEmail.has(leadEmail)
+              ? interestByLeadEmail.get(leadEmail) === 1
+              : true,
+            interest_status: interestByLeadEmail.has(leadEmail)
+              ? interestByLeadEmail.get(leadEmail) ?? null
+              : 1,
+            suppressed: suppressedEmails.has(leadEmail),
+            opt_out_detected: false,
+            lead_email: leadEmail,
+            lead_id: null,
+            campaign: {
+              campaign_id: "",
+              campaign_name: null,
+              client: { id: clientId, name: clientName },
+            },
+            thread_key: threadKey,
+            relationship: relationshipByThreadKey.has(threadKey)
+              ? { podcast_id: relationshipByThreadKey.get(threadKey) }
+              : null,
+            window_aged_out: true,
+            state: {
+              status: "review",
+              classification: row.classification ?? null,
+              nudges_sent: typeof row.nudges_sent === "number" ? row.nudges_sent : 0,
+              nudges_paused: row.nudges_paused === true,
+              last_nudge_at: typeof row.last_nudge_at === "string" ? row.last_nudge_at : null,
+              last_nudge_error: typeof row.last_nudge_error === "string" ? row.last_nudge_error : null,
+              suppressed_at: null,
+              auto_send_eligible_at: null,
+              auto_sent_at: null,
+              auto_send_error: null,
+              draft: draftRecord
+                ? {
+                  subject: typeof draftRecord.subject === "string" ? draftRecord.subject : "",
+                  body: typeof draftRecord.body === "string" ? draftRecord.body : "",
+                  nudges: Array.isArray(draftRecord.nudges) ? draftRecord.nudges : [],
+                  based_on_email_id: typeof draftRecord.based_on_email_id === "string" ? draftRecord.based_on_email_id : null,
+                  generated_at: typeof draftRecord.generated_at === "string" ? draftRecord.generated_at : null,
+                }
+                : null,
+              // Unknowable without the provider window; the send-time
+              // thread-advanced gate is the protection that still applies.
+              draft_stale: false,
+            },
+            lead_context: target
+              ? {
+                podcast_id: typeof target.podcast_id === "string" ? target.podcast_id : null,
+                podcast_name: typeof target.podcast_name === "string" ? target.podcast_name.slice(0, 300) : null,
+                host_name: typeof target.host_name === "string" ? target.host_name.slice(0, 300) : null,
+                stage: "replied",
+                first_message_at: typeof target.launched_at === "string" ? target.launched_at : null,
+                opens: typeof target.email_open_count === "number" ? target.email_open_count : 0,
+                replies: typeof target.email_reply_count === "number" ? target.email_reply_count : 0,
+              }
+              : null,
+          }];
+        });
+      }
       return jsonResponse(req, METHODS, 200, {
         connected: true,
-        threads: dedupedThreads,
+        threads: [...dedupedThreads, ...agedOutThreads],
         truncated,
       });
     }

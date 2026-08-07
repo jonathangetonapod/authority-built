@@ -683,6 +683,63 @@ describe('WorkspaceOutreachSuite', () => {
     expect(screen.getByText(/an older conversation may be missing/i)).toBeInTheDocument()
   })
 
+  it('keeps a staged review reachable after its reply ages out of the provider window', async () => {
+    const clientId = '22222222-2222-4222-8222-222222222222'
+    vi.mocked(getWorkspaceInboxThreads).mockResolvedValue({
+      connected: true,
+      threads: [{
+        id: 'email-aged-review',
+        thread_id: 'thread-aged',
+        message_id: null,
+        eaccount: null,
+        subject: 'Re: Guest spot for Dallas',
+        from_email: 'host@agedshow.com',
+        to_email: '',
+        // The provider window no longer holds the reply, so the server
+        // synthesized this entry from the review queue with no body text.
+        body_text: '',
+        received_at: '2026-07-20T09:00:00.000Z',
+        is_unread: false,
+        interested: true,
+        interest_status: 1,
+        suppressed: false,
+        lead_email: 'host@agedshow.com',
+        campaign: {
+          campaign_id: '',
+          campaign_name: null,
+          client: { id: clientId, name: 'Dallas Fontaine' },
+        },
+        thread_key: 'thread-aged',
+        relationship: null,
+        window_aged_out: true,
+        state: {
+          status: 'review',
+          classification: { label: 'interested', confidence: 90, reasoning: 'Wants to book.' },
+          nudges_sent: 0,
+          nudges_paused: false,
+          last_nudge_at: null,
+          draft: {
+            subject: 'Re: Guest spot for Dallas',
+            body: 'Great to hear from you — how does Tuesday look?',
+            nudges: [],
+            based_on_email_id: 'email-aged-review',
+            generated_at: '2026-07-20T09:05:00.000Z',
+          },
+          draft_stale: false,
+        },
+      }],
+    } as never)
+    renderPage('master-inbox')
+
+    // The staged package appears in the list even though the provider window
+    // returned nothing for it, and says why its preview is empty.
+    fireEvent.click(await screen.findByText('Re: Guest spot for Dallas'))
+    expect(screen.getByText(/Staged for review — the reply is older than the inbox window/i)).toBeInTheDocument()
+    expect(await screen.findByText(/scrolled out of the inbox window/i)).toBeInTheDocument()
+    // The staged draft itself is still on screen for review.
+    expect(screen.getByDisplayValue(/how does Tuesday look/i)).toBeInTheDocument()
+  })
+
   it('lets an operator suppress a host who asked to stop, from the reply itself', async () => {
     const clientId = '22222222-2222-4222-8222-222222222222'
     vi.mocked(getWorkspaceInboxThreads).mockResolvedValue({
