@@ -447,7 +447,7 @@ export default function PortalDashboardMvp() {
             ) : overviewQuery.error && !overview ? (
               <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-center">
                 <p className="text-sm text-destructive">
-                  We could not load your placements. Your session may have expired.
+                  We couldn’t load your placements right now. Try again in a moment, or sign in again if it keeps happening.
                 </p>
                 <Button variant="outline" onClick={() => overviewQuery.refetch()}>
                   <RefreshCw className="mr-2 h-4 w-4" /> Try again

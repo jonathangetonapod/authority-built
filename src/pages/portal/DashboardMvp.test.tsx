@@ -175,7 +175,7 @@ describe('PortalDashboardMvp', () => {
     renderPage()
 
     // The shared hook retries once with backoff before erroring.
-    expect(await screen.findByText(/could not load your placements/i, {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(await screen.findByText(/couldn.t load your placements/i, {}, { timeout: 5000 })).toBeInTheDocument()
     expect(screen.queryByText('Total placements')).not.toBeInTheDocument()
     expect(screen.queryByText('Combined audience')).not.toBeInTheDocument()
   })

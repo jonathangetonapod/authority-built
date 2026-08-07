@@ -161,7 +161,7 @@ export default function PortalCalendar() {
           </div>
         ) : overviewQuery.error ? (
           <div className="flex min-h-52 flex-col items-center justify-center gap-3 text-center">
-            <p className="text-sm text-destructive">We could not load your calendar. Your session may have expired.</p>
+            <p className="text-sm text-destructive">We couldn’t load your calendar right now. Try again in a moment, or sign in again if it keeps happening.</p>
             <Button variant="outline" onClick={() => overviewQuery.refetch()}>
               <RefreshCw className="mr-2 h-4 w-4" /> Try again
             </Button>

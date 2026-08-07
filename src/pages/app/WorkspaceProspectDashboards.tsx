@@ -779,8 +779,19 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
       return setWorkspaceProspectPublished(workspaceId, selected.id, published)
     },
     onSuccess: async (nextDetail, published) => {
+      // pendingAdditions is captured at click time. Publishing clears the
+      // review flag but does NOT make newly-added shows visible, so claiming
+      // "live and ready to share" while shows stay hidden was a lie that also
+      // stopped the list from flagging the dashboard for review. Say the truth.
+      const hiddenCount = pendingAdditions.length
       await refreshAfterMutation(nextDetail)
-      toast.success(published ? 'Dashboard is live and ready to share.' : 'Dashboard unpublished.')
+      if (!published) {
+        toast.success('Dashboard unpublished.')
+      } else if (hiddenCount > 0) {
+        toast.success(`Dashboard published — but ${hiddenCount} added ${hiddenCount === 1 ? 'show is' : 'shows are'} still hidden. Open “New” to show them.`)
+      } else {
+        toast.success('Dashboard is live and ready to share.')
+      }
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Publication could not be changed.'),
   })
