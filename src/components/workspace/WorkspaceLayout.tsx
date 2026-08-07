@@ -97,7 +97,31 @@ function orderedWorkspaceNavItems(value: unknown): WorkspaceNavItem[] {
     seen.add(candidate)
     return [item]
   })
-  return [...ordered, ...workspaceNavItems.filter((item) => !seen.has(item.id))]
+  const missing = workspaceNavItems.filter((item) => !seen.has(item.id))
+  /*
+   * A COMPLETE saved order missing only newly shipped modules gets each new
+   * module spliced in at its default position. Plain appending put every new
+   * page dead last — below Settings — for exactly the users who had cared
+   * enough to arrange their sidebar, which is where nobody looks for a new
+   * module. Partial orders (hand-edited storage, older shapes) keep the
+   * conservative append: guessing positions inside a deliberate custom
+   * arrangement would be worse than adding to the end.
+   */
+  const savedIsCompletePriorOrder = missing.every((item) => {
+    const defaultIndex = workspaceNavItems.findIndex((candidate) => candidate.id === item.id)
+    return workspaceNavItems.every((candidate, index) => (
+      index > defaultIndex || candidate.id === item.id || seen.has(candidate.id)
+    ))
+  })
+  if (savedIsCompletePriorOrder && ordered.length >= workspaceNavItems.length - missing.length) {
+    const result = [...ordered]
+    for (const item of missing) {
+      const defaultIndex = workspaceNavItems.findIndex((candidate) => candidate.id === item.id)
+      result.splice(Math.min(defaultIndex, result.length), 0, item)
+    }
+    return result
+  }
+  return [...ordered, ...missing]
 }
 
 function storedWorkspaceNavItems(

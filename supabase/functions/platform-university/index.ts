@@ -19,6 +19,7 @@ import {
   requireOnlyKeys,
   requireString,
   requireUuid,
+  workspaceCredentialIsFresh,
   writeAudit,
 } from '../_shared/workspaceAuth.ts'
 import { HttpError } from '../_shared/httpError.ts'
@@ -60,22 +61,29 @@ export function parseVideoUrl(raw: string): { provider: 'loom' | 'youtube'; vide
     throw new HttpError(400, 'INVALID_VIDEO_URL', 'Video links must be https')
   }
   const host = url.hostname.toLowerCase().replace(/^www\./u, '')
-  const idShape = /^[A-Za-z0-9_-]{6,64}$/u
+  // Exact id shapes per provider, not a generic 6-64 net. Loom share links
+  // usually carry a title slug ("share/My-Demo-Video-<32hex>") — a loose
+  // match stored the first slug word as the "id" and shipped a dead player
+  // to every workspace, or rejected a perfectly valid link when the first
+  // word was short. YouTube video ids are exactly 11 characters; anything
+  // longer that fits a looser net (a pasted playlist id) also embeds dead.
+  const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/u
 
   if (host === 'loom.com' || host.endsWith('.loom.com')) {
-    const match = /^\/(?:share|embed)\/([A-Za-z0-9]+)/u.exec(url.pathname)
-    if (match && idShape.test(match[1])) return { provider: 'loom', videoId: match[1] }
+    const match = /^\/(?:share|embed)\/(?:[\w-]+-)?([0-9a-f]{32})(?:[/?#]|$)/u.exec(url.pathname)
+    if (match) return { provider: 'loom', videoId: match[1] }
     throw new HttpError(400, 'INVALID_VIDEO_URL', 'That Loom link has no video id — use the Share link')
   }
   if (host === 'youtu.be') {
     const id = url.pathname.slice(1).split('/')[0]
-    if (idShape.test(id)) return { provider: 'youtube', videoId: id }
+    if (YOUTUBE_ID.test(id)) return { provider: 'youtube', videoId: id }
+    throw new HttpError(400, 'INVALID_VIDEO_URL', 'That YouTube link has no video id')
   }
   if (host === 'youtube.com' || host === 'youtube-nocookie.com' || host.endsWith('.youtube.com')) {
     const fromQuery = url.searchParams.get('v')
-    if (fromQuery && idShape.test(fromQuery)) return { provider: 'youtube', videoId: fromQuery }
+    if (fromQuery && YOUTUBE_ID.test(fromQuery)) return { provider: 'youtube', videoId: fromQuery }
     const pathMatch = /^\/(?:embed|shorts|live)\/([A-Za-z0-9_-]+)/u.exec(url.pathname)
-    if (pathMatch && idShape.test(pathMatch[1])) return { provider: 'youtube', videoId: pathMatch[1] }
+    if (pathMatch && YOUTUBE_ID.test(pathMatch[1])) return { provider: 'youtube', videoId: pathMatch[1] }
     throw new HttpError(400, 'INVALID_VIDEO_URL', 'That YouTube link has no video id')
   }
   throw new HttpError(400, 'INVALID_VIDEO_URL', 'Only Loom and YouTube links are supported')
@@ -104,6 +112,17 @@ serve(async (req) => {
       throw new HttpError(405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed')
     }
     const context = await requireAuthenticatedUser(req)
+    /*
+     * Same credential-freshness gate as every sibling function: a token
+     * minted before a password change or access revocation must not keep
+     * working here just because the content is benign. Beyond that, reading
+     * published lessons deliberately requires no workspace membership —
+     * training is platform content offered to every authenticated account,
+     * and the only write a non-admin can make is their own watch mark.
+     */
+    if (!workspaceCredentialIsFresh(context)) {
+      throw new HttpError(401, 'REAUTHENTICATION_REQUIRED', 'Sign in again with the newest account credentials')
+    }
     const admin = context.admin
     const body = await parseJsonObject(req, MAX_BODY_BYTES)
     const action = typeof body.action === 'string' ? body.action : ''
@@ -130,6 +149,9 @@ serve(async (req) => {
         .from('platform_university_watches')
         .select('lesson_id')
         .eq('user_id', context.user.id)
+        // Newest first so that if the cap is ever reached, the marks that
+        // drop are the oldest — a stable subset, not a flapping one.
+        .order('watched_at', { ascending: false })
         .limit(1_000)
       return jsonResponse(req, METHODS, 200, {
         lessons: (data ?? []).map((row) => lessonResponse(row as Record<string, unknown>)),
@@ -150,7 +172,12 @@ serve(async (req) => {
         .select('id')
         .eq('id', lessonId)
       if (!context.platformAdmin) lessonQuery = lessonQuery.eq('published', true)
-      const { data: lessonRow } = await lessonQuery.maybeSingle()
+      const { data: lessonRow, error: lessonLookupError } = await lessonQuery.maybeSingle()
+      // A transient read failure is a 500, not "that lesson no longer
+      // exists" — the 404 message actively misleads when the DB hiccups.
+      if (lessonLookupError) {
+        throw new HttpError(500, 'UNIVERSITY_UNAVAILABLE', 'The lesson could not be checked')
+      }
       if (!lessonRow) {
         throw new HttpError(404, 'LESSON_NOT_FOUND', 'That lesson no longer exists')
       }
@@ -194,6 +221,27 @@ serve(async (req) => {
 
       let saved: Record<string, unknown> | null = null
       if (id) {
+        // A lesson moved to a different category lands at that category's
+        // end. Keeping its old sort_order collided with the destination's
+        // positions and dropped it mid-list wherever the tiebreaker fell.
+        const { data: currentRow } = await admin
+          .from('platform_university_lessons')
+          .select('category')
+          .eq('id', id)
+          .maybeSingle()
+        let movedSortOrder: Record<string, unknown> = {}
+        if (currentRow && currentRow.category !== category) {
+          const { data: destinationTail } = await admin
+            .from('platform_university_lessons')
+            .select('sort_order')
+            .eq('category', category)
+            .order('sort_order', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          movedSortOrder = {
+            sort_order: (typeof destinationTail?.sort_order === 'number' ? destinationTail.sort_order : -1) + 1,
+          }
+        }
         const { data, error } = await admin
           .from('platform_university_lessons')
           .update({
@@ -204,6 +252,7 @@ serve(async (req) => {
             provider,
             video_id: videoId,
             published,
+            ...movedSortOrder,
             updated_at: new Date().toISOString(),
           })
           .eq('id', id)
@@ -286,6 +335,26 @@ serve(async (req) => {
         throw new HttpError(400, 'INVALID_FIELD', 'ordered_ids must list the lessons to order')
       }
       const orderedIds = body.ordered_ids.map((value, index) => requireUuid(value, `ordered_ids[${index}]`))
+      /*
+       * The order must name exactly the lessons the category holds. Silently
+       * skipping foreign or stale ids consumed positions for rows that were
+       * never updated and left omitted lessons interleaved at their old
+       * numbers — while the action still claimed success.
+       */
+      const { data: currentRows, error: currentError } = await admin
+        .from('platform_university_lessons')
+        .select('id')
+        .eq('category', category)
+      if (currentError) {
+        throw new HttpError(500, 'UNIVERSITY_SAVE_FAILED', 'The order could not be saved')
+      }
+      const currentIds = new Set(((currentRows ?? []) as Array<Record<string, unknown>>).map((row) => String(row.id)))
+      const orderedSet = new Set(orderedIds)
+      if (orderedSet.size !== orderedIds.length
+        || currentIds.size !== orderedSet.size
+        || [...currentIds].some((lessonId) => !orderedSet.has(lessonId))) {
+        throw new HttpError(409, 'REORDER_STALE', 'The lesson list changed while reordering — refresh and try again')
+      }
       for (const [index, lessonId] of orderedIds.entries()) {
         const { error } = await admin
           .from('platform_university_lessons')

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -72,6 +72,9 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
  * `segment` is where "Open the module" jumps; null for categories that are
  * about the platform rather than one page. Only categories with lessons
  * render, so the page never looks empty while content is still being made.
+ * Billing's segment only exists on the tenant's own tree — the platform
+ * view has no workspace-scoped billing route, so the link is dropped there
+ * (the sidebar hides its billing item for the same reason).
  */
 const CATEGORY_META: Array<{ id: UniversityCategory; label: string; segment: string | null }> = [
   { id: 'getting_started', label: 'Getting started', segment: null },
@@ -147,6 +150,13 @@ const WorkspaceUniversity = ({ platformWorkspaceId }: Props) => {
   const watchMutation = useMutation({
     mutationFn: ({ lessonId, watched }: { lessonId: string; watched: boolean }) =>
       setUniversityLessonWatched(lessonId, watched),
+    // A refetch started BEFORE the mark (a save or reorder invalidation)
+    // resolves with pre-mark data and would overwrite the patch below,
+    // visually reverting a watched check the server already holds.
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: lessonsKey })
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'The watched mark could not be saved.'),
     // The mark is the cheapest possible write; patch the cache directly so
     // the check appears without refetching the whole library.
     onSuccess: (_result, { lessonId, watched }) => {
@@ -161,12 +171,24 @@ const WorkspaceUniversity = ({ platformWorkspaceId }: Props) => {
     },
   })
 
+  // Lessons this person explicitly un-watched in this visit. Without it the
+  // undo was unkeepable: reopening the lesson — even to peek — instantly
+  // re-marked it watched, clobbering the explicit choice.
+  const unwatchedByHandRef = useRef<Set<string>>(new Set())
+
   const openPlayer = (lesson: UniversityLesson) => {
     setPlaying(lesson)
     // Opening the player is the watch signal; the dialog offers the undo.
-    if (lesson.published && !watchedIds.has(lesson.id)) {
+    if (lesson.published && !watchedIds.has(lesson.id) && !unwatchedByHandRef.current.has(lesson.id)) {
       watchMutation.mutate({ lessonId: lesson.id, watched: true })
     }
+  }
+
+  const toggleWatched = (lesson: UniversityLesson) => {
+    const next = !watchedIds.has(lesson.id)
+    if (next) unwatchedByHandRef.current.delete(lesson.id)
+    else unwatchedByHandRef.current.add(lesson.id)
+    watchMutation.mutate({ lessonId: lesson.id, watched: next })
   }
 
   const selectedWorkspaceQuery = useQuery({
@@ -200,10 +222,15 @@ const WorkspaceUniversity = ({ platformWorkspaceId }: Props) => {
       || lesson.title.toLowerCase().includes(query)
       || lesson.description.toLowerCase().includes(query))
     const grouped = new Map<UniversityCategory, UniversityLesson[]>()
+    const knownCategories = new Set(CATEGORY_META.map((meta) => meta.id))
     for (const lesson of filtered) {
-      const list = grouped.get(lesson.category) ?? []
+      // A category this page does not know renders under "More" instead of
+      // nowhere — the render loop iterates CATEGORY_META, so an unknown
+      // key would make the lesson silently invisible.
+      const category = knownCategories.has(lesson.category) ? lesson.category : 'other'
+      const list = grouped.get(category) ?? []
       list.push(lesson)
-      grouped.set(lesson.category, list)
+      grouped.set(category, list)
     }
     return grouped
   }, [lessons, search])
@@ -252,6 +279,23 @@ const WorkspaceUniversity = ({ platformWorkspaceId }: Props) => {
   }
 
   const totalVisible = [...visibleByCategory.values()].reduce((sum, list) => sum + list.length, 0)
+
+  // Billing has no workspace-scoped route; in the platform view its module
+  // link would 404, so it renders as no link at all there.
+  const moduleSegment = (metaId: UniversityCategory, segment: string | null): string | null =>
+    isPlatformWorkspace && metaId === 'billing' ? null : segment
+
+  if (isPlatformWorkspace && !validWorkspaceId) {
+    return (
+      <WorkspaceLayout platformWorkspace={platformWorkspace}>
+        <Card>
+          <CardContent className="p-10 text-center text-sm text-muted-foreground">
+            Workspace unavailable — check the address and try again.
+          </CardContent>
+        </Card>
+      </WorkspaceLayout>
+    )
+  }
 
   return (
     <WorkspaceLayout platformWorkspace={platformWorkspace}>
@@ -325,8 +369,20 @@ const WorkspaceUniversity = ({ platformWorkspaceId }: Props) => {
                   </span>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {categoryLessons.map((lesson, index) => {
+                  {categoryLessons.map((lesson) => {
                     const thumbnail = universityThumbnailUrl(lesson)
+                    /*
+                     * Arrow positions come from the FULL category list — the
+                     * same list moveLesson swaps in. Using the filtered index
+                     * let an arrow look enabled while a search hid neighbors:
+                     * clicking it swapped with an invisible lesson and the
+                     * visible order never moved. While a search is active the
+                     * arrows are disabled outright; a reorder you cannot see
+                     * is not a reorder.
+                     */
+                    const fullCategoryIds = lessons.filter((item) => item.category === id).map((item) => item.id)
+                    const fullIndex = fullCategoryIds.indexOf(lesson.id)
+                    const searching = search.trim().length > 0
                     return (
                       <Card key={lesson.id} className="overflow-hidden">
                         <button
@@ -341,6 +397,7 @@ const WorkspaceUniversity = ({ platformWorkspaceId }: Props) => {
                               alt=""
                               loading="lazy"
                               className="absolute inset-0 h-full w-full object-cover"
+                              onError={(event) => { event.currentTarget.style.display = 'none' }}
                             />
                           )}
                           <span className="absolute inset-0 flex items-center justify-center">
@@ -366,9 +423,9 @@ const WorkspaceUniversity = ({ platformWorkspaceId }: Props) => {
                             <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{lesson.description}</p>
                           )}
                           <div className="flex items-center justify-between pt-1">
-                            {segment ? (
+                            {moduleSegment(id, segment) ? (
                               <Link
-                                to={`${baseHref}/${segment}`}
+                                to={`${baseHref}/${moduleSegment(id, segment)}`}
                                 className="text-xs font-medium text-primary underline-offset-2 hover:underline"
                               >
                                 Open the module
@@ -376,10 +433,10 @@ const WorkspaceUniversity = ({ platformWorkspaceId }: Props) => {
                             ) : <span />}
                             {canManage && (
                               <span className="flex items-center gap-0.5">
-                                <Button type="button" size="icon" variant="ghost" className="h-7 w-7" disabled={index === 0 || reorderMutation.isPending} onClick={() => moveLesson(id, lesson.id, -1)} aria-label={`Move ${lesson.title} up`}>
+                                <Button type="button" size="icon" variant="ghost" className="h-7 w-7" title={searching ? 'Clear the search to reorder' : undefined} disabled={searching || fullIndex <= 0 || reorderMutation.isPending} onClick={() => moveLesson(id, lesson.id, -1)} aria-label={`Move ${lesson.title} up`}>
                                   <ArrowUp className="h-3.5 w-3.5" />
                                 </Button>
-                                <Button type="button" size="icon" variant="ghost" className="h-7 w-7" disabled={index === categoryLessons.length - 1 || reorderMutation.isPending} onClick={() => moveLesson(id, lesson.id, 1)} aria-label={`Move ${lesson.title} down`}>
+                                <Button type="button" size="icon" variant="ghost" className="h-7 w-7" title={searching ? 'Clear the search to reorder' : undefined} disabled={searching || fullIndex === fullCategoryIds.length - 1 || reorderMutation.isPending} onClick={() => moveLesson(id, lesson.id, 1)} aria-label={`Move ${lesson.title} down`}>
                                   <ArrowDown className="h-3.5 w-3.5" />
                                 </Button>
                                 <Button
@@ -435,7 +492,7 @@ const WorkspaceUniversity = ({ platformWorkspaceId }: Props) => {
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 {(() => {
-                  const segment = CATEGORY_META.find((meta) => meta.id === playing.category)?.segment
+                  const segment = moduleSegment(playing.category, CATEGORY_META.find((meta) => meta.id === playing.category)?.segment ?? null)
                   return segment ? (
                     <Button asChild variant="outline">
                       <Link to={`${baseHref}/${segment}`}>
@@ -450,7 +507,7 @@ const WorkspaceUniversity = ({ platformWorkspaceId }: Props) => {
                     variant="ghost"
                     size="sm"
                     disabled={watchMutation.isPending}
-                    onClick={() => watchMutation.mutate({ lessonId: playing.id, watched: !watchedIds.has(playing.id) })}
+                    onClick={() => toggleWatched(playing)}
                   >
                     <Check className="mr-2 h-4 w-4" />
                     {watchedIds.has(playing.id) ? 'Mark as unwatched' : 'Mark as watched'}
@@ -541,7 +598,7 @@ const WorkspaceUniversity = ({ platformWorkspaceId }: Props) => {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={Boolean(deleting)} onOpenChange={(open) => { if (!open) setDeleting(null) }}>
+      <AlertDialog open={Boolean(deleting)} onOpenChange={(open) => { if (!open && !deleteMutation.isPending) setDeleting(null) }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this lesson?</AlertDialogTitle>
@@ -550,7 +607,7 @@ const WorkspaceUniversity = ({ platformWorkspaceId }: Props) => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={deleteMutation.isPending}

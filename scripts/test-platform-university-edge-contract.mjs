@@ -70,6 +70,37 @@ assert.match(migration, /FORCE ROW LEVEL SECURITY/u)
 assert.match(migration, /REVOKE ALL ON public\.platform_university_lessons FROM anon, authenticated/u)
 assert.match(migration, /provider TEXT NOT NULL CHECK \(provider IN \('loom', 'youtube'\)\)/u)
 
+// The category vocabulary must be ONE set in all four places. The page only
+// renders categories listed in its own CATEGORY_META, so a category the
+// server accepts but the page does not know renders the lesson invisible —
+// saved, billed for nothing, and unfindable.
+function extractSet(source, pattern) {
+  const match = pattern.exec(source)
+  if (!match) return null
+  return [...match[1].matchAll(/'([a-z_]+)'/gu)].map((entry) => entry[1]).sort()
+}
+const migrationCategories = extractSet(migration, /category IN \(([\s\S]*?)\)\)/u)
+const edgeCategories = extractSet(edge, /const CATEGORIES = \[([\s\S]*?)\] as const/u)
+const pageCategories = extractSet(page, /CATEGORY_META: Array[\s\S]*?= \[([\s\S]*?)\n\]/u)
+  ?.filter((value) => !['label', 'segment', 'id'].includes(value))
+const serviceCategories = extractSet(service, /export type UniversityCategory =([\s\S]*?)\n\n/u)
+assert.ok(migrationCategories && edgeCategories && serviceCategories, 'category sets must be extractable')
+assert.deepEqual(edgeCategories, migrationCategories, 'edge CATEGORIES must equal the migration CHECK set')
+assert.deepEqual(serviceCategories, migrationCategories, 'service UniversityCategory must equal the migration CHECK set')
+const pageIds = [...page.matchAll(/\{ id: '([a-z_]+)', label:/gu)].map((entry) => entry[1]).sort()
+assert.deepEqual(pageIds, migrationCategories, 'page CATEGORY_META ids must equal the migration CHECK set')
+
+// Deleting a lesson must take its watch rows with it.
+const watchesCascade = readFileSync('supabase/migrations/20260807000400_university_watches.sql', 'utf8')
+assert.match(watchesCascade, /lesson_id UUID NOT NULL REFERENCES public\.platform_university_lessons\(id\) ON DELETE CASCADE/u)
+
+// Exact provider id shapes: Loom is the trailing 32-hex of a possibly
+// slugged share link; YouTube ids are exactly 11 characters. A looser net
+// stored slug words and playlist ids as "video ids" — dead players
+// published to every workspace.
+assert.match(edge, /\(\?:\[\\w-\]\+-\)\?\(\[0-9a-f\]\{32\}\)/u)
+assert.match(edge, /const YOUTUBE_ID = \/\^\[A-Za-z0-9_-\]\{11\}\$\/u/u)
+
 // Authoring visibility in the UI comes from the server's answer, not a
 // client-side role guess.
 assert.match(page, /const canManage = lessonsQuery\.data\?\.can_manage === true/u)

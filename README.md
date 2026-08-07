@@ -70,6 +70,7 @@ Workspace branding controls the agency name, logo, primary color, and accent col
 | Prospect Studio | Available | Workspace-scoped prospect dashboards, shortlist building, publication review, and prospect photos |
 | Podcast Database | Available | Shared-catalog browsing, per-show details, relationship history, and adding shows to either a client shortlist or a prospect dashboard |
 | Client Podcast System | Available | Recording, scheduled, and going-live operations per client |
+| University | Available | Platform-authored Loom/YouTube training lessons for every workspace, with per-user watched tracking; authored in-app by the platform owner |
 
 Planned modules remain disabled in the workspace navigation until their complete tenant boundary is implemented. A visible legacy admin page is not automatically safe for workspace users.
 
@@ -373,6 +374,10 @@ Two consequences worth knowing before changing this area:
 | `/app/relationships` | Workspace host relationship CRM |
 | `/app/mailboxes` | Future Instantly mailbox preview |
 | `/app/guest-resources` | Workspace guest resources |
+| `/app/prospects` | Prospect Studio dashboards |
+| `/app/podcast-database` | Shared podcast catalog browsing |
+| `/app/client-podcast-system` | Client recording and scheduling operations |
+| `/app/university` | Platform training video library |
 | `/app/settings` | Workspace settings, team, branding, and navigation order |
 
 ### Platform owner selected-workspace routes
@@ -392,6 +397,10 @@ The same modules are reused under:
 /app/workspaces/:workspaceId/relationships
 /app/workspaces/:workspaceId/mailboxes
 /app/workspaces/:workspaceId/guest-resources
+/app/workspaces/:workspaceId/prospects
+/app/workspaces/:workspaceId/podcast-database
+/app/workspaces/:workspaceId/client-podcast-system
+/app/workspaces/:workspaceId/university
 /app/workspaces/:workspaceId/settings
 ```
 

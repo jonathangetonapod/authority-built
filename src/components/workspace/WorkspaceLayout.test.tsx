@@ -165,6 +165,28 @@ describe('WorkspaceLayout', () => {
     expect(screen.getByRole('navigation', { name: 'Workspace navigation' }).scrollTop).toBe(184)
   })
 
+  it('splices a newly shipped module into a complete saved order at its default slot', () => {
+    // Saved before University existed: all twelve prior ids, custom order.
+    const storageKey = `workspace-nav-order-v2:${workspaceId}:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa`
+    const priorOrder = [
+      'clients', 'onboarding', 'podcast-finder', 'prospects', 'podcast-database',
+      'client-podcast-system', 'outreach-platform', 'relationships', 'unibox',
+      'mailboxes', 'billing', 'settings',
+    ]
+    window.localStorage.setItem(storageKey, JSON.stringify(priorOrder))
+    renderLayout()
+
+    const navigation = screen.getByRole('navigation', { name: 'Workspace navigation' })
+    const labels = within(navigation).getAllByRole('listitem').map((item) => (
+      item.querySelector('span')?.textContent
+    ))
+    // Appending put the new module below Settings — where nobody looks.
+    // A complete prior order gets it at its default position instead.
+    expect(labels.indexOf('University')).toBeGreaterThan(-1)
+    expect(labels.indexOf('University')).toBeLessThan(labels.indexOf('Billing & credits'))
+    expect(labels[0]).toBe('Clients')
+  })
+
   it('opens owner organize mode when requested from workspace settings', () => {
     renderLayout()
 
