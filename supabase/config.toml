@@ -199,6 +199,9 @@ verify_jwt = false
 [functions.workspace-credit-refill-tick]
 verify_jwt = false
 
+[functions.platform-university]
+verify_jwt = true
+
 [functions.get-prospect-dashboard]
 verify_jwt = false
 

@@ -34,6 +34,7 @@ const expectedNavigation = [
   'Relationships',
   'Master Inbox',
   'Mailboxes',
+  'University',
   'Billing & credits',
   'Settings',
 ]
@@ -102,7 +103,8 @@ describe('WorkspaceLayout', () => {
     expect(labels).toEqual(expectedNavigation)
 
     const links = within(navigation).getAllByRole('link')
-    expect(links).toHaveLength(12)
+    // 13 with University, the platform training library added 2026-08-07.
+    expect(links).toHaveLength(13)
     expect(within(navigation).getByRole('link', { name: 'Settings' })).toHaveAttribute(
       'href',
       '/app/settings',

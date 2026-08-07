@@ -20,8 +20,8 @@ const CONFIG_PATH = path.join(REPOSITORY_ROOT, 'supabase', 'config.toml')
 const FUNCTIONS_ROOT = path.join(REPOSITORY_ROOT, 'supabase', 'functions')
 
 const EXPECTED_COUNTS = Object.freeze({
-  changedFunctions: 118,
-  deployedFunctions: 116,
+  changedFunctions: 119,
+  deployedFunctions: 117,
   excludedFunctions: 2,
   retiredFunctions: 17,
   unauthenticatedTombstones: 5,
@@ -44,12 +44,13 @@ const EXPECTED_COUNTS = Object.freeze({
   // 164 with automatic credit refills: the tick, _shared/creditPacks.ts (moved
   // out of the checkout function so reading a price no longer executes its
   // serve), and the tick's own test surface.
+  // 167 with platform-university, the training-lesson library (2026-08-07).
   // 166 with the purge tick, which finishes those deletions on a schedule
   // rather than in a request.
   // 165 with workspace deletion: one entrypoint. It reuses the Instantly and
   // domain-provider helpers rather than adding its own, because tearing a
   // workspace down has to stop sending exactly the way pausing does.
-  edgeTypeScriptFiles: 166,
+  edgeTypeScriptFiles: 167,
 })
 
 const EXPECTED_PHASE_KEYS = Object.freeze([

@@ -23,6 +23,7 @@ import {
   Calendar,
   ClipboardList,
   Database,
+  GraduationCap,
   GripVertical,
   Inbox,
   BookUser,
@@ -71,6 +72,7 @@ const workspaceNavItems: WorkspaceNavItem[] = [
   { id: 'relationships', name: 'Relationships', segment: 'relationships', icon: BookUser, enabled: true },
   { id: 'unibox', name: 'Master Inbox', segment: 'master-inbox', icon: Inbox, enabled: true },
   { id: 'mailboxes', name: 'Mailboxes', segment: 'mailboxes', icon: Mailbox, enabled: true },
+  { id: 'university', name: 'University', segment: 'university', icon: GraduationCap, enabled: true },
   // Billing sits in the main navigation rather than only inside Settings:
   // "where do I buy credits" should not require knowing that credits live
   // under a settings sub-page. Owner/admin only, and hidden when a platform

@@ -52,6 +52,7 @@ const WorkspaceBilling = lazyRoute(() => import("./pages/app/WorkspaceBilling"))
 const WorkspaceCampaignDetail = lazyRoute(() => import("./pages/app/WorkspaceCampaignDetail"));
 const WorkspaceOutreachSuite = lazyRoute(() => import("./pages/app/WorkspaceOutreachSuite"));
 const WorkspaceRelationships = lazyRoute(() => import("./pages/app/WorkspaceRelationships"));
+const WorkspaceUniversity = lazyRoute(() => import("./pages/app/WorkspaceUniversity"));
 const WorkspacePodcastFinderHome = lazyRoute(() => import("./pages/app/WorkspacePodcastFinderHome"));
 const WorkspaceSmartPodcastFinder = lazyRoute(() => import("./pages/app/WorkspaceSmartPodcastFinder"));
 const WorkspacePodcastFinder = lazyRoute(() => import("./pages/app/WorkspacePodcastFinder"));
@@ -61,6 +62,7 @@ const WorkspaceProspectDashboards = lazyRoute(() => import("./pages/app/Workspac
 const AdminWorkspaceCampaignDetail = lazyRoute(() => import("./pages/admin/AdminWorkspaceCampaignDetail"));
 const AdminWorkspaceOutreachSuite = lazyRoute(() => import("./pages/admin/AdminWorkspaceOutreachSuite"));
 const AdminWorkspaceRelationships = lazyRoute(() => import("./pages/admin/AdminWorkspaceRelationships"));
+const AdminWorkspaceUniversity = lazyRoute(() => import("./pages/admin/AdminWorkspaceUniversity"));
 const AdminWorkspaceClients = lazyRoute(() => import("./pages/admin/AdminWorkspaceClients"));
 const AdminWorkspaceClientDetail = lazyRoute(() => import("./pages/admin/AdminWorkspaceClientDetail"));
 const AdminWorkspaceOnboarding = lazyRoute(() => import("./pages/admin/AdminWorkspaceOnboarding"));
@@ -276,6 +278,14 @@ const App = () => (
               }
             />
             <Route
+              path="/app/university"
+              element={
+                <ProtectedRoute>
+                  <WorkspaceUniversity />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/app/master-inbox"
               element={
                 <ProtectedRoute>
@@ -416,6 +426,14 @@ const App = () => (
               element={
                 <PlatformAdminRoute>
                   <AdminWorkspaceRelationships />
+                </PlatformAdminRoute>
+              }
+            />
+            <Route
+              path="/app/workspaces/:workspaceId/university"
+              element={
+                <PlatformAdminRoute>
+                  <AdminWorkspaceUniversity />
                 </PlatformAdminRoute>
               }
             />

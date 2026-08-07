@@ -11,6 +11,7 @@ export type WorkspaceModule =
   | 'relationships'
   | 'master-inbox'
   | 'mailboxes'
+  | 'university'
   | 'settings'
 
 const WORKSPACE_MODULES = new Set<WorkspaceModule>([
@@ -24,6 +25,7 @@ const WORKSPACE_MODULES = new Set<WorkspaceModule>([
   'relationships',
   'master-inbox',
   'mailboxes',
+  'university',
   'settings',
 ])
 
