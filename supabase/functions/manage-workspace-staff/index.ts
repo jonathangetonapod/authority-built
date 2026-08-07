@@ -153,6 +153,7 @@ interface StaffViewDto {
     client_brand_primary_color: string;
     client_brand_accent_color: string;
     client_brand_updated_at: string | null;
+    booking_embed_url: string | null;
   };
   members: StaffMemberDto[];
   capabilities: {
@@ -564,6 +565,10 @@ function staffViewDto(value: unknown): StaffViewDto {
       client_brand_primary_color: "#0D1B2A",
       client_brand_accent_color: "#C7794F",
       client_brand_updated_at: null,
+      // Placeholder; listWorkspaceSettings overlays the real value from
+      // loadWorkspaceBranding. The list action always goes through that
+      // overlay, so the settings box shows the saved link and can clear it.
+      booking_embed_url: null,
     },
     members,
     capabilities: {
@@ -931,6 +936,7 @@ async function listWorkspaceSettings(
       client_brand_primary_color: branding.client_brand_primary_color,
       client_brand_accent_color: branding.client_brand_accent_color,
       client_brand_updated_at: branding.client_brand_updated_at,
+      booking_embed_url: branding.booking_embed_url,
     },
     capabilities: {
       ...staff.capabilities,
@@ -2865,8 +2871,10 @@ serve(async (req) => {
       throw new HttpError(405, "METHOD_NOT_ALLOWED", "Only POST is allowed");
     }
 
-    const body = await parseJsonObject(req, MAX_WORKSPACE_LOGO_REQUEST_BYTES);
-    const action = typeof body.action === "string" ? body.action : "";
+    // Authenticate BEFORE buffering the body: this function accepts up to a
+    // 2.9 MB logo/avatar payload, and parsing it ahead of the token let an
+    // unauthenticated caller make the isolate buffer and JSON.parse megabytes
+    // per request.
     const authContext = await requireAuthenticatedUser(req);
     if (!workspaceCredentialIsFresh(authContext)) {
       throw new HttpError(
@@ -2875,6 +2883,8 @@ serve(async (req) => {
         "Sign in again with the newest account credentials",
       );
     }
+    const body = await parseJsonObject(req, MAX_WORKSPACE_LOGO_REQUEST_BYTES);
+    const action = typeof body.action === "string" ? body.action : "";
     const { admin, platformAdmin, tokenIssuedAt, user } = authContext;
     const workspaceId = requireUuid(body.workspace_id, "workspace_id");
 
@@ -3468,7 +3478,10 @@ serve(async (req) => {
           : "workspace.booking_link.cleared",
         entityType: "workspace",
         entityId: workspaceId,
-        metadata: {},
+        // The URL served to clients, recorded so a phished-then-reverted
+        // link can be scoped from the audit trail. The sibling actions
+        // record their values; this one recorded nothing.
+        metadata: { booking_embed_url: rawBookingUrl || null },
       });
       return jsonResponse(req, METHODS, 200, {
         branding: await loadWorkspaceBranding(admin, workspaceId),
@@ -3546,6 +3559,22 @@ serve(async (req) => {
         workspaceId,
       );
       const image = requireWorkspaceLogoImage(body.mime_type, body.image_base64);
+      // Authorize before the service-role upload. The RPC below is the
+      // authoritative gate, but it runs only AFTER the object is written —
+      // so without this probe any authenticated user (a member of another
+      // tenant, a suspended one) could force a 2 MB write under an arbitrary
+      // workspace_id prefix and then a delete. A cheap active-membership
+      // check refuses that at the door.
+      const { data: avatarMembership } = await admin
+        .from("workspace_memberships")
+        .select("id")
+        .eq("workspace_id", workspaceId)
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .maybeSingle();
+      if (!avatarMembership) {
+        throw new HttpError(403, "WORKSPACE_ACCESS_REQUIRED", "You are not an active member of this workspace");
+      }
       const avatarPath =
         `${workspaceId}/${user.id}/${crypto.randomUUID()}.${image.extension}`;
       const { error: uploadError } = await admin.storage
@@ -3578,6 +3607,14 @@ serve(async (req) => {
         throw error;
       }
       await removeMemberAvatarObject(admin, expectedAvatarPath);
+      await writeAudit(admin, {
+        workspaceId,
+        actorUserId: user.id,
+        action: "workspace.member_avatar.set",
+        entityType: "membership",
+        entityId: user.id,
+        metadata: {},
+      });
       return jsonResponse(req, METHODS, 200, { success: true, membership: avatar });
     }
 
@@ -3595,6 +3632,14 @@ serve(async (req) => {
         tokenIssuedAt,
       });
       await removeMemberAvatarObject(admin, expectedAvatarPath);
+      await writeAudit(admin, {
+        workspaceId,
+        actorUserId: user.id,
+        action: "workspace.member_avatar.cleared",
+        entityType: "membership",
+        entityId: user.id,
+        metadata: {},
+      });
       return jsonResponse(req, METHODS, 200, { success: true, membership: avatar });
     }
 

@@ -383,6 +383,54 @@ describe('WorkspaceStaff', () => {
    * down and rebuilds it, losing drafts and scroll position. Saving something
    * the sidebar never draws must not pay that.
    */
+  it('keeps a half-typed workspace name when an unrelated roster change refetches', async () => {
+    // Suspending a teammate invalidates and refetches the staff roster with
+    // changed data. A blanket effect keyed on `data` used to wipe the name,
+    // booking link, and brand a user was mid-editing.
+    renderPage()
+    await screen.findByText('Agency Admin')
+
+    fireEvent.change(screen.getByLabelText('Workspace name'), { target: { value: 'Half Typed Name' } })
+
+    // The next roster load reflects the suspension — genuinely different data.
+    mockedList.mockResolvedValue({
+      ...ownerView,
+      members: ownerView.members.map((member) => (
+        member.id === adminId ? { ...member, status: 'suspended', suspended_at: '2026-07-22T01:00:00.000Z' } : member
+      )),
+    })
+    mockedMutate.mockResolvedValue(undefined)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Suspend' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Suspend user' }))
+    await waitFor(() => expect(mockedMutate).toHaveBeenCalledWith(workspaceId, adminId, 'suspend'))
+
+    // The edit the user never saved is still in the field.
+    expect((screen.getByLabelText('Workspace name') as HTMLInputElement).value).toBe('Half Typed Name')
+  })
+
+  it('shows a saved booking link and lets it be cleared', async () => {
+    // The list response used to drop booking_embed_url, so the box loaded
+    // empty and — since Save disables on an empty box — a saved link could
+    // never be removed through the UI.
+    mockedList.mockResolvedValue({
+      ...ownerView,
+      workspace: { ...ownerView.workspace, booking_embed_url: 'https://calendly.com/northstar/intro' },
+    })
+    vi.mocked(updateWorkspaceBookingLink).mockResolvedValue(undefined)
+    renderPage()
+    await screen.findByText('Agency Admin')
+
+    const box = screen.getByLabelText('Booking link or embed code') as HTMLInputElement
+    expect(box.value).toBe('https://calendly.com/northstar/intro')
+
+    fireEvent.change(box, { target: { value: '' } })
+    const save = screen.getByRole('button', { name: 'Save link' })
+    expect(save).not.toBeDisabled()
+    fireEvent.click(save)
+    await waitFor(() => expect(updateWorkspaceBookingLink).toHaveBeenCalledWith(workspaceId, null))
+  })
+
   it('does not tear the page down to save a booking link', async () => {
     renderPage()
     await screen.findByText('Agency Admin')

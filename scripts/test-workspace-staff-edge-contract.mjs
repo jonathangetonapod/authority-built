@@ -382,6 +382,47 @@ for (const forbidden of [
 
 assert.match(config, /\[functions\.manage-workspace-staff\]\s+verify_jwt = true/u)
 
+// --- Member-avatar surface (added 2026-08-07 after the settings audit) ---
+// The whole avatar surface was previously unpinned.
+const avatarMigration = readFileSync(
+  'supabase/migrations/20260807000500_settings_audit_hardening.sql',
+  'utf8',
+)
+// The RPC is the entire authorization gate for the avatar actions, so it must
+// stay service-role only, and the write must be blocked before authorization
+// by an active-membership probe (no arbitrary cross-tenant bucket writes).
+assert.match(
+  avatarMigration,
+  /REVOKE ALL ON FUNCTION public\.set_membership_avatar_v1\(UUID, TEXT, TEXT, UUID, BIGINT\)\s*\n\s*FROM PUBLIC, anon, authenticated, service_role;/u,
+  'set_membership_avatar_v1 must be revoked from anon/authenticated',
+)
+// The forced-password-change wall the avatar RPC previously skipped.
+assert.match(
+  avatarMigration,
+  /membership_provisioning = 'admin_temporary_password'\s*\n\s*AND COALESCE\(membership_password_change, FALSE\)/u,
+  'the avatar RPC must enforce the forced-password-change wall',
+)
+// The avatar_path shape/pairing CHECK, matching the logo column.
+assert.match(avatarMigration, /workspace_memberships_avatar_state_check/u)
+// Buckets are no longer publicly enumerable.
+assert.match(avatarMigration, /DROP POLICY IF EXISTS workspace_logos_public_read ON storage\.objects;/u)
+assert.match(avatarMigration, /DROP POLICY IF EXISTS member_avatars_public_read ON storage\.objects;/u)
+// The edge action authorizes with an active-membership probe BEFORE the
+// service-role upload — no arbitrary cross-tenant bucket writes.
+assert.match(source, /const \{ data: avatarMembership \} = await admin[\s\S]{0,200}?\.eq\("status", "active"\)/u)
+assert.match(source, /if \(!avatarMembership\) \{[\s\S]{0,160}?WORKSPACE_ACCESS_REQUIRED/u)
+assert.ok(
+  source.indexOf('if (!avatarMembership)') < source.indexOf('.upload(avatarPath'),
+  'update_avatar must probe active membership before uploading',
+)
+
+// The list response must carry booking_embed_url, or the settings box loads
+// empty and a saved link can never be cleared (Save disables on an empty box).
+assert.match(source, /booking_embed_url: branding\.booking_embed_url,/u)
+assert.match(source, /booking_embed_url: string \| null;/u)
+// The booking-link audit records the URL served, for incident scoping.
+assert.match(source, /metadata: \{ booking_embed_url: rawBookingUrl \|\| null \}/u)
+
 process.stdout.write('Workspace Staff Edge contract checks passed\n')
 
 // Platform access is anchored to the caller's membership ON THE DEFAULT

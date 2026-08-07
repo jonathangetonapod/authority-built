@@ -219,6 +219,9 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
   const [credentialSaved, setCredentialSaved] = useState(false)
   const [credentialError, setCredentialError] = useState<string | null>(null)
   const [passwordBusy, setPasswordBusy] = useState(false)
+  // Which member's password op is running, so the spinner lands on that row
+  // rather than every row's password button at once.
+  const [passwordBusyMemberId, setPasswordBusyMemberId] = useState<string | null>(null)
   const [logoRemoveOpen, setLogoRemoveOpen] = useState(false)
   const [workspaceNameDraft, setWorkspaceNameDraft] = useState('')
   const [clientBrandDraft, setClientBrandDraft] = useState(defaultClientBrand)
@@ -302,11 +305,10 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
     gcTime: isPlatformWorkspace ? 0 : undefined,
   })
 
-  useEffect(() => {
-    if (staffQuery.error) {
-      toast.error(staffQuery.error instanceof Error ? staffQuery.error.message : 'Workspace settings could not be loaded.')
-    }
-  }, [staffQuery.error])
+  // A load failure already renders an inline card with a Retry button below;
+  // a toast on top of it double-surfaced the same error and re-fired on every
+  // window-focus refetch while the outage lasted. The card is the better
+  // surface, so it owns the message alone.
 
   const data = staffQuery.data
   const staff = useMemo(
@@ -335,15 +337,44 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
     .map((part) => part[0]?.toUpperCase())
     .join('') || 'W'
 
+  /*
+   * Seed each edit form from the server, but ONLY when that field's own
+   * server value changes — not on every refetch. The staff query is
+   * invalidated by unrelated mutations (suspend a teammate, issue a
+   * password) and refetches on window focus, and a blanket reset keyed on
+   * `data` silently reverted a half-typed name, booking link, or brand the
+   * moment any of those fired. Comparing against the last-seen server value
+   * re-seeds after a genuine remote change (including one this user just
+   * saved) while leaving an in-progress edit untouched.
+   */
+  const lastServerNameRef = useRef<string | null>(null)
+  const lastServerBookingRef = useRef<string | null>(null)
+  const lastServerBrandRef = useRef<string | null>(null)
   useEffect(() => {
     if (!data) return
-    setWorkspaceNameDraft(data.workspace.name)
-    setBookingLinkDraft(data.workspace.booking_embed_url ?? '')
-    setClientBrandDraft({
-      client_brand_name: data.workspace.client_brand_name,
-      client_brand_primary_color: data.workspace.client_brand_primary_color,
-      client_brand_accent_color: data.workspace.client_brand_accent_color,
-    })
+    const serverName = data.workspace.name
+    if (lastServerNameRef.current !== serverName) {
+      lastServerNameRef.current = serverName
+      setWorkspaceNameDraft(serverName)
+    }
+    const serverBooking = data.workspace.booking_embed_url ?? ''
+    if (lastServerBookingRef.current !== serverBooking) {
+      lastServerBookingRef.current = serverBooking
+      setBookingLinkDraft(serverBooking)
+    }
+    const serverBrand = JSON.stringify([
+      data.workspace.client_brand_name,
+      data.workspace.client_brand_primary_color,
+      data.workspace.client_brand_accent_color,
+    ])
+    if (lastServerBrandRef.current !== serverBrand) {
+      lastServerBrandRef.current = serverBrand
+      setClientBrandDraft({
+        client_brand_name: data.workspace.client_brand_name,
+        client_brand_primary_color: data.workspace.client_brand_primary_color,
+        client_brand_accent_color: data.workspace.client_brand_accent_color,
+      })
+    }
   }, [data])
 
   const workspaceNameDirty = Boolean(data) && workspaceNameDraft !== data?.workspace.name
@@ -521,6 +552,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
   const issueTemporaryPassword = async (request: PasswordRequest) => {
     if (passwordBusy) return
     setPasswordBusy(true)
+    setPasswordBusyMemberId(request.mode === 'create' ? null : request.member.id)
     try {
       if (!canInvite) throw new Error('You do not have permission to add workspace users.')
       if (request.mode === 'create' && !canGeneratePassword) {
@@ -546,6 +578,7 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
       toast.error(error instanceof Error ? error.message : 'The temporary password could not be generated.')
     } finally {
       setPasswordBusy(false)
+      setPasswordBusyMemberId(null)
     }
   }
 
@@ -1298,13 +1331,13 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
                                     )}
                                     {member.allowed_actions.includes('retry_password') && (
                                       <Button size="sm" variant="outline" disabled={busy} onClick={() => void issueTemporaryPassword({ mode: 'retry', member })}>
-                                        {passwordBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
+                                        {passwordBusy && passwordBusyMemberId === member.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
                                         Generate password
                                       </Button>
                                     )}
                                     {member.allowed_actions.includes('reset_password') && (
                                       <Button size="sm" variant="outline" disabled={busy} onClick={() => setConfirmation({ action: 'reset_password', member })}>
-                                        {passwordBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
+                                        {passwordBusy && passwordBusyMemberId === member.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
                                         Reset password
                                       </Button>
                                     )}
@@ -1514,7 +1547,12 @@ const WorkspaceStaff = ({ platformWorkspaceId }: WorkspaceStaffProps) => {
           {confirmation && (() => {
             const copy = confirmationCopy(confirmation, isPlatformWorkspace)
             const confirmationBusy = actionMutation.isPending || passwordBusy
-            return <><AlertDialogHeader><AlertDialogTitle>{copy.title}</AlertDialogTitle><AlertDialogDescription>{copy.description}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={confirmationBusy}>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => {
+            return <><AlertDialogHeader><AlertDialogTitle>{copy.title}</AlertDialogTitle><AlertDialogDescription>{copy.description}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={confirmationBusy}>Cancel</AlertDialogCancel><AlertDialogAction onClick={(event) => {
+              // Keep the dialog open while the action runs — the Radix Action
+              // closes on click by default, which fired the in-flight spinner
+              // and disabled-state as dead code and made a failed suspend or
+              // transfer look done. onSuccess/reset close it explicitly.
+              event.preventDefault()
               if (confirmation.action === 'reset_password') {
                 const member = confirmation.member
                 setConfirmation(null)
