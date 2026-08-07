@@ -34,6 +34,8 @@ export interface UniversityLesson {
 
 export interface UniversityLessonsResponse {
   lessons: UniversityLesson[]
+  /** Lessons THIS user has watched — per-user, shared across workspaces. */
+  watched_lesson_ids: string[]
   /** True for platform administrators — the audience that authors lessons. */
   can_manage: boolean
 }
@@ -61,7 +63,20 @@ export async function getUniversityLessons(): Promise<UniversityLessonsResponse>
   if (!data || typeof data !== 'object' || !Array.isArray(data.lessons)) {
     throw new Error('The University response could not be read. Try again.')
   }
-  return { lessons: data.lessons, can_manage: data.can_manage === true }
+  return {
+    lessons: data.lessons,
+    watched_lesson_ids: Array.isArray(data.watched_lesson_ids)
+      ? data.watched_lesson_ids.filter((id): id is string => typeof id === 'string')
+      : [],
+    can_manage: data.can_manage === true,
+  }
+}
+
+export async function setUniversityLessonWatched(lessonId: string, watched: boolean): Promise<void> {
+  await invokeUniversity<{ success: boolean }>(
+    { action: 'set-watched', lesson_id: lessonId, watched },
+    'The watched mark could not be saved.',
+  )
 }
 
 export async function saveUniversityLesson(input: UniversityLessonInput): Promise<UniversityLesson> {

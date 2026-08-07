@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   ExternalLink,
   GraduationCap,
   Loader2,
@@ -51,10 +52,12 @@ import {
   getUniversityLessons,
   reorderUniversityLessons,
   saveUniversityLesson,
+  setUniversityLessonWatched,
   universityEmbedUrl,
   universityThumbnailUrl,
   type UniversityCategory,
   type UniversityLesson,
+  type UniversityLessonsResponse,
 } from '@/services/universityLessons'
 import {
   MY_WORKSPACE_BASE_HREF,
@@ -132,6 +135,39 @@ const WorkspaceUniversity = ({ platformWorkspaceId }: Props) => {
   })
   const lessons = lessonsQuery.data?.lessons ?? []
   const canManage = lessonsQuery.data?.can_manage === true
+  const watchedIds = useMemo(
+    () => new Set(lessonsQuery.data?.watched_lesson_ids ?? []),
+    [lessonsQuery.data?.watched_lesson_ids],
+  )
+  // "New": recent and not yet watched. No last-visit bookkeeping — a badge
+  // that clears itself the moment the lesson is actually watched.
+  const isNew = (lesson: UniversityLesson) =>
+    !watchedIds.has(lesson.id) && Date.now() - Date.parse(lesson.created_at) < 14 * 24 * 60 * 60 * 1000
+
+  const watchMutation = useMutation({
+    mutationFn: ({ lessonId, watched }: { lessonId: string; watched: boolean }) =>
+      setUniversityLessonWatched(lessonId, watched),
+    // The mark is the cheapest possible write; patch the cache directly so
+    // the check appears without refetching the whole library.
+    onSuccess: (_result, { lessonId, watched }) => {
+      queryClient.setQueryData(lessonsKey, (current: UniversityLessonsResponse | undefined) => (current
+        ? {
+          ...current,
+          watched_lesson_ids: watched
+            ? [...new Set([...current.watched_lesson_ids, lessonId])]
+            : current.watched_lesson_ids.filter((id) => id !== lessonId),
+        }
+        : current))
+    },
+  })
+
+  const openPlayer = (lesson: UniversityLesson) => {
+    setPlaying(lesson)
+    // Opening the player is the watch signal; the dialog offers the undo.
+    if (lesson.published && !watchedIds.has(lesson.id)) {
+      watchMutation.mutate({ lessonId: lesson.id, watched: true })
+    }
+  }
 
   const selectedWorkspaceQuery = useQuery({
     queryKey: ['platform', user?.id || 'unknown', 'workspace', selectedWorkspaceId, 'university'],
@@ -279,7 +315,13 @@ const WorkspaceUniversity = ({ platformWorkspaceId }: Props) => {
                     {label}
                   </h2>
                   <span className="text-xs text-muted-foreground">
-                    {categoryLessons.length} lesson{categoryLessons.length === 1 ? '' : 's'}
+                    {(() => {
+                      const published = categoryLessons.filter((item) => item.published)
+                      const watched = published.filter((item) => watchedIds.has(item.id)).length
+                      return published.length > 0
+                        ? `${watched} of ${published.length} watched`
+                        : `${categoryLessons.length} lesson${categoryLessons.length === 1 ? '' : 's'}`
+                    })()}
                   </span>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -290,7 +332,7 @@ const WorkspaceUniversity = ({ platformWorkspaceId }: Props) => {
                         <button
                           type="button"
                           className="group relative block aspect-video w-full bg-gradient-to-br from-primary/15 via-violet-500/10 to-fuchsia-400/10"
-                          onClick={() => setPlaying(lesson)}
+                          onClick={() => openPlayer(lesson)}
                           aria-label={`Play ${lesson.title}`}
                         >
                           {thumbnail && (
@@ -308,6 +350,14 @@ const WorkspaceUniversity = ({ platformWorkspaceId }: Props) => {
                           </span>
                           {!lesson.published && (
                             <Badge className="absolute left-2 top-2 border-amber-200 bg-amber-50 text-amber-800" variant="outline">Draft</Badge>
+                          )}
+                          {lesson.published && isNew(lesson) && (
+                            <Badge className="absolute left-2 top-2 border-primary/30 bg-primary/10 text-primary" variant="outline">New</Badge>
+                          )}
+                          {watchedIds.has(lesson.id) && (
+                            <span className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-emerald-600/90 px-2 py-0.5 text-[10px] font-medium text-white">
+                              <Check className="h-3 w-3" />Watched
+                            </span>
                           )}
                         </button>
                         <CardContent className="space-y-1.5 p-4">
@@ -383,16 +433,30 @@ const WorkspaceUniversity = ({ platformWorkspaceId }: Props) => {
                   allowFullScreen
                 />
               </div>
-              {(() => {
-                const segment = CATEGORY_META.find((meta) => meta.id === playing.category)?.segment
-                return segment ? (
-                  <Button asChild variant="outline" className="self-start">
-                    <Link to={`${baseHref}/${segment}`}>
-                      <ExternalLink className="mr-2 h-4 w-4" />Open the module this teaches
-                    </Link>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                {(() => {
+                  const segment = CATEGORY_META.find((meta) => meta.id === playing.category)?.segment
+                  return segment ? (
+                    <Button asChild variant="outline">
+                      <Link to={`${baseHref}/${segment}`}>
+                        <ExternalLink className="mr-2 h-4 w-4" />Open the module this teaches
+                      </Link>
+                    </Button>
+                  ) : <span />
+                })()}
+                {playing.published && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={watchMutation.isPending}
+                    onClick={() => watchMutation.mutate({ lessonId: playing.id, watched: !watchedIds.has(playing.id) })}
+                  >
+                    <Check className="mr-2 h-4 w-4" />
+                    {watchedIds.has(playing.id) ? 'Mark as unwatched' : 'Mark as watched'}
                   </Button>
-                ) : null
-              })()}
+                )}
+              </div>
             </>
           )}
         </DialogContent>

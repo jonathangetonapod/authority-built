@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   deleteUniversityLesson,
+  setUniversityLessonWatched,
   getUniversityLessons,
   reorderUniversityLessons,
   saveUniversityLesson,
@@ -33,12 +34,30 @@ describe('universityLessons service', () => {
     invoke.mockReset()
   })
 
-  it('lists lessons and carries the authoring flag through', async () => {
-    invoke.mockResolvedValue({ data: { lessons: [lesson], can_manage: true }, error: null })
+  it('lists lessons and carries the authoring flag and watches through', async () => {
+    invoke.mockResolvedValue({
+      data: { lessons: [lesson], watched_lesson_ids: [lessonId], can_manage: true },
+      error: null,
+    })
     const result = await getUniversityLessons()
     expect(invoke).toHaveBeenCalledWith('platform-university', { body: { action: 'list' } })
     expect(result.lessons).toEqual([lesson])
+    expect(result.watched_lesson_ids).toEqual([lessonId])
     expect(result.can_manage).toBe(true)
+  })
+
+  it('treats a response with no watch list as nothing watched', async () => {
+    invoke.mockResolvedValue({ data: { lessons: [lesson], can_manage: false }, error: null })
+    const result = await getUniversityLessons()
+    expect(result.watched_lesson_ids).toEqual([])
+  })
+
+  it('sends the watched toggle exactly as asked', async () => {
+    invoke.mockResolvedValue({ data: { success: true, watched: false }, error: null })
+    await setUniversityLessonWatched(lessonId, false)
+    expect(invoke).toHaveBeenCalledWith('platform-university', {
+      body: { action: 'set-watched', lesson_id: lessonId, watched: false },
+    })
   })
 
   it('refuses an unreadable list payload instead of rendering an empty page', async () => {

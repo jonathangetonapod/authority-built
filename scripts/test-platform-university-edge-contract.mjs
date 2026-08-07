@@ -54,6 +54,16 @@ assert.ok(
   'the player iframe must never take the pasted URL as its source',
 )
 
+// Watch marks are per-user and probe-proof: a member marking a lesson
+// watched must never confirm the existence of a draft id, and the caller's
+// identity comes from the token, never the body.
+assert.match(edge, /action === 'set-watched'/u)
+assert.match(edge, /if \(!context\.platformAdmin\) lessonQuery = lessonQuery\.eq\('published', true\)/u)
+assert.match(edge, /\.eq\('user_id', context\.user\.id\)\s+\.eq\('lesson_id', lessonId\)/u)
+const watchesMigration = readFileSync('supabase/migrations/20260807000400_university_watches.sql', 'utf8')
+assert.match(watchesMigration, /FORCE ROW LEVEL SECURITY/u)
+assert.match(watchesMigration, /REVOKE ALL ON public\.platform_university_watches FROM anon, authenticated/u)
+
 // The table is service-role-only: RLS enabled AND forced, grants revoked.
 assert.match(migration, /ENABLE ROW LEVEL SECURITY/u)
 assert.match(migration, /FORCE ROW LEVEL SECURITY/u)

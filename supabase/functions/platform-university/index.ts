@@ -123,10 +123,55 @@ serve(async (req) => {
       if (error) {
         throw new HttpError(500, 'UNIVERSITY_UNAVAILABLE', 'Lessons could not be loaded')
       }
+      // What THIS user has watched. Per-user, so the same person on two
+      // workspaces has watched a video exactly once. A failed read degrades
+      // to "nothing watched" rather than failing the whole library.
+      const { data: watchRows } = await admin
+        .from('platform_university_watches')
+        .select('lesson_id')
+        .eq('user_id', context.user.id)
+        .limit(1_000)
       return jsonResponse(req, METHODS, 200, {
         lessons: (data ?? []).map((row) => lessonResponse(row as Record<string, unknown>)),
+        watched_lesson_ids: ((watchRows ?? []) as Array<Record<string, unknown>>)
+          .map((row) => String(row.lesson_id)),
         can_manage: context.platformAdmin,
       })
+    }
+
+    if (action === 'set-watched') {
+      requireOnlyKeys(body, ['action', 'lesson_id', 'watched'])
+      const lessonId = requireUuid(body.lesson_id, 'lesson_id')
+      const watched = body.watched === true
+      // The lesson must exist and be visible to this caller — a member can
+      // never probe draft ids by marking them watched.
+      let lessonQuery = admin
+        .from('platform_university_lessons')
+        .select('id')
+        .eq('id', lessonId)
+      if (!context.platformAdmin) lessonQuery = lessonQuery.eq('published', true)
+      const { data: lessonRow } = await lessonQuery.maybeSingle()
+      if (!lessonRow) {
+        throw new HttpError(404, 'LESSON_NOT_FOUND', 'That lesson no longer exists')
+      }
+      if (watched) {
+        const { error } = await admin
+          .from('platform_university_watches')
+          .upsert({ user_id: context.user.id, lesson_id: lessonId }, { onConflict: 'user_id,lesson_id' })
+        if (error) {
+          throw new HttpError(500, 'UNIVERSITY_SAVE_FAILED', 'The watched mark could not be saved')
+        }
+      } else {
+        const { error } = await admin
+          .from('platform_university_watches')
+          .delete()
+          .eq('user_id', context.user.id)
+          .eq('lesson_id', lessonId)
+        if (error) {
+          throw new HttpError(500, 'UNIVERSITY_SAVE_FAILED', 'The watched mark could not be removed')
+        }
+      }
+      return jsonResponse(req, METHODS, 200, { success: true, watched })
     }
 
     // Everything below writes platform content.

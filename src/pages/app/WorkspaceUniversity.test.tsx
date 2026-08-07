@@ -8,6 +8,7 @@ import { getAdminWorkspaceView } from '@/services/adminWorkspaces'
 import {
   getUniversityLessons,
   saveUniversityLesson,
+  setUniversityLessonWatched,
   type UniversityLesson,
 } from '@/services/universityLessons'
 
@@ -29,12 +30,14 @@ vi.mock('@/services/universityLessons', async (importOriginal) => ({
   saveUniversityLesson: vi.fn(),
   deleteUniversityLesson: vi.fn(),
   reorderUniversityLessons: vi.fn(),
+  setUniversityLessonWatched: vi.fn(),
 }))
 
 const mockedUseAuth = vi.mocked(useAuth)
 const mockedLessons = vi.mocked(getUniversityLessons)
 const mockedSave = vi.mocked(saveUniversityLesson)
 const mockedAdminWorkspace = vi.mocked(getAdminWorkspaceView)
+const mockedSetWatched = vi.mocked(setUniversityLessonWatched)
 
 const platformWorkspaceId = '99999999-9999-4999-8999-999999999999'
 
@@ -82,6 +85,7 @@ describe('WorkspaceUniversity', () => {
         lesson(),
         lesson({ id: '44444444-4444-4444-8444-444444444444', category: 'master_inbox', title: 'Review AI drafts', provider: 'youtube', video_id: 'dQw4w9WgXcQ', video_url: 'https://youtu.be/dQw4w9WgXcQ' }),
       ],
+      watched_lesson_ids: [],
       can_manage: false,
     })
     renderPage()
@@ -96,7 +100,7 @@ describe('WorkspaceUniversity', () => {
   })
 
   it('offers no authoring controls unless the server says so', async () => {
-    mockedLessons.mockResolvedValue({ lessons: [lesson()], can_manage: false })
+    mockedLessons.mockResolvedValue({ lessons: [lesson()], watched_lesson_ids: [], can_manage: false })
     renderPage()
     await screen.findByText('Add your first client')
     expect(screen.queryByRole('button', { name: /Add lesson/ })).not.toBeInTheDocument()
@@ -104,7 +108,7 @@ describe('WorkspaceUniversity', () => {
   })
 
   it('lets the platform owner add a lesson from a pasted link', async () => {
-    mockedLessons.mockResolvedValue({ lessons: [], can_manage: true })
+    mockedLessons.mockResolvedValue({ lessons: [], watched_lesson_ids: [], can_manage: true })
     mockedSave.mockResolvedValue(lesson())
     renderPage()
 
@@ -127,6 +131,7 @@ describe('WorkspaceUniversity', () => {
   it('shows drafts with a badge to the author, and jumps to the module a lesson teaches', async () => {
     mockedLessons.mockResolvedValue({
       lessons: [lesson({ category: 'master_inbox', published: false, title: 'Review AI drafts' })],
+      watched_lesson_ids: [],
       can_manage: true,
     })
     renderPage(platformWorkspaceId)
@@ -141,8 +146,38 @@ describe('WorkspaceUniversity', () => {
     )
   })
 
+  it('marks a lesson watched when the player opens, and can undo it', async () => {
+    mockedLessons.mockResolvedValue({ lessons: [lesson()], watched_lesson_ids: [], can_manage: false })
+    mockedSetWatched.mockResolvedValue()
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Play Add your first client' }))
+    await waitFor(() => expect(mockedSetWatched).toHaveBeenCalledWith(lesson().id, true))
+
+    // The player offers the undo for a watch that was only an open.
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark as unwatched' }))
+    await waitFor(() => expect(mockedSetWatched).toHaveBeenLastCalledWith(lesson().id, false))
+  })
+
+  it('shows watched progress per category and does not re-mark a watched lesson', async () => {
+    const second = lesson({ id: '44444444-4444-4444-8444-444444444444', title: 'Invite your team' })
+    mockedLessons.mockResolvedValue({
+      lessons: [lesson(), second],
+      watched_lesson_ids: [lesson().id],
+      can_manage: false,
+    })
+    mockedSetWatched.mockResolvedValue()
+    renderPage()
+
+    expect(await screen.findByText('1 of 2 watched')).toBeInTheDocument()
+    expect(screen.getByText('Watched')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play Add your first client' }))
+    expect(mockedSetWatched).not.toHaveBeenCalled()
+  })
+
   it('searches across titles and says when nothing matches', async () => {
-    mockedLessons.mockResolvedValue({ lessons: [lesson()], can_manage: false })
+    mockedLessons.mockResolvedValue({ lessons: [lesson()], watched_lesson_ids: [], can_manage: false })
     renderPage()
     await screen.findByText('Add your first client')
 

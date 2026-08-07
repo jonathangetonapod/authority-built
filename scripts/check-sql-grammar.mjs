@@ -105,6 +105,7 @@ const SQL_INPUTS = [
   'supabase/migrations/20260807000100_onboarding_revoke_kills_credential.sql',
   'supabase/migrations/20260807000200_inbox_sdr_hardening.sql',
   'supabase/migrations/20260807000300_platform_university.sql',
+  'supabase/migrations/20260807000400_university_watches.sql',
   'supabase/tests/20260720_invite_only_workspace_verification.sql',
   'supabase/tests/20260721_workspace_guest_resources_behavior.sql',
   'supabase/tests/20260722_subagency_workspace_foundation_behavior.sql',
