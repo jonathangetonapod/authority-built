@@ -2229,6 +2229,13 @@ async function issueStaffTemporaryPassword(
   }
 
   if (!passwordIdentityMatches(data.user, membership, lockToken)) {
+    // Every other failure branch releases the delivery claim before it
+    // throws; this one used to abandon it, leaving the membership stuck in
+    // provisioning and blocking every retry with AUTH_ACCOUNT_EXISTS. The
+    // auth account is deliberately NOT deleted — identity did not match, so
+    // we cannot prove we created it, and deleting an account we do not own
+    // would be worse than leaving it for operator review.
+    await releaseInviteClaim(admin, membership.id, lockToken);
     throw new HttpError(
       409,
       "STAFF_IDENTITY_UNSAFE",

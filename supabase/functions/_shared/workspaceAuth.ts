@@ -254,11 +254,20 @@ export async function requireWorkspaceFeatureAccess(
     throw new HttpError(401, 'REAUTHENTICATION_REQUIRED', 'Sign in again to access this workspace')
   }
 
+  // Filter to the active row. A revoked membership keeps its user_id (so a
+  // fresh invitation is not blocked), so a re-invited person legitimately has
+  // BOTH a revoked row and a live row for the same (workspace, user) — and an
+  // unfiltered maybeSingle() on that pair threw PGRST116, turning every
+  // billing/AI-key call into a permanent 500. Only an active membership is
+  // ever accepted below, and the partial unique index guarantees at most one
+  // non-revoked row per user and workspace, so this returns 0 or 1 without
+  // changing which memberships pass.
   const { data: targetMembershipData, error: targetMembershipError } = await context.admin
     .from('workspace_memberships')
     .select('id,workspace_id,email_normalized,role,status,provisioning_method,password_change_required,workspace_access_not_before_epoch')
     .eq('workspace_id', workspaceId)
     .eq('user_id', context.user.id)
+    .eq('status', 'active')
     .maybeSingle()
 
   if (targetMembershipError) {
