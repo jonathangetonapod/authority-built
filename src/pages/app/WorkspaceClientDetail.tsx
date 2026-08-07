@@ -120,9 +120,17 @@ function labelForStatus(value: string): string {
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return 'Not set'
-  const date = new Date(value)
+  // A date-only value (YYYY-MM-DD) is a calendar day, not an instant. Parsing
+  // it as local time rendered it a day early for every negative-UTC zone (all
+  // of the Americas), and disagreed with the Command Center, which pins these
+  // to UTC. Read a bare date in UTC; keep full timestamps as-is.
+  const isDateOnly = value.length === 10
+  const date = new Date(isDateOnly ? `${value}T00:00:00.000Z` : value)
   if (Number.isNaN(date.getTime())) return 'Not set'
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  return date.toLocaleDateString(undefined, {
+    month: 'short', day: 'numeric', year: 'numeric',
+    ...(isDateOnly ? { timeZone: 'UTC' } : {}),
+  })
 }
 
 function formatDateTime(value: string | null | undefined): string {
@@ -565,9 +573,16 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
     setPortalInviteBusy(true)
     try {
       const setup = await createWorkspaceClientPortalSetupLink(workspaceId, canonicalClientId)
-      await navigator.clipboard.writeText(setup.url)
       await detailQuery.refetch()
-      toast.success('Setup link copied. Share it with the client — they set their own password. Expires in 7 days.')
+      // A link was just minted server-side; if the clipboard is unavailable
+      // (insecure context, older browser) reveal the URL instead of implying
+      // nothing happened.
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(setup.url)
+        toast.success('Setup link copied. Share it with the client — they set their own password. Expires in 7 days.')
+      } else {
+        window.prompt('Copy this client setup link (expires in 7 days):', setup.url)
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'The setup link could not be created.')
     } finally {

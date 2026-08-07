@@ -46,7 +46,13 @@ const Login = () => {
 
     if (accountState === 'active') {
       const fallback = '/app/clients'
-      const destination = attemptedPath && (isPlatformAdmin || !attemptedPath.startsWith('/admin'))
+      // Both the legacy /admin subtree and the platform-only
+      // /app/workspaces/:id/* subtree are admin-gated. Honoring a non-admin's
+      // saved destination into either lands them on an access-denied screen
+      // instead of their own home, so those are only followed for admins.
+      const adminOnlyPath = attemptedPath
+        && (attemptedPath.startsWith('/admin') || attemptedPath.startsWith('/app/workspaces/'))
+      const destination = attemptedPath && (isPlatformAdmin || !adminOnlyPath)
         ? attemptedPath
         : fallback
       navigate(destination, { replace: true })

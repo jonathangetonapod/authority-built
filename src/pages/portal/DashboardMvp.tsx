@@ -114,6 +114,10 @@ export default function PortalDashboardMvp() {
     onMutate: (enabled) => setEmailUpdatesOverride(enabled),
     onSuccess: (enabled) => {
       toast.success(enabled ? 'Email updates are on.' : 'Email updates are off.')
+      // Drop the optimistic override so the refetched server value becomes the
+      // source of truth; leaving it set made the switch keep showing this
+      // session's local choice even after the real value changed.
+      setEmailUpdatesOverride(null)
       queryClient.invalidateQueries({ queryKey: ['portal-experience', client?.id] })
     },
     onError: (error) => {
@@ -161,7 +165,10 @@ export default function PortalDashboardMvp() {
     .sort((a, b) => String(a.publish_date || '9999').localeCompare(String(b.publish_date || '9999')))
     .slice(0, 4)
 
-  const emailUpdates = emailUpdatesOverride ?? overview?.profile.notifications_enabled !== false
+  // Undefined until the overview loads — the switch must not assert ON for a
+  // client whose notifications are actually off during the load window.
+  const emailUpdates = emailUpdatesOverride
+    ?? (overview ? overview.profile.notifications_enabled !== false : false)
 
   const review = overview?.review ?? null
   const outreach = overview?.outreach ?? null
@@ -568,7 +575,7 @@ export default function PortalDashboardMvp() {
             </div>
             <Switch
               checked={emailUpdates}
-              disabled={notificationsMutation.isPending || !client?.id}
+              disabled={notificationsMutation.isPending || !client?.id || !overview}
               onCheckedChange={(next) => notificationsMutation.mutate(next)}
               aria-label="Email updates"
             />

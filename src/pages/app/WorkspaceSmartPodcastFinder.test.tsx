@@ -120,9 +120,11 @@ describe('WorkspaceSmartPodcastFinder', () => {
       rateLimit: {},
     } as never)
     vi.mocked(scoreCompatibilityBatch).mockResolvedValue([
-      { podcast_id: 'pd-high', score: 92, reasoning: 'Perfect audience overlap.' },
-      { podcast_id: 'pd-catalog', score: 88, reasoning: 'Strong database match.' },
-      { podcast_id: 'pd-low', score: 41, reasoning: 'Weak topical match.' },
+      // The endpoint's real contract is a 1-10 score. The page normalizes it
+      // to 0-100 for display ("92 fit") and stores /10 (9.2) on the shortlist.
+      { podcast_id: 'pd-high', score: 9.2, reasoning: 'Perfect audience overlap.' },
+      { podcast_id: 'pd-catalog', score: 8.8, reasoning: 'Strong database match.' },
+      { podcast_id: 'pd-low', score: 4.1, reasoning: 'Weak topical match.' },
     ])
     vi.mocked(addClientShortlistPodcasts).mockResolvedValue({ added: 2, skipped: 0, podcast_ids: ['pd-high', 'pd-low'] })
     vi.mocked(searchClientPodcastCatalog).mockResolvedValue([

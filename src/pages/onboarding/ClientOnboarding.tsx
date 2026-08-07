@@ -484,7 +484,16 @@ const QuestionField = ({ question, workspaceName, answer, asset, disabled, onCha
     const accept = question.type === 'image_upload' ? 'image/png,image/jpeg,image/webp' : 'application/pdf'
     return <div className="space-y-2">{label}{help}{asset ? <div className="flex flex-col gap-3 rounded-xl border bg-slate-50 p-4 sm:flex-row sm:items-center"><div className="flex h-11 w-11 items-center justify-center rounded-lg bg-white">{question.type === 'image_upload' ? <ImageIcon className="h-5 w-5 text-primary" /> : <FileText className="h-5 w-5 text-primary" />}</div><div className="min-w-0 flex-1">{asset.signed_url ? <a className="block truncate text-sm font-semibold text-primary hover:underline" href={asset.signed_url} target="_blank" rel="noreferrer">{asset.original_name}</a> : <p className="truncate text-sm font-semibold text-slate-600">{asset.original_name} · preview unavailable</p>}<p className="text-xs text-slate-500">{(asset.byte_size / 1_048_576).toFixed(1)} MB</p></div><Button type="button" size="sm" variant="outline" disabled={disabled} onClick={() => onDeleteUpload(asset.id)}><Trash2 className="mr-2 h-4 w-4" />Remove</Button></div> : <button type="button" disabled={disabled} className="flex w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-primary/25 bg-primary/5 p-5 text-center transition hover:border-primary/60 disabled:opacity-60" onClick={() => fileInput.current?.click()}><UploadCloud className="h-7 w-7 text-primary" /><span className="mt-2 text-sm font-semibold text-primary">Choose {question.type === 'image_upload' ? 'an image' : 'a PDF'}</span><span className="mt-1 text-xs text-slate-500">{question.type === 'image_upload' ? 'PNG, JPEG, or WebP up to 5 MB' : 'PDF up to 10 MB'}</span></button>}<input ref={fileInput} id={inputId} type="file" accept={accept} className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) onUpload(file); event.currentTarget.value = '' }} /></div>
   }
-  return <div className="space-y-2">{label}{help}<Input id={inputId} disabled={disabled} type="text" maxLength={question.type === 'url' ? 2048 : 500} value={typeof answer === 'string' ? answer : ''} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /></div>
+  if (question.type === 'date') {
+    return <div className="space-y-2">{label}{help}<Input id={inputId} disabled={disabled} type="date" placeholder={placeholder} value={typeof answer === 'string' ? answer : ''} onChange={(event) => onChange(event.target.value)} /></div>
+  }
+  // email/url get the right mobile keyboard and light client validation; the
+  // generic text box was giving a non-technical client a plain keyboard and no
+  // format hint on a form built for outside people. Server validation stays
+  // free-form, so this is help, not a gate.
+  const inputType = question.type === 'email' ? 'email' : question.type === 'url' ? 'url' : 'text'
+  const inputMode = question.type === 'email' ? 'email' : question.type === 'url' ? 'url' : undefined
+  return <div className="space-y-2">{label}{help}<Input id={inputId} disabled={disabled} type={inputType} inputMode={inputMode} maxLength={question.type === 'url' ? 2048 : 500} value={typeof answer === 'string' ? answer : ''} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /></div>
 }
 
 const ClientOnboardingPage = () => (

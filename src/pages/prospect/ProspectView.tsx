@@ -449,18 +449,21 @@ function ProspectViewContent() {
         cacheOnly: true,
       })
 
-      // Log cache performance
-      if (data.cachePerformance) {
-        const { cacheHitRate, apiCallsSaved, costSavings } = data.cachePerformance
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-        console.log('📊 [PROSPECT DASHBOARD] Cache Performance')
-        console.log(`   Podcasts loaded: ${data.podcasts?.length || 0}`)
-        console.log(`   ✅ Cache hit rate: ${cacheHitRate}%`)
-        console.log(`   💰 API calls saved: ${apiCallsSaved}`)
-        console.log(`   💵 Cost savings: $${costSavings}`)
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-      } else {
-        console.log(`[Dashboard] Loaded ${data.podcasts?.length || 0} podcasts from cache`)
+      // These are the agency's internal API-cost economics — never for a
+      // prospect's console on a white-label page. Dev only.
+      if (import.meta.env.DEV) {
+        if (data.cachePerformance) {
+          const { cacheHitRate, apiCallsSaved, costSavings } = data.cachePerformance
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+          console.log('📊 [PROSPECT DASHBOARD] Cache Performance')
+          console.log(`   Podcasts loaded: ${data.podcasts?.length || 0}`)
+          console.log(`   ✅ Cache hit rate: ${cacheHitRate}%`)
+          console.log(`   💰 API calls saved: ${apiCallsSaved}`)
+          console.log(`   💵 Cost savings: $${costSavings}`)
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        } else {
+          console.log(`[Dashboard] Loaded ${data.podcasts?.length || 0} podcasts from cache`)
+        }
       }
 
       if (data.podcasts !== undefined && !Array.isArray(data.podcasts)) {

@@ -103,9 +103,11 @@ describe('ClientOnboarding white-label experience', () => {
     expect(screen.getByText('Hi Casey,')).toBeInTheDocument()
     expect(screen.getByText(/Your progress saves automatically and stays private with Iveth Gonzalez/u)).toBeInTheDocument()
     expect(screen.queryByText(/your agency|Get On A Pod/iu)).not.toBeInTheDocument()
-    expect(screen.getByPlaceholderText('How should we reach you?')).toHaveAttribute('type', 'text')
-    expect(screen.getByPlaceholderText('Website or anything helpful')).toHaveAttribute('type', 'text')
-    expect(screen.getByPlaceholderText('Any wording is fine')).toHaveAttribute('type', 'text')
+    // Field types now match the question type: the right mobile keyboard for
+    // email/url and a real date picker, instead of a generic text box.
+    expect(screen.getByPlaceholderText('How should we reach you?')).toHaveAttribute('type', 'email')
+    expect(screen.getByPlaceholderText('Website or anything helpful')).toHaveAttribute('type', 'url')
+    expect(screen.getByPlaceholderText('Any wording is fine')).toHaveAttribute('type', 'date')
     await waitFor(() => expect(document.title).toBe('Iveth Gonzalez · Client onboarding'))
   })
 

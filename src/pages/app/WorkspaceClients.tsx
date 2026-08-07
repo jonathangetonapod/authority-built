@@ -124,6 +124,10 @@ const WorkspaceClients = ({ platformWorkspaceId, mode = 'manage' }: WorkspaceCli
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      // Enter-key repeat fires the form submit synchronously, before the
+      // button's disabled state re-renders — without this a create could
+      // POST twice and duplicate the client (no unique constraint upstream).
+      if (saveMutation.isPending) throw new Error('Already saving.')
       if (!workspaceId) throw new Error('Workspace is unavailable.')
       if (!form.name.trim()) throw new Error('Client name is required.')
       return editing
@@ -251,7 +255,7 @@ const WorkspaceClients = ({ platformWorkspaceId, mode = 'manage' }: WorkspaceCli
                     {mode === 'research' ? 'Add or reactivate a client before starting podcast research.' : 'Add your first client to begin.'}
                   </p>
                 </div>
-                {showManagementControls && (
+                {showManagementControls ? (
                   <Button
                     onClick={openCreate}
                     variant="outline"
@@ -259,7 +263,11 @@ const WorkspaceClients = ({ platformWorkspaceId, mode = 'manage' }: WorkspaceCli
                   >
                     <Plus className="mr-2 h-4 w-4" />Add client
                   </Button>
-                )}
+                ) : mode === 'research' ? (
+                  <Button asChild variant="outline">
+                    <Link to={`${clientBaseHref}/clients`}><Users className="mr-2 h-4 w-4" />Manage clients</Link>
+                  </Button>
+                ) : null}
               </div>
             ) : (
               <div className="overflow-x-auto">

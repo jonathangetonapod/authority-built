@@ -144,8 +144,14 @@ serve(async (req) => {
      * (matched by credits granted), falling back to today's pack if the
      * catalog moved underneath it.
      */
-    const monthlyCapCents = Number(profile.refill_monthly_cap_cents)
-    if (Number.isFinite(monthlyCapCents) && monthlyCapCents >= 0) {
+    // A NULL cap means NO cap, not a zero ceiling. The column has no default
+    // and no code path sets it, so Number(null) === 0 turned the "spend cap"
+    // into "never spend": spent + pack > 0 is always true, so every eligible
+    // workspace was refused and auto-refill silently never charged anyone.
+    // Only enforce a cap that was actually configured.
+    const rawCap = profile.refill_monthly_cap_cents
+    const monthlyCapCents = rawCap === null || rawCap === undefined ? null : Number(rawCap)
+    if (monthlyCapCents !== null && Number.isFinite(monthlyCapCents) && monthlyCapCents >= 0) {
       const monthPrefix = `auto-refill:${workspaceId}:${today.slice(0, 7)}-`
       const { data: monthRefills } = await admin
         .from('workspace_credit_ledger')

@@ -378,6 +378,13 @@ export const MailboxesTable = ({
                       <p className="font-semibold text-foreground">{account.email}</p>
                       <div className="mt-1.5 flex flex-wrap items-center gap-2">
                         <span className="text-xs text-muted-foreground">{mailboxLabel(account)}</span>
+                        {/* This is the account-health screen, and a mailbox
+                            with no signature sends outreach ending in no name —
+                            the warning was plumbed to the row but only shown in
+                            the smaller picker. Surface it here too. */}
+                        {account.has_signature === false && (
+                          <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">No signature</span>
+                        )}
                         {(account.tags?.length ?? 0) > 1 && <span className="text-[10px] text-muted-foreground">+{account.tags.length - 1}</span>}
                         {status && (
                           <Badge variant="outline" className={`px-2 py-0 text-[10px] font-semibold ${status.className}`}>

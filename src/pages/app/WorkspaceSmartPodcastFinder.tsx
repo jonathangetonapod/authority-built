@@ -487,7 +487,12 @@ const WorkspaceSmartPodcastFinder = ({ platformWorkspaceId }: WorkspaceSmartPodc
           const score = scoreById.get(podcast.podcast_id)
           return {
             podcast,
-            score: score?.score ?? null,
+            // The endpoint scores 1-10; the badge thresholds and the "N fit"
+            // label are on a 0-100 scale, so normalize here (as the advanced
+            // Finder does). Without this a real 9 rendered as "9 fit" in the
+            // permanently-muted style and stored 0.9 — a tenth of the true
+            // compatibility — on the client shortlist.
+            score: score?.score == null ? null : Math.round(score.score * 10),
             reasoning: score?.reasoning ?? null,
           }
         })

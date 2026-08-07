@@ -1204,7 +1204,10 @@ export default function PodcastFinder({
           audience_size: result.podcast.reach?.audience_size,
           episode_count: result.podcast.episode_count,
         })),
-        10,
+        // The endpoint caps a request at 20 podcasts and charges one credit
+        // per request. Sending 10 issued twice the requests — and paid twice
+        // — to score the same list. Match the server cap.
+        20,
         (completed, total) => setScoringProgress({
           completed,
           total,
@@ -1557,7 +1560,7 @@ export default function PodcastFinder({
             )}
             {isClientBound && <Button asChild variant="outline"><Link to={clientsHref}>Back to clients</Link></Button>}
             {rateLimit?.remaining !== undefined && <div className="rounded-lg border bg-card px-3 py-2 text-left lg:text-right">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Podscan quota</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Search quota</p>
               <p className="text-sm font-semibold">{rateLimit.remaining.toLocaleString()}{rateLimit.limit !== undefined ? ` of ${rateLimit.limit.toLocaleString()}` : ''} remaining</p>
             </div>}
           </div>
@@ -1854,7 +1857,7 @@ export default function PodcastFinder({
                     <div>
                       <Label>Search strategy</Label>
                       <p className="text-xs text-muted-foreground">
-                        Run against the shared podcast database and Podscan. Exact phrases use Podscan’s
+                        Run against the shared podcast database and the live index. Exact phrases use the index’s
                         documented double-quote syntax.
                       </p>
                     </div>
@@ -2250,7 +2253,7 @@ export default function PodcastFinder({
 
               <div className="grid grid-cols-2 gap-2">
                 <Button variant="outline" onClick={() => void handleEnrichDetail()} disabled={enrichingId !== null || isDiscovering}>{enrichingId === selectedDetail.podcast.podcast_id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />} Load full profile</Button>
-                <Button asChild disabled={!safeExternalUrl(selectedDetail.podcast.podcast_url)}><a href={safeExternalUrl(selectedDetail.podcast.podcast_url) ?? undefined} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-2 h-4 w-4" /> Open Podscan</a></Button>
+                <Button asChild disabled={!safeExternalUrl(selectedDetail.podcast.podcast_url)}><a href={safeExternalUrl(selectedDetail.podcast.podcast_url) ?? undefined} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-2 h-4 w-4" /> Open show</a></Button>
               </div>
 
               <Separator />

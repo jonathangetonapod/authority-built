@@ -92,7 +92,13 @@ export const getAllPosts = async (filters: BlogFilters = {}) => {
   }
 
   if (filters.search) {
-    query = query.or(`title.ilike.%${filters.search}%,content.ilike.%${filters.search}%,excerpt.ilike.%${filters.search}%`)
+    // Strip PostgREST filter metacharacters ( , ) * before building the .or()
+    // expression — an unescaped comma or paren breaks parsing at best and
+    // injects filter terms at worst (repo security rule).
+    const safeSearch = filters.search.replace(/[,()*\\]/gu, ' ').trim()
+    if (safeSearch) {
+      query = query.or(`title.ilike.%${safeSearch}%,content.ilike.%${safeSearch}%,excerpt.ilike.%${safeSearch}%`)
+    }
   }
 
   // Pagination
@@ -374,6 +380,10 @@ export const generateSchemaMarkup = (post: BlogPost) => {
  * Get related posts based on category and tags
  */
 export const getRelatedPosts = async (post: BlogPost, limit = 3) => {
+  // category_id is nullable (ON DELETE SET NULL). Passing '' to a uuid column
+  // threw at PostgREST, which the caller caught as "Post not found" and bounced
+  // the reader out of a post that had already loaded. No category → no related.
+  if (!post.category_id) return []
   const { data, error} = await supabase
     .from('blog_posts')
     .select('id, slug, title, excerpt, featured_image_url, published_at, read_time_minutes, blog_categories(name, slug)')
