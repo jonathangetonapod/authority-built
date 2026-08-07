@@ -24,8 +24,8 @@ BEGIN;
 -- 1. Forced-password-change wall on the avatar RPC.
 CREATE OR REPLACE FUNCTION public.set_membership_avatar_v1(
   p_workspace_id UUID,
-  p_avatar_path TEXT,
   p_expected_avatar_path TEXT,
+  p_avatar_path TEXT,
   p_actor_user_id UUID,
   p_token_issued_at BIGINT
 )
