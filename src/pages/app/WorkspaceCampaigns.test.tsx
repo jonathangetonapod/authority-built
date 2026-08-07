@@ -219,6 +219,55 @@ describe('WorkspaceCampaigns', () => {
     expect(screen.queryByText(/Feb 16–22|podcasts in view|Current wave/i)).not.toBeInTheDocument()
   })
 
+  /*
+   * The Dallas-class incident: a campaign whose Instantly side was deleted sat
+   * on this list rendering last-seen numbers as current until a send 409'd.
+   * The overview now names it from the listing already on the wire.
+   */
+  it('marks a campaign whose Instantly side no longer exists', async () => {
+    mockedOverview.mockResolvedValueOnce({
+      ...campaignOverview,
+      integration: connectedIntegration,
+      campaigns: [{ ...persistedCampaign, provider_missing: true }],
+      provider_campaigns: [],
+    })
+    renderCampaigns()
+
+    const table = await screen.findByRole('table')
+    expect(within(table).getByText('Not in Instantly')).toBeInTheDocument()
+  })
+
+  // A failed read is not an empty list: this used to render "No Instantly
+  // campaigns assigned yet" as fact on any overview error.
+  it('shows the failure and a retry when the overview cannot be read', async () => {
+    mockedOverview.mockRejectedValueOnce(new Error('The campaigns response could not be read. Try again.'))
+    renderCampaigns()
+
+    expect(await screen.findByText('Campaigns could not be loaded')).toBeInTheDocument()
+    // The connection card renders its own retry too; at least one must exist.
+    expect(screen.getAllByRole('button', { name: 'Try again' }).length).toBeGreaterThan(0)
+    expect(screen.queryByText('No Instantly campaigns assigned yet')).not.toBeInTheDocument()
+  })
+
+  // Rows display the campaign's real name; the search used to look only at
+  // the client name and a synthetic default, so it could not find the very
+  // text the Name column showed.
+  it('finds a campaign by the name the row displays', async () => {
+    mockedOverview.mockResolvedValueOnce({
+      ...campaignOverview,
+      integration: connectedIntegration,
+      campaigns: [{ ...persistedCampaign, name: 'Q3 Solar Blitz' }],
+      provider_campaigns: [],
+    })
+    renderCampaigns()
+
+    await screen.findByRole('table')
+    fireEvent.change(screen.getByPlaceholderText('Search campaigns…'), { target: { value: 'solar' } })
+    expect(screen.getByRole('link', { name: 'Q3 Solar Blitz' })).toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText('Search campaigns…'), { target: { value: 'zzz-no-match' } })
+    expect(screen.getByText('No campaigns match this view')).toBeInTheDocument()
+  })
+
   // The table used to fetch each client's detail and shortlist — two requests
   // per row — and render neither. The cost was a spinner per row and, on a
   // failure, an "Unavailable" badge over a campaign that had loaded fine.

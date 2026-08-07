@@ -1207,6 +1207,27 @@ function verifySelectedAccounts(
   }
 }
 
+/*
+ * Live accounts when the key can answer, the snapshot when it cannot. The
+ * settings save and the mailbox assign verified against a cached snapshot, so
+ * a mailbox disabled in Instantly after the last refresh passed the save and
+ * the failure surfaced later as a launch 409 or silent non-sending. A dead
+ * key mid-save should not brick the save either — the snapshot is the honest
+ * fallback, and launch still verifies live.
+ */
+async function freshOrSnapshotAccounts(
+  context: AuthContext,
+  connection: ConnectionRow | null,
+): Promise<InstantlyAccountSummary[]> {
+  if (!connection) return accountsFromSnapshot(null);
+  try {
+    const apiKey = await integrationApiKey(connection);
+    return await refreshProviderAccounts(context.admin, connection, apiKey);
+  } catch (_error) {
+    return accountsFromSnapshot(connection.accounts_snapshot);
+  }
+}
+
 async function refreshProviderAccounts(
   admin: AuthContext["admin"],
   connection: ConnectionRow,
@@ -2909,15 +2930,33 @@ async function syncProviderCampaign(
     );
   }
   const apiKey = await integrationApiKey(connection);
-  const campaignPathId = encodeURIComponent(campaign.instantly_campaign_id);
-  const [providerValue, analyticsValue, leads] = await Promise.all([
-    instantlyRequest<unknown>(apiKey, `/campaigns/${campaignPathId}`),
+  /*
+   * The campaign read goes through the forget helper, like every write path
+   * already does. Raw, a deleted provider campaign made this sync fail
+   * identically forever — and because a failed sync never advances
+   * last_synced_at, dead mappings queued at the head of every cron sweep,
+   * burning the shared rate limit on guaranteed 404s until healthy campaigns
+   * stopped syncing at all.
+   */
+  const provider = await readProviderCampaignOrForget(
+    context,
+    campaign,
+    apiKey,
+    campaign.instantly_campaign_id,
+  );
+  if (!provider) {
+    throw new HttpError(
+      409,
+      "INSTANTLY_RESOURCE_NOT_FOUND",
+      "The Instantly campaign no longer exists. The link has been cleared — save the campaign settings to rebuild it.",
+    );
+  }
+  const [analyticsValue, leads] = await Promise.all([
     instantlyRequest<unknown>(apiKey, "/campaigns/analytics/overview", {
       query: new URLSearchParams({ id: campaign.instantly_campaign_id }),
     }),
     listProviderLeads(apiKey, campaign.instantly_campaign_id),
   ]);
-  const provider = providerCampaign(providerValue);
   const analytics = safeInstantlyAnalytics(analyticsValue);
   const targets = await readTargets(
     context.admin,
@@ -3274,21 +3313,41 @@ serve(async (req) => {
       );
       let providerCampaigns: ProviderCampaign[] = [];
       let providerCampaignsError: string | null = null;
+      let providerListingComplete = false;
       if (connection?.status === "connected") {
         try {
-          providerCampaigns = await listProviderCampaigns(
+          const listing = await listProviderCampaignPage(
             await integrationApiKey(connection),
           );
+          providerCampaigns = listing.campaigns;
+          providerListingComplete = listing.complete;
         } catch (error) {
           providerCampaignsError = safeInstantlyError(error).message;
         }
       }
+      /*
+       * Dead-mapping detection, from data already on the wire: a linked
+       * campaign whose provider id is absent from a COMPLETE listing no longer
+       * exists in Instantly. The Dallas-class incident sat invisible on this
+       * list for exactly the lack of this set-difference — the row rendered
+       * last-seen numbers as current until a send finally 409'd. Only claimed
+       * when the listing is complete and healthy; a truncated or failed
+       * listing proves nothing.
+       */
+      const listedProviderIds = new Set(providerCampaigns.map((campaign) => campaign.id));
+      const providerMissing = (campaign: CampaignRow): boolean => (
+        providerListingComplete
+        && providerCampaignsError === null
+        && Boolean(campaign.instantly_campaign_id)
+        && !listedProviderIds.has(campaign.instantly_campaign_id as string)
+      );
       return jsonResponse(req, METHODS, 200, {
         integration: connectionDto(connection, access),
         can_manage_campaigns: CAMPAIGN_MANAGER_ROLES.has(access.role),
-        campaigns: campaigns.map((campaign) => (
-            campaignDto(campaign, targetsByCampaign.get(campaign.id) || [])
-          )),
+        campaigns: campaigns.map((campaign) => ({
+            ...campaignDto(campaign, targetsByCampaign.get(campaign.id) || []),
+            provider_missing: providerMissing(campaign),
+          })),
         provider_campaigns: providerCampaigns.map((campaign) => ({
           id: campaign.id,
           name: campaign.name,
@@ -5090,6 +5149,19 @@ serve(async (req) => {
         // A lead deleted in Instantly is a real answer, not a failure: the
         // sequence is not running because the lead is gone.
         if (!(error instanceof InstantlyApiError) || error.status !== 404) throw error;
+        /*
+         * Written back, so the table stops disagreeing with this panel. The
+         * row went on claiming a running sequence — counted as emailed,
+         * projecting a next send — for a lead the provider deleted; nulling
+         * the lead status is what the projections key on. The bulk sync
+         * cannot make this call (its lead listing truncates at a thousand,
+         * so absence there proves nothing); this single-lead read can.
+         */
+        await context.admin
+          .from("workspace_client_campaign_targets")
+          .update({ instantly_lead_status: null })
+          .eq("id", target.id)
+          .eq("workspace_id", workspaceId);
         return jsonResponse(req, METHODS, 200, {
           lead: null,
           deleted_upstream: true,
@@ -6628,7 +6700,7 @@ serve(async (req) => {
       const connection = await readConnection(context.admin, workspaceId);
       verifySelectedAccounts(
         senderAccounts,
-        accountsFromSnapshot(connection?.accounts_snapshot),
+        await freshOrSnapshotAccounts(context, connection),
       );
       // Omitted fields keep what the campaign already has, so this stays a
       // partial update for callers that predate the schedule controls.
@@ -6793,7 +6865,7 @@ serve(async (req) => {
         // exist.
         verifySelectedAccounts(
           next,
-          accountsFromSnapshot(connection?.accounts_snapshot),
+          await freshOrSnapshotAccounts(context, connection),
         );
       } else if (next.length === 0 && campaign.instantly_campaign_id) {
         // A launched campaign with no sender is a campaign that has silently

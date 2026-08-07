@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
+import { campaignErrorToast } from '@/lib/campaignErrorGuidance'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -125,7 +126,9 @@ const statusClasses: Record<CampaignStatus, string> = {
 }
 
 function instantlyStatusLabel(status: number): CampaignStatus {
-  if (status === 1 || status === 4) return 'Active'
+  // 4 is "Needs attention" server-side (localCampaignStatus); calling it
+  // Active only in the picker meant the badge flipped the moment it was saved.
+  if (status === 1) return 'Active'
   if (status === 2) return 'Paused'
   if (status === 3) return 'Completed'
   if (status === 0) return 'Draft'
@@ -440,7 +443,10 @@ const WorkspaceCampaigns = ({
       navigate(`${baseHref}/client-campaigns/${variables.clientId}`)
       toast.success('Campaign draft saved.')
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : 'The campaign draft could not be saved.'),
+    onError: (error) => {
+      const report = campaignErrorToast(error, 'The campaign draft could not be saved.')
+      toast.error(report.title, report.description ? { description: report.description } : undefined)
+    },
   })
 
   // Third click returns to needs-attention-first rather than stranding the
@@ -462,6 +468,10 @@ const WorkspaceCampaigns = ({
   const filteredSummaries = summaries.filter((summary) => {
     const matchesSearch = !normalizedSearch
       || summary.client.name.toLowerCase().includes(normalizedSearch)
+      // The Name column shows the campaign's real name; a search that could
+      // not find "Q3 Solar Blitz" while the row displayed it was searching a
+      // different page than the one on screen.
+      || (summary.campaign?.name ?? '').toLowerCase().includes(normalizedSearch)
       || `${summary.client.name} podcast outreach`.toLowerCase().includes(normalizedSearch)
     const matchesClient = clientGroupFilter === 'all' || summary.client.id === clientGroupFilter
     const matchesFilter = filter === 'all'
@@ -546,6 +556,12 @@ const WorkspaceCampaigns = ({
     setSelectedClientId(clientId)
     setSelectedProviderCampaignId('new')
     setCampaignName(client ? `${client.name} Podcast Outreach` : '')
+    // All of the provider-campaign carry-over, not just name and senders:
+    // switching clients used to keep the previous client's campaign timezone
+    // and daily limit, and a new campaign inherited a sending window from a
+    // completely unrelated client.
+    setCampaignTimezoneDraft(defaultInstantlyTimezone())
+    setCampaignDailyLimit(30)
     setSelectedSenderAccounts(new Set())
   }
 
@@ -568,6 +584,25 @@ const WorkspaceCampaigns = ({
 
   const openDraftWorkspace = () => {
     if (!selectedClientId) return
+    /*
+     * The chosen provider campaign is re-derived from live query data, and a
+     * focus refetch can drop it — deleted in Instantly, claimed by a teammate,
+     * or the listing transiently failing to an empty array. Saving then sent
+     * providerCampaignId null and quietly CREATED a duplicate campaign under
+     * the same name instead of linking the one the operator picked.
+     */
+    if (selectedProviderCampaignId !== 'new' && !selectedProviderCampaign) {
+      toast.error('That Instantly campaign is no longer available to assign. Reopen the campaign picker and choose again.')
+      return
+    }
+    if (!Number.isInteger(campaignDailyLimit) || campaignDailyLimit < 1 || campaignDailyLimit > 1000) {
+      toast.error('Daily limit must be a whole number between 1 and 1000.')
+      return
+    }
+    if (!campaignName.trim() || campaignName.trim().length > 180) {
+      toast.error('Give the campaign a name of up to 180 characters.')
+      return
+    }
     saveCampaignMutation.mutate({
       workspaceId,
       clientId: selectedClientId,
@@ -707,7 +742,10 @@ const WorkspaceCampaigns = ({
       {/* Every number above arrives only when somebody presses Refresh totals,
           and without this they look equally current at one minute or one
           fortnight old. */}
-      {integration?.connected && syncFreshness && (
+      {/* Shown while the numbers are shown — disconnecting deliberately leaves
+          campaigns sending, and hiding the staleness line with the connection
+          made week-old totals look as current as live ones. */}
+      {(integration?.connected || summaries.length > 0) && syncFreshness && (
         <p className={`flex items-center gap-2 text-xs ${syncFreshness.stale ? 'font-medium text-amber-700' : 'text-muted-foreground'}`}>
           {syncFreshness.stale && <AlertCircle className="h-3.5 w-3.5 shrink-0" />}
           {syncFreshness.label}
@@ -751,7 +789,15 @@ const WorkspaceCampaigns = ({
                 <SelectTrigger aria-label="Filter campaigns by client" className="w-full sm:w-56"><Users className="mr-2 h-4 w-4 text-muted-foreground" /><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All clients</SelectItem>
+                  {/* Every client that owns a listed campaign, not just the
+                      active ones: a paused client's still-sending campaign
+                      rendered a row this filter could never reach. */}
                   {activeClients.map((client) => <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>)}
+                  {summaries
+                    .map((summary) => summary.client)
+                    .filter((client, index, list) => list.findIndex((item) => item.id === client.id) === index)
+                    .filter((client) => !activeClients.some((active) => active.id === client.id))
+                    .map((client) => <SelectItem key={client.id} value={client.id}>{client.name} (inactive)</SelectItem>)}
                 </SelectContent>
               </Select>
               <div className="relative w-full sm:w-72">
@@ -781,7 +827,18 @@ const WorkspaceCampaigns = ({
             list resolved first. */}
         {clientsLoading || campaignOverviewQuery.isLoading ? (
           <div className="flex min-h-64 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>
-        ) : activeClients.length === 0 ? (
+        ) : campaignOverviewQuery.error ? (
+          <div className="flex min-h-52 flex-col items-center justify-center gap-3 px-6 text-center">
+            <AlertCircle className="h-8 w-8 text-amber-600" />
+            {/* A failed read is not an empty list: this used to render "No
+                Instantly campaigns assigned yet" as fact on any error. */}
+            <div>
+              <h3 className="font-semibold">Campaigns could not be loaded</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{campaignOverviewQuery.error instanceof Error ? campaignOverviewQuery.error.message : 'The campaign overview could not be read.'}</p>
+            </div>
+            <Button type="button" variant="outline" onClick={() => void campaignOverviewQuery.refetch()}>Try again</Button>
+          </div>
+        ) : activeClients.length === 0 && summaries.length === 0 ? (
           <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
             <Mic2 className="h-9 w-9 text-muted-foreground/50" />
             <h3 className="mt-3 font-semibold">No active clients</h3>
@@ -811,14 +868,19 @@ const WorkspaceCampaigns = ({
                     <Link to={`${baseHref}/client-campaigns/${summary.client.id}`} className="block transition-colors hover:text-primary">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0"><p className="truncate font-semibold">{summary.campaign?.name || `${summary.client.name} Podcast Outreach`}</p><p className="truncate text-xs text-muted-foreground">{summary.client.name}</p></div>
-                        <CampaignStatusBadge status={summary.status} />
+                        <span className="flex shrink-0 items-center gap-1.5">
+                          {summary.campaign?.provider_missing && (
+                            <Badge variant="outline" className="border-red-200 bg-red-50 text-red-800">Not in Instantly</Badge>
+                          )}
+                          <CampaignStatusBadge status={summary.status} />
+                        </span>
                       </div>
                     </Link>
                     <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                       <div><p className="text-xs text-muted-foreground">Progress</p><p className="mt-1 font-medium">{metrics.progress === null ? '—' : `${metrics.progress}%`}</p></div>
                       <div><p className="text-xs text-muted-foreground">Sent</p><p className="mt-1 font-medium">{metrics.sent.toLocaleString()}</p></div>
                       <div className="col-span-2"><p className="text-xs text-muted-foreground">Replies</p><p className="mt-1 font-medium">{metrics.replies === null ? '—' : `${metrics.replies.toLocaleString()}${metrics.positiveReplies === null ? '' : ` · ${metrics.positiveReplies.toLocaleString()} interested`}`}</p></div>
-                      <div><p className="text-xs text-muted-foreground">Staged in Instantly</p><p className={metrics.stagedSending > 0 ? 'mt-1 font-semibold text-amber-700' : 'mt-1 font-medium'}>{metrics.staged}{metrics.stagedSending > 0 ? ` · ${metrics.stagedSending} sending` : ''}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Staged in Instantly</p><p className={metrics.stagedSending > 0 ? 'mt-1 font-semibold text-amber-700' : 'mt-1 font-medium'}>{metrics.staged === 0 ? '—' : metrics.staged}{metrics.stagedSending > 0 ? ` · ${metrics.stagedSending} sending` : ''}</p></div>
                     </div>
                     <Link to={summary.nextAction.href} className="mt-4 flex items-center justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2 text-sm font-medium text-primary hover:bg-muted">
                       <span><span className="block text-xs font-normal text-muted-foreground">Next step</span>{summary.nextAction.label}</span>
@@ -856,7 +918,16 @@ const WorkspaceCampaigns = ({
                           <Link to={`${baseHref}/client-campaigns/${summary.client.id}`} className="font-semibold hover:text-primary hover:underline">{summary.campaign?.name || `${summary.client.name} Podcast Outreach`}</Link>
                         </TableCell>
                         <TableCell><Link to={`${baseHref}/clients/${summary.client.id}`} className="text-sm font-medium text-muted-foreground hover:text-primary hover:underline">{summary.client.name}</Link></TableCell>
-                        <TableCell><CampaignStatusBadge status={summary.status} /></TableCell>
+                        <TableCell>
+                          <span className="flex items-center gap-1.5">
+                            {/* Deleted upstream: the row's numbers are last-seen,
+                                and a send into this campaign will 409. */}
+                            {summary.campaign?.provider_missing && (
+                              <Badge variant="outline" className="border-red-200 bg-red-50 text-red-800">Not in Instantly</Badge>
+                            )}
+                            <CampaignStatusBadge status={summary.status} />
+                          </span>
+                        </TableCell>
                         <TableCell>
                           <Link to={summary.nextAction.href} className="text-sm font-medium text-primary hover:underline">{summary.nextAction.label}</Link>
                         </TableCell>
@@ -921,7 +992,15 @@ const WorkspaceCampaigns = ({
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">Choose an existing unassigned campaign, or create a new provider campaign for this client.</p>
+                {campaignOverviewQuery.data?.provider_campaigns_error ? (
+                  <p className="text-xs font-medium text-amber-700">
+                    The Instantly campaign list could not be loaded, so existing campaigns are not shown here — an
+                    empty list above does not mean there are none. Retry from the campaigns page before creating a
+                    duplicate.
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Choose an existing unassigned campaign, or create a new provider campaign for this client.</p>
+                )}
               </div>
               {selectedProviderCampaign ? (
                 <div className="rounded-xl border bg-muted/20 p-4">

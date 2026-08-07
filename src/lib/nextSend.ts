@@ -70,6 +70,10 @@ export function projectNextSend(input: NextSendInputs, now: Date = new Date()): 
   if (input.leadStatus === -2) return { kind: 'none', summary: 'Unsubscribed', reason: 'The host unsubscribed, so nothing further will be sent.' }
   if (input.leadStatus === -3) return { kind: 'none', summary: 'Skipped', reason: 'Instantly skipped this lead, so nothing is queued.' }
   if (input.leadStatus === 2) return { kind: 'held', summary: 'Lead paused', reason: 'This lead is paused in Instantly.' }
+  // Launch always records a status, so null on an emailed target means the
+  // per-lead check found it deleted upstream — projecting a date for it was
+  // promising an email that will never send.
+  if (input.leadStatus === null) return { kind: 'none', summary: 'Not in Instantly', reason: 'This lead no longer exists in the Instantly campaign.' }
   if (input.campaignStatus !== 1) return { kind: 'held', summary: 'Campaign not started', reason: 'The campaign is not sending, so nothing goes out until it is started.' }
   if (!input.sendDays.length) return { kind: 'held', summary: 'No sending days', reason: 'The campaign has no sending days selected.' }
 

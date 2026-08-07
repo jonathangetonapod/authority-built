@@ -163,6 +163,11 @@ export interface WorkspaceClientCampaign {
   target_shortlist_podcast_ids: string[]
   last_synced_at: string | null
   last_error: string | null
+  /**
+   * The linked Instantly campaign is absent from a complete provider listing —
+   * deleted upstream. Only claimed when the listing was complete and healthy.
+   */
+  provider_missing?: boolean
   created_at: string
   updated_at: string
 }
@@ -252,10 +257,25 @@ async function invokeWorkspaceCampaigns<T>(body: Record<string, unknown>, fallba
 }
 
 export async function getWorkspaceCampaignOverview(workspaceId: string): Promise<WorkspaceCampaignOverview> {
-  return await invokeWorkspaceCampaigns<WorkspaceCampaignOverview>({
+  const data = await invokeWorkspaceCampaigns<WorkspaceCampaignOverview>({
     action: 'overview',
     workspace_id: workspaceId,
   }, 'Client campaigns could not be loaded.')
+  // Same refusal as the mailbox and inbox reads beside this one: an
+  // unreadable payload used to fall through as "not connected" and "no
+  // campaigns assigned" — stated as fact, with every button hidden and no
+  // retry, because the query technically succeeded.
+  if (
+    !data
+    || typeof data !== 'object'
+    || !data.integration
+    || typeof data.integration !== 'object'
+    || !Array.isArray(data.campaigns)
+    || !Array.isArray(data.provider_campaigns)
+  ) {
+    throw new Error('The campaigns response could not be read. Try again.')
+  }
+  return data
 }
 
 export async function getWorkspaceMailboxes(workspaceId: string): Promise<WorkspaceMailboxesResponse> {

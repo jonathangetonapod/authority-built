@@ -73,7 +73,7 @@ const GUIDANCE: Record<string, CampaignErrorGuidance> = {
   },
   INSTANTLY_LEAD_NOT_CREATED: {
     title: 'Instantly did not add this contact',
-    explanation: 'The campaign is connected but the contact was not accepted. Nothing was sent to the host.',
+    explanation: 'The campaign is connected but the contact was not accepted. Nothing was sent to the host. If this repeats, the address may be on the Instantly block list — a retry cannot clear that; check the list in Instantly.',
     remedy: { kind: 'retry', label: 'Try again' },
   },
   INSTANTLY_NOT_CONNECTED: {
@@ -162,7 +162,7 @@ const GUIDANCE: Record<string, CampaignErrorGuidance> = {
   },
   INSTANTLY_RATE_LIMITED: {
     title: 'Instantly is rate limiting this workspace',
-    explanation: 'Too many requests in a short window. This clears on its own within a minute or so, and nothing was sent.',
+    explanation: 'Too many requests in a short window. This clears on its own within a minute or so. If the campaign was already live, retry rather than assume: the send may have partially gone through before the limit hit.',
     remedy: { kind: 'retry', label: 'Try again' },
   },
   INSTANTLY_REQUEST_FAILED: {
@@ -246,4 +246,20 @@ export function campaignErrorReport(report: CampaignErrorReport): string {
     if (typeof value === 'string' && value.trim()) lines.push(`${key}: ${value.trim()}`)
   }
   return lines.join('\n')
+}
+
+/**
+ * The toast form of the guidance table, for pages that report campaign errors
+ * with a toast rather than an inline panel. The table was written after a dead
+ * provider mapping surfaced as a bare 409 sentence with no remedy — and then
+ * only the prep dialog ever consulted it, so every mutation on the campaign
+ * pages kept surfacing raw server sentences. Falls back to the server's own
+ * message when the code has no entry, which is never worse than before.
+ */
+export function campaignErrorToast(error: unknown, fallback: string): { title: string; description?: string } {
+  const guidance = campaignErrorGuidance(errorCode(error))
+  if (guidance) {
+    return { title: guidance.title, description: guidance.explanation }
+  }
+  return { title: error instanceof Error ? error.message : fallback }
 }

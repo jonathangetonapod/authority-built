@@ -51,7 +51,7 @@ describe('workspaceCampaigns service', () => {
 
   it('loads the campaign overview through the workspace-scoped function', async () => {
     invoke.mockResolvedValueOnce({
-      data: { integration, can_manage_campaigns: true, campaigns: [] },
+      data: { integration, can_manage_campaigns: true, campaigns: [], provider_campaigns: [] },
       error: null,
     } as never)
 
@@ -60,6 +60,14 @@ describe('workspaceCampaigns service', () => {
       body: { action: 'overview', workspace_id: workspaceId },
     })
   })
+
+  // A 2xx the page cannot read must surface as an error with a retry, not fall
+  // through as "not connected" and "no campaigns assigned" stated as fact.
+  it('refuses an overview payload it cannot read', async () => {
+    invoke.mockResolvedValue({ data: null, error: null } as never)
+    await expect(getWorkspaceCampaignOverview(workspaceId)).rejects.toThrow('could not be read')
+  })
+
 
   it('loads mailboxes through the workspace-scoped function', async () => {
     invoke.mockResolvedValueOnce({

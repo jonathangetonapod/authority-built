@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
+import { campaignErrorToast } from '@/lib/campaignErrorGuidance'
 import { WorkspaceLayout, type PlatformWorkspaceConfig } from '@/components/workspace/WorkspaceLayout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -628,7 +629,8 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
     onError: (error) => {
       setConfirmActivateOpen(false)
       setCampaignRunningPreview(null)
-      toast.error(error instanceof Error ? error.message : 'Campaign status could not be changed.')
+      const report = campaignErrorToast(error, 'Campaign status could not be changed.')
+      toast.error(report.title, report.description ? { description: report.description } : undefined)
     },
   })
   const settingsMutation = useMutation({
@@ -657,7 +659,10 @@ const WorkspaceCampaignDetail = ({ platformWorkspaceId }: WorkspaceCampaignDetai
       await refreshCampaignData()
       toast.success('Campaign settings saved.')
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : 'Campaign settings could not be saved.'),
+    onError: (error) => {
+      const report = campaignErrorToast(error, 'Campaign settings could not be saved.')
+      toast.error(report.title, report.description ? { description: report.description } : undefined)
+    },
   })
 
   if (!isPlatformWorkspace && !workspace) {
