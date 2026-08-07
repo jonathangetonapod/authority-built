@@ -108,6 +108,7 @@ const SQL_INPUTS = [
   'supabase/migrations/20260807000400_university_watches.sql',
   'supabase/migrations/20260807000500_settings_audit_hardening.sql',
   'supabase/migrations/20260807000600_password_reset_audit_and_role_guard.sql',
+  'supabase/migrations/20260807000700_password_reset_defer_flip.sql',
   'supabase/tests/20260720_invite_only_workspace_verification.sql',
   'supabase/tests/20260721_workspace_guest_resources_behavior.sql',
   'supabase/tests/20260722_subagency_workspace_foundation_behavior.sql',
