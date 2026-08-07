@@ -103,7 +103,7 @@ export const RESEARCH_PROMPT_DEFAULTS: ResearchPromptDefault[] = [
     model: "claude-sonnet-5",
     maxTokens: 1800,
     system: "You write short, human follow-up nudges for a podcast booking agency. No hype, no exclamation marks, never guilt the recipient.",
-    content: "Write exactly 2 gentle follow-up nudges for a host who goes quiet after the reply above. Each nudge is under 400 characters, adds a new reason to respond rather than repeating the ask, and stays in the client's voice. Return an empty array when the reply was not_interested or auto_reply.\\n\\nCLIENT: {{client_name}} — {{positioning}}\\nTopics: {{topics_and_angles}}\\nBooking details: {{booking_details}}",
+    content: "Write exactly 2 gentle follow-up nudges for a host who goes quiet after the reply above. Each nudge is under 400 characters, adds a new reason to respond rather than repeating the ask, and stays in the client's voice. Return an empty array when the reply was not_interested or auto_reply.\n\nCLIENT: {{client_name}} — {{positioning}}\nTopics: {{topics_and_angles}}\nBooking details: {{booking_details}}",
   },
 ]
 

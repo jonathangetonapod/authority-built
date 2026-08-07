@@ -1,6 +1,6 @@
 import { assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 
-import { detectDeterministicReply, resolveInboxModel, withinSendWindow } from './inboxSdr.ts'
+import { detectDeterministicReply, resolveInboxModel, stripQuotedText, withinSendWindow } from './inboxSdr.ts'
 
 Deno.test('the inbox runs on the workspace model chosen for the reply stage', () => {
   const shipped = 'claude-sonnet-4-6'
@@ -183,5 +183,51 @@ Deno.test('the send window follows the campaign schedule when one is known', () 
   } finally {
     // deno-lint-ignore no-explicit-any
     ;(globalThis as any).Date = RealDate
+  }
+})
+
+Deno.test('opt-out language quoted from our own thread never silences a willing host', () => {
+  // The compliance footer travels in the quoted section of every reply. Only
+  // what THIS sender wrote may trip the opt-out patterns.
+  const enthusiastic = [
+    'Yes, love it — let\u2019s book a time next week!',
+    '',
+    'On Tue, Aug 4, 2026 at 9:12 AM Outreach <us@agency.com> wrote:',
+    '> Great to connect. Reply "opt out" to stop receiving these messages.',
+  ].join('\n')
+  if (detectDeterministicReply(enthusiastic) !== null) {
+    throw new Error('a quoted compliance footer was treated as the host opting out')
+  }
+
+  const forwarded = [
+    'Sounds great, send over the booking link.',
+    '',
+    '-----Original Message-----',
+    'Please unsubscribe me from all future mailings.',
+  ].join('\n')
+  if (detectDeterministicReply(forwarded) !== null) {
+    throw new Error('quoted text below a forward marker was matched')
+  }
+})
+
+Deno.test('a top-posted opt-out still counts with a quoted thread below it', () => {
+  const reply = [
+    'Please remove me from your list.',
+    '',
+    'On Mon, Aug 3, 2026 at 4:02 PM Outreach <us@agency.com> wrote:',
+    '> Would love to have your take on the show.',
+  ].join('\n')
+  if (detectDeterministicReply(reply) !== 'opt_out') {
+    throw new Error('a real top-posted opt-out was missed')
+  }
+})
+
+Deno.test('stripQuotedText keeps something to classify when the reply is all quote', () => {
+  const allQuote = [
+    '> the entire message is quoted',
+    '> nothing top-posted at all',
+  ].join('\n')
+  if (stripQuotedText(allQuote).trim().length === 0) {
+    throw new Error('an all-quote reply stripped to nothing')
   }
 })

@@ -162,10 +162,20 @@ export const ClientSdrPromptsCard = ({
   const promptOverridesQuery = useQuery({
     queryKey: ['workspace-research-prompts', workspaceId],
     queryFn: () => getWorkspaceResearchPromptOverrides(workspaceId),
-    enabled: expanded === INBOX_MODEL_OWNER || expanded === INBOX_MODEL_FOLLOWER,
     retry: false,
     staleTime: 60_000,
   })
+  /*
+   * The text a prompt falls back to when this client has no override. The
+   * runtime resolves client -> workspace -> shipped, but this card used to
+   * fall back straight to the shipped default: with a workspace house style
+   * in place, the badge said "Workspace default" over shipped text, Reset
+   * seeded shipped text, and saving what was displayed quietly reverted the
+   * client from the house style.
+   */
+  const workspaceFallback = (id: ResearchPromptId): string =>
+    promptOverridesQuery.data?.[id]?.content
+      ?? RESEARCH_PROMPT_DEFAULTS_BY_ID[id].content
   // Read live from Anthropic, so it reflects what this workspace's key can
   // actually reach. Only fetched once an inbox stage is open: it is a provider
   // round trip, and most visits to this card never touch the model.
@@ -204,18 +214,22 @@ export const ClientSdrPromptsCard = ({
   // Seed each editor once from the saved override, or the shipped default
   // when this client has none.
   useEffect(() => {
-    if (!promptsQuery.data) return
+    // Wait for the workspace layer too: seeding from the shipped default
+    // while the house style was still loading marked every prompt "Unsaved"
+    // against text nobody typed.
+    if (!promptsQuery.data || promptOverridesQuery.isLoading) return
     setDrafts((current) => {
       const next = { ...current }
       for (const prompt of PROMPT_GROUPS.flatMap((group) => group.prompts)) {
         if (next[prompt.id] === undefined) {
           next[prompt.id] = promptsQuery.data?.[prompt.id]?.content
-            ?? RESEARCH_PROMPT_DEFAULTS_BY_ID[prompt.id].content
+            ?? workspaceFallback(prompt.id)
         }
       }
       return next
     })
-  }, [promptsQuery.data])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promptsQuery.data, promptOverridesQuery.data, promptOverridesQuery.isLoading])
 
   const saveMutation = useMutation({
     mutationFn: (input: { id: ResearchPromptId; content: string }) =>
@@ -231,7 +245,7 @@ export const ClientSdrPromptsCard = ({
   const resetMutation = useMutation({
     mutationFn: (id: ResearchPromptId) => resetClientSdrPrompt(workspaceId, clientId, id),
     onSuccess: (_result, id) => {
-      setDrafts((current) => ({ ...current, [id]: RESEARCH_PROMPT_DEFAULTS_BY_ID[id].content }))
+      setDrafts((current) => ({ ...current, [id]: workspaceFallback(id) }))
       void queryClient.invalidateQueries({ queryKey: promptsKey })
       toast.success('Reset to the workspace default.')
     },
@@ -269,7 +283,7 @@ export const ClientSdrPromptsCard = ({
               </div>
               {group.prompts.map((prompt) => {
                 const saved = overrides[prompt.id]?.content
-                const fallback = RESEARCH_PROMPT_DEFAULTS_BY_ID[prompt.id].content
+                const fallback = workspaceFallback(prompt.id)
                 const value = drafts[prompt.id] ?? saved ?? fallback
                 const dirty = value !== (saved ?? fallback)
                 const busy = saveMutation.isPending || resetMutation.isPending
@@ -325,7 +339,7 @@ export const ClientSdrPromptsCard = ({
           {activePrompt && (() => {
             const prompt = activePrompt
             const saved = overrides[prompt.id]?.content
-            const fallback = RESEARCH_PROMPT_DEFAULTS_BY_ID[prompt.id].content
+            const fallback = workspaceFallback(prompt.id)
             const value = drafts[prompt.id] ?? saved ?? fallback
             const dirty = value !== (saved ?? fallback)
             const busy = saveMutation.isPending || resetMutation.isPending

@@ -645,6 +645,24 @@ serve(async (req) => {
       if (!['manual', 'auto_draft'].includes(mode)) {
         throw new HttpError(400, 'INVALID_FIELD', 'mode must be manual or auto_draft')
       }
+      // Enforced here, not only in the UI: a client in auto_draft with an
+      // incomplete profile is one the tick enrolls and the generator then
+      // 409s on — every one of its replies skipped with no operator signal.
+      if (mode === 'auto_draft') {
+        const { data: profileRow } = await admin
+          .from('clients')
+          .select('ai_sdr_profile')
+          .eq('id', clientId!)
+          .eq('workspace_id', workspaceId)
+          .maybeSingle()
+        if (!aiSdrReadiness(profileRow?.ai_sdr_profile).ready) {
+          throw new HttpError(
+            409,
+            'SDR_PROFILE_NOT_READY',
+            'Complete the core AI SDR profile fields before enabling automatic drafting',
+          )
+        }
+      }
       const { data: updated, error: modeError } = await admin
         .from('clients')
         .update({ ai_sdr_mode: mode, updated_at: new Date().toISOString() })
@@ -831,6 +849,12 @@ serve(async (req) => {
         can_manage: ['owner', 'admin', 'platform_admin'].includes(access.role),
         client: {
           ...client,
+          // A legacy auto_send row reads as auto_draft here exactly as in
+          // sdr-context-get: drafting still runs for it, and the raw value
+          // rendered as "no mode selected" while the tick was enrolling it.
+          ai_sdr_mode: client.ai_sdr_mode === 'auto_send'
+            ? 'auto_draft'
+            : typeof client.ai_sdr_mode === 'string' ? client.ai_sdr_mode : 'manual',
           ai_sdr_readiness: aiSdrReadiness(client.ai_sdr_profile),
         },
         dashboard: {

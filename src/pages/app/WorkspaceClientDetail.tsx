@@ -321,6 +321,10 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
   const [sdrExpectedUpdatedAt, setSdrExpectedUpdatedAt] = useState<string | null>(null)
   const [sdrBusy, setSdrBusy] = useState(false)
   const [sdrDrafting, setSdrDrafting] = useState(false)
+  // True only after a deliberate unsaved change: typing in the editor or an
+  // AI draft. The draft-vs-saved comparison cannot stand in for this — the
+  // never-seeded initial draft is empty and always "differs".
+  const [sdrDraftDirty, setSdrDraftDirty] = useState(false)
   const [sdrError, setSdrError] = useState<string | null>(null)
   const [notesEditing, setNotesEditing] = useState(false)
   const [notesExpanded, setNotesExpanded] = useState(false)
@@ -689,8 +693,13 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
 
   const openSdrFieldEditor = (fieldId: keyof ClientSdrProfile) => {
     if (!canManage) return
-    setSdrDraft(normalizeClientSdrProfile(client.ai_sdr_profile))
-    setSdrExpectedUpdatedAt(client.ai_sdr_profile_updated_at)
+    // Only re-seed from the saved profile when nothing unsaved is sitting in
+    // the draft — re-seeding unconditionally threw away the AI-drafted
+    // fields the operator just paid for, before they could ever save them.
+    if (!sdrDraftDirty) {
+      setSdrDraft(normalizeClientSdrProfile(client.ai_sdr_profile))
+      setSdrExpectedUpdatedAt(client.ai_sdr_profile_updated_at)
+    }
     setSdrError(null)
     setSdrEditorFieldId(fieldId)
   }
@@ -699,6 +708,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
     if (sdrBusy) return
     setSdrDraft(normalizeClientSdrProfile(client.ai_sdr_profile))
     setSdrExpectedUpdatedAt(client.ai_sdr_profile_updated_at)
+    setSdrDraftDirty(false)
     setSdrError(null)
     setSdrEditorFieldId(null)
   }
@@ -710,20 +720,29 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
       const result = await draftWorkspaceClientSdrProfile(workspaceId, canonicalClientId)
       let filled = 0
       // AI fills only what the owner has not written — hand-edited fields win.
-      setSdrDraft((current) => {
-        const next = { ...current }
-        for (const [field, value] of Object.entries(result.draft)) {
-          const key = field as keyof ClientSdrProfile
-          if (!String(next[key] ?? '').trim() && typeof value === 'string' && value.trim()) {
-            next[key] = value
-            filled += 1
-          }
+      // The merge base is the SAVED profile unless the operator has unsaved
+      // edits: merging into the never-seeded (empty) initial draft would
+      // blank every saved field the AI left alone the moment this was saved.
+      const base = sdrDraftDirty ? sdrDraft : normalizeClientSdrProfile(client.ai_sdr_profile)
+      const next = { ...base }
+      for (const [field, value] of Object.entries(result.draft)) {
+        const key = field as keyof ClientSdrProfile
+        if (!String(next[key] ?? '').trim() && typeof value === 'string' && value.trim()) {
+          next[key] = value
+          filled += 1
         }
-        return next
-      })
+      }
+      setSdrDraft(next)
       if (filled === 0) {
         toast.info('Every field already has content — clear a field first if you want it redrafted.')
       } else {
+        // Open the editor on the drafted content directly. The toast said
+        // "review and save", but the only path to the save button used to
+        // re-seed the draft from the saved profile — discarding the output.
+        if (!sdrDraftDirty) setSdrExpectedUpdatedAt(client.ai_sdr_profile_updated_at)
+        setSdrDraftDirty(true)
+        setSdrError(null)
+        setSdrEditorFieldId(nextSdrField.id)
         toast.success(`Drafted ${filled} field${filled === 1 ? '' : 's'} from the client profile${result.evidence_shows > 0 ? ` and ${result.evidence_shows} researched shows` : ''}. Review and save.`)
       }
     } catch (error) {
@@ -747,6 +766,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
       await detailQuery.refetch()
       setSdrDraft(updated.ai_sdr_profile)
       setSdrExpectedUpdatedAt(updated.ai_sdr_profile_updated_at)
+      setSdrDraftDirty(false)
       setSdrEditorFieldId(null)
       toast.success(updated.ai_sdr_readiness.ready
         ? 'AI SDR profile saved and ready for Master Inbox drafts.'
@@ -962,7 +982,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <Button asChild variant="outline"><Link to={masterInboxHref}><Mail className="mr-2 h-4 w-4" />Open Master Inbox</Link></Button>
                     {canManage && !sdrReadiness.ready && (
-                      <Button type="button" variant="outline" disabled={sdrDrafting || !client.bio} onClick={() => void draftSdrProfileWithAi()}>
+                      <Button type="button" variant="outline" disabled={sdrDrafting || (client.bio ?? '').trim().length < 40} title={(client.bio ?? '').trim().length < 40 ? 'Add a client bio of at least 40 characters first — the draft is built from it.' : undefined} onClick={() => void draftSdrProfileWithAi()}>
                         {sdrDrafting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
                         {sdrDrafting ? 'Drafting…' : 'Draft with AI'}
                       </Button>
@@ -1054,7 +1074,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
               workspaceId={workspaceId}
               clientId={client.id}
               clientName={client.name}
-              canManage={canManage && detail.viewer_role === 'owner'}
+              canManage={canManage && ['owner', 'platform_admin'].includes(detail.viewer_role)}
             />
 
             <section aria-labelledby="ai-sdr-context-heading">
@@ -1469,6 +1489,7 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
                     placeholder={activeSdrField.placeholder}
                     autoFocus
                     onChange={(event) => {
+                      setSdrDraftDirty(true)
                       setSdrDraft((current) => ({ ...current, [activeSdrField.id]: event.target.value }))
                       setSdrError(null)
                     }}

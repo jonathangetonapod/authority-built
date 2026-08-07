@@ -290,7 +290,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
     let timer: number | null = null
     let pending: (() => void) | null = null
     let pendingThreadKey: string | null = null
-    return (thread: WorkspaceInboxThread, body: string) => {
+    const schedule = (thread: WorkspaceInboxThread, body: string) => {
       const clientId = thread.campaign?.client?.id
       if (!thread.thread_key || !clientId) return
       // Members can type, but their save would 403 — and the cache patch ran
@@ -361,6 +361,18 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
       pendingThreadKey = threadKey
       timer = window.setTimeout(flush, 900)
     }
+    return Object.assign(schedule, {
+      // Commit whatever is queued right now. Re-opening a conversation inside
+      // the debounce window restored the cached (pre-edit) draft over the
+      // textarea, and the next keystroke saved that reverted text.
+      flush: () => {
+        if (timer !== null) {
+          window.clearTimeout(timer)
+          timer = null
+        }
+        if (pending) pending()
+      },
+    })
   }, [workspaceId, queryClient, canManage])
 
   const counts = useMemo(() => ({
@@ -373,13 +385,17 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
   const filterCounts = useMemo(() => {
     const counts: Record<InboxFilter, number> = { all: 0, needs_reply: 0, review: 0, replied: 0, booked: 0, archived: 0 }
     for (const thread of threads) {
+      // Count what the list under these chips can actually show: the chip
+      // said "Review 3" over a list of one when the other two sat in the
+      // other interest scope.
+      if (scope === 'interested' ? !thread.interested : thread.interested) continue
       if (selectedClient && thread.campaign?.client?.id !== selectedClient.id) continue
       const status = threadStatus(thread, sentThreadIds)
       counts[status] += 1
       if (status !== 'archived') counts.all += 1
     }
     return counts
-  }, [threads, selectedClient, sentThreadIds])
+  }, [threads, scope, selectedClient, sentThreadIds])
   const visibleThreads = useMemo(() => {
     const query = search.trim().toLowerCase()
     const filtered = threads.filter((thread) => {
@@ -770,6 +786,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
     },
   })
   const openThread = (threadId: string) => {
+    persistDraftEdit.flush()
     setSelectedThreadId(threadId)
     // History is per-conversation; carrying it open into the next thread would
     // show one host's messages under another's subject line.
@@ -1213,7 +1230,7 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                               : 'AI drafting is off until the core fields are complete — you can still reply manually below.'}
                         </span>
                         <Button asChild size="sm" variant="outline" className="border-amber-300 bg-background">
-                          <Link to={`${baseHref}/clients/${selectedThread.campaign.client.id}`}>Open profile</Link>
+                          <Link to={`${baseHref}/clients/${selectedThread.campaign.client.id}?tab=ai-sdr`}>Open profile</Link>
                         </Button>
                       </div>
                     )}
@@ -1333,7 +1350,11 @@ const MasterInboxPreview = ({ workspaceId, clients, clientsLoading, clientsError
                         <p className="mt-2 text-[11px] text-muted-foreground">
                           {selectedThread.state?.nudges_paused
                             ? 'Nudges are paused for this conversation.'
-                            : 'After you send the reply, nudges go out automatically when the host stays quiet — a reply from them cancels the rest of the plan.'}
+                            // Mirrors NUDGE_SENDING_DISABLED in inbox-nudge-tick:
+                            // automated dispatch is off platform-wide, and this
+                            // panel must not promise follow-ups nothing will send.
+                            // Change both together if sending is ever restored.
+                            : 'Automatic nudge sending is currently switched off platform-wide — this plan is staged as a reference, and these follow-ups only go out if you send them yourself.'}
                         </p>
                       </div>
                     )}

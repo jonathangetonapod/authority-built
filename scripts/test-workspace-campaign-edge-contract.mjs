@@ -639,7 +639,10 @@ assert.match(edge, /action === "client-prompts-set"[\s\S]*?requireIntegrationOwn
 assert.match(edge, /action === "client-prompts-reset"[\s\S]*?requireIntegrationOwner\(access\)/u)
 assert.match(sdrShared, /from\('client_ai_sdr_prompts'\)[\s\S]*?\.eq\('client_id', clientId\)/u)
 assert.match(sdrShared, /clientPrompt[\s\S]*?workspacePrompt[\s\S]*?replyDefault\.content/u)
-assert.match(enrollTick, /email\.i_status !== 1\) continue/u)
+// Re-anchored 2026-08-07: the interested-only skip now advances the cursor
+// explicitly — skips must be marked handled or the cursor eats them (the
+// deep-dive's lost-replies bug). The interested-only gate itself is unchanged.
+assert.match(enrollTick, /email\.i_status !== 1\) \{ advanceCursor\(createdAt\); continue \}/u)
 // The nudge prompt is really consumed: its resolved content is appended to
 // the reply call as the nudge-array guidance.
 assert.match(sdrShared, /FOLLOW-UP NUDGE GUIDANCE/u)

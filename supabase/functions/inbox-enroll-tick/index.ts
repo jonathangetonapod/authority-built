@@ -79,7 +79,11 @@ serve(async (req) => {
     .select('workspace_id, status, api_key_ciphertext, api_key_iv, auto_draft_cursor_ts')
     .in('workspace_id', [...autoClientIdsByWorkspace.keys()])
     .eq('status', 'connected')
-    .order('auto_draft_cursor_ts', { ascending: true, nullsFirst: true })
+    // Rotation orders by when a workspace was last LOOKED AT, not by its mail
+    // cursor: the cursor only moves when the provider returns mail, so three
+    // quiet or broken workspaces used to pin the three slots forever and
+    // starve everyone else. The poll stamp is written unconditionally below.
+    .order('auto_draft_polled_at', { ascending: true, nullsFirst: true })
     .limit(MAX_WORKSPACES_PER_TICK)
 
   let drafted = 0
@@ -91,6 +95,13 @@ serve(async (req) => {
     const autoClientIds = autoClientIdsByWorkspace.get(workspaceId)
     if (!workspaceId || !autoClientIds || drafted >= MAX_DRAFTS_PER_TICK) continue
     if (!integration.api_key_ciphertext || !integration.api_key_iv) continue
+
+    // Stamped before any work so a workspace that throws (revoked key,
+    // provider outage) still rotates to the back of the queue.
+    await admin
+      .from('workspace_instantly_integrations')
+      .update({ auto_draft_polled_at: new Date().toISOString() })
+      .eq('workspace_id', workspaceId)
 
     try {
       const apiKey = await decryptInstantlyApiKey({
@@ -183,27 +194,47 @@ serve(async (req) => {
         .eq('workspace_id', workspaceId)
         .eq('role', 'owner')
         .eq('status', 'active')
+        .order('invited_at', { ascending: true })
         .limit(1)
         .maybeSingle()
 
       let creditsExhausted = false
+      /*
+       * The cursor may only pass an email once that email is HANDLED —
+       * drafted, deterministically filtered, or out of auto-draft scope by
+       * design. It used to advance past everything in the page, so replies
+       * skipped for per-tick caps, an empty credit balance, or a transient
+       * draft failure were permanently lost to auto-drafting (the 5-minute
+       * overlap only rescued the newest few). The page is sorted ascending,
+       * so the first deferred email freezes the cursor for the rest of the
+       * page; later emails already drafted re-fetch next tick and dedupe on
+       * based_on_email_id at no cost.
+       */
+      let cursorFrozen = false
+      const advanceCursor = (createdAt: string | null) => {
+        if (cursorFrozen || !createdAt) return
+        if (!cursorHigh || Date.parse(createdAt) > Date.parse(cursorHigh)) cursorHigh = createdAt
+      }
       for (const raw of emails) {
         if (!raw || typeof raw !== 'object') continue
         const email = raw as Record<string, unknown>
         const createdAt = typeof email.timestamp_created === 'string' ? email.timestamp_created : null
-        if (createdAt && (!cursorHigh || createdAt > cursorHigh)) cursorHigh = createdAt
-        if (drafted >= MAX_DRAFTS_PER_TICK || workspaceDrafts >= MAX_DRAFTS_PER_WORKSPACE || creditsExhausted) continue
+        if (drafted >= MAX_DRAFTS_PER_TICK || workspaceDrafts >= MAX_DRAFTS_PER_WORKSPACE || creditsExhausted) {
+          cursorFrozen = true
+          continue
+        }
 
         // Auto-draft is for interested leads only: Instantly's own interest
-        // flag on the reply decides. Everything else waits for an operator
-        // to mark it interested (which moves it into scope for a later tick).
-        if (email.i_status !== 1) continue
+        // flag on the reply decides. A reply marked interested later does NOT
+        // re-enter this scan (the cursor has moved on) — the operator's
+        // "Draft with AI" in the Master Inbox is the recovery path.
+        if (email.i_status !== 1) { advanceCursor(createdAt); continue }
         const campaignId = typeof email.campaign_id === 'string' ? email.campaign_id : null
         const clientId = campaignId ? clientByCampaign.get(campaignId) ?? null : null
-        if (!clientId || !autoClientIds.has(clientId)) continue
+        if (!clientId || !autoClientIds.has(clientId)) { advanceCursor(createdAt); continue }
         const emailId = typeof email.id === 'string' ? email.id : null
         const threadKey = typeof email.thread_id === 'string' && email.thread_id ? email.thread_id : emailId
-        if (!emailId || !threadKey) continue
+        if (!emailId || !threadKey) { advanceCursor(createdAt); continue }
         // Identity of the human who wrote, and the show they host. Stamped on
         // every thread write so a reply lands in the relationship register
         // immediately instead of waiting on an analytics sync.
@@ -251,16 +282,18 @@ serve(async (req) => {
               .eq('thread_key', threadKey)
             if (identityError) throw identityError
           }
-          if (['booked', 'archived'].includes(String(stateRow.status ?? ''))) continue
-          if (stateRow.suppressed_at) continue
+          if (['booked', 'archived'].includes(String(stateRow.status ?? ''))) { advanceCursor(createdAt); continue }
+          if (stateRow.suppressed_at) { advanceCursor(createdAt); continue }
           const existingDraft = stateRow.draft && typeof stateRow.draft === 'object' && !Array.isArray(stateRow.draft)
             ? stateRow.draft as Record<string, unknown>
             : null
-          if (existingDraft?.based_on_email_id === emailId) continue
+          if (existingDraft?.based_on_email_id === emailId) { advanceCursor(createdAt); continue }
           const claimFresh = stateRow.draft_claim_email_id === emailId
             && typeof stateRow.draft_claimed_at === 'string'
             && Date.now() - Date.parse(stateRow.draft_claimed_at) < CLAIM_TTL_MS
-          if (claimFresh) continue
+          // Another invocation is mid-flight on this email. Its outcome is
+          // unknown, so the cursor must not pass it.
+          if (claimFresh) { cursorFrozen = true; continue }
         }
 
         const bodyRecord = (email.body ?? {}) as Record<string, unknown>
@@ -270,7 +303,7 @@ serve(async (req) => {
             ? bodyRecord.html.replace(/<[^>]+>/gu, ' ').replace(/\s+/gu, ' ').trim()
             : '').slice(0, 8_000)
         const subject = typeof email.subject === 'string' ? email.subject.slice(0, 300) : '(no subject)'
-        if (!messageText) continue
+        if (!messageText) { advanceCursor(createdAt); continue }
 
         // Deterministic pre-filter: zero tokens, immediate triage.
         const deterministic = email.is_auto_reply === 1
@@ -303,21 +336,48 @@ serve(async (req) => {
               }, { onConflict: 'workspace_id,contact_email' })
           }
           prefiltered += 1
+          advanceCursor(createdAt)
           continue
         }
 
-        // Idempotency claim BEFORE any billing or model work.
-        await admin
-          .from('workspace_inbox_thread_state')
-          .upsert({
-            workspace_id: workspaceId,
-            thread_key: threadKey,
-            client_id: clientId,
-            ...leadIdentity,
-            draft_claim_email_id: emailId,
-            draft_claimed_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'workspace_id,thread_key' })
+        // Idempotency claim BEFORE any billing or model work — and taken by
+        // compare-and-set, not blind upsert: two overlapping invocations that
+        // both read a stale row would otherwise both "claim", both bill, and
+        // both call the model. Exactly one writer wins; the loser defers.
+        const claimNow = new Date().toISOString()
+        if (stateRow) {
+          const staleCutoff = new Date(Date.now() - CLAIM_TTL_MS).toISOString()
+          const { data: claimedRows, error: claimError } = await admin
+            .from('workspace_inbox_thread_state')
+            .update({
+              client_id: clientId,
+              ...leadIdentity,
+              draft_claim_email_id: emailId,
+              draft_claimed_at: claimNow,
+              updated_at: claimNow,
+            })
+            .eq('workspace_id', workspaceId)
+            .eq('thread_key', threadKey)
+            .or(`draft_claim_email_id.is.null,draft_claim_email_id.neq.${emailId},draft_claimed_at.lt.${staleCutoff}`)
+            .select('thread_key')
+          if (claimError) throw claimError
+          if (!claimedRows || claimedRows.length !== 1) { cursorFrozen = true; continue }
+        } else {
+          const { error: claimInsertError } = await admin
+            .from('workspace_inbox_thread_state')
+            .insert({
+              workspace_id: workspaceId,
+              thread_key: threadKey,
+              client_id: clientId,
+              ...leadIdentity,
+              draft_claim_email_id: emailId,
+              draft_claimed_at: claimNow,
+              updated_at: claimNow,
+            })
+          // A unique violation means a concurrent invocation created the row
+          // (and holds the claim); defer to it.
+          if (claimInsertError) { cursorFrozen = true; continue }
+        }
 
         try {
           const pkg = await generateReplyPackage({
@@ -351,10 +411,18 @@ serve(async (req) => {
               auto_send_eligible_at: null,
               auto_sent_at: null,
               auto_send_error: null,
+              // A fresh package restarts the nudge plan. Leaving the old
+              // progress in place made a second-round plan start mid-plan —
+              // or read as exhausted and silently never run.
+              nudges_sent: 0,
+              nudge_failure_count: 0,
+              nudges_paused: false,
+              last_nudge_error: null,
               updated_at: new Date().toISOString(),
             }, { onConflict: 'workspace_id,thread_key' })
           drafted += 1
           workspaceDrafts += 1
+          advanceCursor(createdAt)
           await writeAudit(admin, {
             workspaceId,
             actorUserId: ownerRow?.user_id ?? null,
@@ -365,10 +433,24 @@ serve(async (req) => {
           })
         } catch (error) {
           if (error instanceof HttpError && error.code === 'INSUFFICIENT_CREDITS') {
+            // Recoverable by topping up: freeze the cursor so every reply
+            // from here on is drafted once the balance allows.
             creditsExhausted = true
+            cursorFrozen = true
+          } else if (
+            error instanceof HttpError
+            && ['SDR_PROFILE_NOT_READY', 'CLIENT_NOT_FOUND'].includes(error.code)
+          ) {
+            // Out of auto-draft scope until an operator acts (both throw
+            // before any charge). The reply stays visible in the Master
+            // Inbox for manual drafting; holding the cursor here would
+            // head-of-line block the whole workspace behind one client.
+            advanceCursor(createdAt)
+          } else {
+            // DRAFT_FAILED and transient errors: the charge was refunded,
+            // the claim expires, and the frozen cursor retries next tick.
+            cursorFrozen = true
           }
-          // SDR_PROFILE_NOT_READY, DRAFT_FAILED, and transient errors leave
-          // the claim to expire; the message is retried next tick.
           skipped += 1
         }
       }

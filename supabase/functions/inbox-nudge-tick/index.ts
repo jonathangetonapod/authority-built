@@ -48,6 +48,8 @@ interface CandidateRow {
   nudges_sent: number
   nudge_failure_count: number | null
   draft: Record<string, unknown> | null
+  last_nudge_at: string | null
+  updated_at: string | null
 }
 
 function json(status: number, body: Record<string, unknown>): Response {
@@ -88,7 +90,7 @@ serve(async (req) => {
   const admin = createAdminClient()
   const { data: candidates, error: candidatesError } = await admin
     .from('workspace_inbox_thread_state')
-    .select('workspace_id, thread_key, client_id, nudges_sent, nudge_failure_count, draft')
+    .select('workspace_id, thread_key, client_id, nudges_sent, nudge_failure_count, draft, last_nudge_at, updated_at')
     .eq('status', 'replied')
     .eq('nudges_paused', false)
     .order('updated_at', { ascending: true })
@@ -127,6 +129,22 @@ serve(async (req) => {
     }
     if ((sentByWorkspace.get(raw.workspace_id) ?? 0) >= MAX_SENDS_PER_WORKSPACE) continue
 
+    /*
+     * Zero-cost dueness pre-filter. The real anchor is the newest outbound
+     * message in the live thread, but our own last nudge (or, before any
+     * nudge, the moment the plan was staged) is a LOWER bound on it — if not
+     * enough days have passed since even that, the provider lookup cannot
+     * say "due". Without this, a handful of long-delay plans sat at the
+     * front of the updated_at ordering, spent the entire per-tick lookup
+     * budget every run, and starved every actually-due nudge platform-wide.
+     */
+    const dueStep = steps[raw.nudges_sent]
+    const anchorLowerBound = raw.last_nudge_at ?? raw.updated_at
+    if (typeof anchorLowerBound === 'string' && Number.isFinite(Date.parse(anchorLowerBound))
+      && Date.now() - Date.parse(anchorLowerBound) < dueStep.send_after_days * DAY_MS) {
+      continue
+    }
+
     const recordFailure = async (reason: string) => {
       const failures = (raw.nudge_failure_count ?? 0) + 1
       await admin
@@ -153,6 +171,7 @@ serve(async (req) => {
           .eq('workspace_id', raw.workspace_id)
           .eq('role', 'owner')
           .eq('status', 'active')
+          .order('invited_at', { ascending: true })
           .limit(1)
           .maybeSingle()
         ownerByWorkspace.set(raw.workspace_id, owner)
@@ -227,7 +246,12 @@ serve(async (req) => {
       const threadPayload = await instantlyRequest<{ items?: Array<Record<string, unknown>> }>(
         apiKey,
         '/emails',
-        { query: new URLSearchParams({ search: `thread:${raw.thread_key}`, limit: '20' }) },
+        // Newest first, explicitly: the default list order follows record
+        // creation, and a thread longer than the window could otherwise hide
+        // the host's latest reply outside the 20 fetched — making an old
+        // outbound look like the newest message and sending a nudge on top
+        // of an answer. With desc, the newest records are always in view.
+        { query: new URLSearchParams({ search: `thread:${raw.thread_key}`, limit: '20', sort_order: 'desc' }) },
       )
       const messages = (threadPayload.items ?? [])
         .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))

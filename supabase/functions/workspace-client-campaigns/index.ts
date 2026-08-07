@@ -4315,6 +4315,21 @@ serve(async (req) => {
               updated_at: new Date().toISOString(),
             }, { onConflict: "workspace_id,thread_key" });
         }
+        // The do-not-contact list is what the send gate reads. Marking only
+        // the thread row left the operator looking at an "Opted out" badge
+        // while the server would still have sent to the address — the enroll
+        // tick writes both, and this path must too.
+        if (deterministic === "opt_out" && draftLeadEmail) {
+          await context.admin
+            .from("workspace_outreach_suppressions")
+            .upsert({
+              workspace_id: workspaceId,
+              contact_email: draftLeadEmail.trim().toLowerCase(),
+              reason: "opted_out",
+              source: "inbox_draft",
+              note: `Detected while drafting for client ${clientId}`,
+            }, { onConflict: "workspace_id,contact_email" });
+        }
         return jsonResponse(req, METHODS, 200, {
           classification,
           nudges: [],
@@ -4352,6 +4367,13 @@ serve(async (req) => {
               based_on_email_id: emailId,
               generated_at: new Date().toISOString(),
             },
+            // A fresh package restarts the nudge plan; stale progress from a
+            // previous round made a new plan start mid-plan or read as
+            // already exhausted.
+            nudges_sent: 0,
+            nudge_failure_count: 0,
+            nudges_paused: false,
+            last_nudge_error: null,
             updated_by: context.user.id,
             updated_at: new Date().toISOString(),
           }, { onConflict: "workspace_id,thread_key" });
@@ -4412,14 +4434,39 @@ serve(async (req) => {
       const replyLeadEmail = (typeof body.lead_email === "string" ? body.lead_email : "")
         .trim()
         .toLowerCase();
-      if (replyLeadEmail) {
-        const { data: replySuppression } = await context.admin
-          .from("workspace_outreach_suppressions")
-          .select("reason")
+      // The browser's lead_email is advisory — a request that omits it must
+      // not skip the gate. The thread-state row carries the server-recorded
+      // address (stamped by the ticks and the inbox list) and the thread's
+      // own suppression mark; both are checked alongside whatever the
+      // browser sent.
+      let threadStateRow: Record<string, unknown> | null = null;
+      if (replyThreadKey) {
+        const { data: stateRowData } = await context.admin
+          .from("workspace_inbox_thread_state")
+          .select("lead_email, suppressed_at, reply_sent_email_id")
           .eq("workspace_id", workspaceId)
-          .eq("contact_email", replyLeadEmail)
+          .eq("thread_key", replyThreadKey)
           .maybeSingle();
-        if (replySuppression) {
+        threadStateRow = (stateRowData ?? null) as Record<string, unknown> | null;
+        if (threadStateRow?.suppressed_at) {
+          throw new HttpError(
+            409,
+            "INBOX_CONTACT_SUPPRESSED",
+            "This conversation is marked opted-out. Remove the address from the do-not-contact list in Relationships before replying.",
+          );
+        }
+      }
+      const recordedLeadEmail = typeof threadStateRow?.lead_email === "string"
+        ? threadStateRow.lead_email.trim().toLowerCase()
+        : "";
+      const gateAddresses = [...new Set([replyLeadEmail, recordedLeadEmail].filter(Boolean))];
+      if (gateAddresses.length > 0) {
+        const { data: replySuppressions } = await context.admin
+          .from("workspace_outreach_suppressions")
+          .select("contact_email")
+          .eq("workspace_id", workspaceId)
+          .in("contact_email", gateAddresses);
+        if ((replySuppressions ?? []).length > 0) {
           throw new HttpError(
             409,
             "INBOX_CONTACT_SUPPRESSED",
@@ -4487,7 +4534,10 @@ serve(async (req) => {
           const head = await instantlyRequest<{ items?: Array<Record<string, unknown>> }>(
             apiKey,
             "/emails",
-            { query: new URLSearchParams({ search: `thread:${replyThreadKey}`, limit: "20" }) },
+            // Newest first, explicitly: on a long thread the default order
+            // could leave the host's latest reply outside the 20-message
+            // window and wave a stale send through.
+            { query: new URLSearchParams({ search: `thread:${replyThreadKey}`, limit: "20", sort_order: "desc" }) },
           );
           const inbound = (head.items ?? [])
             .filter((item) => item && typeof item === "object" && (item as Record<string, unknown>).ue_type === 2)
@@ -4509,6 +4559,37 @@ serve(async (req) => {
           // key, provider hiccup) never blocks an operator-authorized send.
         }
       }
+      /*
+       * Send-once: claim the reply BEFORE dispatch, keyed on the inbound
+       * message being answered. Without it, a reload, a second tab, or a
+       * second operator inside the cache window sent the same staged reply
+       * twice — every client-side guard is advisory. A definite provider
+       * rejection releases the claim so the operator can retry; an ambiguous
+       * outcome (timeout, 5xx, rate limit) keeps it, because the send may
+       * have gone out and a duplicate is worse than a manual follow-up.
+       */
+      let replyClaimed = false;
+      if (replyThreadKey && threadStateRow) {
+        const { data: claimedRows } = await context.admin
+          .from("workspace_inbox_thread_state")
+          .update({
+            reply_sent_email_id: replyToId,
+            updated_by: context.user.id,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("workspace_id", workspaceId)
+          .eq("thread_key", replyThreadKey)
+          .or(`reply_sent_email_id.is.null,reply_sent_email_id.neq.${replyToId}`)
+          .select("thread_key");
+        if ((claimedRows ?? []).length !== 1) {
+          throw new HttpError(
+            409,
+            "INBOX_REPLY_ALREADY_SENT",
+            "A reply to this message was already sent from this conversation. Refresh before sending again.",
+          );
+        }
+        replyClaimed = true;
+      }
       try {
         await instantlyRequest(apiKey, "/emails/reply", {
           method: "POST",
@@ -4520,6 +4601,19 @@ serve(async (req) => {
           },
         });
       } catch (error) {
+        if (
+          replyClaimed
+          && error instanceof InstantlyApiError
+          && error.status >= 400 && error.status < 500
+          && error.status !== 408 && error.status !== 429
+        ) {
+          await context.admin
+            .from("workspace_inbox_thread_state")
+            .update({ reply_sent_email_id: null, updated_at: new Date().toISOString() })
+            .eq("workspace_id", workspaceId)
+            .eq("thread_key", replyThreadKey)
+            .eq("reply_sent_email_id", replyToId);
+        }
         if (error instanceof InstantlyApiError) throw providerHttpError(error);
         throw error;
       }
