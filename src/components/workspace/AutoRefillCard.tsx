@@ -67,7 +67,7 @@ export function AutoRefillCard({ workspaceId, overview, onSaved }: AutoRefillCar
       onSaved?.()
       toast.success(saved.threshold === null
         ? 'Automatic top-ups switched off.'
-        : `We will buy ${saved.pack} credits when you drop below ${saved.threshold}.`)
+        : `We will buy ${saved.pack} credits when you reach ${saved.threshold} or fewer.`)
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Automatic top-ups could not be saved.'),
   })
@@ -111,7 +111,7 @@ export function AutoRefillCard({ workspaceId, overview, onSaved }: AutoRefillCar
             {enabled && (
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="auto-refill-threshold">When my balance falls below</Label>
+                  <Label htmlFor="auto-refill-threshold">When my balance reaches (or drops below)</Label>
                   <Select value={threshold} onValueChange={setThreshold} disabled={saveMutation.isPending}>
                     <SelectTrigger id="auto-refill-threshold"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -138,7 +138,7 @@ export function AutoRefillCard({ workspaceId, overview, onSaved }: AutoRefillCar
             {/* Said before they agree, not after they are charged. */}
             <p className="text-xs leading-5 text-muted-foreground">
               {enabled
-                ? `Your saved card will be charged for ${PACKS.find((option) => String(option.credits) === pack)?.label ?? 'a pack'} without asking first, at most once a day, and only when the balance is below ${threshold}. Switch this off any time.`
+                ? `Your saved card will be charged for ${PACKS.find((option) => String(option.credits) === pack)?.label ?? 'a pack'} without asking first, at most once a day, and only when the balance is at or below ${threshold}. Switch this off any time.`
                 : 'Nothing is charged automatically while this is off. Credits stop when the balance reaches zero.'}
             </p>
 

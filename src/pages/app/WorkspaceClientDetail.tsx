@@ -595,7 +595,10 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
     setPortalPreviewBusy(true)
     try {
       const preview = await createWorkspaceClientPortalPreview(workspaceId, canonicalClientId)
-      const clientPayload = btoa(JSON.stringify(preview.client))
+      // UTF-8-safe base64: btoa alone throws on any character outside Latin-1
+      // (accented, CJK, emoji), so a client named e.g. "Nguyễn" broke the
+      // whole preview. Encode the bytes, not the code units.
+      const clientPayload = btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(preview.client))))
       const hash = `#session=${encodeURIComponent(preview.session_token)}&expires=${encodeURIComponent(preview.expires_at)}&client=${encodeURIComponent(clientPayload)}`
       window.open(`/portal/preview${hash}`, '_blank', 'noopener')
     } catch (error) {
@@ -805,13 +808,18 @@ const WorkspaceClientDetail = ({ platformWorkspaceId }: WorkspaceClientDetailPro
     if (!canManage || notesBusy) return
     setNotesBusy(true)
     try {
+      // The update action overwrites the whole core record, so building the
+      // payload from the snapshot this page loaded with silently reverted any
+      // name/email/status edit made elsewhere since. Rebuild from the freshest
+      // server record and change only the notes.
+      const latest = (await detailQuery.refetch()).data?.client ?? client
       await updateWorkspaceClient(workspaceId, canonicalClientId, {
-        name: client.name,
-        email: client.email || '',
-        contact_person: client.contact_person || '',
-        linkedin_url: client.linkedin_url || '',
-        website: client.website || '',
-        status: client.status,
+        name: latest.name,
+        email: latest.email || '',
+        contact_person: latest.contact_person || '',
+        linkedin_url: latest.linkedin_url || '',
+        website: latest.website || '',
+        status: latest.status,
         notes: notesDraft,
       })
       await detailQuery.refetch()

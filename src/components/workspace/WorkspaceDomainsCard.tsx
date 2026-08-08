@@ -158,8 +158,13 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waitingKey])
 
-  const busy = addMutation.isPending || refreshMutation.isPending
-    || primaryMutation.isPending || removeMutation.isPending
+  // Per-row busy: only the domain being acted on is disabled, so checking one
+  // domain no longer freezes copy/use-for-links/remove on every other row and
+  // the add form. The add form and workspace picker gate on the add only.
+  const rowBusy = (domainId: string): boolean =>
+    (refreshMutation.isPending && refreshMutation.variables === domainId)
+    || (primaryMutation.isPending && primaryMutation.variables === domainId)
+    || (removeMutation.isPending && removeMutation.variables === domainId)
   const domains = domainsQuery.data || []
 
   /**
@@ -248,7 +253,7 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
           <div className="space-y-1.5">
             <Label htmlFor="domain-workspace">Workspace</Label>
-            <Select value={workspaceId} onValueChange={setWorkspaceId} disabled={busy}>
+            <Select value={workspaceId} onValueChange={setWorkspaceId} disabled={addMutation.isPending}>
               <SelectTrigger id="domain-workspace"><SelectValue placeholder="Choose a workspace" /></SelectTrigger>
               <SelectContent>
                 {workspaces.map((workspace) => (
@@ -264,13 +269,13 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
               placeholder="podcasts.theiragency.com"
               value={hostname}
               onChange={(event) => setHostname(event.target.value)}
-              disabled={busy}
+              disabled={addMutation.isPending}
             />
           </div>
           <div className="flex items-end">
             <Button
               onClick={() => addMutation.mutate()}
-              disabled={busy || !workspaceId || !check.ready}
+              disabled={addMutation.isPending || !workspaceId || !check.ready}
             >
               {addMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Add domain
             </Button>
@@ -298,7 +303,7 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
                   size="sm"
                   variant="outline"
                   className="mt-2 h-7 bg-background text-xs"
-                  disabled={busy}
+                  disabled={addMutation.isPending}
                   onClick={() => setHostname(check.suggestion || '')}
                 >
                   Use {check.suggestion} instead
@@ -354,15 +359,15 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-1">
                     {domain.status === 'awaiting_dns' && domain.dns_record_value && (
-                      <Button size="sm" variant="outline" disabled={busy} onClick={() => void copyInstructions(domain)}>
+                      <Button size="sm" variant="outline" disabled={rowBusy(domain.id)} onClick={() => void copyInstructions(domain)}>
                         <Copy className="mr-2 h-3.5 w-3.5" />Copy instructions
                       </Button>
                     )}
-                    <Button size="sm" variant="outline" disabled={busy} onClick={() => refreshMutation.mutate(domain.id)}>
+                    <Button size="sm" variant="outline" disabled={rowBusy(domain.id)} onClick={() => refreshMutation.mutate(domain.id)}>
                       <RefreshCw className="mr-2 h-3.5 w-3.5" />Check
                     </Button>
                     {domain.status === 'active' && !domain.is_primary && (
-                      <Button size="sm" variant="outline" disabled={busy} onClick={() => primaryMutation.mutate(domain.id)}>
+                      <Button size="sm" variant="outline" disabled={rowBusy(domain.id)} onClick={() => primaryMutation.mutate(domain.id)}>
                         Use for links
                       </Button>
                     )}
@@ -370,7 +375,7 @@ export function WorkspaceDomainsCard({ workspaces }: Props) {
                       size="sm"
                       variant="ghost"
                       className="text-destructive"
-                      disabled={busy}
+                      disabled={rowBusy(domain.id)}
                       onClick={() => setPendingRemoval(domain)}
                       aria-label={`Remove ${domain.hostname}`}
                     >

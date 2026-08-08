@@ -16,7 +16,11 @@ const PreviewHandoff = () => {
       const sessionToken = params.get('session') || ''
       const expiresAt = params.get('expires') || ''
       const clientRaw = params.get('client') || ''
-      const client = JSON.parse(atob(clientRaw)) as { id?: string; name?: string }
+      // Symmetric UTF-8-safe decode of the base64 payload (see the encoder in
+      // WorkspaceClientDetail); plain atob+JSON.parse mangled non-Latin1 names.
+      const client = JSON.parse(
+        new TextDecoder().decode(Uint8Array.from(atob(clientRaw), (character) => character.charCodeAt(0))),
+      ) as { id?: string; name?: string }
       if (!sessionToken || !expiresAt || !client?.id || !client?.name) {
         setFailed(true)
         return

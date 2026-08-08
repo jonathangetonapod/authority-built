@@ -582,7 +582,7 @@ const WorkspacePodcastDatabase = ({ platformWorkspaceId }: WorkspacePodcastDatab
             </div>
             <div className="flex gap-2">
               <Button variant="ghost" onClick={() => setSelectedPodcasts(new Map())}>Clear</Button>
-              <Button onClick={() => { setSelectedClientId(targetClientId); setAddDialogOpen(true) }}><Plus className="mr-2 h-4 w-4" />Add to client</Button>
+              <Button onClick={() => { setAddTarget('client'); setSelectedProspectId(''); setSelectedClientId(targetClientId); setAddDialogOpen(true) }}><Plus className="mr-2 h-4 w-4" />Add to client</Button>
             </div>
           </div>
         )}

@@ -166,10 +166,15 @@ export const MailboxesTable = ({
   const visibleAccounts = accounts.slice(0, visibleCount)
   const problemCount = allAccounts.filter((account) => account.status < 0).length
   const unassignedCount = allAccounts.filter((account) => (account.campaigns?.length ?? 0) === 0).length
+  // Both sums count the SAME accounts (active), so the meter can't read over
+  // 100%: previously the denominator dropped a mailbox that erred after
+  // sending while the numerator kept its sends, showing e.g. "50 of 40 used".
   const capacity = allAccounts.reduce((total, account) => (
     account.status === 1 ? total + (account.daily_limit ?? 0) : total
   ), 0)
-  const sentToday = allAccounts.reduce((total, account) => total + (account.sent_today ?? 0), 0)
+  const sentToday = allAccounts.reduce((total, account) => (
+    account.status === 1 ? total + (account.sent_today ?? 0) : total
+  ), 0)
 
   return (
     <Card className="overflow-hidden shadow-none">

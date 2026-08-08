@@ -842,7 +842,15 @@ const WorkspaceSmartPodcastFinder = ({ platformWorkspaceId }: WorkspaceSmartPodc
                 </Link>.
               </p>
             )}
-            {activeClients.length === 0 && !clientsQuery.isLoading && (
+            {clientsQuery.isError ? (
+              <p className="flex items-center gap-2 text-sm text-destructive">
+                <Users className="h-4 w-4" />
+                Your clients could not be loaded.
+                <button type="button" className="font-medium underline underline-offset-2" onClick={() => void clientsQuery.refetch()}>Try again</button>
+              </p>
+            ) : activeClients.length === 0 && !clientsQuery.isLoading && (
+              // A failed load must not read as "you have no clients" — that
+              // sends the operator to create a duplicate of one they already have.
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Users className="h-4 w-4" />
                 No active clients yet. <Link className="font-medium underline underline-offset-2" to={`${baseHref}/clients`}>Add your first client</Link>.

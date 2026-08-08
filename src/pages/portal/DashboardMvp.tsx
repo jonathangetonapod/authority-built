@@ -200,7 +200,7 @@ export default function PortalDashboardMvp() {
       ? [
         { label: 'Podcasts contacted', value: String(outreach.podcasts_contacted), icon: Send },
         { label: 'Replies', value: String(outreach.replies), icon: MessageSquare },
-        { label: 'Booked shows', value: String(securedBookings.length), icon: Mic2 },
+        { label: 'Shows secured', value: String(securedBookings.length), icon: Mic2 },
         { label: 'Published episodes', value: String(published.length), icon: Radio },
       ]
       : [
