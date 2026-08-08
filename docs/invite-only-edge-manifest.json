@@ -22,6 +22,7 @@
     "stripe-webhook",
     "sync-fathom-calls",
     "update-order-status",
+    "update-prospect-dashboard",
     "verify-portal-token"
   ],
   "unauthenticated_tombstone_probes": [
@@ -49,6 +50,7 @@
       "stripe-webhook",
       "sync-fathom-calls",
       "update-order-status",
+      "update-prospect-dashboard",
       "verify-portal-token"
     ],
     "2_fail_closed_handlers_before_migrations": [
@@ -135,7 +137,6 @@
       "stripe-credit-webhook",
       "submit-to-indexing",
       "sync-replies",
-      "update-prospect-dashboard",
       "workspace-billing-portal",
       "workspace-client-campaigns",
       "workspace-client-podcast-system",

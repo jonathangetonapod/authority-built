@@ -23,7 +23,7 @@ const EXPECTED_COUNTS = Object.freeze({
   changedFunctions: 119,
   deployedFunctions: 117,
   excludedFunctions: 2,
-  retiredFunctions: 17,
+  retiredFunctions: 18,
   unauthenticatedTombstones: 5,
   // +2: _shared/promptVariables.ts and its test, the prompt variable registry.
   // 146 with _shared/promptRequirements.ts and its test: the fields a prompt
@@ -76,6 +76,7 @@ const EXPECTED_RETIRED_FUNCTIONS = Object.freeze([
   'stripe-webhook',
   'sync-fathom-calls',
   'update-order-status',
+  'update-prospect-dashboard',
   'verify-portal-token',
 ])
 
