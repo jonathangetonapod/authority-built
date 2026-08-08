@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, CreditCard, ExternalLink, Loader2, ShieldCheck } from 'lucide-react'
 import { Link, Navigate } from 'react-router-dom'
 import { toast } from 'sonner'
+import { CREDIT_PACKS, packPriceLabel } from '@/lib/creditPacks'
 
 import { AutoRefillCard } from '@/components/workspace/AutoRefillCard'
 import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
@@ -67,11 +68,7 @@ const formatPrice = (cents: number): string => (
   cents % 100 === 0 ? `$${(cents / 100).toFixed(0)}` : `$${(cents / 100).toFixed(2)}`
 )
 
-const CREDIT_PACKS = [
-  { key: 'starter' as const, credits: 100, price: 29, note: 'Top-up' },
-  { key: 'growth' as const, credits: 300, price: 69, note: 'Most popular' },
-  { key: 'scale' as const, credits: 800, price: 149, note: 'Best value' },
-]
+
 
 function formatShortDate(value: string | null): string {
   if (!value || !Number.isFinite(Date.parse(value))) return '—'
@@ -449,7 +446,7 @@ const WorkspaceBilling = () => {
                       <div key={pack.key} className="flex flex-col rounded-xl border p-4">
                         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{pack.note}</p>
                         <p className="mt-2 text-2xl font-bold">{pack.credits} <span className="text-sm font-normal text-muted-foreground">credits</span></p>
-                        <p className="mt-1 text-sm text-muted-foreground">${pack.price} · ${(pack.price / pack.credits).toFixed(2)}/credit</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{packPriceLabel(pack.amountCents)} · ${(pack.amountCents / 100 / pack.credits).toFixed(2)}/credit</p>
                         <Button
                           type="button"
                           className="mt-4"
@@ -458,7 +455,7 @@ const WorkspaceBilling = () => {
                           onClick={() => void buyPack(pack.key)}
                         >
                           {checkoutPack === pack.key ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                          {checkoutPack === pack.key ? 'Opening checkout…' : `Buy for $${pack.price}`}
+                          {checkoutPack === pack.key ? 'Opening checkout…' : `Buy for ${packPriceLabel(pack.amountCents)}`}
                         </Button>
                       </div>
                     ))}

@@ -217,7 +217,7 @@ export function JoinRequestsCard() {
       {/* Sending mails a stranger and creates a workspace in their name. That is
           not a thing to do on a stray click from a table row, so the dialog says
           exactly what is about to happen and to whom. */}
-      <Dialog open={Boolean(confirming)} onOpenChange={(open) => { if (!open) setConfirming(null) }}>
+      <Dialog open={Boolean(confirming)} onOpenChange={(open) => { if (!open && !invite.isPending) setConfirming(null) }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Send an invitation?</DialogTitle>

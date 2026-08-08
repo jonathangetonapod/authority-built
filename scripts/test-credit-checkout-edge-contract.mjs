@@ -78,14 +78,22 @@ const serverPacks = [...packSource[0].matchAll(/(\w+): \{ credits: ([\d_]+), amo
   .map(([, key, credits, cents]) => ({
     key,
     credits: Number(credits.replace(/_/gu, '')),
-    price: Number(cents.replace(/_/gu, '')) / 100,
+    cents: Number(cents.replace(/_/gu, '')),
   }))
 assert.equal(serverPacks.length, 3)
+// The prices come from ONE frontend catalog now (src/lib/creditPacks.ts),
+// shared by the billing page and the auto-refill card and pinned to the
+// server by test-credit-packs-sync — so a shown price cannot diverge from the
+// charged one, and the billing page must consume that catalog rather than
+// re-declare its own.
+const frontendPacks = readFileSync('src/lib/creditPacks.ts', 'utf8').replace(/_/gu, '')
+assert.match(billingPage, /import \{ CREDIT_PACKS[^}]*\} from '@\/lib\/creditPacks'/u,
+  'the billing page must import the shared credit-pack catalog, not hardcode prices')
 for (const pack of serverPacks) {
   assert.match(
-    billingPage,
-    new RegExp(`key: '${pack.key}' as const, credits: ${pack.credits}, price: ${pack.price}\\b`, 'u'),
-    `the billing page must show ${pack.key} as ${pack.credits} credits for $${pack.price}`,
+    frontendPacks,
+    new RegExp(`key: '${pack.key}', credits: ${pack.credits}, amountCents: ${pack.cents}`, 'u'),
+    `the frontend catalog must show ${pack.key} as ${pack.credits} credits for ${pack.cents} cents`,
   )
 }
 // Buying more never costs more per credit than the plan's included rate, or a
@@ -93,7 +101,7 @@ for (const pack of serverPacks) {
 const PLAN_RATE = 29 / 100
 let previousRate = Infinity
 for (const pack of serverPacks) {
-  const rate = pack.price / pack.credits
+  const rate = (pack.cents / 100) / pack.credits
   assert.ok(rate <= PLAN_RATE + 1e-9, `${pack.key} costs more per credit than the plan`)
   assert.ok(rate <= previousRate + 1e-9, `${pack.key} must not cost more per credit than a smaller pack`)
   previousRate = rate

@@ -1447,7 +1447,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
         onRemovePhoto={() => photoMutation.mutate({})}
       />
 
-      <Dialog open={rebuildDialogOpen} onOpenChange={setRebuildDialogOpen}>
+      <Dialog open={rebuildDialogOpen} onOpenChange={(open) => { if (!open && !building) setRebuildDialogOpen(false) }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Rebuild {selected?.prospect_name}&rsquo;s shortlist?</DialogTitle>
@@ -1472,7 +1472,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
         </DialogContent>
       </Dialog>
 
-      <Dialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
+      <Dialog open={archiveDialogOpen} onOpenChange={(open) => { if (!open && !archiveMutation.isPending) setArchiveDialogOpen(false) }}>
         <DialogContent>
           <DialogHeader><DialogTitle>Archive {selected?.prospect_name}?</DialogTitle><DialogDescription>The private link will stop working immediately. The prospect and shortlist stay in the database for historical reporting.</DialogDescription></DialogHeader>
           <DialogFooter><Button variant="outline" onClick={() => setArchiveDialogOpen(false)}>Cancel</Button><Button variant="destructive" disabled={archiveMutation.isPending} onClick={() => archiveMutation.mutate()}>{archiveMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Archive dashboard</Button></DialogFooter>

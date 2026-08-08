@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { setWorkspaceAutoRefill, type WorkspaceBillingOverview } from '@/services/workspaceStaff'
+import { CREDIT_PACKS, packPriceLabel } from '@/lib/creditPacks'
 
 interface AutoRefillCardProps {
   workspaceId: string
@@ -16,13 +17,12 @@ interface AutoRefillCardProps {
   onSaved?: () => void
 }
 
-// The packs the checkout sells. An automatic top-up buys one of these, at the
-// same price — a figure that only existed here would be a price nobody agreed.
-const PACKS = [
-  { credits: 100, label: '100 credits · $29' },
-  { credits: 300, label: '300 credits · $69' },
-  { credits: 800, label: '800 credits · $149' },
-]
+// The packs the checkout sells, from the one shared source so an automatic
+// top-up's shown price can never drift from the price actually charged.
+const PACKS = CREDIT_PACKS.map((pack) => ({
+  credits: pack.credits,
+  label: `${pack.credits} credits · ${packPriceLabel(pack.amountCents)}`,
+}))
 
 const THRESHOLDS = [10, 25, 50, 100, 200]
 
