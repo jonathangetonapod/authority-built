@@ -298,8 +298,12 @@ export const WorkspaceBrandLogo = ({
     data-testid={`workspace-logo-${placement}`}
     data-logo-state={logoUrl ? 'uploaded' : 'initials'}
     className={cn(
-      'isolate overflow-hidden shadow-none ring-0',
-      logoUrl ? 'border border-transparent bg-transparent' : 'border border-border bg-muted',
+      'isolate overflow-hidden ring-0',
+      logoUrl
+        // An uploaded logo sits clean on a transparent card.
+        ? 'border border-transparent bg-transparent shadow-none'
+        // No logo yet: a polished brand monogram, not a flat grey box.
+        : 'border-0 bg-gradient-to-br from-primary via-violet-500 to-fuchsia-500 shadow-lg shadow-primary/25 ring-1 ring-inset ring-white/20',
       brandLogoSizes[placement],
     )}
   >
@@ -315,11 +319,15 @@ export const WorkspaceBrandLogo = ({
     )}
     <AvatarFallback
       className={cn(
-        'rounded-[inherit] bg-muted font-bold tracking-tight text-foreground',
+        // A soft top sheen over the gradient, white initials with a little
+        // depth — reads as an intentional brand mark rather than a placeholder.
+        'relative rounded-[inherit] bg-transparent font-bold tracking-tight text-white',
+        'before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:bg-gradient-to-b before:from-white/25 before:to-transparent',
+        '[text-shadow:0_1px_2px_rgba(13,27,42,0.35)]',
         brandLogoFallbackSizes[placement],
       )}
     >
-      {workspaceInitials}
+      <span className="relative">{workspaceInitials}</span>
     </AvatarFallback>
   </Avatar>
 )
