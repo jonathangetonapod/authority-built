@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import WorkspaceProspectDashboards from '@/pages/app/WorkspaceProspectDashboards'
 import { useAuth } from '@/contexts/AuthContext'
@@ -107,6 +107,25 @@ function renderPage(props: { platformWorkspaceId?: string } = {}) {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <WorkspaceProspectDashboards {...props} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+}
+
+const LocationProbe = () => {
+  const location = useLocation()
+  return <div data-testid="loc-search">{location.search}</div>
+}
+
+function renderWithLocation(initialEntry = '/') {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[initialEntry]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <WorkspaceProspectDashboards />
+        <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -408,5 +427,13 @@ describe('WorkspaceProspectDashboards shortlist search and filters', () => {
 
     const headings = screen.getAllByRole('heading', { level: 4 })
     expect(within(headings[0]).getByText('Private Practice Owners Club')).toBeInTheDocument()
+  })
+
+  // Selection is derived from the URL now, so an auto-selected first dashboard
+  // must write itself into ?prospect instead of leaving the address blank or
+  // stale. This is the behavior the whole fix exists for.
+  it('stamps the auto-selected dashboard into the ?prospect URL param', async () => {
+    renderWithLocation('/')
+    await waitFor(() => expect(screen.getByTestId('loc-search').textContent).toContain(`prospect=${prospectId}`))
   })
 })
