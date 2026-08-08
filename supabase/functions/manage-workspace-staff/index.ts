@@ -2922,7 +2922,7 @@ serve(async (req) => {
 
       const [profileResult, lotsResult, ledgerResult, spentResult, usageResult, pricesResult, cardProofResult] = await Promise.all([
         admin.from("workspace_billing_profiles")
-          .select("plan_key, billing_status, base_price_cents, per_client_price_cents, included_active_clients, monthly_credit_allowance, stripe_subscription_id, stripe_customer_id, cancel_at_period_end, current_period_end, refill_threshold_credits, refill_pack_credits")
+          .select("plan_key, billing_status, base_price_cents, per_client_price_cents, included_active_clients, monthly_credit_allowance, stripe_subscription_id, stripe_customer_id, cancel_at_period_end, current_period_end, refill_threshold_credits, refill_pack_credits, refill_monthly_cap_cents")
           .eq("workspace_id", workspaceId)
           .maybeSingle(),
         admin.from("workspace_credit_lots")
@@ -3029,6 +3029,7 @@ serve(async (req) => {
           // period ends, so the status alone cannot show that it is ending.
           refill_threshold_credits: profileResult.data?.refill_threshold_credits ?? null,
           refill_pack_credits: profileResult.data?.refill_pack_credits ?? null,
+          refill_monthly_cap_cents: profileResult.data?.refill_monthly_cap_cents ?? null,
           // Whether there is anything to charge. A Stripe customer row is
           // created the moment a checkout session opens — before any payment —
           // so "has a customer" was true for anyone who clicked Buy and then
@@ -3109,7 +3110,7 @@ serve(async (req) => {
     }
 
     if (action === "billing-autorefill-set") {
-      requireOnlyKeys(body, ["action", "workspace_id", "threshold_credits", "pack_credits"]);
+      requireOnlyKeys(body, ["action", "workspace_id", "threshold_credits", "pack_credits", "monthly_cap_cents"]);
       const refillAccess = await requireWorkspaceFeatureAccess(authContext, workspaceId);
       // The workspace's own managers, not only a platform admin: this is their
       // card and their decision.
@@ -3118,6 +3119,22 @@ serve(async (req) => {
       }
 
       const off = body.threshold_credits === null && body.pack_credits === null;
+      // A monthly spending ceiling in cents; null (or absent) means no cap.
+      // Only sent when the caller is changing it, so an omitted key leaves the
+      // stored cap untouched. $100,000 is a generous upper bound against typos.
+      const hasCap = "monthly_cap_cents" in body;
+      let capCents: number | null = null;
+      if (hasCap && body.monthly_cap_cents !== null) {
+        if (
+          typeof body.monthly_cap_cents !== "number"
+          || !Number.isSafeInteger(body.monthly_cap_cents)
+          || body.monthly_cap_cents < 0
+          || body.monthly_cap_cents > 10_000_000
+        ) {
+          throw new HttpError(400, "INVALID_CAP", "Choose a monthly cap between $0 and $100,000, or no limit");
+        }
+        capCents = body.monthly_cap_cents;
+      }
       if (!off) {
         const threshold = typeof body.threshold_credits === "number"
             && Number.isSafeInteger(body.threshold_credits)
@@ -3145,6 +3162,9 @@ serve(async (req) => {
           workspace_id: workspaceId,
           refill_threshold_credits: off ? null : body.threshold_credits,
           refill_pack_credits: off ? null : body.pack_credits,
+          // Disabling clears the cap; enabling writes it when supplied and
+          // leaves it as-is otherwise (absent key => no change).
+          ...(off ? { refill_monthly_cap_cents: null } : hasCap ? { refill_monthly_cap_cents: capCents } : {}),
           updated_at: new Date().toISOString(),
         }, { onConflict: "workspace_id" });
       if (refillError) {
@@ -3157,12 +3177,13 @@ serve(async (req) => {
         action: off ? "workspace.credits.autorefill_disabled" : "workspace.credits.autorefill_enabled",
         entityType: "workspace",
         entityId: workspaceId,
-        metadata: { threshold_credits: body.threshold_credits, pack_credits: body.pack_credits },
+        metadata: { threshold_credits: body.threshold_credits, pack_credits: body.pack_credits, monthly_cap_cents: off ? null : (hasCap ? capCents : undefined) },
       });
       return jsonResponse(req, METHODS, 200, {
         success: true,
         refill_threshold_credits: off ? null : body.threshold_credits,
         refill_pack_credits: off ? null : body.pack_credits,
+        ...(off ? { refill_monthly_cap_cents: null } : hasCap ? { refill_monthly_cap_cents: capCents } : {}),
       });
     }
 

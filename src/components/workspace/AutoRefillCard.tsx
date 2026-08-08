@@ -26,6 +26,21 @@ const PACKS = [
 
 const THRESHOLDS = [10, 25, 50, 100, 200]
 
+// A monthly ceiling on automatic spend, in cents. '' means no limit — the
+// default, matching a workspace that never set one.
+// 'none' rather than '' because Radix Select reserves the empty string.
+const CAP_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'none', label: 'No monthly limit' },
+  { value: '5000', label: '$50 / month' },
+  { value: '10000', label: '$100 / month' },
+  { value: '25000', label: '$250 / month' },
+  { value: '50000', label: '$500 / month' },
+  { value: '100000', label: '$1,000 / month' },
+]
+
+const capLabel = (cents: number | null): string =>
+  cents === null ? 'no monthly limit' : `$${(cents / 100).toLocaleString()} a month`
+
 /**
  * Let a workspace agree to being topped up without being present.
  *
@@ -40,6 +55,9 @@ export function AutoRefillCard({ workspaceId, overview, onSaved }: AutoRefillCar
   const [enabled, setEnabled] = useState(configured)
   const [threshold, setThreshold] = useState(String(overview?.refill_threshold_credits ?? 50))
   const [pack, setPack] = useState(String(overview?.refill_pack_credits ?? 300))
+  const [capValue, setCapValue] = useState(
+    typeof overview?.refill_monthly_cap_cents === 'number' ? String(overview.refill_monthly_cap_cents) : 'none',
+  )
 
   useEffect(() => {
     setEnabled(typeof overview?.refill_threshold_credits === 'number')
@@ -49,12 +67,15 @@ export function AutoRefillCard({ workspaceId, overview, onSaved }: AutoRefillCar
     if (typeof overview?.refill_pack_credits === 'number') {
       setPack(String(overview.refill_pack_credits))
     }
-  }, [overview?.refill_threshold_credits, overview?.refill_pack_credits])
+    setCapValue(typeof overview?.refill_monthly_cap_cents === 'number' ? String(overview.refill_monthly_cap_cents) : 'none')
+  }, [overview?.refill_threshold_credits, overview?.refill_pack_credits, overview?.refill_monthly_cap_cents])
 
   const saveMutation = useMutation({
     mutationFn: () => setWorkspaceAutoRefill(
       workspaceId,
-      enabled ? { thresholdCredits: Number(threshold), packCredits: Number(pack) } : null,
+      enabled
+        ? { thresholdCredits: Number(threshold), packCredits: Number(pack), monthlyCapCents: capValue === 'none' ? null : Number(capValue) }
+        : null,
     ),
     onSuccess: async (saved) => {
       await queryClient.invalidateQueries({ queryKey: ['workspace-billing-overview', workspaceId] })
@@ -67,16 +88,20 @@ export function AutoRefillCard({ workspaceId, overview, onSaved }: AutoRefillCar
       onSaved?.()
       toast.success(saved.threshold === null
         ? 'Automatic top-ups switched off.'
-        : `We will buy ${saved.pack} credits when you reach ${saved.threshold} or fewer.`)
+        : `We will buy ${saved.pack} credits when you reach ${saved.threshold} or fewer, up to ${capLabel(saved.monthlyCapCents)}.`)
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Automatic top-ups could not be saved.'),
   })
 
   const hasCard = overview?.has_saved_card === true
+  const overviewCapValue = typeof overview?.refill_monthly_cap_cents === 'number'
+    ? String(overview.refill_monthly_cap_cents)
+    : 'none'
   const dirty = enabled !== configured
     || (enabled && (
       Number(threshold) !== overview?.refill_threshold_credits
       || Number(pack) !== overview?.refill_pack_credits
+      || capValue !== overviewCapValue
     ))
 
   return (
@@ -132,13 +157,24 @@ export function AutoRefillCard({ workspaceId, overview, onSaved }: AutoRefillCar
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="auto-refill-cap">Don’t spend more than</Label>
+                  <Select value={capValue} onValueChange={setCapValue} disabled={saveMutation.isPending}>
+                    <SelectTrigger id="auto-refill-cap"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {CAP_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             )}
 
             {/* Said before they agree, not after they are charged. */}
             <p className="text-xs leading-5 text-muted-foreground">
               {enabled
-                ? `Your saved card will be charged for ${PACKS.find((option) => String(option.credits) === pack)?.label ?? 'a pack'} without asking first, at most once a day, and only when the balance is at or below ${threshold}. Switch this off any time.`
+                ? `Your saved card will be charged for ${PACKS.find((option) => String(option.credits) === pack)?.label ?? 'a pack'} without asking first, at most once a day, and only when the balance is at or below ${threshold} — up to ${capLabel(capValue === 'none' ? null : Number(capValue))} of top-ups. Switch this off any time.`
                 : 'Nothing is charged automatically while this is off. Credits stop when the balance reaches zero.'}
             </p>
 

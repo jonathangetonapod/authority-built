@@ -943,6 +943,8 @@ export interface WorkspaceBillingOverview {
   /** Automatic top-ups: both set together, or both null when switched off. */
   refill_threshold_credits?: number | null
   refill_pack_credits?: number | null
+  /** Monthly auto-refill spend ceiling in cents; null means no cap. */
+  refill_monthly_cap_cents?: number | null
   /** Whether Stripe has a card for this workspace to charge. */
   has_saved_card?: boolean
   balance: number
@@ -1119,23 +1121,26 @@ export async function getBillingPortfolio(
  */
 export async function setWorkspaceAutoRefill(
   workspaceId: string,
-  input: { thresholdCredits: number; packCredits: number } | null,
-): Promise<{ threshold: number | null; pack: number | null }> {
+  input: { thresholdCredits: number; packCredits: number; monthlyCapCents: number | null } | null,
+): Promise<{ threshold: number | null; pack: number | null; monthlyCapCents: number | null }> {
   const canonicalWorkspaceId = canonicalUuid(workspaceId, 'Workspace ID')
   const data = await invoke({
     action: 'billing-autorefill-set',
     workspace_id: canonicalWorkspaceId,
     threshold_credits: input ? input.thresholdCredits : null,
     pack_credits: input ? input.packCredits : null,
+    monthly_cap_cents: input ? input.monthlyCapCents : null,
   }, 'Automatic top-ups could not be saved.') as {
     success?: boolean
     refill_threshold_credits?: number | null
     refill_pack_credits?: number | null
+    refill_monthly_cap_cents?: number | null
   }
   if (data?.success !== true) throw new Error('Automatic top-ups could not be saved.')
   return {
     threshold: data.refill_threshold_credits ?? null,
     pack: data.refill_pack_credits ?? null,
+    monthlyCapCents: data.refill_monthly_cap_cents ?? null,
   }
 }
 
