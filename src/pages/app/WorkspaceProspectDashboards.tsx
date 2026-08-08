@@ -627,6 +627,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
       : searchParams.get('view') === 'new'
         ? 'new'
         : 'featured'
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [prospectFilter, setProspectFilter] = useState<ProspectListFilter>('all')
   const [profileDialogOpen, setProfileDialogOpen] = useState(false)
@@ -659,26 +660,19 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
     if (publicationPriority !== 0) return publicationPriority
     return new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime()
   }), [prospects])
-  // Selection is DERIVED from the URL — a single source of truth — so it can
-  // never drift from ?prospect. A separate selectedId state that the effect
-  // kept in sync had to write the URL, and that write woke the view-sync
-  // effect below (which force-resets the shortlist tab to the URL's ?view)
-  // mid-browse. Mirrors WorkspaceClientPodcastSystem's ?client handling.
-  const selectedId = requestedProspectId
-    && orderedProspects.some((prospect) => prospect.id === requestedProspectId)
-    ? requestedProspectId
-    : null
   useEffect(() => {
-    // With nothing valid named, open the first dashboard by WRITING it into
-    // the URL. The guard makes this inert once the URL names a real prospect,
-    // so its own write cannot feed back and loop; waiting for the list keeps a
-    // just-created id (named before its refetch lands) from being overwritten.
-    if (!listQuery.isSuccess || orderedProspects.length === 0) return
-    if (requestedProspectId && orderedProspects.some((prospect) => prospect.id === requestedProspectId)) return
-    const next = new URLSearchParams(searchParams)
-    next.set('prospect', orderedProspects[0].id)
-    setSearchParams(next, { replace: true })
-  }, [listQuery.isSuccess, orderedProspects, requestedProspectId, searchParams, setSearchParams])
+    if (orderedProspects.length === 0) {
+      setSelectedId(null)
+      return
+    }
+    if (requestedProspectId && orderedProspects.some((prospect) => prospect.id === requestedProspectId)) {
+      if (selectedId !== requestedProspectId) setSelectedId(requestedProspectId)
+      return
+    }
+    if (!selectedId || !orderedProspects.some((prospect) => prospect.id === selectedId)) {
+      setSelectedId(orderedProspects[0].id)
+    }
+  }, [orderedProspects, requestedProspectId, selectedId])
   useEffect(() => {
     if (requestedProspectId) setShortlistView(requestedShortlistView)
   }, [requestedProspectId, requestedShortlistView])
@@ -734,17 +728,11 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
     },
     onSuccess: async (result) => {
       setProfileDialogOpen(false)
+      if (result.created && result.prospect) setSelectedId(result.prospect.id)
       if (!result.created && result.detail) {
         queryClient.setQueryData(detailQueryKey, result.detail)
       }
       await queryClient.invalidateQueries({ queryKey: listQueryKey })
-      // Name the new draft only after its refetch lands, so the auto-select
-      // effect sees it in the list instead of overwriting it with the first row.
-      if (result.created && result.prospect) {
-        const next = new URLSearchParams(searchParams)
-        next.set('prospect', result.prospect.id)
-        setSearchParams(next, { replace: true })
-      }
       toast.success(result.created ? 'Prospect draft created.' : 'Prospect profile updated.')
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'The prospect profile could not be saved.'),
@@ -827,9 +815,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
     },
     onSuccess: async () => {
       setArchiveDialogOpen(false)
-      const next = new URLSearchParams(searchParams)
-      next.delete('prospect')
-      setSearchParams(next, { replace: true })
+      setSelectedId(null)
       await queryClient.invalidateQueries({ queryKey: listQueryKey })
       toast.success('Prospect dashboard archived.')
     },
@@ -1137,7 +1123,7 @@ const WorkspaceProspectDashboards = ({ platformWorkspaceId }: WorkspaceProspectD
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      {filteredProspects.map((prospect) => <ProspectListCard key={prospect.id} prospect={prospect} selected={prospect.id === selectedId} onSelect={() => { setShortlistView('featured'); setSearchParams({ prospect: prospect.id, view: 'featured' }, { replace: true }) }} />)}
+                      {filteredProspects.map((prospect) => <ProspectListCard key={prospect.id} prospect={prospect} selected={prospect.id === selectedId} onSelect={() => { setSelectedId(prospect.id); setShortlistView('featured'); setSearchParams({ prospect: prospect.id, view: 'featured' }, { replace: true }) }} />)}
                     </div>
                   )}
                 </CardContent>
