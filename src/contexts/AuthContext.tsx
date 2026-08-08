@@ -138,19 +138,41 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (!options?.quiet) setAccountState('loading')
     setAccountError(null)
 
-    const { data, error } = await supabase.functions.invoke<AccountContextResponse>('account-context')
+    // Bound the wait. Without a timeout, a stalled function or gateway (a cold
+    // start beyond the proxy window, a hung connection) left the loud path on
+    // 'loading' forever — a full-screen spinner with no escape. On timeout the
+    // loud path falls to 'error', which at least offers Try again / Sign out.
+    const ACCOUNT_CONTEXT_TIMEOUT_MS = 15000
+    const result = await Promise.race([
+      supabase.functions.invoke<AccountContextResponse>('account-context')
+        .then((response) => ({ ...response, timedOut: false as const })),
+      new Promise<{ data: null; error: null; timedOut: true }>((resolve) =>
+        setTimeout(() => resolve({ data: null, error: null, timedOut: true }), ACCOUNT_CONTEXT_TIMEOUT_MS)),
+    ])
     if (requestId !== accountRequestRef.current) return false
+    const { data, error } = result
 
-    if (error || !data) {
+    if (result.timedOut || error || !data) {
+      if (requestId !== accountRequestRef.current) return false
+      /*
+       * A quiet refresh is the client's own token housekeeping, and a
+       * transient failure there (5xx, cold start, network blip, timeout) must
+       * NOT evict a user whose account is fine — a genuine state change comes
+       * back as data, never as an error. Keep whatever is on screen and let
+       * the next loud read decide, instead of dropping an in-progress form to
+       * an error screen for a routine token rotation.
+       */
+      if (options?.quiet) return false
       // The SDK's own message for any non-2xx is the same sentence every time,
       // so reading it here threw away every specific refusal account-context
       // takes the trouble to name — invalid auth, context unavailable,
       // authorization unavailable. This is the project's normalizer and it
       // reads the real body.
-      const normalized = error
-        ? await toFunctionError(error, 'Unable to load account access.')
-        : new Error('Unable to load account access.')
-      if (requestId !== accountRequestRef.current) return false
+      const normalized = result.timedOut
+        ? new Error('Account access timed out. Check your connection and try again.')
+        : error
+          ? await toFunctionError(error, 'Unable to load account access.')
+          : new Error('Unable to load account access.')
       setAccountState('error')
       setAccountError(normalized.message)
       setIsPlatformAdmin(false)

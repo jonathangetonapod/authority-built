@@ -59,7 +59,7 @@ const Course = () => {
     }
 
     toast({
-      title: "You're on the list!",
+      title: "You're on the list",
       description: `We'll notify ${email} when the course launches.`,
     });
 

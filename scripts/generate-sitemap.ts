@@ -3,10 +3,15 @@ import { writeFileSync } from 'fs'
 import { resolve } from 'path'
 
 const mode = process.argv.slice(2)
-if (mode.length !== 1 || !['--static', '--database'].includes(mode[0])) {
-  throw new Error('Choose exactly one sitemap source: --static or --database')
+if (mode.length !== 1 || !['--static', '--database', '--auto'].includes(mode[0])) {
+  throw new Error('Choose exactly one sitemap source: --static, --database, or --auto')
 }
-const USE_DATABASE = mode[0] === '--database'
+// --auto: use the database when credentials are present (production builds
+// carry VITE_SUPABASE_ANON_KEY, and published posts are public), and fall
+// back to the static page set otherwise instead of failing the build. This
+// is what the release build uses so blog posts reach the sitemap without
+// making a credential-less local/CI build throw. --database stays strict.
+const AUTO = mode[0] === '--auto'
 
 const SUPABASE_URL =
   process.env.PODCASTS_SUPABASE_URL ||
@@ -19,6 +24,7 @@ const SUPABASE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.VITE_SUPABASE_ANON_KEY ||
   ''
+const USE_DATABASE = mode[0] === '--database' || (AUTO && Boolean(SUPABASE_URL && SUPABASE_KEY))
 function resolveBaseUrl(): string {
   try {
     const parsed = new URL(process.env.VITE_APP_URL || 'https://getonapod.com')
@@ -64,7 +70,6 @@ async function generateSitemap() {
   // Static pages
   const staticPages = [
     { url: '', priority: '1.0', changefreq: 'daily' },
-    { url: '/podcast-booking', priority: '0.9', changefreq: 'weekly' },
     { url: '/blog', priority: '0.9', changefreq: 'daily' },
     { url: '/resources', priority: '0.8', changefreq: 'weekly' },
     { url: '/course', priority: '0.8', changefreq: 'monthly' },

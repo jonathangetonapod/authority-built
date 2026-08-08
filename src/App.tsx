@@ -17,7 +17,6 @@ import { selectedWorkspaceBaseHref, workspaceModuleHref, type WorkspaceModule } 
 
 // The booking service page is no longer the entry, so its thirteen marketing
 // sections should not ride along on every visit to the app.
-const Index = lazyRoute(() => import("./pages/Index"));
 const RequestAccess = lazyRoute(() => import("./pages/RequestAccess"));
 const Resources = lazyRoute(() => import("./pages/Resources"));
 const Blog = lazyRoute(() => import("./pages/Blog"));
@@ -123,7 +122,9 @@ const App = () => (
             <Route path="/" element={<AgencyLanding />} />
             {/* The done-for-you booking service keeps its own page; it sells to
                 founders, not to the agencies who run placement themselves. */}
-            <Route path="/podcast-booking" element={<Index />} />
+            {/* Done-for-you page retired: the invite-only MVP leads with the
+                SaaS landing. Old inbound links land there. */}
+            <Route path="/podcast-booking" element={<Navigate to="/" replace />} />
             <Route path="/docs" element={<Navigate to="/" replace />} />
             <Route path="/resources" element={<Resources />} />
             <Route path="/premium-placements" element={<Navigate to="/" replace />} />

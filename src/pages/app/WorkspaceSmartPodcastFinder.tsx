@@ -33,7 +33,7 @@ import { selectedWorkspaceBaseHref } from '@/lib/workspaceRoutes'
 import { getWorkspaceClients, getWorkspaceResearchContext } from '@/services/clients'
 import { generatePodcastQueries } from '@/services/queryGeneration'
 import { searchPodcastsWithMeta, type PodcastData } from '@/services/podscan'
-import { scoreCompatibilityBatch } from '@/services/compatibilityScoring'
+import { InsufficientCreditsError, PartialScoringError, scoreCompatibilityBatch, type CompatibilityScore } from '@/services/compatibilityScoring'
 import {
   addClientShortlistPodcasts,
   searchClientPodcastCatalog,
@@ -331,7 +331,28 @@ const WorkspaceSmartPodcastFinder = ({ platformWorkspaceId }: WorkspaceSmartPodc
     }
   }
 
+  // Ranks discovered candidates against whatever scores landed, normalizing
+  // the 1-10 endpoint score to 0-100. Shared by the success path and the
+  // partial-failure recovery so a scan is never silently discarded.
+  const rankCandidates = (cands: ScanPodcast[], scores: CompatibilityScore[]): ScanResult[] => {
+    const scoreById = new Map(scores.map((score) => [score.podcast_id, score]))
+    return cands
+      .map((podcast): ScanResult => {
+        const score = scoreById.get(podcast.podcast_id)
+        return {
+          podcast,
+          score: score?.score == null ? null : Math.round(score.score * 10),
+          reasoning: score?.reasoning ?? null,
+        }
+      })
+      .sort((left, right) => (right.score ?? -1) - (left.score ?? -1))
+  }
+
   const runScan = async () => {
+    // Discovery is already paid for by the time scoring runs; hold the
+    // candidates so a scoring failure can still show them instead of throwing
+    // the whole run away.
+    let discoveredCandidates: ScanPodcast[] = []
     if (!workspaceId || !clientId || !selectedClient || scanning) return
     if (!clientBio) {
       toast.error('Add a client profile (bio) before scanning — the AI needs it to judge relevancy.')
@@ -446,6 +467,7 @@ const WorkspaceSmartPodcastFinder = ({ platformWorkspaceId }: WorkspaceSmartPodc
       const fresh = [...collected.values()]
         .filter((podcast) => !existingPodcastIds.has(podcast.podcast_id.toLowerCase()))
       const candidates = fresh.slice(0, MAX_SCORED)
+      discoveredCandidates = candidates
       const droppedCount = fresh.length - candidates.length
       if (candidates.length === 0) {
         setPhase('done')
@@ -481,22 +503,7 @@ const WorkspaceSmartPodcastFinder = ({ platformWorkspaceId }: WorkspaceSmartPodc
         { workspaceId, clientId },
       )
       if (scanRunId.current !== runId) return
-      const scoreById = new Map(scores.map((score) => [score.podcast_id, score]))
-      const ranked = candidates
-        .map((podcast): ScanResult => {
-          const score = scoreById.get(podcast.podcast_id)
-          return {
-            podcast,
-            // The endpoint scores 1-10; the badge thresholds and the "N fit"
-            // label are on a 0-100 scale, so normalize here (as the advanced
-            // Finder does). Without this a real 9 rendered as "9 fit" in the
-            // permanently-muted style and stored 0.9 — a tenth of the true
-            // compatibility — on the client shortlist.
-            score: score?.score == null ? null : Math.round(score.score * 10),
-            reasoning: score?.reasoning ?? null,
-          }
-        })
-        .sort((left, right) => (right.score ?? -1) - (left.score ?? -1))
+      const ranked = rankCandidates(candidates, scores)
       setResults(ranked)
       setPhase('done')
       setStatusMessage('')
@@ -511,6 +518,25 @@ const WorkspaceSmartPodcastFinder = ({ platformWorkspaceId }: WorkspaceSmartPodc
       if (notes) toast.warning(`${ranked.length - unscored} ranked for ${selectedClient.name} — ${notes}.`)
       else toast.success(`${ranked.length} podcasts ranked for ${selectedClient.name}.`)
     } catch (error) {
+      if (scanRunId.current !== runId) return
+      // A scoring failure must not bin discovery the workspace already paid
+      // for. Show what was found (with any partial scores) and say plainly
+      // what did not score, mirroring the advanced Finder.
+      if (error instanceof PartialScoringError && discoveredCandidates.length > 0) {
+        const ranked = rankCandidates(discoveredCandidates, error.scored)
+        setResults(ranked)
+        setPhase('done')
+        setStatusMessage('')
+        toast.warning(`${error.message} Score the rest again when you are ready.`, { duration: 10000 })
+        return
+      }
+      if (error instanceof InsufficientCreditsError && discoveredCandidates.length > 0) {
+        setResults(rankCandidates(discoveredCandidates, []))
+        setPhase('done')
+        setStatusMessage('')
+        toast.error(`${error.message} The ${discoveredCandidates.length} podcasts found are shown unscored — add credits to score them.`, { duration: 10000 })
+        return
+      }
       setPhase('idle')
       setStatusMessage('')
       toast.error(error instanceof Error ? error.message : 'The scan could not be completed.')

@@ -7,10 +7,10 @@ import { Menu, X } from 'lucide-react';
 // agency landing page took the root. Pointing them at "/" sent the reader to a
 // page that has none of them.
 const navLinks = [
-  { href: '/podcast-booking#how-it-works', label: 'How It Works' },
-  { href: '/podcast-booking#who-its-for', label: "Who It's For" },
-  { href: '/podcast-booking#results', label: 'Results' },
-  { href: '/podcast-booking#pricing', label: 'Pricing' },
+  { href: '/#tour', label: 'Product' },
+  { href: '/#portal', label: 'Client Portal' },
+  { href: '/#pricing', label: 'Pricing' },
+  { href: '/#faq', label: 'FAQ' },
   { href: '/resources', label: 'Resources' },
   { href: '/login', label: 'Workspace Login' },
 ];

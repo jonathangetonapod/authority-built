@@ -173,7 +173,7 @@ export const PodcastAnalyticsModal = ({ podcast, isOpen, onClose }: PodcastAnaly
         {/* Actions */}
         <div className="flex gap-3">
           <Button asChild className="w-full">
-            <a href="/podcast-booking#book">Book This Show</a>
+            <a href="/register">Request access</a>
           </Button>
         </div>
       </DialogContent>

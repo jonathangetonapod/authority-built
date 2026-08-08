@@ -11,11 +11,12 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run build:static",
-    "build:static": "npm run sitemap:static && vite build --mode static-validation",
+    "build:static": "npm run sitemap:auto && vite build --mode static-validation",
     "build:dev": "vite build --mode development",
     "sitemap": "npm run sitemap:static",
     "sitemap:static": "tsx scripts/generate-sitemap.ts --static",
     "sitemap:database": "tsx scripts/generate-sitemap.ts --database",
+    "sitemap:auto": "tsx scripts/generate-sitemap.ts --auto",
     "test:staging": "tsx scripts/staging-acceptance.ts",
     "typecheck:app": "tsc --noEmit -p tsconfig.app.json --pretty false",
     "typecheck:staging": "tsc --noEmit -p tsconfig.staging.json",

@@ -72,7 +72,7 @@ export default function BlogPost() {
       // Fallback: Copy to clipboard
       navigator.clipboard.writeText(window.location.href)
       toast({
-        title: 'Link copied!',
+        title: 'Link copied',
         description: 'Post URL copied to clipboard',
       })
     }

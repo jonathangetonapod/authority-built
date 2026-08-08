@@ -347,6 +347,21 @@ function ProspectViewContent() {
    * terracotta, used only when a workspace has set no accent of its own.
    */
   const accentColor = workspaceBrand?.accent_color?.trim() || '#b46a3c'
+  // The agency's primary brand color, applied to the one surface where
+  // "primary" belongs — the booking CTA — with a text color chosen for
+  // contrast so a light brand color can't render unreadable. #0d1b2a is the
+  // page's structural ink and stays fixed. Falls back to that ink.
+  const primaryColor = /^#[0-9a-f]{6}$/iu.test(workspaceBrand?.primary_color?.trim() || '')
+    ? (workspaceBrand!.primary_color as string).trim()
+    : '#0d1b2a'
+  const primaryTextColor = (() => {
+    const hex = primaryColor.replace('#', '')
+    const r = parseInt(hex.slice(0, 2), 16) / 255
+    const g = parseInt(hex.slice(2, 4), 16) / 255
+    const b = parseInt(hex.slice(4, 6), 16) / 255
+    const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return luminance > 0.6 ? '#0d1b2a' : '#f7fafc'
+  })()
   const conciergeName = workspaceBrand?.brand_name?.trim()
     ? `${workspaceBrand.brand_name.trim()}, your booking team`
     : 'Your booking team'
@@ -1008,7 +1023,8 @@ function ProspectViewContent() {
               <button
                 type="button"
                 onClick={() => openExternalUrl(bookingLink)}
-                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-full bg-[#0d1b2a] px-5 text-sm font-semibold text-[#f7fafc] shadow-[0_8px_20px_rgba(13,27,42,0.18)] transition-transform hover:-translate-y-px"
+                style={{ backgroundColor: primaryColor, color: primaryTextColor }}
+                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-full px-5 text-sm font-semibold shadow-[0_8px_20px_rgba(13,27,42,0.18)] transition-transform hover:-translate-y-px"
               >
                 <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
                 Book a 15-min call

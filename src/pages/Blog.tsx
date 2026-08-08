@@ -71,7 +71,7 @@ const Blog = () => {
               Podcast Marketing Insights
             </h1>
             <p className="text-base sm:text-lg md:text-xl text-muted-foreground leading-relaxed px-4">
-              Expert strategies, data-driven insights, and proven tactics to dominate podcast guesting and build your authority.
+              Expert strategies, data-driven insights, and practical tactics for podcast guesting and building your authority.
             </p>
           </div>
         </div>
@@ -178,7 +178,7 @@ const Blog = () => {
                 <p className="text-xl text-muted-foreground">
                   {searchQuery || selectedCategory !== 'all'
                     ? 'No articles found. Try adjusting your filters.'
-                    : 'No articles published yet. Check back soon!'}
+                    : 'No articles published yet. Check back soon.'}
                 </p>
               </div>
             ) : (
@@ -195,30 +195,6 @@ const Blog = () => {
                 ))}
               </div>
             )}
-          </div>
-        </div>
-      </section>
-
-      {/* Newsletter CTA */}
-      <section className="py-10 md:py-20 bg-gradient-to-r from-primary/10 via-purple-500/10 to-primary/10 px-4">
-        <div className="container mx-auto">
-          <div className="max-w-2xl mx-auto text-center">
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-foreground mb-4 px-4">
-              Get Podcast Marketing Insights Weekly
-            </h2>
-            <p className="text-base sm:text-lg text-muted-foreground mb-8 px-4">
-              Join 2,500+ founders and executives receiving our best strategies for podcast guesting.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto px-4">
-              <input
-                type="email"
-                placeholder="Enter your email"
-                className="flex h-12 sm:h-14 w-full rounded-lg border border-border bg-background px-4 py-2 text-base focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-              <Button size="lg" className="w-full sm:w-auto min-h-[48px] sm:min-h-[56px] whitespace-nowrap">
-                Subscribe
-              </Button>
-            </div>
           </div>
         </div>
       </section>

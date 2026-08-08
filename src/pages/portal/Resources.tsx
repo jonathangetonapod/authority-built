@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { PortalLayout } from '@/components/portal/PortalLayout'
 import { useAuth } from '@/contexts/AuthContext'
 import { useClientPortal } from '@/contexts/ClientPortalContext'
+import { isPortalAuthError } from '@/hooks/usePortalExperience'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -74,7 +75,7 @@ const typeInfo = {
 
 export default function PortalResources() {
   const { isPlatformAdmin } = useAuth()
-  const { client, session, isImpersonating } = useClientPortal()
+  const { client, session, isImpersonating, logout } = useClientPortal()
   const [searchQuery, setSearchQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [viewingResource, setViewingResource] = useState<PortalGuestResource | null>(null)
@@ -107,6 +108,14 @@ export default function PortalResources() {
     retry: false,
     gcTime: 0,
   })
+
+  // A rejected token here is a dead session, not a "try again" — convert it
+  // to a logout so the client is sent back to the portal login instead of
+  // looping on an error. Impersonation is a platform-admin view, not a portal
+  // session, so it is left alone.
+  useEffect(() => {
+    if (!isImpersonating && isPortalAuthError(error)) void logout()
+  }, [error, isImpersonating, logout])
 
   // Filter resources
   const filteredResources = (resources || []).filter(resource => {
